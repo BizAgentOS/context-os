@@ -1,0 +1,36 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# OS and editor files
+.DS_Store
+.idea/
+.vscode/
+
+# Python and Node environments
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+node_modules/
+
+# Build, test and temporary output
+build/
+dist/
+coverage/
+.coverage
+htmlcov/
+tmp/
+*.log
+
+# Generated experimental data and local runtime state
+/data/generated/
+/data/private/
+/runs/
+/local-state/
