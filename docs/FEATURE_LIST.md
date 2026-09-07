@@ -5,7 +5,7 @@ Last Updated: 2026-09-07
 ## Version Info
 
 - **Current Release:** 无，尚未发布产品版本。
-- **Planned Version:** v0.1.0 — 本地方法验证实验。
+- **Planned Version:** v0.1.0 开发档案 — 首轮交付 Agent 企业记忆体验。
 - **版本状态:** InProgress；首个实验版本开发中，尚未发布。
 - **状态规则:** `Planned → InProgress → Completed`；`Released` 仅填写实际发布版本。
 - **设计:** [v0.1.0 设计与开发步骤](features/v0.1.0.md)。
@@ -28,7 +28,7 @@ Last Updated: 2026-09-07
 | 005 | 简单本地工作台 | New | High | InProgress | v0.1.0 | 001；维护页依赖 004 | [设计](features/v0.1.0.md#feature-005) |
 | 006 | 对照实验与规模验证 | Internal | High | Planned | v0.1.0 | 001、002、004 | [设计](features/v0.1.0.md#feature-006) |
 
-以设计块中的票依赖决定可开始的工作。005 和 006 可随前面的链路逐步建设；v0.1.0 的完整验收包含全部六项。
+此表保留已有能力与票的实际完成记录，计数不代表新 MVP 体验的完成比例。首轮按 [MVP 完成条件](MVP.md)验收，不等待全部六项扩展能力。未完成票的依赖将在主 Agent 体验设计后重排；006、完整外部消费和完整回归/恢复保留为后续工作，不因范围调整标为完成。
 
 ## Feature Details
 
@@ -99,6 +99,6 @@ Last Updated: 2026-09-07
 - InProgress: 2
 - Completed: 1
 - New: 5；Internal: 1；High: 6。
-- **当前：FEATURE_005 / T005-01 已完成同步前端，T005-02等待实际维护链路；下一步继续 FEATURE_002 / T002-01 的业务范围与建模任务。旧产物保留为技术试样，直接确认请求已撤回。见[工作台说明](experiment/LAB.md)与[流程草案](experiment/ONTOLOGY_MODELING.md)。**
+- **当前：先设计主 Agent 的首次进入、企业理解与资料接入体验，再按新 MVP 重排未完成票。T005-01是已交付的浏览型原型，不代表 Agent 主入口已完成；T002-01仍需建模与验证。旧产物保留为技术试样，直接确认请求已撤回。见[首轮体验](MVP.md)、[现有工作台](experiment/LAB.md)与[建模方法](experiment/ONTOLOGY_MODELING.md)。**
 
 项目初始化和开发文档已完成，记录在 [CHANGELOG](CHANGELOG.md)；它们不计入产品功能完成数。功能状态在本文维护，具体票的完成状态在对应设计块维护。
