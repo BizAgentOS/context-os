@@ -23,7 +23,7 @@ Last Updated: 2026-09-07
 |---|---|---|---|---|---|---|---|
 | 001 | 虚构企业、原始数据与基线 | New | High | Completed | v0.1.0 | 无 | [设计](features/v0.1.0.md#feature-001) |
 | 002 | 初始本体与只读数据服务 | New | High | InProgress | v0.1.0 | 001 | [设计](features/v0.1.0.md#feature-002) |
-| 003 | KodaX 与 NOOA 式维护 Agent | New | High | Planned | v0.1.0 | 002 | [设计](features/v0.1.0.md#feature-003) |
+| 003 | KodaX 与 NOOA 式企业主 Agent | New | High | Planned | v0.1.0 | 首段无；对象阶段依赖 002 | [设计](features/v0.1.0.md#feature-003) |
 | 004 | 本体演变与结果恢复 | New | High | Planned | v0.1.0 | 003 | [设计](features/v0.1.0.md#feature-004) |
 | 005 | 简单本地工作台 | New | High | InProgress | v0.1.0 | 001；维护页依赖 004 | [设计](features/v0.1.0.md#feature-005) |
 | 006 | 对照实验与规模验证 | Internal | High | Planned | v0.1.0 | 001、002、004 | [设计](features/v0.1.0.md#feature-006) |
@@ -52,14 +52,14 @@ Last Updated: 2026-09-07
 - **Blocked by:** 001。
 - **Design:** [FEATURE_002](features/v0.1.0.md#feature-002)。
 
-### 003: KodaX 与 NOOA 式维护 Agent
+### 003: KodaX 与 NOOA 式企业主 Agent
 
 - **Status:** Planned
 - **Category / Priority:** New / High
 - **Planned / Released:** v0.1.0 / —
 - **Created / Started / Completed:** 2026-09-07 / — / —
-- **Description:** 实际接入 Runtime，通过稳定对象引用、类型化工具、按需读取和受限代码执行调查问题，产生有依据的修改建议。
-- **Blocked by:** 002。
+- **Description:** 基于 KodaX SDK 的主 Agent，借鉴 NOOA 对象化状态和类型化方法，串起企业理解、资料接入、辅助建模、报告与维护；[设计已沉淀](AGENT_DESIGN.md)，实现未开始。
+- **Blocked by:** 企业理解/来源首段无；后续对象与建模能力依赖 002，不等待完整 MCP。
 - **Design:** [FEATURE_003](features/v0.1.0.md#feature-003)。
 
 ### 004: 本体演变与结果恢复
@@ -99,6 +99,6 @@ Last Updated: 2026-09-07
 - InProgress: 2
 - Completed: 1
 - New: 5；Internal: 1；High: 6。
-- **当前：先设计主 Agent 的首次进入、企业理解与资料接入体验，再按新 MVP 重排未完成票。T005-01是已交付的浏览型原型，不代表 Agent 主入口已完成；T002-01仍需建模与验证。旧产物保留为技术试样，直接确认请求已撤回。见[首轮体验](MVP.md)、[现有工作台](experiment/LAB.md)与[建模方法](experiment/ONTOLOGY_MODELING.md)。**
+- **当前：已沉淀[主 Agent 设计](AGENT_DESIGN.md)，下一步按企业理解与首份资料的完整体验拆票、同步设计界面。T005-01是已交付的浏览型原型，不代表 Agent 主入口已完成；T002-01仍需建模与验证。旧产物保留为技术试样，直接确认请求已撤回。见[首轮体验](MVP.md)、[现有工作台](experiment/LAB.md)与[建模方法](experiment/ONTOLOGY_MODELING.md)。**
 
 项目初始化和开发文档已完成，记录在 [CHANGELOG](CHANGELOG.md)；它们不计入产品功能完成数。功能状态在本文维护，具体票的完成状态在对应设计块维护。

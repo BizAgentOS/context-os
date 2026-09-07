@@ -10,6 +10,7 @@
 
 - [产品目标](docs/PRODUCT.md)：产品是什么、解决什么问题、边界在哪里。
 - [MVP 目标](docs/MVP.md)：首轮体验、最小范围、验收方式。
+- [主 Agent 设计](docs/AGENT_DESIGN.md)：KodaX SDK 与 NOOA 思路的结合、企业记忆、工作方法及首轮交互。
 - [澄川热力公司设定](data/samples/chengchuan-heating/sources/company/company-brief.md)：第一家虚构企业的经营、片区和部门职责。
 - [企业数据样本](data/samples/chengchuan-heating/README.md)与 [实验说明](docs/experiment/README.md)：业务资料、公开开发问题和输入边界。
 - [执行清单](docs/PLAN.md)：每次完成一个部分，记录真实进度。
@@ -25,7 +26,7 @@ FEATURE_001 已完成企业样本、可重复生成与历史回放，以及10题
 
 ## 工作方式
 
-先围绕一条 Agent 工作体验接通可核查的产物，再扩展数据量和方法评测。当前页面是浏览型实验室，Agent 主入口、企业初始化、接入及报告体验仍待设计与实现；已有浮窗不算完整 Agent 产品。
+先围绕一条 Agent 工作体验接通可核查的产物，再扩展数据量和方法评测。当前页面是浏览型实验室，主 Agent 行为与记忆设计已沉淀，Agent 主入口、企业初始化、接入及报告体验仍待实现；已有浮窗不算完整 Agent 产品。
 
 检查第一批样本（Python 3.9+，仅标准库）：
 
