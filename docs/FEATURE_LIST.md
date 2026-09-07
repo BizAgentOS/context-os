@@ -15,7 +15,7 @@ Last Updated: 2026-09-07
 
 | Version | Status | Planned | InProgress | Completed | Progress |
 |---|---|---:|---:|---:|---:|
-| v0.1.0 | InProgress | 3 | 2 | 1 | 1/6 |
+| v0.1.0 | InProgress | 2 | 2 | 2 | 2/6 |
 
 ## Feature Index
 
@@ -23,7 +23,7 @@ Last Updated: 2026-09-07
 |---|---|---|---|---|---|---|---|
 | 001 | 虚构企业、原始数据与基线 | New | High | Completed | v0.1.0 | 无 | [设计](features/v0.1.0.md#feature-001) |
 | 002 | 初始本体与只读数据服务 | New | High | InProgress | v0.1.0 | 001 | [设计](features/v0.1.0.md#feature-002) |
-| 003 | KodaX 与 NOOA 式企业主 Agent | New | High | Planned | v0.1.0 | 首段无；对象阶段依赖 002 | [设计](features/v0.1.0.md#feature-003) |
+| 003 | KodaX 与 NOOA 式企业主 Agent | New | High | Completed | v0.1.0 | 首段无；对象能力与 002 对接 | [设计](features/v0.1.0.md#feature-003) |
 | 004 | 本体演变与结果恢复 | New | High | Planned | v0.1.0 | 003 | [设计](features/v0.1.0.md#feature-004) |
 | 005 | 简单本地工作台 | New | High | InProgress | v0.1.0 | 001；维护页依赖 004 | [设计](features/v0.1.0.md#feature-005) |
 | 006 | 对照实验与规模验证 | Internal | High | Planned | v0.1.0 | 001、002、004 | [设计](features/v0.1.0.md#feature-006) |
@@ -54,11 +54,11 @@ Last Updated: 2026-09-07
 
 ### 003: KodaX 与 NOOA 式企业主 Agent
 
-- **Status:** Planned
+- **Status:** Completed
 - **Category / Priority:** New / High
 - **Planned / Released:** v0.1.0 / —
-- **Created / Started / Completed:** 2026-09-07 / — / —
-- **Description:** 基于 KodaX SDK 的主 Agent，将本体概念、实例、关系和业务方法组成 NOOA 式对象操作环境，串起企业理解、资料接入、辅助建模、报告与维护；[设计初版](AGENT_BLUEPRINT.md)已包含配置、组件、上下文与应用契约，[行为规则](AGENT_DESIGN.md)作为依据，实现未开始。
+- **Created / Started / Completed:** 2026-09-07 / 2026-09-07 / 2026-09-07
+- **Description:** 已完成 T003-01/02/03：真实 KodaX SDK 主 Agent、来源与企业记忆、本体候选/采用、对象组合、报告、更新和恢复；16 项 Agent 检查及实际模型链路验证见运行记录。
 - **Blocked by:** 企业理解/来源首段无；后续对象与建模能力依赖 002，不等待完整 MCP。
 - **Design:** [FEATURE_003](features/v0.1.0.md#feature-003)。
 
@@ -78,7 +78,7 @@ Last Updated: 2026-09-07
 - **Category / Priority:** New / High
 - **Planned / Released:** v0.1.0 / —
 - **Created / Started / Completed:** 2026-09-07 / 2026-09-07 / —
-- **Description:** 同步呈现实验目标、企业资料、本体建模过程、概念/对象试样和 Agent 设计；提供本地笔记与只读问答浮窗，维护结果随 004 接入。
+- **Description:** T005-01 保留浏览型实验室；T005-03 已交付主 Agent 对话、模型配置和来源/本体/对象/报告工作台，完整演变与对照视图仍由 T005-02 承接。
 - **Blocked by:** 基础查看依赖 001 和已有技术试样，不等待正式本体；维护页依赖 004。
 - **Design:** [FEATURE_005](features/v0.1.0.md#feature-005)。
 
@@ -95,10 +95,10 @@ Last Updated: 2026-09-07
 ## Summary
 
 - Total: 6
-- Planned: 3
+- Planned: 2
 - InProgress: 2
-- Completed: 1
+- Completed: 2
 - New: 5；Internal: 1；High: 6。
-- **当前：[Agent 设计初版](AGENT_BLUEPRINT.md)已交付，覆盖身份/方法、组件、上下文、本体对象工作区、状态与事件契约；实现仍未开始，本次没有新实现票。对象组合执行器保留接入验证。T005-01是已交付的浏览型原型，不代表 Agent 主入口已完成；T002-01仍需建模与验证。旧产物保留为技术试样，直接确认请求已撤回。见[首轮体验](MVP.md)、[现有工作台](experiment/LAB.md)与[建模方法](experiment/ONTOLOGY_MODELING.md)。**
+- **当前：FEATURE_003 与 T005-03 主 Agent 工作台已完成，真实 SDK、企业理解、资料、本体对象、报告与一次记忆更新已跑通。见[运行与验收](experiment/AGENT.md)。下一步先体验并检查业务建模质量；T002 后续只读 MCP、T004 完整语义演变/恢复、T005-02 对照视图与 T006 方法评测继续保持未完成。旧浏览型实验室与技术试样仍可查看。**
 
 项目初始化和开发文档已完成，记录在 [CHANGELOG](CHANGELOG.md)；它们不计入产品功能完成数。功能状态在本文维护，具体票的完成状态在对应设计块维护。

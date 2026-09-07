@@ -10,6 +10,7 @@
 
 - [产品目标](docs/PRODUCT.md)：产品是什么、解决什么问题、边界在哪里。
 - [MVP 目标](docs/MVP.md)：首轮体验、最小范围、验收方式。
+- [Agent 运行与验收](docs/experiment/AGENT.md)：启动主对话工作台、接入资料、建模、调查与维护。
 - [Agent 设计方案](docs/AGENT_BLUEPRINT.md)：组成、身份说明、五种工作方法、上下文、对象工作区及应用接口。
 - [Agent 行为与技术依据](docs/AGENT_DESIGN.md)：下一步选择、任务与记忆、用户协作、热力对话及完成条件；附 KodaX / NOOA 技术参考。
 - [澄川热力公司设定](data/samples/chengchuan-heating/sources/company/company-brief.md)：第一家虚构企业的经营、片区和部门职责。
@@ -27,7 +28,16 @@ FEATURE_001 已完成企业样本、可重复生成与历史回放，以及10题
 
 ## 工作方式
 
-Agent 设计初版已形成，包含行为、配置、对象环境和应用契约；后续按该方案安排实现。首轮将围绕一条工作体验接通可核查的产物，再扩展数据量和方法评测。当前页面是浏览型实验室，Agent 主入口、企业初始化、接入及报告体验仍待实现；已有浮窗不算完整 Agent 产品。
+主 Agent 已接通真实 KodaX SDK，提供对话、资料上传、企业理解、本体候选/采用、对象关系查证和报告。先用这一条体验检查产品思路，再扩展连接器及方法评测。
+
+启动主 Agent（Node.js 22.18+）：
+
+```sh
+npm ci
+npm start
+```
+
+打开 <http://127.0.0.1:8788>，在模型设置中配置凭据，或沿用宿主环境变量。详情见[运行与验收](docs/experiment/AGENT.md)。
 
 检查第一批样本（Python 3.9+，仅标准库）：
 
@@ -43,6 +53,6 @@ python3 scripts/validate_heating_sample.py
 python3 scripts/lab_server.py
 ```
 
-打开 http://127.0.0.1:8787。可查看企业来源、建模过程、概念/对象试样与证据，保存步骤笔记，并通过浮窗问答；DeepSeek 凭据沿用服务端 `DEEPSEEK_API_KEY` 环境变量。KodaX 维护 Runtime 仍未接入。
+打开 http://127.0.0.1:8787。可查看企业来源、建模过程、概念/对象试样与证据，保存步骤笔记，并通过浮窗问答；DeepSeek 凭据沿用服务端 `DEEPSEEK_API_KEY` 环境变量。此 8787 页面保留为旧浏览入口；新的 KodaX Agent 使用上面的 8788 入口。
 
 外层目录中的调研资料、星桥软件数据和旧方案保留为参考。本项目当前执行范围以本仓库的产品目标、MVP 目标和执行清单为准，旧方案中的完整平台能力不自动进入本次实验。

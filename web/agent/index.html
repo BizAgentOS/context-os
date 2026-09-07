@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#f7f7f2" />
+    <title>DataEngine · 企业记忆</title>
+    <link rel="stylesheet" href="./app.css" />
+    <script src="./app.js" type="module"></script>
+  </head>
+  <body>
+    <svg
+      class="icon-definitions"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <defs>
+        <symbol id="i-plus" viewBox="0 0 24 24">
+          <path d="M12 5v14M5 12h14" />
+        </symbol>
+        <symbol id="i-chat" viewBox="0 0 24 24">
+          <path
+            d="M20 11.5a8 8 0 0 1-8 8H5l-3 2v-10a9 9 0 0 1 18 0ZM7 10h8M7 14h5"
+          />
+        </symbol>
+        <symbol id="i-profile" viewBox="0 0 24 24">
+          <path
+            d="M4 21V5l8-3 8 3v16M2 21h20M9 21v-5h6v5M8 7h1m6 0h1M8 11h1m6 0h1"
+          />
+        </symbol>
+        <symbol id="i-source" viewBox="0 0 24 24">
+          <path d="M4 5h6l2 2h8v13H4ZM4 10h16" />
+        </symbol>
+        <symbol id="i-ontology" viewBox="0 0 24 24">
+          <rect x="9" y="2" width="6" height="6" rx="1.5" />
+          <rect x="2" y="16" width="6" height="6" rx="1.5" />
+          <rect x="16" y="16" width="6" height="6" rx="1.5" />
+          <path d="M12 8v4M5 16v-4h14v4" />
+        </symbol>
+        <symbol id="i-report" viewBox="0 0 24 24">
+          <path d="M6 3h9l4 4v14H6ZM14 3v5h5M9 12h7M9 16h7" />
+        </symbol>
+        <symbol id="i-change" viewBox="0 0 24 24">
+          <path d="M4 11a8 8 0 1 1 2 7M4 5v6h6M12 7v5l3 2" />
+        </symbol>
+        <symbol id="i-settings" viewBox="0 0 24 24">
+          <path d="M4 7h16M4 17h16" />
+          <circle cx="8" cy="7" r="3" />
+          <circle cx="16" cy="17" r="3" />
+        </symbol>
+        <symbol id="i-arrow" viewBox="0 0 24 24">
+          <path d="M12 19V5m-6 6 6-6 6 6" />
+        </symbol>
+        <symbol id="i-right" viewBox="0 0 24 24">
+          <path d="M5 12h14m-6-6 6 6-6 6" />
+        </symbol>
+        <symbol id="i-close" viewBox="0 0 24 24">
+          <path d="m6 6 12 12M18 6 6 18" />
+        </symbol>
+        <symbol id="i-panel" viewBox="0 0 24 24">
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <path d="M14 4v16" />
+        </symbol>
+        <symbol id="i-clip" viewBox="0 0 24 24">
+          <path
+            d="m8 12 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l8-8a7 7 0 0 1 10 10l-8 8"
+          />
+        </symbol>
+        <symbol id="i-check" viewBox="0 0 24 24">
+          <path d="m5 12 4 4L19 6" />
+        </symbol>
+        <symbol id="i-menu" viewBox="0 0 24 24">
+          <path d="M4 6h16M4 12h16M4 18h16" />
+        </symbol>
+        <symbol id="i-edit" viewBox="0 0 24 24">
+          <path d="m14 5 5 5M4 20l5-1L20 8a2 2 0 0 0-5-5L4 14Z" />
+        </symbol>
+        <symbol id="i-spark" viewBox="0 0 24 24">
+          <path d="m12 2 2.8 7.2L22 12l-7.2 2.8L12 22l-2.8-7.2L2 12l7.2-2.8Z" />
+        </symbol>
+      </defs>
+    </svg>
+
+    <div class="app-shell" id="app-shell">
+      <aside class="sidebar" id="sidebar" aria-label="工作区导航">
+        <a class="brand" href="./" aria-label="DataEngine 首页">
+          <span class="brand-mark"
+            ><svg class="icon"><use href="#i-spark" /></svg
+          ></span>
+          <span
+            >DataEngine<span class="brand-caption">企业记忆工作台</span></span
+          >
+        </a>
+        <div class="workspace">
+          <span class="workspace-avatar">企</span
+          ><span id="workspace-name">我的企业空间</span
+          ><span class="local-pill">本地</span>
+        </div>
+        <button class="new-task-button" id="new-task">
+          <svg class="icon"><use href="#i-plus" /></svg>开始新任务
+        </button>
+        <nav class="main-nav" aria-label="企业记忆">
+          <button class="nav-item active" data-view="conversation">
+            <svg class="icon"><use href="#i-chat" /></svg
+            ><span>与 Agent 协作</span>
+          </button>
+          <p class="nav-label">企业记忆</p>
+          <button class="nav-item" data-view="profile">
+            <svg class="icon"><use href="#i-profile" /></svg
+            ><span>企业理解</span
+            ><span class="nav-count" data-count="profile">0</span>
+          </button>
+          <button class="nav-item" data-view="source">
+            <svg class="icon"><use href="#i-source" /></svg><span>数据来源</span
+            ><span class="nav-count" data-count="source">0</span>
+          </button>
+          <button class="nav-item" data-view="ontology">
+            <svg class="icon"><use href="#i-ontology" /></svg
+            ><span>本体与对象</span
+            ><span class="nav-count" data-count="ontology">0</span>
+          </button>
+          <button class="nav-item" data-view="report">
+            <svg class="icon"><use href="#i-report" /></svg><span>调查报告</span
+            ><span class="nav-count" data-count="report">0</span>
+          </button>
+          <button class="nav-item" data-view="change">
+            <svg class="icon"><use href="#i-change" /></svg><span>记忆更新</span
+            ><span class="nav-count" data-count="change">0</span>
+          </button>
+        </nav>
+        <div class="task-section">
+          <p class="nav-label">最近任务</p>
+          <div id="task-list" class="task-list">
+            <p class="sidebar-empty">从第一个业务问题开始</p>
+          </div>
+        </div>
+        <div class="sidebar-footer">
+          <button class="nav-item" id="open-settings">
+            <svg class="icon"><use href="#i-settings" /></svg
+            ><span>模型设置</span
+            ><span id="model-dot" class="status-dot"></span></button
+          ><span class="experiment-note">实验版 · 让理解逐步积累</span>
+        </div>
+      </aside>
+      <button
+        class="sidebar-backdrop"
+        id="sidebar-backdrop"
+        aria-label="收起导航"
+        hidden
+      ></button>
+
+      <main class="workspace-main" id="workspace-main">
+        <header class="topbar">
+          <button
+            class="icon-button mobile-menu"
+            id="open-sidebar"
+            aria-label="打开导航"
+          >
+            <svg class="icon"><use href="#i-menu" /></svg>
+          </button>
+          <div class="topbar-heading">
+            <span class="topbar-eyebrow" id="topbar-eyebrow">企业记忆助手</span>
+            <h1 id="page-title">与 Agent 协作</h1>
+          </div>
+          <div class="topbar-actions">
+            <button class="model-chip" id="model-chip">
+              <span class="status-dot"></span
+              ><span id="model-label">连接模型</span></button
+            ><button
+              class="icon-button"
+              id="toggle-detail"
+              aria-label="打开成果面板"
+              title="成果面板"
+              aria-expanded="false"
+            >
+              <svg class="icon"><use href="#i-panel" /></svg>
+            </button>
+          </div>
+        </header>
+        <div
+          class="connection-notice"
+          id="connection-notice"
+          role="status"
+          hidden
+        ></div>
+        <section
+          class="conversation-scroll"
+          id="conversation-scroll"
+          aria-label="对话与工作记录"
+        >
+          <div class="welcome" id="welcome">
+            <div class="welcome-emblem">
+              <svg class="icon"><use href="#i-spark" /></svg
+              ><span class="emblem-point point-one"></span
+              ><span class="emblem-point point-two"></span>
+            </div>
+            <p class="welcome-eyebrow">从一次对话，开始理解你的企业</p>
+            <h2>把企业的经验，<br />变成可用的记忆。</h2>
+            <p class="welcome-description">
+              告诉我你在做什么，或交给我一份资料。<br />我们一起梳理业务、连接数据，让每次工作都有积累。
+            </p>
+            <div class="starter-grid">
+              <button class="starter-card" id="start-understanding">
+                <span class="starter-icon"
+                  ><svg class="icon"><use href="#i-profile" /></svg></span
+                ><strong>先聊聊我的企业</strong
+                ><span>从业务、职责和一个目标开始</span
+                ><svg class="icon starter-arrow"><use href="#i-right" /></svg>
+              </button>
+              <button class="starter-card" id="start-upload">
+                <span class="starter-icon"
+                  ><svg class="icon"><use href="#i-source" /></svg></span
+                ><strong>从一份资料开始</strong
+                ><span>上传企业介绍、业务文档或表格</span
+                ><svg class="icon starter-arrow"><use href="#i-right" /></svg>
+              </button>
+            </div>
+            <button class="sample-link" id="load-sample">
+              <span class="sample-indicator"></span
+              >试用澄川热力的虚构企业资料<svg class="icon">
+                <use href="#i-right" />
+              </svg>
+            </button>
+          </div>
+          <div
+            class="messages"
+            id="messages"
+            aria-live="polite"
+            aria-relevant="additions text"
+          ></div>
+          <div class="pending-card" id="pending-card" hidden></div>
+          <div class="run-progress" id="run-progress" hidden>
+            <span class="working-mark"
+              ><svg class="icon"><use href="#i-spark" /></svg
+            ></span>
+            <div>
+              <span id="run-progress-label">正在处理你的任务</span
+              ><span id="run-progress-detail"></span>
+            </div>
+          </div>
+          <div class="task-outcome" id="task-outcome" hidden></div>
+        </section>
+        <section
+          class="library-view"
+          id="library-view"
+          aria-label="企业记忆列表"
+          hidden
+        ></section>
+        <div class="composer-area">
+          <div class="focus-context" id="focus-context" hidden>
+            <svg class="icon"><use href="#i-report" /></svg
+            ><span id="focus-label"></span
+            ><button
+              class="icon-button small"
+              id="clear-focus"
+              aria-label="取消引用成果"
+            >
+              <svg class="icon"><use href="#i-close" /></svg>
+            </button>
+          </div>
+          <form class="composer" id="message-form">
+            <label class="sr-only" for="message-input"
+              >发给企业记忆助手的消息</label
+            >
+            <textarea
+              id="message-input"
+              rows="2"
+              placeholder="介绍你的企业，或提出一个想解决的业务问题…"
+              maxlength="20000"
+            ></textarea>
+            <div class="composer-toolbar">
+              <div class="composer-left">
+                <button
+                  class="icon-button"
+                  id="upload-button"
+                  type="button"
+                  title="上传 Markdown、文本或 CSV"
+                  aria-label="上传企业资料"
+                >
+                  <svg class="icon"><use href="#i-plus" /></svg></button
+                ><span class="upload-hint" id="upload-hint">文档与 CSV</span>
+              </div>
+              <div class="composer-right">
+                <span class="keyboard-hint">↵ 发送</span
+                ><button
+                  class="stop-button"
+                  id="stop-button"
+                  type="button"
+                  hidden
+                >
+                  <span></span>停止</button
+                ><button
+                  class="send-button"
+                  id="send-button"
+                  type="submit"
+                  aria-label="发送消息"
+                  disabled
+                >
+                  <svg class="icon"><use href="#i-arrow" /></svg>
+                </button>
+              </div>
+            </div>
+          </form>
+          <p class="composer-footnote">
+            理解有依据，修改有记录。关键业务定义由你决定。
+          </p>
+          <input
+            id="file-input"
+            type="file"
+            accept=".md,.txt,.csv,text/plain,text/markdown,text/csv"
+            multiple
+            hidden
+          />
+        </div>
+      </main>
+
+      <aside
+        class="detail-panel"
+        id="detail-panel"
+        aria-label="当前成果"
+        hidden
+      >
+        <header class="detail-topbar">
+          <span
+            ><svg class="icon"><use href="#i-panel" /></svg>成果工作区</span
+          ><button
+            class="icon-button"
+            id="close-detail"
+            aria-label="收起成果面板"
+          >
+            <svg class="icon"><use href="#i-close" /></svg>
+          </button>
+        </header>
+        <div class="detail-content" id="detail-content">
+          <div class="detail-empty">
+            <svg class="icon"><use href="#i-source" /></svg>
+            <h2>工作会留下成果</h2>
+            <p>
+              保存的企业理解、资料、本体和报告会出现在这里。<br />打开一份成果，可以继续围绕它对话。
+            </p>
+          </div>
+        </div>
+      </aside>
+      <div class="drop-overlay" id="drop-overlay" hidden>
+        <svg class="icon"><use href="#i-source" /></svg
+        ><strong>把资料交给 Agent</strong
+        ><span>松开以上传 Markdown、文本或 CSV 文件</span>
+      </div>
+    </div>
+
+    <dialog
+      id="settings-dialog"
+      class="settings-dialog"
+      aria-labelledby="settings-title"
+    >
+      <form id="settings-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="section-eyebrow">开始协作之前</p>
+            <h2 id="settings-title">连接你的模型</h2>
+          </div>
+          <button
+            class="icon-button"
+            id="close-settings"
+            type="button"
+            aria-label="关闭模型设置"
+          >
+            <svg class="icon"><use href="#i-close" /></svg>
+          </button>
+        </div>
+        <p class="dialog-intro">
+          选择模型后，Agent 就能阅读资料、构建企业理解并推进你的任务。
+        </p>
+        <label for="provider-input">模型服务</label
+        ><select id="provider-input">
+          <option value="deepseek">DeepSeek</option>
+          <option value="openai">OpenAI</option>
+          <option value="anthropic">Anthropic</option>
+        </select>
+        <label for="model-input">模型名称</label
+        ><input
+          id="model-input"
+          type="text"
+          value="deepseek-v4-flash"
+          autocomplete="off"
+          required
+        />
+        <label for="api-key-input"
+          >API Key<span id="key-help">仅由本地服务持有</span></label
+        ><input
+          id="api-key-input"
+          type="password"
+          placeholder="输入你的 API Key"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <p class="field-note">
+          凭据不进入聊天或企业记忆，也不会保存在浏览器中。已有凭据时，留空表示沿用。
+        </p>
+        <div
+          id="settings-status"
+          class="settings-status"
+          role="status"
+          hidden
+        ></div>
+        <div class="dialog-actions">
+          <button class="secondary-button" id="test-settings" type="button">
+            测试当前连接</button
+          ><button class="primary-button" id="save-settings" type="submit">
+            保存设置
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <div class="toast" id="toast" role="status" hidden></div>
+  </body>
+</html>

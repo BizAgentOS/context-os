@@ -1,6 +1,6 @@
 # DataEngine Agent 设计方案
 
-日期：2026-09-07。本文件把[行为规格](AGENT_DESIGN.md)落实为 Agent 的组成、配置、对象环境和应用契约，作为 [FEATURE_003](features/v0.1.0.md#feature-003) 的设计附件。状态为设计交付，尚未实现或运行验证；这是方案版本，不是产品发布。
+日期：2026-09-07。本文件把[行为规格](AGENT_DESIGN.md)落实为 Agent 的组成、配置、对象环境和应用契约，作为 [FEATURE_003](features/v0.1.0.md#feature-003) 的设计附件。首轮实现采用受限对象方法组合，已接通真实 SDK；实际范围、版本和验证见[运行说明](experiment/AGENT.md)。这是开发中的实验版本，尚未发布。
 
 ## 1. 第一版 Agent 的组成
 
