@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the committed source sample, without reading answers or future plans."""
+"""Check a fixed or generated source snapshot without reading author-side state."""
 import argparse
 import csv
 import hashlib
@@ -23,17 +23,17 @@ def time(value):
     return result
 
 
-def validate(root):
+def validate(root, quiet=False):
     manifest = json.loads((root / 'manifest.json').read_text(encoding='utf-8'))
     require(manifest['fictional'] is True, 'Sample must be marked fictional')
     as_of = time(manifest['as_of'])
     start, end = map(time, manifest['observation_window'])
-    require(start < end <= as_of, 'Invalid observation window')
+    require(start <= end <= as_of, 'Invalid observation window')
     tables, listed, source_ids = {}, set(), set()
     row_count = 0
     for entry in manifest['files']:
         rel = Path(entry['path'])
-        require(not rel.is_absolute() and '..' not in rel.parts and rel.parts[0] == 'sources',
+        require(not rel.is_absolute() and '..' not in rel.parts and len(rel.parts) > 1 and rel.parts[0] == 'sources',
                 f"Source path outside sources/: {rel}")
         require(str(rel) not in listed, f"Duplicate source path: {rel}")
         listed.add(str(rel))
@@ -54,9 +54,8 @@ def validate(root):
         require(reader.fieldnames == entry['columns'], f"CSV columns differ: {rel}")
         rows = list(reader)
         require(len(rows) == entry['records'], f"Row count mismatch: {rel}")
-        require(bool(rows), f"Empty source table: {rel}")
         availability = [r['available_at'] for r in rows]
-        require(entry['available_at_range'] == [min(availability), max(availability)],
+        require(entry['available_at_range'] == ([min(availability), max(availability)] if rows else []),
                 f"Availability range differs: {rel}")
         row_count += len(rows)
         primary = entry['primary_key']
@@ -94,6 +93,7 @@ def validate(root):
 
     orders = index('maintenance/work-orders.csv', 'work_order_no')
     for row in orders.values():
+        require(row['status_as_of_snapshot'] in {'open', 'completed'}, 'Unknown work order status')
         require(row['station_id'] in stations, 'Work order references unknown station')
         if row['equipment_id']:
             require(row['equipment_id'] in equipment, 'Work order references unknown equipment')
@@ -104,6 +104,7 @@ def validate(root):
 
     tickets = index('service/tickets.csv', 'ticket_id')
     for row in tickets.values():
+        require(row['status_as_of_snapshot'] in {'open', 'closed'}, 'Unknown ticket status')
         if row['local_work_order_no']:
             require(row['local_work_order_no'] in orders, 'Ticket references unknown work order')
         if row['closed_at']:
@@ -125,11 +126,28 @@ def validate(root):
 
     numeric = ['secondary_supply_c', 'secondary_return_c', 'secondary_flow_m3_h',
                'secondary_supply_mpa', 'secondary_return_mpa', 'interval_heat_gj']
+    channels = index('monitoring/channel-register.csv', 'station_tag') if 'monitoring/channel-register.csv' in tables else None
+    if channels is not None:
+        for row in channels.values():
+            require(row['station_id'] in stations, 'Channel references unknown station')
+            require(not row['valid_to'] or time(row['valid_to']) > time(row['valid_from']), 'Invalid channel interval')
+    for row in tables.get('service/heating-events.csv', []):
+        require(row['station_id'] in stations, 'Heating event references unknown station')
+        require(time(row['station_recovered_at']) >= time(row['started_at']), 'Invalid event chronology')
+        linked = row['linked_ticket_ids'].split(';')
+        require(len(linked) == len(set(linked)) and all(k in tickets for k in linked), 'Invalid event ticket references')
     series, missing = defaultdict(list), 0
     for row in tables['monitoring/station-hourly.csv']:
         begin, finish = time(row['interval_start']), time(row['interval_end'])
         require(finish-begin == timedelta(hours=1), 'Not a one-hour interval')
-        series[row['station_tag']].append((begin, finish))
+        key = row['station_tag']
+        if channels is not None:
+            require(key in channels, f'Unknown monitoring channel: {key}')
+            channel = channels[key]
+            require(time(channel['valid_from']) <= begin and
+                    (not channel['valid_to'] or finish <= time(channel['valid_to'])), 'Monitoring outside channel validity')
+            key = channel['station_id']
+        series[key].append((begin, finish))
         if row['quality'] == 'missing':
             require(all(row[k] == '' for k in numeric), 'Missing data must not contain invented zeroes')
             missing += 1
@@ -142,7 +160,7 @@ def validate(root):
         require(values['secondary_supply_mpa'] >= values['secondary_return_mpa'] >= 0, 'Invalid pressure relationship')
         heat = values['secondary_flow_m3_h'] * delta * 0.004186
         require(abs(heat-values['interval_heat_gj']) <= 0.00051, 'Synthetic heat arithmetic mismatch')
-    require(len(series) == len(stations), 'Sample station/channel count mismatch')
+    require(len(series) == (len(stations) if start < end else 0), 'Sample station/channel count mismatch')
     for tag, intervals in series.items():
         cursor = start
         for begin, finish in sorted(intervals):
@@ -155,9 +173,10 @@ def validate(root):
     require(sorted(dates) == expected, 'Weather coverage differs')
     for row in weather:
         require(math.isfinite(float(row['outdoor_mean_c'])), 'Invalid outdoor temperature')
-    print(f"PASS: {len(listed)} source files, {row_count} CSV records; hashes, references, times and sample quantities checked.")
-    print(f"Coverage: {len(stations)} stations, {len(buildings)} buildings, {len(weather)} days; {missing} explicit missing monitoring interval(s).")
-    print('This validates a fixed sample, not a generator, physical simulator or Agent evaluation.')
+    if not quiet:
+        print(f"PASS: {len(listed)} source files, {row_count} CSV records; hashes, references, times and sample quantities checked.")
+        print(f"Coverage: {len(stations)} stations, {len(buildings)} buildings, {len(weather)} complete days; {missing} explicit missing monitoring interval(s).")
+        print('This checks source data; it does not establish physical accuracy or Agent performance.')
 
 
 def main():

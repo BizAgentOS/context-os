@@ -1,0 +1,5 @@
+{
+  "seed": 42,
+  "days": 22,
+  "changes": {"facts": true, "mapping": true, "rules": true}
+}

@@ -99,6 +99,6 @@ Last Updated: 2026-09-07
 - InProgress: 1
 - Completed: 0
 - New: 5；Internal: 1；High: 6。
-- **下一项：FEATURE_001 / T001-02，可重复生成与增量回放。**
+- **下一项：FEATURE_001 / T001-03，隔离评测与原始消费基线。**
 
 项目初始化和开发文档已完成，记录在 [CHANGELOG](CHANGELOG.md)；它们不计入产品功能完成数。功能状态在本文维护，具体票的完成状态在对应设计块维护。
