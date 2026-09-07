@@ -21,7 +21,7 @@
 
 **目标版本 v0.1.0，开发中，尚未发布。** 已构建澄川热力的企业设定和第一批固定来源样本：1 个热源接入点、2 座换热站、4 个小区、12 栋楼、两周记录。17 份来源文件包含 738 条 CSV 记录及 8 份业务文档。
 
-FEATURE_001 已完成企业样本、可重复生成与历史回放，以及10题原始资料基线。操作见 [生成说明](docs/experiment/GENERATOR.md)和 [基线说明](docs/experiment/BASELINE.md)，实际表现与限制见 [首跑结果](docs/experiment/BASELINE_RESULT.md)。下一项 T002-01 构建初始本体与对象；维护 Agent、前端和方法对照继续按 [功能台账](docs/FEATURE_LIST.md)推进。
+FEATURE_001 已完成企业样本、可重复生成与历史回放，以及10题原始资料基线。操作见 [生成说明](docs/experiment/GENERATOR.md)和 [基线说明](docs/experiment/BASELINE.md)，实际表现与限制见 [首跑结果](docs/experiment/BASELINE_RESULT.md)。T002-01 已生成9类本体候选及738个可追溯对象预览，待用户确认后保存正式v1；见 [确认摘要](docs/experiment/ONTOLOGY_REVIEW.md)与 [对象使用说明](docs/experiment/ONTOLOGY.md)。维护 Agent、前端和方法对照继续按 [功能台账](docs/FEATURE_LIST.md)推进。
 
 ## 工作方式
 

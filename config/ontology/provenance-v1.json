@@ -1,0 +1,46 @@
+{
+  "status": "pending_user_confirmation",
+  "snapshot_manifest_sha256": "4d3e24b6e006e059bba2145d0f6eef093ba6c0bd5bd3a77de5727e70e15ccddc",
+  "candidate_sha256": "108e9c7126056a3e028bdaf08db7607ad8d09ee6ec533a690a4af6c1bb300428",
+  "model": "deepseek-v4-flash",
+  "calls": [
+    {
+      "request_sha256": "6913112ef88dd883b750a63d01d46a11ac129a92b55b2116f54cfefde84a0df9",
+      "response_candidate_sha256": "a8bb8d08c5391f8ef9e7bc9799100c28f858e4de776b676dc901fb942610c13b",
+      "usage": {
+        "completion_tokens": 3249,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 14795,
+        "prompt_tokens": 14795,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 18044
+      },
+      "elapsed_seconds": 19.865
+    },
+    {
+      "request_sha256": "f98f937e2d791e427d91103cdc1bb90ede170c1a7d504ebf8594cc8e2afebb99",
+      "response_candidate_sha256": "400e591bf65f3ee1f27c1b65f3b6470b0c9c259c50c2f0d7cc513314fc974536",
+      "usage": {
+        "completion_tokens": 3949,
+        "prompt_cache_hit_tokens": 14720,
+        "prompt_cache_miss_tokens": 3670,
+        "prompt_tokens": 18390,
+        "prompt_tokens_details": {
+          "cached_tokens": 14720
+        },
+        "total_tokens": 22339
+      },
+      "elapsed_seconds": 18.28274625
+    }
+  ],
+  "model_revision_feedback": "来源校验/阅读发现以下问题，请仅依据上面来源修订完整候选JSON，保留可用部分，不写批准状态。\n1. station_has_hourly_observation 的 from_type=Station，但Station不存在station_tag和interval_start；StationHourlyObservation不存在station_id。修正lookup方向为从有标签和时间的记录，查登记表到站点。\n2. 地址aliases只含两个别称，原始客服记录还使用文苑、柳岸、松园等简称。按地址说明和楼栋正式名称补全字面别名，不写任何投诉ID到楼栋的逐题答案；无法说明的地址保留待确认。\n3. 指标population应明确“收到时间”的窗口左闭右开、查询时点不得早于窗口结束；回访口径需明确最近一次、未接通/不确定计入分母、没有回访不计入该分母且另列。保留正式规则中的定义，并补充支持这些细节的原文引文。\n4. open_questions里称“监测缺失原因未核实”，请核对shift-log-20260110；文档已说明的事实不要再标为无依据。工单引用在正式地址说明中已说明“不直接认定同根因”，不要询问是否一律同根因。\n5. 维修单有台账station_id，可用直接字段关系描述所属/处理站点。每个关系的证据不应只截取一个通用字段名，优先用完整表头和相关业务说明支持含义。\n6. 每个类型定义应为可复用概念，不把恰好3栋/100户这类本批实例数据固定为类型定义。",
+  "developer_adjustments": [
+    "模型修订已纠正lookup方向，但关系ID和中文名仍是旧方向；将其统一为hourly_observation_at_station/小时监测对应站点，并说明标签不是永久站点身份。",
+    "模型两次都把来源已解释的地址别称、缺失采集原因和派单含义列为未核实，删除这三条重复疑问；原始来源和真实未确认根因不改写。",
+    "将open_questions限定为最终用户需要确认的对象粒度与正式业务口径，不伪造已确认状态。"
+  ],
+  "private_evaluation_inputs_used": false,
+  "note": "本次作者助手曾接触基线评测，故不作为独立建模Agent；两次实际抽取调用为全新输入，只含当前来源和建模契约/来源校验反馈。来源证据可核查，候选不是模型零人工干预产物。"
+}

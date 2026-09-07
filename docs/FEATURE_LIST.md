@@ -15,14 +15,14 @@ Last Updated: 2026-09-07
 
 | Version | Status | Planned | InProgress | Completed | Progress |
 |---|---|---:|---:|---:|---:|
-| v0.1.0 | InProgress | 5 | 0 | 1 | 1/6 |
+| v0.1.0 | InProgress | 4 | 1 | 1 | 1/6 |
 
 ## Feature Index
 
 | ID | Title | Category | Priority | Status | Planned | Blocked by | Design |
 |---|---|---|---|---|---|---|---|
 | 001 | 虚构企业、原始数据与基线 | New | High | Completed | v0.1.0 | 无 | [设计](features/v0.1.0.md#feature-001) |
-| 002 | 初始本体与只读数据服务 | New | High | Planned | v0.1.0 | 001 | [设计](features/v0.1.0.md#feature-002) |
+| 002 | 初始本体与只读数据服务 | New | High | InProgress | v0.1.0 | 001 | [设计](features/v0.1.0.md#feature-002) |
 | 003 | KodaX 与 NOOA 式维护 Agent | New | High | Planned | v0.1.0 | 002 | [设计](features/v0.1.0.md#feature-003) |
 | 004 | 本体演变与结果恢复 | New | High | Planned | v0.1.0 | 003 | [设计](features/v0.1.0.md#feature-004) |
 | 005 | 简单本地工作台 | New | High | Planned | v0.1.0 | 002；维护页依赖 004 | [设计](features/v0.1.0.md#feature-005) |
@@ -44,10 +44,10 @@ Last Updated: 2026-09-07
 
 ### 002: 初始本体与只读数据服务
 
-- **Status:** Planned
+- **Status:** InProgress
 - **Category / Priority:** New / High
 - **Planned / Released:** v0.1.0 / —
-- **Created / Started / Completed:** 2026-09-07 / — / —
+- **Created / Started / Completed:** 2026-09-07 / 2026-09-07 / —
 - **Description:** 从可见来源提出本体与 Mapping 候选，经确认形成企业对象、证据、函数与只读 MCP，跑通外部消费。
 - **Blocked by:** 001。
 - **Design:** [FEATURE_002](features/v0.1.0.md#feature-002)。
@@ -95,10 +95,10 @@ Last Updated: 2026-09-07
 ## Summary
 
 - Total: 6
-- Planned: 5
-- InProgress: 0
+- Planned: 4
+- InProgress: 1
 - Completed: 1
 - New: 5；Internal: 1；High: 6。
-- **下一项：FEATURE_002 / T002-01，来源到初始本体与对象。**
+- **当前：FEATURE_002 / T002-01，候选与对象预览已验证，待确认后保存正式v1；见[确认摘要](experiment/ONTOLOGY_REVIEW.md)。**
 
 项目初始化和开发文档已完成，记录在 [CHANGELOG](CHANGELOG.md)；它们不计入产品功能完成数。功能状态在本文维护，具体票的完成状态在对应设计块维护。

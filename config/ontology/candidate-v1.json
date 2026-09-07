@@ -1,0 +1,411 @@
+{
+  "constraints": [
+    {
+      "description": "投诉办结状态不等于供暖恢复，不能将客服关闭视为恢复证明。",
+      "evidence": [
+        {
+          "path": "sources/company/service-rules.md",
+          "quote": "办结记录表明客服流程已关闭，其本身不构成供暖恢复证明。"
+        }
+      ]
+    },
+    {
+      "description": "站点监测温度不能直接替代户内室温，不能从站点数据推断住户恢复。",
+      "evidence": [
+        {
+          "path": "sources/company/service-rules.md",
+          "quote": "站点监测温度反映记录中指定的站点测量位置，不能直接替代户内室温。"
+        }
+      ]
+    },
+    {
+      "description": "少量入户测温不能推算全部住户室温。",
+      "evidence": [
+        {
+          "path": "sources/service/address-book-note.md",
+          "quote": "room-measurements 为少量上门实测，不能推算全部1200户室温。"
+        }
+      ]
+    },
+    {
+      "description": "工单引用不代表同一根因，不能将派单引用认定为共同根因。",
+      "evidence": [
+        {
+          "path": "sources/service/address-book-note.md",
+          "quote": "工单引用表示派单安排，不直接认定来电具有同一根因。"
+        }
+      ]
+    },
+    {
+      "description": "监测缺失不能当作零热量或停止供热。",
+      "evidence": [
+        {
+          "path": "sources/operations/shift-log-20260110.md",
+          "quote": "不能仅凭缺失记录判定该小时停止供热。"
+        }
+      ]
+    }
+  ],
+  "metrics": [
+    {
+      "definition": "统计集合中截至查询时点已关闭的投诉条数除以统计集合中的投诉条数。",
+      "denominator": "统计集合中的投诉条数",
+      "empty_result": "分母为零时返回“无样本”",
+      "evidence": [
+        {
+          "path": "sources/company/service-rules.md",
+          "quote": "客服办结率 = 统计集合中截至查询时点已关闭的投诉条数 ÷ 统计集合中的投诉条数。"
+        },
+        {
+          "path": "sources/company/service-rules.md",
+          "quote": "统计集合为收到时间落在窗口内、且截至查询时点已经收到的全部投诉单。"
+        },
+        {
+          "path": "sources/company/service-rules.md",
+          "quote": "统计窗口采用左闭右开区间，即包括开始时刻、不包括结束时刻；查询时点不得早于窗口结束时刻。"
+        }
+      ],
+      "id": "customer_service_closing_rate",
+      "name": "客服办结率",
+      "numerator": "已关闭的投诉条数",
+      "population": "收到时间落在统计窗口内且截至查询时点已收到的全部投诉单"
+    },
+    {
+      "definition": "同一统计集合中最近一次回访明确改善的投诉条数除以同一集合中有回访结果的投诉条数。",
+      "denominator": "有回访结果的投诉条数",
+      "empty_result": "分母为零时返回“无样本”",
+      "evidence": [
+        {
+          "path": "sources/company/service-rules.md",
+          "quote": "回访确认改善率 = 同一统计集合中最近一次回访明确改善的投诉条数 ÷ 同一集合中有回访结果的投诉条数。"
+        },
+        {
+          "path": "sources/company/service-rules.md",
+          "quote": "对每条投诉，只取查询时点之前（含该时点）最近一次已记录的回访结果；这里“有回访结果”包括明确改善、明确未改善、未接通及其他/不确定。未接通计入分母，并在报告中单列条数；其他/不确定也单列。没有回访记录的投诉不计入该分母，须另列“尚未回访”条数。"
+        }
+      ],
+      "id": "callback_confirmed_improvement_rate",
+      "name": "回访确认改善率",
+      "numerator": "最近一次回访明确改善的投诉条数",
+      "population": "统计集合中有回访结果的投诉条数"
+    }
+  ],
+  "open_questions": [
+    "请确认本版对象粒度：站点、楼栋、设备，以及投诉、工单、回访、测温、小时监测、日气象分别成对象；不新增无来源实例的住户或故障根因对象。",
+    "请确认采用已生效内部规则中的客服办结率和回访确认改善率，二者不合并成居民恢复率。"
+  ],
+  "relations": [
+    {
+      "description": "换热站为楼栋提供供热服务，通过station_id关联。",
+      "evidence": [
+        {
+          "path": "sources/assets/buildings.csv",
+          "quote": "building_id,community_name,building_number,station_id,contract_households,supplied_area_m2,effective_from,available_at"
+        }
+      ],
+      "from_field": "station_id",
+      "from_type": "Station",
+      "id": "station_serves_building",
+      "kind": "foreign_key",
+      "name": "站点服务楼栋",
+      "to_field": "station_id",
+      "to_type": "Building"
+    },
+    {
+      "description": "设备安装在站点内，通过station_id关联。",
+      "evidence": [
+        {
+          "path": "sources/assets/equipment.csv",
+          "quote": "equipment_id,station_id,equipment_name,active_from,available_at"
+        }
+      ],
+      "from_field": "station_id",
+      "from_type": "Station",
+      "id": "station_has_equipment",
+      "kind": "foreign_key",
+      "name": "站点拥有设备",
+      "to_field": "station_id",
+      "to_type": "Equipment"
+    },
+    {
+      "description": "每条回访对应一条投诉单，通过ticket_id关联。",
+      "evidence": [
+        {
+          "path": "sources/service/callbacks.csv",
+          "quote": "callback_id,ticket_id,called_at,result,note,available_at"
+        }
+      ],
+      "from_field": "ticket_id",
+      "from_type": "Ticket",
+      "id": "ticket_has_callback",
+      "kind": "foreign_key",
+      "name": "投诉单有回访",
+      "to_field": "ticket_id",
+      "to_type": "Callback"
+    },
+    {
+      "description": "入户测温记录关联到投诉单，通过ticket_id关联。",
+      "evidence": [
+        {
+          "path": "sources/service/room-measurements.csv",
+          "quote": "measurement_id,ticket_id,customer_address,measured_at,indoor_c,measurement_location,method,observer_team,available_at"
+        }
+      ],
+      "from_field": "ticket_id",
+      "from_type": "Ticket",
+      "id": "ticket_has_measurement",
+      "kind": "foreign_key",
+      "name": "投诉单有测温",
+      "to_field": "ticket_id",
+      "to_type": "RoomMeasurement"
+    },
+    {
+      "description": "投诉单可能引用维修工单，表示派单安排，不代表根因。",
+      "evidence": [
+        {
+          "path": "sources/service/tickets.csv",
+          "quote": "ticket_id,opened_at,customer_address,complaint_text,channel,status_as_of_snapshot,closed_at,local_work_order_no,owner_team,available_at"
+        },
+        {
+          "path": "sources/service/address-book-note.md",
+          "quote": "工单引用表示派单安排，不直接认定来电具有同一根因。"
+        }
+      ],
+      "from_field": "local_work_order_no",
+      "from_type": "Ticket",
+      "id": "ticket_references_work_order",
+      "kind": "foreign_key",
+      "name": "投诉单引用工单",
+      "to_field": "work_order_no",
+      "to_type": "WorkOrder"
+    },
+    {
+      "description": "维修工单可能涉及特定设备，通过equipment_id关联。",
+      "evidence": [
+        {
+          "path": "sources/maintenance/work-orders.csv",
+          "quote": "work_order_no,opened_at,station_id,location,equipment_id,job_type,status_as_of_snapshot,completed_at,field_note,available_at"
+        }
+      ],
+      "from_field": "equipment_id",
+      "from_type": "WorkOrder",
+      "id": "work_order_uses_equipment",
+      "kind": "foreign_key",
+      "name": "工单涉及设备",
+      "to_field": "equipment_id",
+      "to_type": "Equipment"
+    },
+    {
+      "description": "维修工单由站点处理，通过station_id关联。",
+      "evidence": [
+        {
+          "path": "sources/maintenance/work-orders.csv",
+          "quote": "work_order_no,opened_at,station_id,location,equipment_id,job_type,status_as_of_snapshot,completed_at,field_note,available_at"
+        }
+      ],
+      "from_field": "station_id",
+      "from_type": "WorkOrder",
+      "id": "work_order_at_station",
+      "kind": "foreign_key",
+      "name": "工单所属站点",
+      "to_field": "station_id",
+      "to_type": "Station"
+    },
+    {
+      "description": "按监测小时开始时间查接入登记的有效标签，联系到同一台账站点；标签不是站点的永久身份。",
+      "evidence": [
+        {
+          "path": "sources/monitoring/channel-register.csv",
+          "quote": "station_tag,station_id,valid_from,valid_to,available_at"
+        },
+        {
+          "path": "sources/monitoring/handover-note.md",
+          "quote": "清河路8号清河站的控制柜在监测平台标作 QH_RT；资产台账站号为 Z01。育新路16号育新站的控制柜在监测平台标作 YX_RT；资产台账站号为 Z02。"
+        }
+      ],
+      "from_field": "station_tag",
+      "from_type": "StationHourlyObservation",
+      "id": "hourly_observation_at_station",
+      "kind": "lookup",
+      "lookup_key": "station_tag",
+      "lookup_source": "sources/monitoring/channel-register.csv",
+      "lookup_value": "station_id",
+      "name": "小时监测对应站点",
+      "time_field": "interval_start",
+      "to_field": "station_id",
+      "to_type": "Station",
+      "valid_from": "valid_from",
+      "valid_to": "valid_to"
+    },
+    {
+      "aliases": {
+        "文苑": "文苑小区",
+        "文苑一期": "文苑小区",
+        "新桥": "新桥小区",
+        "新桥花园": "新桥小区",
+        "松园": "松园小区",
+        "柳岸": "柳岸小区"
+      },
+      "description": "将投诉地址中的小区名和楼号解析到楼栋，门牌保留但不建立住户对象。",
+      "evidence": [
+        {
+          "path": "sources/service/address-book-note.md",
+          "quote": "物业移交资料显示：文苑小区居民常称“文苑一期”，新桥小区居民常称“新桥花园”。客服接线原样保留来电地址；资产台账按小区正式名称和楼号登记。柳岸、松园沿用小区简称。"
+        }
+      ],
+      "from_field": "customer_address",
+      "from_type": "Ticket",
+      "id": "ticket_address_to_building",
+      "kind": "address",
+      "name": "投诉地址解析到楼栋",
+      "to_field": "building_id",
+      "to_name_field": "community_name",
+      "to_number_field": "building_number",
+      "to_type": "Building"
+    }
+  ],
+  "types": [
+    {
+      "description": "公司经营的换热站，负责将外购热量送入服务小区。",
+      "evidence": [
+        {
+          "path": "sources/assets/stations.csv",
+          "quote": "station_id,station_name,address,heat_source_ref,service_area_m2,active_from,available_at"
+        }
+      ],
+      "id": "Station",
+      "key": "station_id",
+      "name": "换热站",
+      "numeric_fields": {
+        "service_area_m2": "平方米"
+      },
+      "source": "sources/assets/stations.csv"
+    },
+    {
+      "description": "小区内的楼栋，每个小区有若干楼栋，每栋有合同户数和建筑面积。",
+      "evidence": [
+        {
+          "path": "sources/assets/buildings.csv",
+          "quote": "building_id,community_name,building_number,station_id,contract_households,supplied_area_m2,effective_from,available_at"
+        }
+      ],
+      "id": "Building",
+      "key": "building_id",
+      "name": "楼栋",
+      "numeric_fields": {
+        "contract_households": "户",
+        "supplied_area_m2": "平方米"
+      },
+      "source": "sources/assets/buildings.csv"
+    },
+    {
+      "description": "换热站内的设备，如过滤器、换热器、循环泵。",
+      "evidence": [
+        {
+          "path": "sources/assets/equipment.csv",
+          "quote": "equipment_id,station_id,equipment_name,active_from,available_at"
+        }
+      ],
+      "id": "Equipment",
+      "key": "equipment_id",
+      "name": "设备",
+      "numeric_fields": {},
+      "source": "sources/assets/equipment.csv"
+    },
+    {
+      "description": "客户服务接收的投诉记录，包含地址和主诉。",
+      "evidence": [
+        {
+          "path": "sources/service/tickets.csv",
+          "quote": "ticket_id,opened_at,customer_address,complaint_text,channel,status_as_of_snapshot,closed_at,local_work_order_no,owner_team,available_at"
+        }
+      ],
+      "id": "Ticket",
+      "key": "ticket_id",
+      "name": "投诉单",
+      "numeric_fields": {},
+      "source": "sources/service/tickets.csv"
+    },
+    {
+      "description": "客服对投诉人的回访结果，区分明确改善、未改善等。",
+      "evidence": [
+        {
+          "path": "sources/service/callbacks.csv",
+          "quote": "callback_id,ticket_id,called_at,result,note,available_at"
+        }
+      ],
+      "id": "Callback",
+      "key": "callback_id",
+      "name": "回访记录",
+      "numeric_fields": {},
+      "source": "sources/service/callbacks.csv"
+    },
+    {
+      "description": "维修人员入户实测的室温记录，仅覆盖少量住户。",
+      "evidence": [
+        {
+          "path": "sources/service/room-measurements.csv",
+          "quote": "measurement_id,ticket_id,customer_address,measured_at,indoor_c,measurement_location,method,observer_team,available_at"
+        }
+      ],
+      "id": "RoomMeasurement",
+      "key": "measurement_id",
+      "name": "入户测温记录",
+      "numeric_fields": {
+        "indoor_c": "摄氏度"
+      },
+      "source": "sources/service/room-measurements.csv"
+    },
+    {
+      "description": "维修派单和现场处理记录。",
+      "evidence": [
+        {
+          "path": "sources/maintenance/work-orders.csv",
+          "quote": "work_order_no,opened_at,station_id,location,equipment_id,job_type,status_as_of_snapshot,completed_at,field_note,available_at"
+        }
+      ],
+      "id": "WorkOrder",
+      "key": "work_order_no",
+      "name": "维修工单",
+      "numeric_fields": {},
+      "source": "sources/maintenance/work-orders.csv"
+    },
+    {
+      "description": "换热站二次侧每小时监测数据，包括温度、流量、压力等。",
+      "evidence": [
+        {
+          "path": "sources/monitoring/station-hourly.csv",
+          "quote": "observation_id,station_tag,interval_start,interval_end,secondary_supply_c,secondary_return_c,secondary_flow_m3_h,secondary_supply_mpa,secondary_return_mpa,interval_heat_gj,quality,available_at"
+        }
+      ],
+      "id": "StationHourlyObservation",
+      "key": "observation_id",
+      "name": "站点小时监测记录",
+      "numeric_fields": {
+        "interval_heat_gj": "吉焦",
+        "secondary_flow_m3_h": "立方米每小时",
+        "secondary_return_c": "摄氏度",
+        "secondary_return_mpa": "兆帕",
+        "secondary_supply_c": "摄氏度",
+        "secondary_supply_mpa": "兆帕"
+      },
+      "source": "sources/monitoring/station-hourly.csv"
+    },
+    {
+      "description": "北城气象观测点的日均室外气温。",
+      "evidence": [
+        {
+          "path": "sources/monitoring/weather-daily.csv",
+          "quote": "observation_id,date,weather_site,outdoor_mean_c,available_at"
+        }
+      ],
+      "id": "WeatherDailyObservation",
+      "key": "observation_id",
+      "name": "日气象观测记录",
+      "numeric_fields": {
+        "outdoor_mean_c": "摄氏度"
+      },
+      "source": "sources/monitoring/weather-daily.csv"
+    }
+  ]
+}
