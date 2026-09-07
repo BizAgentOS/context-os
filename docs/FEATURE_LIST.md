@@ -15,7 +15,7 @@ Last Updated: 2026-09-07
 
 | Version | Status | Planned | InProgress | Completed | Progress |
 |---|---|---:|---:|---:|---:|
-| v0.1.0 | InProgress | 4 | 1 | 1 | 1/6 |
+| v0.1.0 | InProgress | 3 | 2 | 1 | 1/6 |
 
 ## Feature Index
 
@@ -25,7 +25,7 @@ Last Updated: 2026-09-07
 | 002 | 初始本体与只读数据服务 | New | High | InProgress | v0.1.0 | 001 | [设计](features/v0.1.0.md#feature-002) |
 | 003 | KodaX 与 NOOA 式维护 Agent | New | High | Planned | v0.1.0 | 002 | [设计](features/v0.1.0.md#feature-003) |
 | 004 | 本体演变与结果恢复 | New | High | Planned | v0.1.0 | 003 | [设计](features/v0.1.0.md#feature-004) |
-| 005 | 简单本地工作台 | New | High | Planned | v0.1.0 | 002；维护页依赖 004 | [设计](features/v0.1.0.md#feature-005) |
+| 005 | 简单本地工作台 | New | High | InProgress | v0.1.0 | 001；维护页依赖 004 | [设计](features/v0.1.0.md#feature-005) |
 | 006 | 对照实验与规模验证 | Internal | High | Planned | v0.1.0 | 001、002、004 | [设计](features/v0.1.0.md#feature-006) |
 
 以设计块中的票依赖决定可开始的工作。005 和 006 可随前面的链路逐步建设；v0.1.0 的完整验收包含全部六项。
@@ -74,12 +74,12 @@ Last Updated: 2026-09-07
 
 ### 005: 简单本地工作台
 
-- **Status:** Planned
+- **Status:** InProgress
 - **Category / Priority:** New / High
 - **Planned / Released:** v0.1.0 / —
-- **Created / Started / Completed:** 2026-09-07 / — / —
-- **Description:** 以一个本地页面和少量标签查看真实来源、本体、对象、维护任务、版本差异及结果。
-- **Blocked by:** 基础查看依赖 002；维护页依赖 004。
+- **Created / Started / Completed:** 2026-09-07 / 2026-09-07 / —
+- **Description:** 同步呈现实验目标、企业资料、本体建模过程、概念/对象试样和 Agent 设计；提供本地笔记与只读问答浮窗，维护结果随 004 接入。
+- **Blocked by:** 基础查看依赖 001 和已有技术试样，不等待正式本体；维护页依赖 004。
 - **Design:** [FEATURE_005](features/v0.1.0.md#feature-005)。
 
 ### 006: 对照实验与规模验证
@@ -95,10 +95,10 @@ Last Updated: 2026-09-07
 ## Summary
 
 - Total: 6
-- Planned: 4
-- InProgress: 1
+- Planned: 3
+- InProgress: 2
 - Completed: 1
 - New: 5；Internal: 1；High: 6。
-- **当前：FEATURE_002 / T002-01，候选与对象预览已验证，待确认后保存正式v1；见[确认摘要](experiment/ONTOLOGY_REVIEW.md)。**
+- **当前：FEATURE_005 / T005-01 已完成同步前端，T005-02等待实际维护链路；下一步继续 FEATURE_002 / T002-01 的业务范围与建模任务。旧产物保留为技术试样，直接确认请求已撤回。见[工作台说明](experiment/LAB.md)与[流程草案](experiment/ONTOLOGY_MODELING.md)。**
 
 项目初始化和开发文档已完成，记录在 [CHANGELOG](CHANGELOG.md)；它们不计入产品功能完成数。功能状态在本文维护，具体票的完成状态在对应设计块维护。

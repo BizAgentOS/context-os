@@ -1,5 +1,5 @@
 {
-  "status": "pending_user_confirmation",
+  "status": "technical_trial_not_for_confirmation",
   "snapshot_manifest_sha256": "4d3e24b6e006e059bba2145d0f6eef093ba6c0bd5bd3a77de5727e70e15ccddc",
   "candidate_sha256": "108e9c7126056a3e028bdaf08db7607ad8d09ee6ec533a690a4af6c1bb300428",
   "model": "deepseek-v4-flash",
@@ -42,5 +42,6 @@
     "将open_questions限定为最终用户需要确认的对象粒度与正式业务口径，不伪造已确认状态。"
   ],
   "private_evaluation_inputs_used": false,
-  "note": "本次作者助手曾接触基线评测，故不作为独立建模Agent；两次实际抽取调用为全新输入，只含当前来源和建模契约/来源校验反馈。来源证据可核查，候选不是模型零人工干预产物。"
+  "note": "本次作者助手曾接触基线评测，故不作为独立建模Agent；两次实际抽取调用为全新输入，只含当前来源和建模契约/来源校验反馈。来源证据可核查，候选不是模型零人工干预产物。",
+  "review_update": "2026-09-07：用户指出应先设计本体建模能力。撤回对该试样直接保存正式v1的确认请求，保留模型调用与修订历史；后续以docs/experiment/ONTOLOGY_MODELING.md为流程设计输入。"
 }

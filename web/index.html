@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%23235447%27/%3E%3Ctext x=%278%27 y=%2724%27 fill=%27white%27 font-size=%2724%27%3ED%3C/text%3E%3C/svg%3E"
+    />
+    <title>DataEngine · 本体实验室</title>
+    <link rel="stylesheet" href="/app.css" />
+    <script defer src="/app.js"></script>
+  </head>
+  <body>
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#home"
+        ><span class="brand-icon">D<span>·</span></span
+        ><span>DataEngine<small>ONTOLOGY LAB</small></span></a
+      >
+      <div class="workspace-label">工作空间 <span>01</span></div>
+      <nav aria-label="主导航">
+        <a href="#home" data-page="home"
+          ><span class="nav-icon">◈</span>实验室首页</a
+        >
+        <a href="#company" data-page="company"
+          ><span class="nav-icon">▦</span>企业空间</a
+        >
+        <div class="nav-group">本体建模</div>
+        <a href="#modeling" data-page="modeling"
+          ><span class="nav-icon">⌘</span>建模流程<span class="nav-dot"></span
+        ></a>
+        <a href="#concepts" data-page="concepts"
+          ><span class="nav-icon">◇</span>概念与关系</a
+        >
+        <a href="#objects" data-page="objects"
+          ><span class="nav-icon">⊞</span>对象与证据</a
+        >
+        <div class="nav-group">智能体</div>
+        <a href="#agent" data-page="agent"
+          ><span class="nav-icon">✳</span>Agent 工作台</a
+        >
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="company-avatar">澄</div>
+        <div>澄川热力<small>虚构企业 · 方法验证</small></div>
+        <span class="online-dot"></span>
+      </div>
+    </aside>
+    <div class="shell">
+      <header class="topbar">
+        <div>
+          <button
+            id="menu-toggle"
+            class="icon-button mobile-only"
+            aria-label="切换导航"
+          >
+            ☰</button
+          ><span class="muted">工作空间</span><span class="slash">/</span
+          ><span id="breadcrumb">实验室首页</span>
+        </div>
+        <div class="top-meta">
+          <span class="online-dot"></span>本地实验<span class="divider"></span
+          ><span id="snapshot-label">加载来源…</span>
+        </div>
+      </header>
+      <main id="main" tabindex="-1">
+        <div class="empty">正在读取实验资料…</div>
+      </main>
+      <footer class="page-footer">
+        <span>DataEngine Lab <span class="muted">/</span> 从一条业务链开始</span
+        ><span>v0.1.0 开发中 · 所有企业数据均为虚构</span>
+      </footer>
+    </div>
+    <button
+      id="chat-launcher"
+      class="chat-launcher"
+      aria-expanded="false"
+      aria-controls="chat-panel"
+    >
+      <span>✳</span>实验室助手
+    </button>
+    <section id="chat-panel" class="chat-panel" aria-label="实验室助手" hidden>
+      <header>
+        <div class="assistant-mark">✳</div>
+        <div>
+          <strong>实验室助手</strong><small>结合当前页面，简单聊一聊</small>
+        </div>
+        <button class="icon-button" id="chat-close" aria-label="关闭助手">
+          ×
+        </button>
+      </header>
+      <div class="chat-context" id="chat-context">上下文：实验室首页</div>
+      <div class="chat-messages" id="chat-messages" aria-live="polite">
+        <div class="message assistant">
+          你好。可以问我实验想验证什么，或打开一份资料，让我帮你理解它。<small
+            >只读问答，不执行建模或修改。</small
+          >
+        </div>
+      </div>
+      <div class="chat-suggestions">
+        <button data-prompt="这个实验现在进行到哪一步？">现在到哪一步？</button
+        ><button data-prompt="如何开始设计这家公司的本体？">
+          怎么开始建模？
+        </button>
+      </div>
+      <form id="chat-form">
+        <label class="sr-only" for="chat-input">向实验室助手提问</label
+        ><textarea
+          id="chat-input"
+          rows="2"
+          maxlength="5000"
+          placeholder="针对当前页面，输入你的问题…"
+          required
+        ></textarea>
+        <div>
+          <small id="chat-status">DeepSeek · 当前对话仅保留在本页</small
+          ><button type="submit" id="chat-send" class="primary small">
+            发送 ↑
+          </button>
+        </div>
+      </form>
+    </section>
+    <dialog id="detail-dialog">
+      <header>
+        <div>
+          <span class="eyebrow">DETAIL & EVIDENCE</span>
+          <h2 id="detail-title">详情</h2>
+        </div>
+        <button class="icon-button" id="detail-close" aria-label="关闭详情">
+          ×
+        </button>
+      </header>
+      <div id="detail-body"></div>
+    </dialog>
+    <div id="toast" role="status" hidden></div>
+  </body>
+</html>

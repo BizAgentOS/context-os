@@ -34,3 +34,7 @@ tmp/
 /data/private/
 /runs/
 /local-state/
+
+# Local browser verification artifacts
+/.playwright-cli/
+/output/playwright/

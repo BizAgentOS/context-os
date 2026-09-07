@@ -1,6 +1,6 @@
 # 来源、本体候选与对象预览
 
-T002-01 的实现采用一个标准库Python脚本、一个候选JSON及文件对象包。当前正式确认尚未完成，先看 [确认摘要](ONTOLOGY_REVIEW.md)。FEATURE_002 保持InProgress，T002-01不提前勾选。
+T002-01 的实现采用一个标准库Python脚本、一个候选JSON及文件对象包。当前产物重新定位为技术试样；先看 [本体建模流程设计](ONTOLOGY_MODELING.md)，历史结构见 [试样说明](ONTOLOGY_REVIEW.md)。FEATURE_002 保持InProgress，T002-01不提前勾选。
 
 ## 四个命令
 
@@ -48,13 +48,13 @@ python3 scripts/ontology.py evidence --store data/generated/ontology-v1-preview 
 
 ## 确认与版本保存
 
-正式保存需要产品负责人对 [确认摘要](ONTOLOGY_REVIEW.md) 作出明确决定。程序支持在build时传入 `--approval`，其JSON必须含decision=approved、当前candidate_sha256、当前snapshot_manifest_sha256、reviewer与statement。程序核对候选和快照哈希，写入新对象包中的approval.json；确认后的版本为v1和m1，旧预览保留。
+现有确认入口只验证候选/快照的技术绑定，尚未覆盖完整建模过程。已撤回对旧试样直接正式保存的确认请求；后续需先完成流程设计、语义审查和任务验证。程序支持在build时传入 `--approval`，其JSON必须含decision=approved、当前candidate_sha256、当前snapshot_manifest_sha256、reviewer与statement。程序核对候选和快照哈希，写入新对象包中的approval.json；确认后的版本为v1和m1，旧预览保留。
 
 本轮没有生成真实approval文件，也没有代用户填写审核人。自动测试中的“test fixture”确认仅用于临时目录验证程序行为，不代表真实批准。确认记录由可信操作人员根据实际用户决定填写；此原型不建设身份认证和审批系统。
 
 ## 当前验证和边界
 
-本次实际预览含738个对象、731条关系；来源引用、地址匹配、监测标签有效期、空值、重读一致性、候选字段和引文、文件篡改拒绝、确认哈希绑定均有检查。类型和关系的业务含义还需看确认摘要；引文存在不等于语义自动正确。
+本次实际预览含738个对象、731条关系；来源引用、地址匹配、监测标签有效期、空值、重读一致性、候选字段和引文、文件篡改拒绝、确认哈希绑定均有检查。类型和关系的业务含义仍待完整建模过程检验；引文存在不等于语义自动正确。
 
 ```sh
 python3 -m unittest discover -s tests -v
