@@ -1,0 +1,341 @@
+{
+  "dataset_version": "chengchuan-heating-sample-v1",
+  "fictional": true,
+  "timezone": "Asia/Shanghai",
+  "as_of": "2026-01-19T00:00:00+08:00",
+  "observation_window": [
+    "2026-01-05T00:00:00+08:00",
+    "2026-01-19T00:00:00+08:00"
+  ],
+  "observation_window_semantics": "left_closed_right_open",
+  "source_root": "sources",
+  "total_csv_records": 738,
+  "files": [
+    {
+      "path": "sources/assets/buildings.csv",
+      "format": "csv",
+      "owner": "运行调度",
+      "bytes": 1163,
+      "sha256": "fe2e0d777af5947a15e976b560e973ddacec37d261db900a229bf04e983e4c02",
+      "source_id": "SRC-BUILDINGS",
+      "columns": [
+        "building_id",
+        "community_name",
+        "building_number",
+        "station_id",
+        "contract_households",
+        "supplied_area_m2",
+        "effective_from",
+        "available_at"
+      ],
+      "primary_key": "building_id",
+      "records": 12,
+      "time_columns": [
+        "effective_from",
+        "available_at"
+      ],
+      "available_at_range": [
+        "2026-01-04T09:00:00+08:00",
+        "2026-01-04T09:00:00+08:00"
+      ]
+    },
+    {
+      "path": "sources/assets/equipment.csv",
+      "format": "csv",
+      "owner": "运行调度",
+      "bytes": 556,
+      "sha256": "cec40d16cc45be15a9072eb6671c0d17541dcb764ad99eae8544c0c29cbe48e4",
+      "source_id": "SRC-EQUIPMENT",
+      "columns": [
+        "equipment_id",
+        "station_id",
+        "equipment_name",
+        "active_from",
+        "available_at"
+      ],
+      "primary_key": "equipment_id",
+      "records": 6,
+      "time_columns": [
+        "active_from",
+        "available_at"
+      ],
+      "available_at_range": [
+        "2026-01-04T09:00:00+08:00",
+        "2026-01-04T09:00:00+08:00"
+      ]
+    },
+    {
+      "path": "sources/assets/stations.csv",
+      "format": "csv",
+      "owner": "运行调度",
+      "bytes": 308,
+      "sha256": "37dfabda621e0b6ff95816fed2216910b8d04129e16c05c824a6ce281e6f94c0",
+      "source_id": "SRC-STATIONS",
+      "columns": [
+        "station_id",
+        "station_name",
+        "address",
+        "heat_source_ref",
+        "service_area_m2",
+        "active_from",
+        "available_at"
+      ],
+      "primary_key": "station_id",
+      "records": 2,
+      "time_columns": [
+        "active_from",
+        "available_at"
+      ],
+      "available_at_range": [
+        "2026-01-04T09:00:00+08:00",
+        "2026-01-04T09:00:00+08:00"
+      ]
+    },
+    {
+      "path": "sources/company/company-brief.md",
+      "format": "markdown",
+      "owner": "运行调度、客户服务",
+      "bytes": 3304,
+      "sha256": "16c6ee648bf7e1d2e40ff0b8e41d520aaccadbf005288b9d3380058bdd40e7ee",
+      "source_id": "COMP-BRIEF-001",
+      "available_at": "2025-12-29T09:00:00+08:00"
+    },
+    {
+      "path": "sources/company/service-rules.md",
+      "format": "markdown",
+      "owner": "运行调度、客户服务",
+      "bytes": 4064,
+      "sha256": "0a92577a71b3ff5a1ea7f466bfcae50a5c873dd125573a3af57f4c950d4acd63",
+      "source_id": "COMP-RULES-001",
+      "available_at": "2025-12-30T10:00:00+08:00"
+    },
+    {
+      "path": "sources/company/source-guide.md",
+      "format": "markdown",
+      "owner": "运行调度、客户服务",
+      "bytes": 2907,
+      "sha256": "b1eea021d7eb5d4b342dd54bd79ecd85b610e764cf4c74c1166823929b2d34eb",
+      "source_id": "COMP-SOURCES-001",
+      "available_at": "2026-01-18T20:00:00+08:00"
+    },
+    {
+      "path": "sources/maintenance/work-orders.csv",
+      "format": "csv",
+      "owner": "设备维修",
+      "bytes": 1073,
+      "sha256": "03fc36361b743befa19e5ba4d258c43f460681ae80afc3dd6bb8bdda44d382a8",
+      "source_id": "SRC-WORK-ORDERS",
+      "columns": [
+        "work_order_no",
+        "opened_at",
+        "station_id",
+        "location",
+        "equipment_id",
+        "job_type",
+        "status_as_of_snapshot",
+        "completed_at",
+        "field_note",
+        "available_at"
+      ],
+      "primary_key": "work_order_no",
+      "records": 4,
+      "time_columns": [
+        "opened_at",
+        "completed_at",
+        "available_at"
+      ],
+      "available_at_range": [
+        "2026-01-09T14:10:00+08:00",
+        "2026-01-15T10:00:00+08:00"
+      ]
+    },
+    {
+      "path": "sources/monitoring/handover-note.md",
+      "format": "markdown",
+      "owner": "运行调度",
+      "bytes": 888,
+      "sha256": "e3ebc7cb21695d889a1c162818d8659709829be989b101ec61666d79cea1b09f",
+      "source_id": "OPS-HANDOVER-20260104",
+      "available_at": "2026-01-04T10:00:00+08:00"
+    },
+    {
+      "path": "sources/monitoring/station-hourly.csv",
+      "format": "csv",
+      "owner": "运行调度",
+      "bytes": 96180,
+      "sha256": "22b9edd7cdfdf7b5efd7be9bc51e22e7490c4d4678827fbe7839d34e3763bee1",
+      "source_id": "SRC-STATION-HOURLY",
+      "columns": [
+        "observation_id",
+        "station_tag",
+        "interval_start",
+        "interval_end",
+        "secondary_supply_c",
+        "secondary_return_c",
+        "secondary_flow_m3_h",
+        "secondary_supply_mpa",
+        "secondary_return_mpa",
+        "interval_heat_gj",
+        "quality",
+        "available_at"
+      ],
+      "primary_key": "observation_id",
+      "records": 672,
+      "time_columns": [
+        "interval_start",
+        "interval_end",
+        "available_at"
+      ],
+      "available_at_range": [
+        "2026-01-05T01:00:00+08:00",
+        "2026-01-19T00:00:00+08:00"
+      ]
+    },
+    {
+      "path": "sources/monitoring/weather-daily.csv",
+      "format": "csv",
+      "owner": "运行调度",
+      "bytes": 1013,
+      "sha256": "225efbf7d40722ed680620f14a4007aac56fa49f6a5d5e2f5a85aeefcc945819",
+      "source_id": "SRC-WEATHER-DAILY",
+      "columns": [
+        "observation_id",
+        "date",
+        "weather_site",
+        "outdoor_mean_c",
+        "available_at"
+      ],
+      "primary_key": "observation_id",
+      "records": 14,
+      "time_columns": [
+        "available_at"
+      ],
+      "available_at_range": [
+        "2026-01-06T00:00:00+08:00",
+        "2026-01-19T00:00:00+08:00"
+      ]
+    },
+    {
+      "path": "sources/operations/shift-log-20260110.md",
+      "format": "markdown",
+      "owner": "运行调度、客户服务",
+      "bytes": 356,
+      "sha256": "2ac352017596f6b0fc80e53010dfc9e8bebdfbd237a85c539d5663d3229f07b2",
+      "source_id": "OPS-GAP-20260110",
+      "available_at": "2026-01-10T14:05:00+08:00"
+    },
+    {
+      "path": "sources/operations/shift-log-20260114.md",
+      "format": "markdown",
+      "owner": "运行调度、客户服务",
+      "bytes": 1081,
+      "sha256": "4ab8b2269d518a546ba86ef8293a144a59f7e15ef0ccc674cabc06511d21c5f8",
+      "source_id": "OPS-SHIFT-20260114",
+      "available_at": "2026-01-14T18:00:00+08:00"
+    },
+    {
+      "path": "sources/operations/weekly-review-draft.md",
+      "format": "markdown",
+      "owner": "运行调度、客户服务",
+      "bytes": 662,
+      "sha256": "1f59c664cbd8d4b6fca3ed3f2864d0a9fb006f846dbfec5c037dbdb91c64a685",
+      "source_id": "OPS-REVIEW-DRAFT-20260118",
+      "available_at": "2026-01-18T17:00:00+08:00"
+    },
+    {
+      "path": "sources/service/address-book-note.md",
+      "format": "markdown",
+      "owner": "客户服务",
+      "bytes": 700,
+      "sha256": "1ee3f10113c119f4221fd1a1a88c48706be5282dc2d6bbab91124bbc60456fba",
+      "source_id": "CS-ADDRESS-20260104",
+      "available_at": "2026-01-04T11:00:00+08:00"
+    },
+    {
+      "path": "sources/service/callbacks.csv",
+      "format": "csv",
+      "owner": "客户服务",
+      "bytes": 1048,
+      "sha256": "15c32bb2ff0b5ee16b2ecc6b98ef67f5543e6686c1a6c60e796c8d558bdfc3b6",
+      "source_id": "SRC-CALLBACKS",
+      "columns": [
+        "callback_id",
+        "ticket_id",
+        "called_at",
+        "result",
+        "note",
+        "available_at"
+      ],
+      "primary_key": "callback_id",
+      "records": 10,
+      "time_columns": [
+        "called_at",
+        "available_at"
+      ],
+      "available_at_range": [
+        "2026-01-09T16:00:00+08:00",
+        "2026-01-15T10:00:00+08:00"
+      ]
+    },
+    {
+      "path": "sources/service/room-measurements.csv",
+      "format": "csv",
+      "owner": "客户服务",
+      "bytes": 1146,
+      "sha256": "f7fd99a89ad709db8109a0a2e8f1cc56871862e4b1472f8c0de554ebf1b13d40",
+      "source_id": "SRC-ROOM-MEASUREMENTS",
+      "columns": [
+        "measurement_id",
+        "ticket_id",
+        "customer_address",
+        "measured_at",
+        "indoor_c",
+        "measurement_location",
+        "method",
+        "observer_team",
+        "available_at"
+      ],
+      "primary_key": "measurement_id",
+      "records": 8,
+      "time_columns": [
+        "measured_at",
+        "available_at"
+      ],
+      "available_at_range": [
+        "2026-01-14T08:35:00+08:00",
+        "2026-01-15T09:50:00+08:00"
+      ]
+    },
+    {
+      "path": "sources/service/tickets.csv",
+      "format": "csv",
+      "owner": "客户服务",
+      "bytes": 1761,
+      "sha256": "2107d478e1ef9001f10a5fc09894a13be1f978deaf5c2958553564b46549966c",
+      "source_id": "SRC-TICKETS",
+      "columns": [
+        "ticket_id",
+        "opened_at",
+        "customer_address",
+        "complaint_text",
+        "channel",
+        "status_as_of_snapshot",
+        "closed_at",
+        "local_work_order_no",
+        "owner_team",
+        "available_at"
+      ],
+      "primary_key": "ticket_id",
+      "records": 10,
+      "time_columns": [
+        "opened_at",
+        "closed_at",
+        "available_at"
+      ],
+      "available_at_range": [
+        "2026-01-09T14:30:00+08:00",
+        "2026-01-17T09:10:00+08:00"
+      ]
+    }
+  ]
+}

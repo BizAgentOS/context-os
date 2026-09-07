@@ -6,7 +6,7 @@ Last Updated: 2026-09-07
 
 - **Current Release:** 无，尚未发布产品版本。
 - **Planned Version:** v0.1.0 — 本地方法验证实验。
-- **版本状态:** Planned；本轮采用首个实验版本编号，不代表已发布或可运行。
+- **版本状态:** InProgress；首个实验版本开发中，尚未发布。
 - **状态规则:** `Planned → InProgress → Completed`；`Released` 仅填写实际发布版本。
 - **设计:** [v0.1.0 设计与开发步骤](features/v0.1.0.md)。
 - **范围:** [产品目标](PRODUCT.md)与 [MVP 目标](MVP.md)。
@@ -15,13 +15,13 @@ Last Updated: 2026-09-07
 
 | Version | Status | Planned | InProgress | Completed | Progress |
 |---|---|---:|---:|---:|---:|
-| v0.1.0 | Planned | 6 | 0 | 0 | 0/6 |
+| v0.1.0 | InProgress | 5 | 1 | 0 | 0/6 |
 
 ## Feature Index
 
 | ID | Title | Category | Priority | Status | Planned | Blocked by | Design |
 |---|---|---|---|---|---|---|---|
-| 001 | 虚构企业、原始数据与基线 | New | High | Planned | v0.1.0 | 无 | [设计](features/v0.1.0.md#feature-001) |
+| 001 | 虚构企业、原始数据与基线 | New | High | InProgress | v0.1.0 | 无 | [设计](features/v0.1.0.md#feature-001) |
 | 002 | 初始本体与只读数据服务 | New | High | Planned | v0.1.0 | 001 | [设计](features/v0.1.0.md#feature-002) |
 | 003 | KodaX 与 NOOA 式维护 Agent | New | High | Planned | v0.1.0 | 002 | [设计](features/v0.1.0.md#feature-003) |
 | 004 | 本体演变与结果恢复 | New | High | Planned | v0.1.0 | 003 | [设计](features/v0.1.0.md#feature-004) |
@@ -34,11 +34,11 @@ Last Updated: 2026-09-07
 
 ### 001: 虚构企业、原始数据与基线
 
-- **Status:** Planned
+- **Status:** InProgress
 - **Category / Priority:** New / High
 - **Planned / Released:** v0.1.0 / —
-- **Created / Started / Completed:** 2026-09-07 / — / —
-- **Description:** 先写企业业务设定，再生成三类相互关联的原始来源、变化事件和隔离评测材料，记录原始资料基线。
+- **Created / Started / Completed:** 2026-09-07 / 2026-09-07 / —
+- **Description:** 构建澄川热力的经营设定、设施台账、监测、客服与维修记录及业务文档，再实现变化回放、隔离评测和原始资料基线。
 - **Blocked by:** 无。
 - **Design:** [FEATURE_001](features/v0.1.0.md#feature-001)。
 
@@ -95,10 +95,10 @@ Last Updated: 2026-09-07
 ## Summary
 
 - Total: 6
-- Planned: 6
-- InProgress: 0
+- Planned: 5
+- InProgress: 1
 - Completed: 0
 - New: 5；Internal: 1；High: 6。
-- **下一项：FEATURE_001 / T001-01，企业设定与最小业务样本。**
+- **下一项：FEATURE_001 / T001-02，可重复生成与增量回放。**
 
 项目初始化和开发文档已完成，记录在 [CHANGELOG](CHANGELOG.md)；它们不计入产品功能完成数。功能状态在本文维护，具体票的完成状态在对应设计块维护。

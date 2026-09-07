@@ -1,0 +1,2 @@
+# Keep committed sample bytes stable for manifest checksums.
+data/samples/chengchuan-heating/** text eol=lf

@@ -1,0 +1,3 @@
+station_id,station_name,address,heat_source_ref,service_area_m2,active_from,available_at
+Z01,清河站,清河路8号,外购热源入口-R01,60000,2026-01-01T00:00:00+08:00,2026-01-04T09:00:00+08:00
+Z02,育新站,育新路16号,外购热源入口-R01,60000,2026-01-01T00:00:00+08:00,2026-01-04T09:00:00+08:00
