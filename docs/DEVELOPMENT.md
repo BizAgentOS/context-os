@@ -9,6 +9,7 @@
 | `PRODUCT.md` / `MVP.md` | 产品方向与当前实验范围 |
 | `FEATURE_LIST.md` | 唯一功能状态台账、计划版本和实际发布版本 |
 | `features/v0.1.0.md` | 版本目标，以及每个 Feature 的六节设计、票依赖和验收 |
+| `AGENT_BLUEPRINT.md` / `AGENT_DESIGN.md` | FEATURE_003 设计附件：前者为组成、配置与契约；后者为行为规则及技术参考，不单独维护进度 |
 | `PLAN.md` | 六部分导航和下一项入口，状态查询指向台账 |
 | `CHANGELOG.md` | 已发生的变更；未发布内容放在 `[Unreleased]` |
 

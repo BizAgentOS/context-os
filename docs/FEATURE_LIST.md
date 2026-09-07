@@ -58,7 +58,7 @@ Last Updated: 2026-09-07
 - **Category / Priority:** New / High
 - **Planned / Released:** v0.1.0 / —
 - **Created / Started / Completed:** 2026-09-07 / — / —
-- **Description:** 基于 KodaX SDK 的主 Agent，将本体概念、实例、关系和业务方法组成 NOOA 式对象操作环境，串起企业理解、资料接入、辅助建模、报告与维护；[行为规格草案](AGENT_DESIGN.md)已沉淀，当前评审职责、决策、协作、状态与完成条件，实现未开始。
+- **Description:** 基于 KodaX SDK 的主 Agent，将本体概念、实例、关系和业务方法组成 NOOA 式对象操作环境，串起企业理解、资料接入、辅助建模、报告与维护；[设计初版](AGENT_BLUEPRINT.md)已包含配置、组件、上下文与应用契约，[行为规则](AGENT_DESIGN.md)作为依据，实现未开始。
 - **Blocked by:** 企业理解/来源首段无；后续对象与建模能力依赖 002，不等待完整 MCP。
 - **Design:** [FEATURE_003](features/v0.1.0.md#feature-003)。
 
@@ -99,6 +99,6 @@ Last Updated: 2026-09-07
 - InProgress: 2
 - Completed: 1
 - New: 5；Internal: 1；High: 6。
-- **当前：先评审[主 Agent 行为设计](AGENT_DESIGN.md)，用热力连续对话明确下一步判断、协作、记忆和任务完成条件；本阶段不拆票或进入运行时/界面实现。T005-01是已交付的浏览型原型，不代表 Agent 主入口已完成；T002-01仍需建模与验证。旧产物保留为技术试样，直接确认请求已撤回。见[首轮体验](MVP.md)、[现有工作台](experiment/LAB.md)与[建模方法](experiment/ONTOLOGY_MODELING.md)。**
+- **当前：[Agent 设计初版](AGENT_BLUEPRINT.md)已交付，覆盖身份/方法、组件、上下文、本体对象工作区、状态与事件契约；实现仍未开始，本次没有新实现票。对象组合执行器保留接入验证。T005-01是已交付的浏览型原型，不代表 Agent 主入口已完成；T002-01仍需建模与验证。旧产物保留为技术试样，直接确认请求已撤回。见[首轮体验](MVP.md)、[现有工作台](experiment/LAB.md)与[建模方法](experiment/ONTOLOGY_MODELING.md)。**
 
 项目初始化和开发文档已完成，记录在 [CHANGELOG](CHANGELOG.md)；它们不计入产品功能完成数。功能状态在本文维护，具体票的完成状态在对应设计块维护。
