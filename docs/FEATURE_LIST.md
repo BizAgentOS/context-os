@@ -58,7 +58,7 @@ Last Updated: 2026-09-07
 - **Category / Priority:** New / High
 - **Planned / Released:** v0.1.0 / —
 - **Created / Started / Completed:** 2026-09-07 / — / —
-- **Description:** 基于 KodaX SDK 的主 Agent，借鉴 NOOA 对象化状态和类型化方法，串起企业理解、资料接入、辅助建模、报告与维护；[设计已沉淀](AGENT_DESIGN.md)，实现未开始。
+- **Description:** 基于 KodaX SDK 的主 Agent，将本体概念、实例、关系和业务方法组成 NOOA 式对象操作环境，串起企业理解、资料接入、辅助建模、报告与维护；[设计已沉淀](AGENT_DESIGN.md)，实现未开始。
 - **Blocked by:** 企业理解/来源首段无；后续对象与建模能力依赖 002，不等待完整 MCP。
 - **Design:** [FEATURE_003](features/v0.1.0.md#feature-003)。
 
