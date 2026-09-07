@@ -1,0 +1,9 @@
+{
+  "model": "deepseek-v4-flash",
+  "max_turns": 12,
+  "max_output_tokens_per_turn": 2400,
+  "question_timeout_seconds": 240,
+  "request_timeout_seconds": 45,
+  "temperature": 0,
+  "thinking": {"type": "disabled"}
+}

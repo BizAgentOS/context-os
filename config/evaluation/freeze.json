@@ -1,0 +1,60 @@
+{
+  "cases": [
+    {
+      "as_of": "2026-01-19T00:00:00+08:00",
+      "id": "D01"
+    },
+    {
+      "as_of": "2026-01-19T00:00:00+08:00",
+      "id": "D02"
+    },
+    {
+      "as_of": "2026-01-19T00:00:00+08:00",
+      "id": "D03"
+    },
+    {
+      "as_of": "2026-01-19T00:00:00+08:00",
+      "id": "D04"
+    },
+    {
+      "as_of": "2026-01-19T00:00:00+08:00",
+      "id": "D05"
+    },
+    {
+      "as_of": "2026-01-19T00:00:00+08:00",
+      "id": "H01"
+    },
+    {
+      "as_of": "2026-01-19T00:00:00+08:00",
+      "id": "H02"
+    },
+    {
+      "as_of": "2026-01-19T00:00:00+08:00",
+      "id": "H03"
+    },
+    {
+      "as_of": "2026-01-14T09:50:00+08:00",
+      "id": "H04"
+    },
+    {
+      "as_of": "2026-01-19T00:00:00+08:00",
+      "id": "H05"
+    }
+  ],
+  "files": {
+    "config/evaluation/development.json": "453134e89b3e4b7d97f1e083b8355f793a03852d8389cce903b250419c5f6446",
+    "config/evaluation/raw-budget.json": "f2abf64d679828850504ba6d1519f8da7cca6679cba5922b683b4e77d1ef830f",
+    "config/evaluation/raw-system.txt": "37ffba2364ced33a17157076db55c1b0feac450018c929e631ac2f2611231f03",
+    "data/private/chengchuan-heating/evaluation/answers.json": "26e358ad2e9d14827de322da42941c4700497102cef2950a6b2bcddeeb05219e",
+    "data/private/chengchuan-heating/evaluation/holdout.json": "4246e449d9ce30f8941f64ba0322266868cda2210bfd66886aa53b4326eb8e60",
+    "data/private/chengchuan-heating/evaluation/review-rubric.md": "b89cc118a4b74673d8048075a24cd54173ebfd8c302b0f115632b64229655bc8",
+    "scripts/heating_data.py": "3c2df09778566f5dad1c44a36b6b7f87391acf804dbdb10b4e8be4ca291c017b",
+    "scripts/raw_baseline.py": "3f4e67073d174cd52c3c78ceae8cb5fe7eba977aec1c87cde21015d5f6b8fefa",
+    "scripts/validate_heating_sample.py": "00f9bffd2ca4a51bbb523a31e0c375aecbd9d0bf9b0e611b49a411514f78326f"
+  },
+  "snapshots": {
+    "2026-01-14T09:50:00+08:00": "d05bf16c7150902f15a16acad8e311665e3f49c526004a639bca765a2d2dab9f",
+    "2026-01-19T00:00:00+08:00": "4d3e24b6e006e059bba2145d0f6eef093ba6c0bd5bd3a77de5727e70e15ccddc"
+  },
+  "version": 1
+}

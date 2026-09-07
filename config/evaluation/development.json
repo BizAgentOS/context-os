@@ -1,0 +1,27 @@
+[
+  {
+    "id": "D01",
+    "as_of": "2026-01-19T00:00:00+08:00",
+    "question": "将1月14日收到的投诉按换热站归属，给出地址与设施依据。claims包含station_by_ticket（投诉ID到台账站号的对象）。"
+  },
+  {
+    "id": "D02",
+    "as_of": "2026-01-19T00:00:00+08:00",
+    "question": "复盘育新站1月14日运行变化：给出监测区间和现场依据，区分站内问题与尚不确定的住户问题。claims包含confirmed_equipment（已记录问题设备ID）、all_complaints_same_cause（是否能确认当日全部投诉同根因，布尔值）。"
+  },
+  {
+    "id": "D03",
+    "as_of": "2026-01-19T00:00:00+08:00",
+    "question": "统计1月14日收到的投诉，截至查询时点的客服办结率与回访确认改善率，列分子分母、未接通、尚未回访。claims包含closed、total、improved、with_callback、unreachable、no_callback（均为条数）。"
+  },
+  {
+    "id": "D04",
+    "as_of": "2026-01-19T00:00:00+08:00",
+    "question": "维修与后续测温/回访能否证明全部小区住户恢复？说明已支持的改善范围和缺失证据。claims包含all_households_recovered（布尔值）。"
+  },
+  {
+    "id": "D05",
+    "as_of": "2026-01-19T00:00:00+08:00",
+    "question": "核查清河站1月5日至19日的小时监测覆盖并汇总有值区间热量，说明缺失如何影响解释。claims包含expected_hours、valid_hours、missing_hours、observed_heat_gj；不能填补缺失为真实零值。"
+  }
+]
