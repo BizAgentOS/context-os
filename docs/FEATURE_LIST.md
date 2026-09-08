@@ -15,7 +15,7 @@ Last Updated: 2026-09-08
 
 | Version | Status | Planned | InProgress | Completed | Progress |
 |---|---|---:|---:|---:|---:|
-| v0.1.0 | InProgress | 2 | 2 | 3 | 3/7 |
+| v0.1.0 | InProgress | 2 | 2 | 4 | 4/8 |
 
 ## Feature Index
 
@@ -28,6 +28,7 @@ Last Updated: 2026-09-08
 | 005 | 简单本地工作台 | New | High | InProgress | v0.1.0 | 001；维护页依赖 004 | [设计](features/v0.1.0.md#feature-005) |
 | 006 | 对照实验与规模验证 | Internal | High | Planned | v0.1.0 | 001、002、004 | [设计](features/v0.1.0.md#feature-006) |
 | 007 | 数据消费与访问治理 | New | High | Completed | v0.1.0 | 复用已实现的 003/005 | [设计](features/v0.1.0.md#feature-007) |
+| 008 | 四页企业记忆的持续维护 | Enhancement | High | Completed | v0.1.0 | 复用 003/005/007 | [设计](features/v0.1.0.md#feature-008) |
 
 此表保留已有能力与票的实际完成记录，计数不代表新 MVP 体验的完成比例。首轮按 [MVP 完成条件](MVP.md)验收，不等待全部后续扩展能力。未完成票的依赖将在主 Agent 体验设计后重排；006、完整外部 MCP 消费和完整回归/恢复保留为后续工作，不因范围调整标为完成。
 
@@ -103,13 +104,23 @@ Last Updated: 2026-09-08
 - **Blocked by:** 复用 T003-02/04 与 T005-04（已实现）；不等待完整外部 MCP 或企业 IAM。
 - **Design:** [FEATURE_007](features/v0.1.0.md#feature-007)；[第四页设计](DATA_CONSUMPTION_DESIGN.md)。
 
+### 008: 四页企业记忆的持续维护
+
+- **Status:** Completed
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.1.0 / —
+- **Created / Started / Completed:** 2026-09-08 / 2026-09-08 / 2026-09-08
+- **Description:** 自由往返四页；文档概念草稿、定义/对象/业务验证；跨页待确认与资料变化；来源用途和敏感列贯穿消费。
+- **Validation:** 类型检查、51 项 Agent 和 22 项 Python 测试通过；真实 KodaX/DeepSeek、桌面/窄屏及补资料后重验完成，详见[维护验收](experiment/MAINTENANCE.md)。
+- **Design:** [FEATURE_008](features/v0.1.0.md#feature-008)。
+
 ## Summary
 
-- Total: 7
+- Total: 8
 - Planned: 2
 - InProgress: 2
-- Completed: 3
-- New: 6；Internal: 1；High: 7。
-- **当前：按用户手绘与产品定位实现[企业记忆画布](CANVAS_DESIGN.md)，T003-04 / T005-04 已完成，验证见[画布运行记录](experiment/CANVAS.md)。既有 KodaX 与企业记忆能力复用；运行前端已有企业、数据、本体与对象、数据消费四页；第四页已通过类型检查、35 项 Agent 测试、22 项 Python 测试及真实消费链验收，FEATURE_007 已完成，见[消费链记录](experiment/CONSUMPTION.md)。四页目标分别解决企业是什么、接入什么、如何组织本体、谁消费记忆。继续保持无任务/历史聊天/报告与更新页。旧完成记录保留，T004/T006 的扩展能力继续延后。**
+- Completed: 4
+- New: 6；Internal: 1；Enhancement: 1；High: 8。
+- **当前：FEATURE_008 已完成，四页可自由往返，本体页提供定义/对象/业务验证，资料变化与待确认独立保留，来源使用限制贯穿实际消费。51 项 Agent、22 项 Python、真实模型与浏览器维护链验收通过，见[维护验收](experiment/MAINTENANCE.md)。FEATURE_007 既有授权/消费能力保留；继续保持前景输入浮层，不增加任务、历史会话、报告或更新页。FEATURE_002/004/006 完整方法能力仍按原票推进。**
 
 项目初始化和开发文档已完成，记录在 [CHANGELOG](CHANGELOG.md)；它们不计入产品功能完成数。功能状态在本文维护，具体票的完成状态在对应设计块维护。

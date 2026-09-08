@@ -10,6 +10,7 @@ import type {
   WriteContext,
 } from "./contracts.ts";
 import { ObjectView, type ModelDefinition } from "./domain-objects.ts";
+import { SourcePolicyService } from "./source-policy.ts";
 
 interface Grant {
   type: string;
@@ -136,6 +137,7 @@ export const consumptionTools: DomainTool[] = [
 export class ConsumptionService {
   private db: DatabaseSync;
   private memory: Repository;
+  private sourcePolicies: SourcePolicyService;
   private closed = false;
 
   constructor(directory: string, memory: Repository) {
@@ -147,6 +149,7 @@ export class ConsumptionService {
       CREATE TABLE IF NOT EXISTS credentials (key_hash TEXT PRIMARY KEY, consumer_id TEXT NOT NULL, consumer_version INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS access_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, consumer_id TEXT, body TEXT NOT NULL);`);
     this.memory = memory;
+    this.sourcePolicies = new SourcePolicyService(memory);
   }
   close() {
     if (!this.closed) {
@@ -183,6 +186,27 @@ export class ConsumptionService {
       throw new Error("授权必须绑定已采用的本体版本");
     return model;
   }
+  private assertNonSensitive(
+    definition: ModelDefinition,
+    typeName: string,
+    fields: string[],
+  ): void {
+    const type = definition.types.find(
+      (candidate) => candidate.name === typeName,
+    );
+    if (!type) throw new Error("本体对象类型不存在");
+    const sensitiveFields = this.sourcePolicies.read(type.sourceId)?.content
+      .sensitiveFields as string[] | undefined;
+    for (const field of fields) {
+      const column = field === "$id" ? type.idField : type.fields[field];
+      if (sensitiveFields?.includes(column))
+        throw new AccessError(
+          403,
+          "sensitive_field",
+          `${typeName}.${field} 对应敏感来源列，不能对外读取`,
+        );
+    }
+  }
   private grants(value: unknown, definition: ModelDefinition): Grant[] {
     if (!Array.isArray(value) || !value.length || value.length > 50)
       throw new Error("需要明确的可读类型与字段清单");
@@ -201,6 +225,7 @@ export class ConsumptionService {
       for (const field of fields)
         if (field !== "$id" && !Object.hasOwn(target.fields, field))
           throw new Error(`类型 ${type} 没有字段 ${field}`);
+      this.assertNonSensitive(definition, type, fields);
       return { type, fields, relations };
     });
     if (new Set(grants.map((grant) => grant.type)).size !== grants.length)
@@ -446,6 +471,7 @@ export class ConsumptionService {
         definition.modelVersion,
       );
       const modelDefinition = model.content as unknown as ModelDefinition;
+      if (id !== null) this.assertNonSensitive(modelDefinition, type, ["$id"]);
       const relationName = request.query.get("relation");
       let outputGrant = grant;
       if (relationName !== null) {
@@ -474,6 +500,12 @@ export class ConsumptionService {
             "关系的目标或连接字段未获授权",
           );
         resource.relation = relation.name;
+        this.assertNonSensitive(modelDefinition, relation.from, [
+          relation.fromField,
+        ]);
+        this.assertNonSensitive(modelDefinition, relation.to, [
+          relation.toField,
+        ]);
         outputGrant = target;
       }
       const fields = request.query.has("fields")
@@ -485,6 +517,8 @@ export class ConsumptionService {
         new Set(fields).size !== fields.length
       )
         throw new AccessError(403, "field_denied", "请求字段未获授权");
+      // Source classification is current even when the consumer's data version is fixed.
+      this.assertNonSensitive(modelDefinition, outputGrant.type, fields);
       const integer = (name: string, fallback: number, max: number) => {
         const value = request.query.get(name);
         if (value === null) return fallback;

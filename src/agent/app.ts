@@ -6,6 +6,7 @@ import { MemoryStore } from "./memory.ts";
 import { Workspace, domainTools } from "./workspace.ts";
 import { ObjectView } from "./domain-objects.ts";
 import { ConsumptionService, consumptionTools } from "./consumption.ts";
+import { SourcePolicyService } from "./source-policy.ts";
 import {
   KodaXDriver,
   providers,
@@ -35,7 +36,7 @@ const canvasPages: CanvasPage[] = [
   "consumption",
 ];
 const canvasPrompts: Record<CanvasPage, string> = {
-  company: "你的企业叫什么？",
+  company: "你的企业叫什么，主要提供什么服务？",
   sources: "上传第一份企业资料。",
   ontology: "从哪些业务对象开始？",
   consumption: "哪些应用需要使用这些企业记忆？",
@@ -43,7 +44,7 @@ const canvasPrompts: Record<CanvasPage, string> = {
 const pageCompleteTool: DomainTool = {
   name: "page_complete",
   description:
-    "完成当前页。必须先保存有依据的企业名称与业务，或实际检查有记录的 CSV；本体页必须用户已采用。成功后只简短收尾，不再调用工具。",
+    "完成当前页。必须先保存有依据的企业名称与业务，或实际检查有内容的 CSV、Markdown、TXT；文档支持概念梳理，本体页仍必须用户已采用。成功后只简短收尾，不再调用工具。",
   mutates: true,
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
 };
@@ -58,6 +59,14 @@ const objectSchema = (
   properties: Record<string, unknown>,
   required: string[],
 ) => ({ type: "object", properties, required, additionalProperties: false });
+interface CanvasAttention {
+  id: string;
+  page: CanvasPage;
+  title: string;
+  detail: string;
+  artifactId?: string;
+  kind: string;
+}
 const controlTools: DomainTool[] = [
   {
     name: "task_checkpoint",
@@ -159,8 +168,8 @@ export class AgentApplication {
         .some((a) => a.status === "adopted");
       if (adopted && !saved.reached.includes("consumption")) {
         saved.reached = [...new Set([...saved.reached, ...canvasPages])];
-        for (const id of ["company", "sources", "ontology"] as CanvasPage[])
-          if (!saved.completed.includes(id)) saved.completed.push(id);
+        if (!saved.completed.includes("ontology"))
+          saved.completed.push("ontology");
         this.memory.saveCanvas(saved);
       }
       return saved;
@@ -168,14 +177,16 @@ export class AgentApplication {
     // Existing spaces keep their saved memory; the new canvas does not reset them.
     const completed: CanvasPage[] = [];
     const hasModel = this.memory.listArtifacts("ontology").length > 0;
-    if (this.companyReady() || hasModel) completed.push("company");
-    if ((completed.length && this.sourcesReady()) || hasModel)
+    if (this.companyReady()) completed.push("company");
+    if (this.sourcesReady() && (completed.length || hasModel))
       completed.push("sources");
     if (
       this.memory.listArtifacts("ontology").some((a) => a.status === "adopted")
     )
       completed.push("ontology");
-    const currentPage = canvasPages[Math.min(completed.length, 2)];
+    const currentPage = hasModel
+      ? "ontology"
+      : canvasPages[Math.min(completed.length, 2)];
     const progress: CanvasProgress = {
       currentPage,
       completed,
@@ -229,21 +240,26 @@ export class AgentApplication {
   private sourcesReady(): boolean {
     return this.memory
       .listArtifacts("source")
-      .some(
-        (source) =>
-          source.status === "ready" &&
-          source.content.format === "csv" &&
-          Array.isArray(source.content.rows) &&
-          source.content.rows.length > 0,
+      .some((source) => this.sourceUsable(source));
+  }
+
+  private sourceUsable(source: Artifact): boolean {
+    if (source.kind !== "source" || source.status !== "ready") return false;
+    if (source.content.format === "csv")
+      return (
+        Array.isArray(source.content.rows) && source.content.rows.length > 0
       );
+    return (
+      source.content.format === "text" &&
+      typeof source.content.raw === "string" &&
+      !!source.content.raw.trim()
+    );
   }
 
   private canvasPage(value?: unknown): CanvasPage {
     const progress = this.canvasProgress();
     const page = value ?? progress.currentPage;
     if (!canvasPages.includes(page as CanvasPage)) throw new Error("无效页面");
-    if (!progress.reached.includes(page as CanvasPage))
-      throw new Error("请先完成前一页");
     return page as CanvasPage;
   }
 
@@ -263,6 +279,254 @@ export class AgentApplication {
       this.memory.saveCanvas(progress);
     }
     return this.memory.getTask(taskId);
+  }
+
+  private canvasAttention(progress: CanvasProgress): CanvasAttention[] {
+    const items = new Map<string, CanvasAttention>();
+    const add = (item: CanvasAttention) => items.set(item.id, item);
+    const sources = this.memory.listArtifacts("source");
+    const models = this.memory.listArtifacts("ontology");
+    const active = models.find((model) => model.status === "adopted");
+    const definitions = [
+      ...models,
+      ...this.memory.listArtifacts("ontology_outline"),
+    ];
+    const latestChecks = new Map<string, Artifact>();
+    for (const check of this.memory.listArtifacts("verification")) {
+      const question = String(check.content.question)
+        .trim()
+        .replace(/\s+/g, " ");
+      const prior = latestChecks.get(question);
+      const run = Number(check.content.runNumber ?? 0);
+      const previousRun = Number(prior?.content.runNumber ?? 0);
+      if (
+        !prior ||
+        run > previousRun ||
+        (run === previousRun &&
+          String(check.content.generatedAt ?? check.createdAt) >
+            String(prior.content.generatedAt ?? prior.createdAt))
+      )
+        latestChecks.set(question, check);
+    }
+    const reviewedSources = new Map<string, number>();
+    for (const check of latestChecks.values()) {
+      if (
+        check.status !== "matches_expectation" ||
+        check.content.modelId !== active?.id ||
+        check.content.modelVersion !== active?.version
+      )
+        continue;
+      for (const ref of (check.content.evidence ?? []) as Data[]) {
+        const id = String(ref.sourceId);
+        reviewedSources.set(
+          id,
+          Math.max(reviewedSources.get(id) ?? 0, Number(ref.version)),
+        );
+      }
+    }
+    const referenced = new Set(
+      definitions.flatMap((definition) =>
+        Object.keys((definition.content.sourceVersions ?? {}) as Data),
+      ),
+    );
+    for (const source of sources) {
+      const base = { page: "sources" as const, artifactId: source.id };
+      if (source.status === "failed") {
+        add({
+          ...base,
+          id: `source-failed:${source.id}`,
+          kind: "source_failed",
+          title: `${source.title} 尚未接入成功`,
+          detail: String(
+            source.content.parseError ?? "请检查文件内容后重新上传。",
+          ),
+        });
+        continue;
+      }
+      if (!this.sourceUsable(source)) {
+        add({
+          ...base,
+          id: `source-empty:${source.id}`,
+          kind: "source_empty",
+          title: `${source.title} 暂无可用内容`,
+          detail: "请补充正文或业务记录后重新上传。",
+        });
+        continue;
+      }
+      const definitionVersion = (
+        (active?.content.sourceVersions ?? {}) as Data
+      )[source.id];
+      const draftVersion = Math.max(
+        0,
+        ...definitions.map((definition) =>
+          Number(
+            ((definition.content.sourceVersions ?? {}) as Data)[source.id] ?? 0,
+          ),
+        ),
+      );
+      const version = Math.max(
+        typeof definitionVersion === "number"
+          ? definitionVersion
+          : draftVersion,
+        reviewedSources.get(source.id) ?? 0,
+      );
+      if (version > 0 && source.version > version) {
+        add({
+          ...base,
+          page: "ontology",
+          id: `source-changed:${source.id}`,
+          kind: "source_changed",
+          title: `${source.title} 有新资料待核对`,
+          detail: `已有定义或最近确认的查证使用第 ${version} 版，来源已到第 ${source.version} 版。请核对对象变化；只有业务含义变化时才调整定义。`,
+        });
+      } else if (
+        !referenced.has(source.id) &&
+        (definitions.length || progress.completed.includes("sources"))
+      ) {
+        add({
+          ...base,
+          page: "ontology",
+          id: `source-unreviewed:${source.id}`,
+          kind: "source_unreviewed",
+          title: `${source.title} 尚未纳入业务定义`,
+          detail: "请查看资料与当前业务问题的关系，再决定是否补充对象或定义。",
+        });
+      }
+    }
+    const profile = this.memory.listArtifacts("profile")[0];
+    const statements = (profile?.content.statements ?? []) as Data[];
+    for (const statement of statements.filter(
+      (item) => item.origin === "suggestion",
+    ))
+      add({
+        id: `profile-suggestion:${String(statement.key)}`,
+        page: "company",
+        kind: "profile_suggestion",
+        artifactId: profile!.id,
+        title: "有企业信息需要确认",
+        detail: String(statement.text),
+      });
+    for (const conflict of (profile?.content.conflicts ?? []) as Data[]) {
+      if (conflict.resolved) continue;
+      const statement = statements.find((item) => item.key === conflict.key);
+      if (
+        !statement ||
+        statement.text !== conflict.retained ||
+        statement.text === conflict.proposed
+      )
+        continue;
+      const key = createHash("sha256")
+        .update(
+          JSON.stringify([conflict.key, conflict.retained, conflict.proposed]),
+        )
+        .digest("hex")
+        .slice(0, 16);
+      add({
+        id: `profile-conflict:${key}`,
+        page: "company",
+        kind: "profile_conflict",
+        artifactId: profile!.id,
+        title: "企业信息存在不同说法",
+        detail: `已确认：${String(conflict.retained)}；新说法：${String(conflict.proposed)}。请核对依据后决定。`,
+      });
+    }
+    for (const model of models) {
+      const validation = model.content.validation as Data | undefined;
+      if (model.status === "candidate" && validation?.valid === false)
+        add({
+          id: `model-invalid:${model.id}`,
+          page: "ontology",
+          kind: "model_invalid",
+          artifactId: model.id,
+          title: `${model.title} 需要修正`,
+          detail: "来源或字段映射检查未通过，请查看候选中的具体问题。",
+        });
+    }
+    const latestCandidate = models[0];
+    const pendingModel = progress.taskIds.ontology
+      ? this.memory.getTask(progress.taskIds.ontology).pending?.candidateId
+      : undefined;
+    if (
+      latestCandidate?.status === "candidate" &&
+      latestCandidate.id !== pendingModel &&
+      (latestCandidate.content.validation as Data | undefined)?.valid !== false
+    )
+      add({
+        id: `model-review:${latestCandidate.id}`,
+        page: "ontology",
+        kind: "model_review",
+        artifactId: latestCandidate.id,
+        title: "有本体候选尚未确认",
+        detail: "请查看业务定义和实例；采用仍需针对当前候选版本明确决定。",
+      });
+    for (const [question, check] of latestChecks) {
+      const changedSources = Object.entries(
+        (check.content.sourceVersions ?? {}) as Data,
+      ).some(([id, version]) =>
+        sources.some(
+          (source) => source.id === id && source.version > Number(version),
+        ),
+      );
+      const changedModel =
+        check.content.modelStatus === "adopted" &&
+        active &&
+        (check.content.modelId !== active.id ||
+          check.content.modelVersion !== active.version);
+      const kind =
+        changedSources || changedModel
+          ? "verification_outdated"
+          : check.status === "needs_adjustment"
+            ? "verification_needs_adjustment"
+            : check.status === "unreviewed"
+              ? "verification_unreviewed"
+              : null;
+      if (!kind) continue;
+      add({
+        id: `verification:${createHash("sha256").update(question).digest("hex").slice(0, 16)}`,
+        page: "ontology",
+        artifactId: check.id,
+        kind,
+        title:
+          kind === "verification_outdated"
+            ? "有业务问题需要重新验证"
+            : kind === "verification_needs_adjustment"
+              ? "有查证结果需要调整"
+              : "有查证结果待业务确认",
+        detail: `${question}${
+          kind === "verification_outdated"
+            ? "；相关资料或已采用定义已有变化，旧结果保留原依据。"
+            : kind === "verification_needs_adjustment"
+              ? "；请核对问题、定义与来源后重新验证。"
+              : "；请查看真实结果和证据，确认是否回答了业务问题。"
+        }`,
+      });
+    }
+    for (const [page, taskId] of Object.entries(progress.taskIds)) {
+      const task = this.memory.getTask(taskId!);
+      if (task.pending) {
+        const artifactId = task.pending.candidateId ?? task.pending.consumerId;
+        add({
+          id: `pending:${page}`,
+          page: page as CanvasPage,
+          kind: "pending",
+          title: String(task.pending.question),
+          detail: String(task.pending.reason ?? "请补充或确认后继续。"),
+          ...(typeof artifactId === "string" ? { artifactId } : {}),
+        });
+      }
+      const ended = this.memory
+        .events(task.id)
+        .findLast((event) => event.kind === "run.ended");
+      if (typeof ended?.data.error === "string")
+        add({
+          id: `run-failed:${page}`,
+          page: page as CanvasPage,
+          kind: "run_failed",
+          title: "上次处理未完成",
+          detail: `${this.safeError(new Error(ended.data.error))}。已保存内容保留，可以继续处理。`,
+        });
+    }
+    return [...items.values()];
   }
 
   canvasState(value?: unknown) {
@@ -292,7 +556,7 @@ export class AgentApplication {
       pages: canvasPages.map((id) => ({
         id,
         ready: progress.completed.includes(id),
-        available: progress.reached.includes(id),
+        available: true,
       })),
       model: this.model(),
       busy: !!this.active || this.modelTest,
@@ -311,6 +575,16 @@ export class AgentApplication {
       profile,
       sources,
       ontologies,
+      outlines: this.memory.listArtifacts("ontology_outline"),
+      verifications: this.memory.listArtifacts("verification"),
+      sourcePolicies: this.memory.listArtifacts("source_policy"),
+      sourcePolicyFields: Object.fromEntries(
+        sources.map((source) => [
+          source.id,
+          new SourcePolicyService(this.memory).availableFields(source.id),
+        ]),
+      ),
+      attention: this.canvasAttention(progress),
       consumers,
       accessLogs: page === "consumption" ? this.consumption.logs() : [],
       pending: pending
@@ -350,6 +624,13 @@ export class AgentApplication {
     const page = this.canvasPage(body.page);
     if (page !== this.canvasProgress().currentPage)
       throw new Error("页面已变化，请回到当前页面后继续");
+    if (
+      body.refreshSources !== undefined &&
+      typeof body.refreshSources !== "boolean"
+    )
+      throw new Error("资料刷新标记必须为布尔值");
+    if (body.refreshSources === true && page !== "ontology")
+      throw new Error("请在本体页面明确使用最新资料重新验证");
     const text = string(body.text, "消息", 6000);
     const messageId =
       body.messageId === undefined
@@ -372,6 +653,9 @@ export class AgentApplication {
         "profile",
         "source",
         "ontology",
+        "ontology_outline",
+        "verification",
+        "source_policy",
         ...(page === "consumption" ? ["consumer"] : []),
       ].includes(focus.kind)
     )
@@ -413,6 +697,11 @@ export class AgentApplication {
       });
     }
     await this.stopActive("已收到新的输入。");
+    if (body.refreshSources === true)
+      this.memory.clearInvestigation(
+        task.id,
+        "用户明确要求使用最新资料重新验证，旧验证记录保留原依据。",
+      );
     const message = this.memory.addMessage(task.id, "user", text, messageId);
     this.memory.trimMessages(task.id);
     if (!this.model().configured)
@@ -557,23 +846,38 @@ export class AgentApplication {
   }
 
   private canvasWorkspace(context: WriteContext, page: CanvasPage): Workspace {
-    const kinds =
+    const writableKinds =
       page === "consumption"
-        ? ["profile", "ontology", "consumer"]
+        ? ["consumer"]
         : page === "ontology"
-          ? ["profile", "source", "ontology"]
+          ? [
+              "profile",
+              "source",
+              "ontology",
+              "ontology_outline",
+              "verification",
+            ]
           : ["profile", "source"];
+    const readableKinds = [
+      "profile",
+      "ontology",
+      "ontology_outline",
+      "source_policy",
+      ...(page === "consumption" ? ["consumer"] : ["source", "verification"]),
+    ];
     const repository: Repository = {
       listArtifacts: (kind) =>
-        this.memory.listArtifacts(kind).filter((a) => kinds.includes(a.kind)),
+        this.memory
+          .listArtifacts(kind)
+          .filter((a) => readableKinds.includes(a.kind)),
       getArtifact: (id, version) => {
         const artifact = this.memory.getArtifact(id, version);
-        if (!kinds.includes(artifact.kind))
+        if (!readableKinds.includes(artifact.kind))
           throw new Error("当前页面不支持此内容");
         return artifact;
       },
       putArtifact: (input, writeContext, operationId) => {
-        if (!kinds.includes(input.kind))
+        if (!writableKinds.includes(input.kind))
           throw new Error("当前页面不支持保存此内容");
         return this.memory.putArtifact(input, writeContext, operationId);
       },
@@ -732,7 +1036,13 @@ export class AgentApplication {
               "memory_read",
               ...(page !== "consumption" ? ["profile_update"] : []),
               ...(page === "ontology"
-                ? ["ontology_propose", "ontology_preview", "object_execute"]
+                ? [
+                    "ontology_outline",
+                    "ontology_propose",
+                    "ontology_preview",
+                    "object_execute",
+                    "ontology_verify",
+                  ]
                 : []),
             ].includes(tool.name),
           ),
@@ -769,6 +1079,30 @@ export class AgentApplication {
                 },
               }),
           enterprise: workspace.overview(),
+          ...(page
+            ? {
+                maintenance: {
+                  attention: this.canvasAttention(this.canvasProgress()),
+                  outlines: this.memory
+                    .listArtifacts("ontology_outline")
+                    .map(({ id, version, title, status }) => ({
+                      id,
+                      version,
+                      title,
+                      status,
+                    })),
+                  verifications: this.memory
+                    .listArtifacts("verification")
+                    .map(({ id, version, title, status }) => ({
+                      id,
+                      version,
+                      title,
+                      status,
+                    })),
+                  sourcePolicies: this.memory.listArtifacts("source_policy"),
+                },
+              }
+            : {}),
           ...(page === "consumption"
             ? {
                 consumption: {
@@ -825,14 +1159,13 @@ export class AgentApplication {
                 .listArtifacts("source")
                 .filter(
                   (a) =>
-                    a.status === "ready" &&
-                    a.content.format === "csv" &&
-                    Array.isArray(a.content.rows) &&
-                    a.content.rows.length > 0 &&
+                    this.sourceUsable(a) &&
                     inspectedSources.get(a.id) === a.version,
                 );
               if (!artifacts.length)
-                throw new Error("请先读取并检查一份有记录的 CSV 业务资料");
+                throw new Error(
+                  "请先读取并检查一份有记录的 CSV 或有内容的 Markdown、TXT 企业资料",
+                );
             } else {
               artifacts = this.memory
                 .listArtifacts("ontology")
@@ -943,11 +1276,7 @@ export class AgentApplication {
               : await workspace.execute(name, args, operationId);
           if (page && name === "memory_read" && typeof args.id === "string") {
             const artifact = result as unknown as Artifact;
-            if (
-              artifact.kind === "source" &&
-              Array.isArray(artifact.content.rows) &&
-              artifact.content.rows.length > 0
-            )
+            if (this.sourceUsable(artifact))
               inspectedSources.set(artifact.id, artifact.version);
           }
           if (mutates && operationId) lastWrite = { signature, operationId };
@@ -1173,22 +1502,30 @@ export class AgentApplication {
       const ref = artifact.content.model as Data;
       model = this.memory.getArtifact(String(ref.id), Number(ref.version));
       versions = artifact.content.sourceVersions as Record<string, number>;
+    } else if (artifact.kind === "verification") {
+      model = this.memory.getArtifact(
+        String(artifact.content.modelId),
+        Number(artifact.content.modelVersion),
+      );
+      if (model.kind !== "ontology")
+        throw new Error("验证记录的本体引用不可用");
+      versions = artifact.content.sourceVersions as Record<string, number>;
     } else {
       if (
         artifact.kind !== "ontology" ||
         !artifact.content.preview ||
         !(artifact.content.validation as Data)?.valid
       )
-        throw new Error("需要已检查的本体或已保存的调查报告");
+        throw new Error("需要已检查的本体、业务验证或已保存的调查报告");
       model = artifact;
       versions = artifact.content.sourceVersions as Record<string, number>;
     }
     const view = new ObjectView(this.memory, model, versions);
     if (
-      artifact.kind === "report" &&
+      ["report", "verification"].includes(artifact.kind) &&
       view.snapshot !== artifact.content.snapshot
     )
-      throw new Error("报告的对象快照不匹配");
+      throw new Error("保存结果的对象快照不匹配");
     const type = query.get("type");
     const id = query.get("id");
     const relation = query.get("relation");

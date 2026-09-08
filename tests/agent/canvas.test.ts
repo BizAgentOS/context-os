@@ -172,12 +172,18 @@ test("the canvas creates a company from real user facts and advances only after 
       "content-type": "application/json",
       "x-dataengine-token": initial.token,
     };
-    const blocked = await fetch(`${url}/api/canvas/navigate`, {
+    const visited = await fetch(`${url}/api/canvas/navigate`, {
       method: "POST",
       headers,
       body: JSON.stringify({ page: "ontology" }),
     });
-    assert.equal(blocked.status, 400);
+    assert.equal(visited.status, 200);
+    assert.equal(requests.length, 0);
+    await fetch(`${url}/api/canvas/navigate`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ page: "company" }),
+    });
     await fetch(`${url}/api/canvas/message`, {
       method: "POST",
       headers,
@@ -576,7 +582,8 @@ test("leaving a page invalidates its pending write, and cancelled or failed comp
     });
     await app.idle();
     assert.equal(app.canvasState().currentPage, "sources");
-    assert.equal(app.canvasState().pages[2].available, false);
+    assert.equal(app.canvasState().pages[2].available, true);
+    assert.equal(app.canvasState().pages[1].ready, false);
     assert.equal(app.canvasState().sources.length, 1);
     assert.match(app.canvasState().messages.at(-1)!.content, /未完成/);
   } finally {

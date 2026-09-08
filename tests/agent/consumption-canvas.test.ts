@@ -91,6 +91,10 @@ test("the fourth canvas proposes a visible grant but only the host can enable it
     assert.equal(
       app.canvasState().pages.find((page) => page.id === "consumption")
         ?.available,
+      true,
+    );
+    assert.equal(
+      app.canvasState().pages.find((page) => page.id === "consumption")?.ready,
       false,
     );
     model = await modelFor(app);

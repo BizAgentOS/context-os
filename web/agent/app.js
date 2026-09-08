@@ -19,6 +19,9 @@ const fieldLabels = {
   "company.industry": "行业",
   "company.location": "所在地区",
   "company.scope": "服务范围",
+  "company.customers": "服务对象",
+  "company.customer": "服务对象",
+  customers: "服务对象",
   "company.departments": "部门",
   "company.organization": "组织",
   "company.role": "你的职责",
@@ -60,6 +63,11 @@ const state = {
   profile: null,
   sources: [],
   ontologies: [],
+  outlines: [],
+  verifications: [],
+  sourcePolicies: [],
+  sourcePolicyFields: {},
+  attention: [],
   consumers: [],
   accessLogs: [],
   pending: null,
@@ -76,6 +84,8 @@ const ui = {
   detail: null,
   focus: null,
   drafts: new Map(),
+  ontologyView: "definitions",
+  definitionId: null,
   canvasKey: "",
   dialogueKey: "",
   pendingMessage: null,
@@ -248,6 +258,13 @@ function canvasFingerprint() {
     profile: state.profile && `${state.profile.id}:${state.profile.version}`,
     sources: refs(state.sources),
     ontologies: refs(state.ontologies),
+    outlines: refs(state.outlines),
+    verifications: refs(state.verifications),
+    sourcePolicies: refs(state.sourcePolicies),
+    sourcePolicyFields: state.sourcePolicyFields,
+    attention: state.attention,
+    ontologyView: ui.ontologyView,
+    definitionId: ui.definitionId,
     consumers: refs(state.consumers),
     accessLogs: ui.page === "consumption" ? state.accessLogs : [],
     pending: state.pending,
@@ -280,7 +297,7 @@ function renderCanvas(force = false) {
   else if (ui.page === "sources") canvas.replaceChildren(renderSources());
   else if (ui.page === "ontology") canvas.replaceChildren(renderOntology());
   else canvas.replaceChildren(renderConsumption());
-  requestAnimationFrame(drawConnections);
+  renderAttention(canvas);
 }
 function emptyCanvas(fallback) {
   const section = node("section", "empty-canvas");
@@ -326,7 +343,21 @@ function renderCompany() {
     );
   const intro = node("div", "company-introduction");
   intro.append(node("h1", "company-name", nameRow?.text || "关于这家企业"));
-  if (business) intro.append(node("p", "company-business", business.text));
+  if (business)
+    intro.append(
+      button(business.text, "company-business editable-text", () =>
+        openStatement(business),
+      ),
+    );
+  intro
+    .querySelector("h1")
+    .addEventListener("click", () => nameRow && openStatement(nameRow));
+  if (nameRow) {
+    const edit = button("编辑企业信息", "quiet-button", () =>
+      openStatement(nameRow),
+    );
+    intro.append(edit);
+  }
   identity.append(intro);
   section.append(identity);
   const rest = rows.filter((item) => item !== nameRow && item !== business);
@@ -345,6 +376,14 @@ function renderCompany() {
       facts.append(fact);
     }
     section.append(facts);
+  }
+  if (!findStatement(["company.goal", "goal", "goals"])) {
+    const prompt = button("先选一个想解决的业务问题", "inline-prompt", () => {
+      $("#message-input").value = "我们这次最想解决的问题是：";
+      resizeInput();
+      $("#message-input").focus();
+    });
+    section.append(prompt);
   }
   return section;
 }
@@ -369,6 +408,31 @@ function renderSources() {
         source.content.parseError ? "内容需要修正" : excerpt,
       ),
     );
+    const policy = state.sourcePolicies.find(
+      (item) => item.content.sourceId === source.id,
+    );
+    card.append(
+      node(
+        "span",
+        "source-meta",
+        [
+          source.content.format === "csv"
+            ? `${source.content.rows?.length || 0} 条记录`
+            : "文档 · 可用于概念定义",
+          `第 ${source.version} 版`,
+        ].join(" · "),
+      ),
+    );
+    if (policy?.content.purpose)
+      card.append(node("p", "source-purpose", policy.content.purpose));
+    if (policy?.content.sensitiveFields?.length)
+      card.append(
+        node(
+          "span",
+          "source-meta",
+          `${policy.content.sensitiveFields.length} 个字段限制对外使用`,
+        ),
+      );
     grid.append(card);
   }
   section.append(grid);
@@ -408,163 +472,548 @@ function canAdopt(artifact) {
     Number(state.pending.version) === artifact.version
   );
 }
-function renderOntology() {
-  const artifact = currentOntology();
-  if (!artifact?.content?.types?.length)
-    return emptyCanvas("从哪些业务对象开始？");
-  const section = node("section", "ontology-canvas");
-  section.append(
-    heading(artifact.title || "业务对象", artifact.content.purpose),
+function currentDefinition() {
+  const options = [...state.ontologies, ...state.outlines];
+  return (
+    options.find((item) => item.id === ui.definitionId) ||
+    (state.pending?.candidateId &&
+      options.find((item) => item.id === state.pending.candidateId)) ||
+    options.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
   );
-  const graph = node("div", "ontology-graph");
-  graph.dataset.artifactId = artifact.id;
-  graph.dataset.artifactVersion = String(artifact.version);
-  const inner = node("div", "graph-inner");
-  const positions = graphPositions(
-    artifact.content.types,
-    artifact.content.relations || [],
-  );
-  inner.style.height = `${positions.height}px`;
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("class", "graph-connections");
-  svg.setAttribute("aria-hidden", "true");
-  inner.append(svg);
-  for (const type of artifact.content.types) {
-    const position = positions.nodes.get(type.name);
-    const control = button("", "concept-node", () =>
-      openType(artifact, type.name),
-    );
-    control.style.left = `${position.x}%`;
-    control.style.top = `${position.y}px`;
-    control.dataset.type = type.name;
-    control.append(node("h2", "", type.name));
-    if (type.description) control.append(node("p", "", type.description));
-    inner.append(control);
-  }
-  graph.append(inner);
-  section.append(graph);
-  if (canAdopt(artifact)) {
-    const decision = node("div", "decision-strip");
-    decision.append(node("p", "", "这些对象和关系，是否符合你的业务？"));
-    const adopt = button("采用这组定义", "primary-button", () =>
-      decide(artifact, "adopt"),
-    );
-    const revise = button("继续调整", "quiet-button", () => {
-      setFocus(artifact);
-      $("#message-input").focus();
+}
+function ontologyViews() {
+  const nav = node("nav", "view-tabs");
+  nav.setAttribute("aria-label", "本体查看方式");
+  for (const [id, title] of [
+    ["definitions", "定义"],
+    ["objects", "对象"],
+    ["verification", "验证"],
+  ]) {
+    const control = button(title, "view-tab", () => {
+      ui.ontologyView = id;
+      renderCanvas(true);
+      $("#canvas").scrollTop = 0;
     });
-    adopt.disabled = ui.requesting || state.busy;
-    decision.append(adopt, revise);
-    section.append(decision);
-  } else if (artifact.status === "candidate") {
+    control.setAttribute("aria-pressed", String(ui.ontologyView === id));
+    nav.append(control);
+  }
+  return nav;
+}
+function renderOntology() {
+  const artifact = currentDefinition();
+  const section = node("section", "ontology-canvas");
+  const goal = findStatement(["company.goal", "goal", "goals"]);
+  section.append(
+    heading("业务记忆", goal?.text || artifact?.content.purpose),
+    ontologyViews(),
+  );
+  if (ui.ontologyView === "verification") {
+    section.append(renderVerifications(artifact));
+    return section;
+  }
+  if (!artifact) {
+    const empty = node("div", "view-empty");
+    empty.append(
+      node(
+        "h2",
+        "",
+        ui.ontologyView === "objects"
+          ? "定义对应的记录，会在这里成为对象。"
+          : "从一个业务问题，开始理解这些资料。",
+      ),
+    );
+    empty.append(
+      node("p", "", "可以先用文档整理概念，再用业务记录建立对象与关系。"),
+    );
+    empty.append(
+      button("查看企业资料", "quiet-button", () => navigate("sources")),
+    );
+    section.append(empty);
+    return section;
+  }
+  const options = [...state.ontologies, ...state.outlines].sort((a, b) =>
+    b.createdAt.localeCompare(a.createdAt),
+  );
+  const modelBar = node("div", "model-bar");
+  const select = node("select", "model-select");
+  select.setAttribute("aria-label", "选择定义版本");
+  for (const model of options) {
+    const option = node(
+      "option",
+      "",
+      `${model.title} · ${model.kind === "ontology_outline" ? "概念草稿" : model.status === "adopted" ? "已采用" : model.status === "rejected" ? "已放下" : "待确认"}`,
+    );
+    option.value = model.id;
+    select.append(option);
+  }
+  select.value = artifact.id;
+  select.addEventListener("change", () => {
+    ui.definitionId = select.value;
+    renderCanvas(true);
+  });
+  modelBar.append(select);
+  section.append(modelBar);
+  if (ui.ontologyView === "objects") {
+    if (
+      artifact.kind === "ontology_outline" ||
+      !artifact.content.validation?.valid
+    ) {
+      section.append(
+        node(
+          "p",
+          "view-empty",
+          "这些定义还没有对应到可用记录。接入业务数据并检查映射后，就可以查看具体对象。",
+        ),
+      );
+    } else {
+      section.append(
+        node(
+          "p",
+          "detail-note",
+          artifact.status === "adopted"
+            ? "这里是所选定义保存时的记录。查看资料更新后的结果，可在“验证”中重新查证。"
+            : "这是候选定义对应的对象预览，尚未采用。",
+        ),
+      );
+      const list = node("div", "definition-list");
+      for (const type of artifact.content.types) {
+        const count = artifact.content.preview?.types?.find?.(
+          (entry) => entry.name === type.name,
+        )?.count;
+        const item = button("", "definition-card", () =>
+          openType(artifact, type.name),
+        );
+        item.append(
+          node("h2", "", type.name),
+          node("p", "", type.description),
+          node(
+            "span",
+            "source-meta",
+            count === undefined ? "查看对象与依据 →" : `${count} 个对象 →`,
+          ),
+        );
+        list.append(item);
+      }
+      section.append(list);
+    }
+    return section;
+  }
+  const outlined = artifact.kind === "ontology_outline";
+  const types = outlined ? artifact.content.concepts : artifact.content.types;
+  const list = node("div", "definition-list");
+  for (const type of types || []) {
+    const item = button("", "definition-card", () =>
+      outlined ? openConcept(artifact, type) : openType(artifact, type.name),
+    );
+    item.append(
+      node("h2", "", type.name),
+      node("p", "", type.description),
+      node(
+        "span",
+        "source-meta",
+        outlined ? "概念草稿 · 查看定义依据 →" : "查看含义、映射与依据 →",
+      ),
+    );
+    list.append(item);
+  }
+  section.append(list);
+  if (artifact.content.relations?.length) {
+    const relations = node("div", "definition-relations");
+    for (const relation of artifact.content.relations) {
+      const row = button(
+        `${relation.from}  →  ${relation.name}  →  ${relation.to}`,
+        "relation-row",
+        () =>
+          outlined
+            ? openConcept(artifact, relation, true)
+            : adjustArtifact(
+                artifact,
+                `${relation.from}的${relation.name}关系`,
+              ),
+      );
+      relations.append(row);
+    }
+    section.append(node("h2", "subsection-title", "关系"), relations);
+  }
+  if (outlined)
     section.append(
       node(
         "p",
-        "ontology-note",
-        artifact.content.validation?.valid
-          ? "定义还在整理中。"
-          : "先检查这些定义如何对应到资料。",
+        "detail-note",
+        "这些概念来自资料，仍需业务确认与记录映射。概念草稿不会生成对象或开放访问。",
       ),
     );
+  else {
+    for (const error of artifact.content.validation?.errors || [])
+      section.append(node("p", "persistent-note", `需要修正：${error}`));
+    if (canAdopt(artifact)) {
+      const decision = node("div", "decision-strip");
+      decision.append(node("p", "", "这些定义和关系，是否符合你的业务？"));
+      const adopt = button("采用这组定义", "primary-button", () =>
+        decide(artifact, "adopt"),
+      );
+      adopt.disabled = ui.requesting || state.busy;
+      decision.append(
+        adopt,
+        button("先用业务问题验证", "quiet-button", () => {
+          ui.ontologyView = "verification";
+          renderCanvas(true);
+        }),
+      );
+      section.append(decision);
+    } else if (artifact.status === "candidate")
+      section.append(
+        node(
+          "p",
+          "detail-note",
+          artifact.content.validation?.valid
+            ? "程序检查已完成，业务含义仍需确认。"
+            : "需要检查定义与资料之间的映射。",
+        ),
+      );
   }
   return section;
 }
-function graphPositions(types, relations) {
-  const names = types.map((type) => type.name);
-  const levels = new Map(names.map((name) => [name, 0]));
-  const incoming = new Set(relations.map((relation) => relation.to));
-  let frontier = names.filter((name) => !incoming.has(name));
-  const visited = new Set(frontier);
-  if (!frontier.length && names.length) {
-    frontier = [names[0]];
-    visited.add(names[0]);
-  }
-  for (let level = 1; frontier.length && level < 3; level += 1) {
-    const next = [];
-    for (const relation of relations) {
-      if (
-        frontier.includes(relation.from) &&
-        names.includes(relation.to) &&
-        !visited.has(relation.to)
-      ) {
-        levels.set(relation.to, level);
-        visited.add(relation.to);
-        next.push(relation.to);
-      }
-    }
-    frontier = next;
-  }
-  const maxLevel = Math.max(0, ...levels.values());
-  const columns = Array.from({ length: maxLevel + 1 }, (_, level) =>
-    names.filter((name) => levels.get(name) === level),
+function openConcept(artifact, concept, relation = false) {
+  const section = detailFrame(concept.name, closeDetail, "返回定义");
+  if (relation)
+    section.append(node("p", "detail-note", `${concept.from} → ${concept.to}`));
+  section.append(
+    node("p", "source-text", concept.description),
+    node("h2", "subsection-title", "定义依据"),
+    evidenceButtons(concept.evidence, () =>
+      openConcept(artifact, concept, relation),
+    ),
   );
-  if (columns.length === 1 && names.length > 2) {
-    columns.length = 0;
-    for (
-      let start = 0;
-      start < names.length;
-      start += Math.ceil(names.length / 3)
+  section
+    .querySelector(".canvas-heading")
+    .append(
+      button("调整定义", "quiet-button", () =>
+        adjustArtifact(artifact, concept.name),
+      ),
+    );
+  showDetail(
+    {
+      key: `concept:${artifact.id}:${artifact.version}:${concept.name}`,
+      artifact,
+    },
+    section,
+  );
+}
+function verificationStale(record) {
+  const active = [...state.ontologies]
+    .filter((item) => item.status === "adopted")
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  const changedModel =
+    record.content.modelStatus === "adopted" &&
+    active &&
+    (record.content.modelId !== active.id ||
+      record.content.modelVersion !== active.version);
+  return (
+    changedModel ||
+    Object.entries(record.content.sourceVersions || {}).some(
+      ([id, version]) =>
+        state.sources.find((source) => source.id === id)?.version !== version,
     )
-      columns.push(names.slice(start, start + Math.ceil(names.length / 3)));
-  }
-  const height = Math.max(
-    230,
-    Math.max(...columns.map((column) => column.length)) * 158 + 20,
   );
-  const nodes = new Map();
-  columns.forEach((column, index) =>
-    column.forEach((name, row) => {
-      const x =
-        columns.length === 1 ? 50 : 16 + (68 * index) / (columns.length - 1);
-      nodes.set(name, { x, y: ((row + 1) * height) / (column.length + 1) });
+}
+const verificationLabels = {
+  unreviewed: "待业务确认",
+  matches_expectation: "符合预期",
+  needs_adjustment: "需要调整",
+};
+function renderVerifications(artifact) {
+  const section = node("div", "verification-canvas");
+  section.append(
+    node("p", "view-intro", "用一个实际问题，检查定义和关系是否足以解释业务。"),
+  );
+  const form = node("form", "verification-form");
+  const input = node("input");
+  input.type = "text";
+  input.maxLength = 1200;
+  input.setAttribute("aria-label", "要验证的业务问题");
+  input.placeholder = "例如：这条投诉办结后，有没有供暖恢复的依据？";
+  input.value =
+    ui.verificationQuestion ||
+    findStatement(["company.goal", "goal", "goals"])?.text ||
+    "";
+  input.addEventListener("input", () => {
+    ui.verificationQuestion = input.value;
+  });
+  const submit = node("button", "primary-button", "验证这个问题");
+  submit.type = "submit";
+  submit.disabled = ui.requesting || state.busy;
+  form.append(input, submit);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!input.value.trim()) return input.focus();
+    const mapped = artifact?.kind === "ontology" ? artifact : currentOntology();
+    if (mapped) setFocus(mapped);
+    $("#message-input").value =
+      `请用已保存的本体与真实对象验证这个业务问题：${input.value.trim()}。请保存实际查询结果和依据；如果资料不足，保留具体缺口。`;
+    resizeInput();
+    ui.nextRefreshSources = true;
+    sendMessage();
+  });
+  section.append(form);
+  if (!state.verifications.length)
+    section.append(
+      node(
+        "p",
+        "detail-note",
+        "验证结果和依据会留在这里。资料不足时先补资料，不能把未知当作已解决。",
+      ),
+    );
+  for (const record of [...state.verifications].sort(
+    (a, b) =>
+      String(b.content.generatedAt || b.createdAt).localeCompare(
+        String(a.content.generatedAt || a.createdAt),
+      ) ||
+      (Number(b.content.runNumber) || 0) - (Number(a.content.runNumber) || 0),
+  )) {
+    const card = button("", "verification-card", () =>
+      openVerification(record),
+    );
+    card.append(
+      node("h2", "", record.content.question),
+      node(
+        "span",
+        "verification-status",
+        `${verificationLabels[record.status] || "待确认"}${verificationStale(record) ? " · 资料或定义已有更新，可重新验证" : ""}`,
+      ),
+    );
+    const titles = Object.keys(record.content.sourceVersions || {})
+      .map((id) => state.sources.find((source) => source.id === id)?.title)
+      .filter(Boolean);
+    card.append(node("p", "", titles.join(" · ")));
+    section.append(card);
+  }
+  return section;
+}
+const resultLabels = {
+  negative_callback_evidence: "回访显示未改善",
+  positive_callback_evidence: "回访显示已改善",
+  conflicting_callback_evidence: "回访证据有冲突",
+  no_evidence: "缺少回访依据",
+  not_recovered: "未恢复",
+  not_improved: "未改善",
+  improved: "已改善",
+  recovered: "已恢复",
+  no_callback_evidence: "缺少回访依据",
+  unknown_callback_evidence: "回访结果尚不明确",
+};
+function renderVerificationValue(value, artifact, depth = 0) {
+  const section = node("div", "verification-result");
+  if (depth > 4 || value === null || typeof value !== "object") {
+    section.append(node("p", "", plain(value)));
+    return section;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value)
+      section.append(
+        renderVerificationValue(
+          typeof item === "string" ? resultLabels[item] || item : item,
+          artifact,
+          depth + 1,
+        ),
+      );
+  } else if (value.items) {
+    if (value.coverage?.complete === false || value.truncated)
+      section.append(
+        node("p", "persistent-note", "当前结果只覆盖部分记录，不能代表全部。"),
+      );
+    if (!value.items.length)
+      section.append(
+        node("p", "detail-note", "没有匹配记录，业务事实仍需核实。"),
+      );
+    for (const item of value.items.slice(0, 20))
+      section.append(renderVerificationValue(item, artifact, depth + 1));
+    if (value.items.length > 20)
+      section.append(
+        node(
+          "p",
+          "detail-note",
+          `这里显示前 20 条，共返回 ${value.items.length} 条。`,
+        ),
+      );
+  } else if (value.fields && value.id) {
+    section.append(
+      node("h3", "", `${value.type} · ${value.id}`),
+      propertyList(value.fields),
+    );
+    section.append(
+      button("查看本次查证的对象与依据", "quiet-button", () =>
+        loadObjects(artifact, value.type, {
+          id: value.id,
+          back: () => openVerification(artifact),
+        }),
+      ),
+    );
+    if (value.evidence)
+      section.append(
+        evidenceButtons(value.evidence, () => openVerification(artifact)),
+      );
+  } else {
+    const omitted = new Set([
+      "snapshot",
+      "evidence",
+      "sourceVersions",
+      "collectionId",
+      "model",
+      "coverage",
+    ]);
+    for (const [key, entry] of Object.entries(value)) {
+      if (omitted.has(key)) continue;
+      const labels = {
+        status: "依据显示",
+        recovered: "是否恢复",
+        scope: "适用范围",
+        note: "说明",
+        object: "对象",
+        type: "类型",
+        id: "编号",
+        method: "检查口径",
+        outcomes: "回访结果",
+        partial: "是否仅部分记录",
+        count: "数量",
+        total: "总数",
+      };
+      if (entry && typeof entry === "object") {
+        section.append(
+          node("h3", "", labels[key] || key),
+          renderVerificationValue(entry, artifact, depth + 1),
+        );
+      } else
+        section.append(
+          node(
+            "p",
+            "result-line",
+            `${labels[key] || key}：${resultLabels[entry] || plain(entry)}`,
+          ),
+        );
+    }
+  }
+  return section;
+}
+function openVerification(record) {
+  const section = detailFrame(record.content.question, closeDetail, "返回验证");
+  section.append(
+    node("p", "detail-note", verificationLabels[record.status] || "待业务确认"),
+  );
+  if (verificationStale(record))
+    section.append(
+      node(
+        "p",
+        "persistent-note",
+        "资料或定义已有更新。这里保留当时的结果和依据，可重新验证查看变化。",
+      ),
+    );
+  if (record.content.modelStatus === "candidate")
+    section.append(node("p", "detail-note", "此结果来自候选定义，尚未采用。"));
+  const results = Object.entries(record.content.result?.results || {});
+  const operationLabels = {
+    get: "对象记录",
+    query: "查询记录",
+    related: "关联记录",
+    call: "业务判断",
+    aggregate: "汇总结果",
+    evidence: "来源记录",
+    describe: "对象定义",
+  };
+  results.forEach(([handle, value]) => {
+    const operation = (record.content.operations || [])
+      .map((op, index) => ({ ...op, handle: op.as || `step${index + 1}` }))
+      .findLast((op) => op.handle === handle);
+    section.append(
+      node(
+        "h2",
+        "subsection-title",
+        `${operationLabels[operation?.op] || "结果"}${operation?.type ? ` · ${operation.type}` : ""}`,
+      ),
+      renderVerificationValue(value, record),
+    );
+  });
+  section.append(
+    node("h2", "subsection-title", "验证依据"),
+    evidenceButtons(record.content.evidence || [], () =>
+      openVerification(record),
+    ),
+  );
+  section.append(
+    node(
+      "p",
+      "detail-note",
+      "结果来自已保存的记录。是否足以回答业务问题，由你确认。",
+    ),
+  );
+  const actions = node("div", "review-actions");
+  for (const [status, title] of [
+    ["matches_expectation", "符合预期"],
+    ["needs_adjustment", "需要调整"],
+  ]) {
+    const control = button(title, "quiet-button", async () => {
+      const ok = await mutate("/api/verifications/review", {
+        id: record.id,
+        version: record.version,
+        status,
+      });
+      const updated = state.verifications.find((item) => item.id === record.id);
+      if (ok && updated) openVerification(updated);
+    });
+    control.disabled = state.busy || ui.requesting || record.status === status;
+    actions.append(control);
+  }
+  actions.append(
+    button("重新验证", "quiet-button", () => {
+      ui.verificationQuestion = record.content.question;
+      ui.ontologyView = "verification";
+      closeDetail();
     }),
   );
-  return { nodes, height };
-}
-function drawConnections() {
-  const graph = $(".ontology-graph");
-  if (!graph) return;
-  const artifact = state.ontologies.find(
-    (item) =>
-      item.id === graph.dataset.artifactId &&
-      item.version === Number(graph.dataset.artifactVersion),
+  section.append(actions);
+  showDetail(
+    { key: `verification:${record.id}:${record.version}`, artifact: record },
+    section,
   );
-  if (!artifact) return;
-  const inner = graph.querySelector(".graph-inner");
-  const svg = graph.querySelector("svg");
-  const width = inner.clientWidth;
-  const height = inner.clientHeight;
-  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  svg.replaceChildren();
-  const nodes = [...inner.querySelectorAll(".concept-node")];
-  const base = inner.getBoundingClientRect();
-  for (const relation of artifact.content.relations || []) {
-    const from = nodes.find((item) => item.dataset.type === relation.from);
-    const to = nodes.find((item) => item.dataset.type === relation.to);
-    if (!from || !to) continue;
-    const a = from.getBoundingClientRect();
-    const b = to.getBoundingClientRect();
-    const right = b.left >= a.left;
-    const x1 = (right ? a.right : a.left) - base.left;
-    const x2 = (right ? b.left : b.right) - base.left;
-    const y1 = a.top + a.height / 2 - base.top;
-    const y2 = b.top + b.height / 2 - base.top;
-    const middle = (x1 + x2) / 2;
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute("class", "graph-edge");
-    path.setAttribute(
-      "d",
-      `M ${x1} ${y1} C ${middle} ${y1}, ${middle} ${y2}, ${x2} ${y2}`,
-    );
-    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    text.setAttribute("class", "graph-edge-label");
-    text.setAttribute("x", String(middle));
-    text.setAttribute("y", String((y1 + y2) / 2 - 8));
-    text.textContent = relation.name;
-    svg.append(path, text);
-  }
 }
-
+function renderAttention(canvas) {
+  const entries = (state.attention || []).filter(
+    (item) =>
+      item.page === ui.page &&
+      !(
+        ui.page === "ontology" &&
+        ui.ontologyView === "verification" &&
+        item.kind.startsWith("verification_")
+      ),
+  );
+  if (!entries.length) return;
+  const section = node("aside", "attention-list");
+  section.setAttribute("aria-label", "待处理的企业记忆");
+  section.append(node("h2", "subsection-title", "待处理"));
+  for (const entry of entries) {
+    const row = button("", "attention-item", () => {
+      const artifact = [
+        ...state.sources,
+        ...state.ontologies,
+        ...state.outlines,
+        ...state.verifications,
+      ].find((item) => item.id === entry.artifactId);
+      if (artifact?.kind === "source") openSource(artifact);
+      else if (artifact?.kind === "verification") openVerification(artifact);
+      else {
+        if (artifact) setFocus(artifact);
+        $("#message-input").value = entry.detail || entry.title;
+        resizeInput();
+        $("#message-input").focus();
+      }
+    });
+    row.append(node("strong", "", entry.title));
+    if (entry.detail && entry.detail !== entry.title)
+      row.append(node("span", "", entry.detail));
+    section.append(row);
+  }
+  canvas.querySelector("section")?.append(section);
+}
 const consumerStatuses = {
   draft: "待启用",
   active: "已启用",
@@ -574,6 +1023,20 @@ function consumerName(consumer) {
   return consumer.content.name || consumer.title || "调用方";
 }
 function renderConsumption() {
+  if (
+    !state.consumers.length &&
+    !state.ontologies.some((item) => item.status === "adopted")
+  ) {
+    const section = node("section", "empty-canvas");
+    const content = node("div");
+    content.append(
+      node("h1", "", "让合适的应用，使用合适的企业记忆。"),
+      node("p", "empty-note", "先建立并采用本体，再确认每个调用方的可读范围。"),
+      button("查看本体", "quiet-button", () => navigate("ontology")),
+    );
+    section.append(content);
+    return section;
+  }
   if (!state.consumers.length)
     return emptyCanvas("哪些应用需要使用这些企业记忆？");
   const section = node("section", "consumption-canvas");
@@ -764,6 +1227,7 @@ const accessReasons = {
   relation_denied: "关系、目标或连接字段没有获得完整授权，或缺少起始对象编号。",
   field_denied: "请求包含未获授权的字段。",
   invalid_page: "分页参数需要修正。",
+  sensitive_field: "请求涉及已限制对外使用的资料字段。",
   memory_unavailable: "授权对应的企业记忆暂时无法读取。",
 };
 function renderAccessLogs(logs, showConsumer = true) {
@@ -928,7 +1392,34 @@ function openStatement(statement, artifact = state.profile) {
       .querySelector(".canvas-heading > div")
       .append(node("p", "", "待确认"));
   }
-  section.append(node("p", "source-text", statement.text));
+  const form = node("form", "memory-edit-form");
+  const input = node("textarea");
+  input.value = statement.text;
+  input.rows = 3;
+  input.maxLength = 5000;
+  input.setAttribute("aria-label", `编辑${label(statement.key)}`);
+  const save = node("button", "primary-button", "保存修改");
+  save.type = "submit";
+  save.disabled = ui.requesting || state.busy;
+  form.append(input, save);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const ok = await mutate(
+      "/api/profile",
+      {
+        id: artifact.id,
+        expectedVersion: artifact.version,
+        key: statement.key,
+        text: input.value,
+      },
+      (result) => {
+        state.profile = result.artifact;
+        closeDetail();
+      },
+    );
+    if (ok) await refresh();
+  });
+  section.append(form);
   if (statement.evidence?.length) {
     section.append(
       node("h2", "subsection-title", "来源"),
@@ -967,6 +1458,11 @@ function openSource(artifact, options = {}) {
     button("围绕这份资料提问", "quiet-button", () => askAbout(artifact)),
   );
   section.querySelector(".canvas-heading").append(actions);
+  if (
+    state.sources.find((source) => source.id === artifact.id)?.version ===
+    artifact.version
+  )
+    section.append(sourcePolicyEditor(artifact));
   if (artifact.content.parseError)
     section.append(
       node(
@@ -1037,6 +1533,93 @@ function openSource(artifact, options = {}) {
     section,
   );
 }
+function sourcePolicyEditor(source) {
+  const policy = state.sourcePolicies.find(
+    (item) => item.content.sourceId === source.id,
+  );
+  const details = node("details", "source-policy");
+  const summary = node("summary", "", "用途与使用范围");
+  details.append(summary);
+  const form = node("form", "memory-edit-form");
+  const field = (title, value, name) => {
+    const wrap = node("label", "edit-field");
+    const input = node("input");
+    input.type = "text";
+    input.name = name;
+    input.value = value || "";
+    input.maxLength = name === "owner" ? 200 : 1000;
+    wrap.append(node("span", "", title), input);
+    form.append(wrap);
+    return input;
+  };
+  const purpose = field(
+    "这份资料用来解决什么问题",
+    policy?.content.purpose,
+    "purpose",
+  );
+  const owner = field("资料负责人", policy?.content.owner, "owner");
+  const inputs = [];
+  const policyColumns = [
+    ...new Set([
+      ...(state.sourcePolicyFields[source.id] || source.content.columns || []),
+      ...(policy?.content.sensitiveFields || []),
+    ]),
+  ];
+  if (policyColumns.length) {
+    const fields = node("fieldset", "sensitive-fields");
+    fields.append(node("legend", "", "限制对外使用的字段"));
+    for (const column of policyColumns) {
+      const wrap = node("label");
+      const input = node("input");
+      input.type = "checkbox";
+      input.value = column;
+      input.checked =
+        policy?.content.sensitiveFields?.includes(column) || false;
+      inputs.push(input);
+      wrap.append(input, node("span", "", column));
+      fields.append(wrap);
+    }
+    form.append(
+      fields,
+      node(
+        "p",
+        "detail-note",
+        "勾选的字段不允许通过消费 API 读取，已有调用方也会受到限制。",
+      ),
+    );
+  } else
+    form.append(
+      node(
+        "p",
+        "detail-note",
+        "文档原文不向消费 API 开放；未来形成对象时，仍需单独确认访问范围。",
+      ),
+    );
+  const actions = node("div", "review-actions");
+  const save = node("button", "primary-button", "保存使用范围");
+  save.type = "submit";
+  save.disabled = ui.requesting || state.busy;
+  actions.append(save);
+  form.append(actions);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const ok = await mutate("/api/sources/policy", {
+      sourceId: source.id,
+      version: policy?.version || 0,
+      purpose: purpose.value,
+      owner: owner.value,
+      sensitiveFields: inputs
+        .filter((input) => input.checked)
+        .map((input) => input.value),
+    });
+    if (ok) {
+      openSource(source);
+      $(".source-policy").open = true;
+    }
+  });
+  details.append(form);
+  return details;
+}
 function propertyList(fields, className = "object-fields") {
   const list = node("dl", className);
   for (const [key, value] of Object.entries(fields)) {
@@ -1061,7 +1644,25 @@ function openType(artifact, typeName) {
     ),
   );
   section.querySelector(".canvas-heading").append(actions);
-  section.append(propertyList(type.fields || {}, "definition-fields"));
+  section.append(
+    node("h2", "subsection-title", "业务属性对应的资料列"),
+    propertyList(type.fields || {}, "definition-fields"),
+  );
+  const source = state.sources.find((item) => item.id === type.sourceId);
+  section.append(
+    node(
+      "p",
+      "detail-note",
+      `对象身份来自 ${source?.title || "来源资料"} 的 ${type.idField} 字段。`,
+    ),
+  );
+  if (artifact.content.evidence?.length)
+    section.append(
+      node("h2", "subsection-title", "定义依据"),
+      evidenceButtons(artifact.content.evidence, () =>
+        openType(artifact, typeName),
+      ),
+    );
   const relations = (artifact.content.relations || []).filter(
     (item) => item.from === typeName,
   );
@@ -1336,7 +1937,7 @@ function hasCanvasContent() {
     : ui.page === "sources"
       ? state.sources.length > 0
       : ui.page === "ontology"
-        ? Boolean(currentOntology()?.content.types?.length)
+        ? Boolean(currentDefinition() || state.verifications.length)
         : state.consumers.length > 0;
 }
 function updateComposer() {
@@ -1381,6 +1982,7 @@ async function sendMessage() {
     openSettings();
     return;
   }
+  $(".canvas-app").dataset.reading = "false";
   const page = ui.page;
   const focus = ui.focus;
   const contextKey = `${page}:${focus?.id || ""}:${focus?.version || ""}`;
@@ -1396,10 +1998,14 @@ async function sendMessage() {
       page,
       text,
       messageId: ui.pendingMessage.id,
+      ...(page === "ontology" && ui.nextRefreshSources
+        ? { refreshSources: true }
+        : {}),
       ...(focus ? { focusId: focus.id, focusVersion: focus.version } : {}),
     },
     () => {
       ui.pendingMessage = null;
+      ui.nextRefreshSources = false;
       if (input.value.trim() === text) input.value = "";
       rememberDraft();
       resizeInput();
@@ -1601,7 +2207,15 @@ new ResizeObserver(([entry]) => {
   );
 }).observe($(".interaction"));
 
-window.addEventListener("resize", drawConnections);
+const readCanvas = () => {
+  $(".canvas-app").dataset.reading = "true";
+};
+$("#canvas").addEventListener("pointerdown", readCanvas);
+$("#canvas").addEventListener("focusin", readCanvas);
+$("#canvas").addEventListener("wheel", readCanvas, { passive: true });
+$("#message-input").addEventListener("focus", () => {
+  $(".canvas-app").dataset.reading = "false";
+});
 window.addEventListener("focus", () => refresh());
 refresh(true);
 setInterval(() => {

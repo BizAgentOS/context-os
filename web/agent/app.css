@@ -1432,3 +1432,325 @@ tr.highlight td {
     scroll-behavior: auto !important;
   }
 }
+
+/* Definition, object and evidence views share the same full-height memory canvas. */
+.view-tabs {
+  display: flex;
+  gap: 28px;
+  border-bottom: 1px solid var(--line);
+  margin: 22px 0 30px;
+}
+.view-tab {
+  padding: 12px 0;
+  color: #929292;
+  font-size: 13px;
+  border-bottom: 1px solid transparent;
+}
+.view-tab[aria-pressed="true"] {
+  color: #191919;
+  border-bottom-color: #191919;
+}
+.model-bar {
+  margin: 0 0 24px;
+}
+.model-select {
+  border: 0;
+  background: transparent;
+  max-width: 100%;
+  font-size: 12px;
+  padding: 6px 24px 6px 0;
+  color: #777;
+  text-overflow: ellipsis;
+}
+.definition-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.definition-card {
+  border: 1px solid #e8e8e8;
+  border-radius: 7px;
+  padding: 22px;
+  text-align: left;
+  min-width: 0;
+}
+.definition-card:hover {
+  border-color: #aaa;
+}
+.definition-card h2,
+.verification-card h2 {
+  font-size: 17px;
+  font-weight: 460;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.definition-card p,
+.verification-card p {
+  color: #777;
+  font-size: 12px;
+  line-height: 1.9;
+  margin-top: 10px;
+  overflow-wrap: anywhere;
+}
+.source-meta {
+  display: block;
+  font-size: 10px;
+  line-height: 1.8;
+  color: #929292;
+  margin-top: 13px;
+}
+.definition-relations {
+  display: flex;
+  flex-direction: column;
+}
+.relation-row {
+  text-align: left;
+  padding: 13px 0;
+  font-size: 12px;
+  line-height: 1.7;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.view-empty {
+  margin: 55px auto;
+  max-width: 650px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.9;
+  color: #777;
+}
+.view-empty h2 {
+  font-size: 24px;
+  font-weight: 350;
+  color: #333;
+  margin-bottom: 17px;
+}
+.view-empty p,
+.view-empty button {
+  margin-top: 18px;
+}
+.empty-note {
+  font-size: 12px;
+  line-height: 1.9;
+  color: #888;
+  margin: 20px 0;
+}
+.inline-prompt {
+  display: block;
+  margin-top: 35px;
+  color: #777;
+  text-align: left;
+  font-size: 13px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.editable-text {
+  display: block;
+  padding: 0;
+  text-align: left;
+}
+.company-introduction > .quiet-button {
+  margin-top: 14px;
+}
+.view-intro {
+  font-size: 13px;
+  color: #777;
+  line-height: 1.9;
+}
+.verification-form {
+  display: flex;
+  gap: 12px;
+  margin: 20px 0 32px;
+}
+.verification-form input {
+  min-width: 0;
+  flex: 1;
+  padding: 13px 15px;
+  border: 1px solid #ddd;
+  border-radius: 7px;
+  background: white;
+  font-size: 12px;
+}
+.verification-card {
+  display: block;
+  width: 100%;
+  padding: 23px 0;
+  border-top: 1px solid var(--line);
+  text-align: left;
+}
+.verification-status {
+  display: block;
+  margin-top: 12px;
+  color: #777;
+  font-size: 11px;
+}
+.verification-result {
+  font-size: 12px;
+  line-height: 1.9;
+  overflow-wrap: anywhere;
+}
+.verification-result h3 {
+  font-size: 13px;
+  font-weight: 500;
+  margin: 18px 0 8px;
+}
+.verification-result > .verification-result {
+  border-left: 1px solid #eee;
+  padding-left: 16px;
+  margin: 10px 0 22px;
+}
+.result-line {
+  margin: 8px 0;
+}
+.review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 22px 0;
+}
+.attention-list {
+  border-top: 1px solid var(--line);
+  margin-top: 32px;
+  padding-top: 2px;
+  text-align: left;
+  max-width: 850px;
+  width: 100%;
+}
+.attention-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+}
+.attention-item strong {
+  display: block;
+  font-size: 12px;
+  line-height: 1.8;
+  font-weight: 450;
+}
+.attention-item span {
+  display: block;
+  font-size: 11px;
+  line-height: 1.9;
+  color: #888;
+  margin-top: 5px;
+}
+.empty-canvas:has(.attention-list) {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-top: 30px;
+}
+.canvas:has(> .empty-canvas .attention-list)::after {
+  content: "";
+  display: block;
+  height: var(--interaction-height);
+}
+.persistent-note {
+  margin: 18px 0;
+  padding: 13px 16px;
+  border-left: 2px solid #888;
+  background: #fafafa;
+  color: #666;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.memory-edit-form {
+  display: grid;
+  gap: 17px;
+  margin: 20px 0;
+}
+.memory-edit-form > .primary-button {
+  justify-self: start;
+}
+.memory-edit-form textarea,
+.edit-field input {
+  width: 100%;
+  border: 1px solid #ddd;
+  border-radius: 7px;
+  padding: 12px 14px;
+  background: white;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.memory-edit-form textarea {
+  resize: vertical;
+  min-height: 110px;
+}
+.edit-field {
+  display: block;
+  font-size: 12px;
+  color: #777;
+}
+.edit-field > span {
+  display: block;
+  margin-bottom: 9px;
+}
+.source-policy {
+  padding: 17px 0;
+  margin: 0 0 22px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.source-policy summary {
+  font-size: 12px;
+  cursor: pointer;
+  color: #777;
+}
+.sensitive-fields {
+  margin: 0;
+  padding: 15px 0;
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 24px;
+}
+.sensitive-fields legend {
+  font-size: 12px;
+  color: #777;
+}
+.sensitive-fields label {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  font-size: 12px;
+}
+.sensitive-fields input {
+  accent-color: #333;
+}
+@media (max-width: 580px) {
+  .definition-list {
+    grid-template-columns: 1fr;
+  }
+  .definition-card {
+    padding: 18px;
+  }
+  .verification-form {
+    flex-direction: column;
+  }
+  .verification-form .primary-button {
+    align-self: flex-end;
+  }
+  .view-tabs {
+    margin: 14px 0 20px;
+  }
+  .view-empty {
+    margin: 30px 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.dialogue {
+  transition: opacity 180ms ease;
+}
+.canvas-app[data-reading="true"] .dialogue {
+  opacity: 0;
+}

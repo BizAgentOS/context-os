@@ -76,6 +76,44 @@ const functionSchema = schema(
   },
   ["name", "implementation", "type", "relation", "field", "evidence"],
 );
+const outlineEvidenceSchema = {
+  type: "array",
+  minItems: 1,
+  maxItems: 30,
+  items: evidenceSchema,
+};
+const objectOperationsSchema = {
+  type: "array",
+  minItems: 1,
+  maxItems: 12,
+  items: schema(
+    {
+      op: {
+        type: "string",
+        enum: [
+          "describe",
+          "query",
+          "get",
+          "related",
+          "evidence",
+          "aggregate",
+          "call",
+        ],
+      },
+      as: string,
+      type: string,
+      id: string,
+      input: { anyOf: [{ type: "string" }, { type: "object" }] },
+      where: { type: "object" },
+      offset: { type: "integer", minimum: 0 },
+      limit: { type: "integer", minimum: 1, maximum: 100 },
+      relation: string,
+      field: string,
+      method: string,
+    },
+    ["op"],
+  ),
+};
 export const domainTools: DomainTool[] = [
   {
     name: "workspace_overview",
@@ -128,6 +166,48 @@ export const domainTools: DomainTool[] = [
     mutates: true,
   },
   {
+    name: "ontology_outline",
+    description:
+      "根据已保存的文档或表格，保存少量有证据的概念定义和关系初稿。每个概念及关系都需引用真实来源；关系端点必须为本稿概念。初稿不创建实例、不采用模型，也不开放 API。后续接入适合的记录后再用 ontology_propose 提出映射。修改初稿需传准确 id/version。",
+    inputSchema: schema(
+      {
+        id: string,
+        version: { type: "integer", minimum: 1 },
+        title: { type: "string", maxLength: 160 },
+        purpose: { type: "string", maxLength: 1200 },
+        concepts: {
+          type: "array",
+          minItems: 1,
+          maxItems: 12,
+          items: schema(
+            {
+              name: { type: "string", maxLength: 80 },
+              description: { type: "string", maxLength: 1200 },
+              evidence: outlineEvidenceSchema,
+            },
+            ["name", "description", "evidence"],
+          ),
+        },
+        relations: {
+          type: "array",
+          maxItems: 30,
+          items: schema(
+            {
+              name: { type: "string", maxLength: 80 },
+              from: string,
+              to: string,
+              description: { type: "string", maxLength: 1200 },
+              evidence: outlineEvidenceSchema,
+            },
+            ["name", "from", "to", "description", "evidence"],
+          ),
+        },
+      },
+      ["title", "purpose", "concepts", "relations"],
+    ),
+    mutates: true,
+  },
+  {
     name: "ontology_propose",
     description:
       "围绕当前任务提出有来源依据的本体候选。types.fields 把业务属性映射到 CSV 列，idField 是来源身份列，关系字段用业务属性名或 $id。只允许已注册 recovery_evidence 回访证据方法，不能以办结判断恢复。候选必须预览并由用户采用后才正式生效。",
@@ -164,42 +244,26 @@ export const domainTools: DomainTool[] = [
       {
         candidateId: string,
         candidateVersion: { type: "integer" },
-        operations: {
-          type: "array",
-          minItems: 1,
-          maxItems: 12,
-          items: schema(
-            {
-              op: {
-                type: "string",
-                enum: [
-                  "describe",
-                  "query",
-                  "get",
-                  "related",
-                  "evidence",
-                  "aggregate",
-                  "call",
-                ],
-              },
-              as: string,
-              type: string,
-              id: string,
-              input: { anyOf: [{ type: "string" }, { type: "object" }] },
-              where: { type: "object" },
-              offset: { type: "integer", minimum: 0 },
-              limit: { type: "integer", minimum: 1, maximum: 100 },
-              relation: string,
-              field: string,
-              method: string,
-            },
-            ["op"],
-          ),
-        },
+        operations: objectOperationsSchema,
       },
       ["operations"],
     ),
     mutates: false,
+  },
+  {
+    name: "ontology_verify",
+    description:
+      "用一个具体业务问题执行真实对象查证，并把问题、步骤、结果、覆盖范围和来源版本保存到本体页。operations 与 object_execute 相同；候选需传 candidateId/candidateVersion，正式查证沿用本任务固定快照。结果始终待用户核对，不接收模型编造的答案或通过结论；部分页仍只代表当前页，办结不等于恢复。执行失败不保存验证结果。",
+    inputSchema: schema(
+      {
+        question: { type: "string", maxLength: 1200 },
+        candidateId: string,
+        candidateVersion: { type: "integer", minimum: 1 },
+        operations: objectOperationsSchema,
+      },
+      ["question", "operations"],
+    ),
+    mutates: true,
   },
   {
     name: "report_save",
@@ -261,6 +325,15 @@ export class Workspace {
           : undefined,
       })),
       models: this.repo.listArtifacts("ontology").map(summarize),
+      outlines: this.repo.listArtifacts("ontology_outline").map(summarize),
+      verifications: this.repo.listArtifacts("verification").map((a) => ({
+        ...summarize(a),
+        hasNewerSources: Object.entries(
+          (a.content.sourceVersions ?? {}) as Data,
+        ).some(
+          ([id, version]) => this.repo.getArtifact(id).version !== version,
+        ),
+      })),
       reports: this.repo.listArtifacts("report").map((a) => ({
         ...summarize(a),
         hasNewerSources: Object.entries(
@@ -364,14 +437,207 @@ export class Workspace {
     if (name === "memory_read") return json(this.read(args));
     if (name === "profile_update")
       return json(this.updateProfile(arr(args.statements), operationId));
+    if (name === "ontology_outline")
+      return json(this.outline(args, operationId));
     if (name === "ontology_propose")
       return json(this.propose(args, operationId));
     if (name === "ontology_preview")
       return json(this.preview(args, operationId));
     if (name === "object_execute")
       return this.view(args).execute(arr(args.operations));
+    if (name === "ontology_verify") return json(this.verify(args, operationId));
     if (name === "report_save") return json(this.saveReport(args, operationId));
     throw new Error(`未知领域工具：${name}`);
+  }
+  private outline(
+    args: Record<string, unknown>,
+    operationId?: string,
+  ): Artifact {
+    const bounded = (value: unknown, label: string, limit: number) => {
+      const text = str(value, label).trim();
+      if (text.length > limit) throw new Error(`${label}不能超过 ${limit} 字`);
+      return text;
+    };
+    const evidenceFor = (value: unknown) => {
+      const refs = this.validateEvidence(value, true);
+      if (refs.length > 30) throw new Error("每项概念或关系最多引用 30 项证据");
+      for (const ref of refs) {
+        const source = this.repo.getArtifact(
+          String(ref.sourceId),
+          Number(ref.version),
+        );
+        if (source.status === "failed")
+          throw new Error("解析失败的来源不能作为概念依据，请先修正资料");
+        const hasContent =
+          source.content.format === "csv"
+            ? Array.isArray(source.content.rows) &&
+              source.content.rows.length > 0
+            : source.content.format === "text" &&
+              typeof source.content.raw === "string" &&
+              !!source.content.raw.trim();
+        if (source.status !== "ready" || !hasContent)
+          throw new Error(
+            "概念依据需要有实际正文或业务记录的资料，请先补充内容",
+          );
+      }
+      return refs;
+    };
+    const inputConcepts = arr(args.concepts);
+    if (!inputConcepts.length || inputConcepts.length > 12)
+      throw new Error("概念初稿需要 1–12 个业务概念");
+    const concepts = inputConcepts.map((concept) => ({
+      name: bounded(concept.name, "概念名称", 80),
+      description: bounded(concept.description, "概念含义", 1200),
+      evidence: evidenceFor(concept.evidence),
+    }));
+    const names = new Set(concepts.map((concept) => concept.name));
+    if (names.size !== concepts.length) throw new Error("概念名称必须唯一");
+    const inputRelations = arr(args.relations ?? []);
+    if (inputRelations.length > 30) throw new Error("概念关系不能超过 30 项");
+    const relations = inputRelations.map((relation) => {
+      const from = bounded(relation.from, "起点概念", 80);
+      const to = bounded(relation.to, "终点概念", 80);
+      if (!names.has(from) || !names.has(to))
+        throw new Error("关系必须连接本稿中真实存在的概念");
+      return {
+        name: bounded(relation.name, "关系名称", 80),
+        from,
+        to,
+        description: bounded(relation.description, "关系含义", 1200),
+        evidence: evidenceFor(relation.evidence),
+      };
+    });
+    if (
+      new Set(relations.map((relation) => `${relation.from}:${relation.name}`))
+        .size !== relations.length
+    )
+      throw new Error("同一概念的关系名称不能重复");
+    const evidence = [
+      ...new Map(
+        [...concepts, ...relations]
+          .flatMap((item) => item.evidence)
+          .map((ref) => [JSON.stringify(ref), ref]),
+      ).values(),
+    ];
+    const sourceVersions: Record<string, number> = {};
+    for (const ref of evidence) {
+      const id = String(ref.sourceId);
+      if (
+        sourceVersions[id] !== undefined &&
+        sourceVersions[id] !== ref.version
+      )
+        throw new Error("同一概念初稿不能混用来源版本");
+      sourceVersions[id] = Number(ref.version);
+    }
+    if ((args.id === undefined) !== (args.version === undefined))
+      throw new Error("修改概念初稿需要准确的 id 和 version");
+    const prior =
+      args.id === undefined
+        ? undefined
+        : this.repo.getArtifact(
+            str(args.id, "概念初稿 id"),
+            Number(args.version),
+          );
+    if (prior && prior.kind !== "ontology_outline")
+      throw new Error("只能修订概念初稿，不能覆盖其他企业记忆");
+    return this.repo.putArtifact(
+      {
+        ...(prior
+          ? { id: prior.id, expectedVersion: Number(args.version) }
+          : {}),
+        kind: "ontology_outline",
+        title: bounded(args.title, "概念初稿名称", 160),
+        status: "draft",
+        content: json({
+          purpose: bounded(args.purpose, "建模问题", 1200),
+          concepts,
+          relations,
+          sourceVersions,
+          evidence,
+        }) as Data,
+      },
+      this.context,
+      operationId,
+    );
+  }
+  private verify(
+    args: Record<string, unknown>,
+    operationId?: string,
+  ): Artifact {
+    const question = str(args.question, "验证问题").trim();
+    if (question.length > 1200) throw new Error("验证问题不能超过 1200 字");
+    if (
+      (args.candidateId === undefined) !==
+      (args.candidateVersion === undefined)
+    )
+      throw new Error("预览验证需要准确的候选 id 和 version");
+    const operations = arr(args.operations);
+    const view = this.view(args);
+    const result = view.execute(operations);
+    const refs: Data[] = [];
+    const collectEvidence = (value: Json): void => {
+      if (Array.isArray(value)) {
+        value.forEach(collectEvidence);
+      } else if (value && typeof value === "object") {
+        for (const [key, child] of Object.entries(value)) {
+          if (key === "evidence" && Array.isArray(child))
+            refs.push(...this.validateEvidence(child));
+          else collectEvidence(child);
+        }
+      }
+    };
+    collectEvidence(result);
+    // An empty result has no record rows; keep the actual investigated source scope.
+    if (!refs.length)
+      refs.push(
+        ...this.validateEvidence(
+          Object.entries(view.sourceVersions).map(([sourceId, version]) => ({
+            sourceId,
+            version,
+          })),
+        ),
+      );
+    for (const ref of refs)
+      if (view.sourceVersions[String(ref.sourceId)] !== ref.version)
+        throw new Error("验证证据不属于当前对象快照");
+    const evidence = [
+      ...new Map(refs.map((ref) => [JSON.stringify(ref), ref])).values(),
+    ];
+    return this.repo.putArtifact(
+      {
+        kind: "verification",
+        title: question,
+        status: "unreviewed",
+        content: json({
+          question,
+          runNumber:
+            1 +
+            Math.max(
+              0,
+              ...this.repo
+                .listArtifacts("verification")
+                .filter(
+                  (item) =>
+                    String(item.content.question)
+                      .trim()
+                      .replace(/\s+/g, " ") === question.replace(/\s+/g, " "),
+                )
+                .map((item) => Number(item.content.runNumber) || 0),
+            ),
+          modelId: view.model.id,
+          modelVersion: view.model.version,
+          modelStatus: view.model.status,
+          sourceVersions: view.sourceVersions,
+          snapshot: view.snapshot,
+          operations,
+          result,
+          evidence,
+          generatedAt: new Date().toISOString(),
+        }) as Data,
+      },
+      this.context,
+      operationId,
+    );
   }
   private saveReport(
     args: Record<string, unknown>,
@@ -771,6 +1037,14 @@ export class Workspace {
       }
       if (existing) Object.assign(existing, next);
       else statements.push(next);
+      if (trusted)
+        for (const conflict of conflicts)
+          if (conflict.key === key && !conflict.resolved)
+            conflict.resolved = {
+              origin: "user",
+              at: new Date().toISOString(),
+              value: text,
+            };
     }
     return this.repo.putArtifact(
       {

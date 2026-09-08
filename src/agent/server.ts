@@ -5,6 +5,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { join, resolve } from "node:path";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { AgentApplication } from "./app.ts";
+import { SourcePolicyService } from "./source-policy.ts";
+import { reviewVerification } from "./maintenance.ts";
 import type { AgentDriver } from "./runtime.ts";
 
 const webRoot = fileURLToPath(new URL("../../web/agent/", import.meta.url));
@@ -206,6 +208,20 @@ export async function createServer(
       const body = await readBody(request);
       let result: unknown;
       switch (url.pathname) {
+        case "/api/sources/policy":
+          result = await queue(async () => {
+            const policy = new SourcePolicyService(app.memory).update(body);
+            return { ...app.canvasState(), policy };
+          });
+          break;
+        case "/api/verifications/review":
+          result = await queue(async () => {
+            if (app.canvasState().busy)
+              throw new Error("请等待当前整理完成或先停止，再确认验证结果");
+            const verification = reviewVerification(app.memory, body);
+            return { ...app.canvasState(), verification };
+          });
+          break;
         case "/api/consumers/activate":
           result = await queue(() => app.activateConsumer(body));
           break;

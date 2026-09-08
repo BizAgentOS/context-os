@@ -141,3 +141,74 @@ test("unverified user corrections cannot change a saved statement or its provena
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("directly confirming a retained value resolves only that field's conflicts and preserves their evidence", () => {
+  const directory = mkdtempSync(
+    join(tmpdir(), "dataengine-profile-resolution-"),
+  );
+  let repo = new MemoryStore(directory);
+  try {
+    const workspace = new Workspace(repo);
+    workspace.editProfile("company.name", "澄川热力");
+    workspace.editProfile("company.business", "居民供热服务");
+    const source = workspace.upload(
+      "旧企业介绍.md",
+      "名称：澄川能源。业务：电力销售。",
+    );
+    const evidence = [{ sourceId: source.id, version: source.version }];
+    const conflicting = workspace.execute("profile_update", {
+      statements: [
+        { key: "company.name", text: "澄川能源", origin: "source", evidence },
+        {
+          key: "company.business",
+          text: "电力销售",
+          origin: "source",
+          evidence,
+        },
+      ],
+    }) as unknown as Artifact;
+    const before = conflicting.content.conflicts as Data[];
+    const forged = workspace.execute("profile_update", {
+      statements: [
+        {
+          key: "company.name",
+          text: "澄川热力",
+          origin: "suggestion",
+          resolved: {
+            origin: "user",
+            at: "2026-09-08T00:00:00Z",
+            value: "澄川热力",
+          },
+        },
+      ],
+    }) as unknown as Artifact;
+    assert.deepEqual(forged.content.conflicts, before);
+
+    const confirmed = workspace.editProfile("company.name", "澄川热力");
+    const conflicts = confirmed.content.conflicts as Data[];
+    assert.deepEqual(
+      conflicts.map(({ resolved, ...history }) => history),
+      before,
+    );
+    assert.equal((conflicts[0].resolved as Data)?.origin, "user");
+    assert.equal((conflicts[0].resolved as Data)?.value, "澄川热力");
+    assert.ok(
+      Number.isFinite(Date.parse(String((conflicts[0].resolved as Data)?.at))),
+    );
+    assert.equal(conflicts[1].resolved, undefined);
+    repo.close();
+    repo = new MemoryStore(directory);
+    const reopened = new Workspace(repo).execute("memory_read", {
+      id: confirmed.id,
+    }) as unknown as Artifact;
+    assert.deepEqual(reopened.content, confirmed.content);
+    const historical = new Workspace(repo).execute("memory_read", {
+      id: conflicting.id,
+      version: conflicting.version,
+    }) as unknown as Artifact;
+    assert.deepEqual(historical.content.conflicts, before);
+  } finally {
+    repo.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
