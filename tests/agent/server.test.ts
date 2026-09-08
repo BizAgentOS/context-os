@@ -326,7 +326,11 @@ test("a user message executes tools, saves a visible artifact and survives reope
       service.server.listen(0, "127.0.0.1", resolve),
     );
     const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
-    const initial = await (await fetch(`${base}/api/bootstrap`)).json();
+    const initial = await (
+      await fetch(`${base}/api/bootstrap`, {
+        headers: { "x-dataengine-token": service.adminToken },
+      })
+    ).json();
     const denied = await fetch(`${base}/api/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -348,7 +352,11 @@ test("a user message executes tools, saves a visible artifact and survives reope
       });
     assert.equal((await send()).status, 202);
     await service.app.idle();
-    const state = await (await fetch(`${base}/api/state`)).json();
+    const state = await (
+      await fetch(`${base}/api/state`, {
+        headers: { "x-dataengine-token": service.adminToken },
+      })
+    ).json();
     assert.equal(state.task.status, "completed");
     assert.equal(state.artifacts[0].kind, "profile");
     assert.match(state.messages.at(-1).content, /已保存/);

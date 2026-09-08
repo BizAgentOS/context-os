@@ -1,10 +1,16 @@
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
-const pageLabels = { company: "企业", sources: "数据", ontology: "本体" };
+const pageLabels = {
+  company: "企业",
+  sources: "数据",
+  ontology: "本体",
+  consumption: "数据消费",
+};
 const placeholders = {
   company: "从你的企业开始…",
   sources: "告诉我资料在哪里，或上传一份文件…",
   ontology: "我们需要理解哪些业务对象？",
+  consumption: "哪些应用需要使用这些企业记忆？",
 };
 const fieldLabels = {
   "company.name": "企业名称",
@@ -29,9 +35,20 @@ const fieldLabels = {
   departments: "部门",
   description: "说明",
   status: "状态",
+  $id: "对象编号",
 };
+const accessFragment = new URLSearchParams(location.hash.slice(1));
+let initialAccess = accessFragment.get("access") || "";
+if (accessFragment.has("access")) {
+  accessFragment.delete("access");
+  history.replaceState(
+    null,
+    "",
+    `${location.pathname}${location.search}${accessFragment.size ? `#${accessFragment}` : ""}`,
+  );
+}
 const state = {
-  token: "",
+  token: initialAccess,
   currentPage: "company",
   page: "company",
   pages: [],
@@ -43,8 +60,11 @@ const state = {
   profile: null,
   sources: [],
   ontologies: [],
+  consumers: [],
+  accessLogs: [],
   pending: null,
 };
+initialAccess = "";
 const ui = {
   page: "company",
   initialized: false,
@@ -101,18 +121,17 @@ function errorMessage(message = "") {
 async function api(path, body) {
   const response = await fetch(path, {
     method: body === undefined ? "GET" : "POST",
-    headers:
-      body === undefined
-        ? {}
-        : {
-            "Content-Type": "application/json",
-            "X-DataEngine-Token": state.token,
-          },
+    headers: {
+      ...(state.token ? { "X-DataEngine-Token": state.token } : {}),
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const data = await response
     .json()
     .catch(() => ({ error: "暂时无法读取页面，请重试。" }));
+  if (response.status === 401)
+    throw new Error("请使用本机服务启动时提供的链接打开企业记忆。");
   if (!response.ok || data.error)
     throw new Error(data.error || "请求未完成，请重试。");
   return data;
@@ -229,21 +248,38 @@ function canvasFingerprint() {
     profile: state.profile && `${state.profile.id}:${state.profile.version}`,
     sources: refs(state.sources),
     ontologies: refs(state.ontologies),
+    consumers: refs(state.consumers),
+    accessLogs: ui.page === "consumption" ? state.accessLogs : [],
     pending: state.pending,
     prompt: state.prompt,
     detail: ui.detail?.key,
-    deciding: ui.page === "ontology" && (state.busy || ui.requesting),
+    deciding:
+      ["ontology", "consumption"].includes(ui.page) &&
+      (state.busy || ui.requesting),
   });
 }
 function renderCanvas(force = false) {
   const fingerprint = canvasFingerprint();
   if (!force && fingerprint === ui.canvasKey) return;
   ui.canvasKey = fingerprint;
-  if (ui.detail) return;
+  if (ui.detail) {
+    if (ui.detail.kind === "consumer") {
+      const consumer = state.consumers.find(
+        (item) => item.id === ui.detail.consumerId,
+      );
+      if (consumer) {
+        const scroll = $("#canvas").scrollTop;
+        $("#canvas").replaceChildren(renderConsumerDetail(consumer));
+        $("#canvas").scrollTop = scroll;
+      }
+    }
+    return;
+  }
   const canvas = $("#canvas");
   if (ui.page === "company") canvas.replaceChildren(renderCompany());
   else if (ui.page === "sources") canvas.replaceChildren(renderSources());
-  else canvas.replaceChildren(renderOntology());
+  else if (ui.page === "ontology") canvas.replaceChildren(renderOntology());
+  else canvas.replaceChildren(renderConsumption());
   requestAnimationFrame(drawConnections);
 }
 function emptyCanvas(fallback) {
@@ -527,6 +563,294 @@ function drawConnections() {
     text.textContent = relation.name;
     svg.append(path, text);
   }
+}
+
+const consumerStatuses = {
+  draft: "待启用",
+  active: "已启用",
+  revoked: "已停用",
+};
+function consumerName(consumer) {
+  return consumer.content.name || consumer.title || "调用方";
+}
+function renderConsumption() {
+  if (!state.consumers.length)
+    return emptyCanvas("哪些应用需要使用这些企业记忆？");
+  const section = node("section", "consumption-canvas");
+  section.append(heading("数据消费"));
+  const connections = node("div", "consumer-connections");
+  const memory = node("div", "memory-origin");
+  memory.append(
+    node("span", "memory-origin-label", "企业记忆"),
+    node("h2", "", companyName()),
+  );
+  const consumers = node("div", "consumer-list");
+  for (const consumer of state.consumers) {
+    const card = button("", "consumer-card", () => openConsumer(consumer));
+    card.dataset.consumerId = consumer.id;
+    card.dataset.status = consumer.status;
+    const title = node("div", "consumer-card-heading");
+    title.append(
+      node("h2", "", consumerName(consumer)),
+      node("span", "consumer-status", consumerStatuses[consumer.status] || ""),
+    );
+    card.append(title);
+    if (consumer.content.purpose)
+      card.append(node("p", "consumer-purpose", consumer.content.purpose));
+    card.append(
+      node(
+        "p",
+        "consumer-types",
+        (consumer.content.grants || []).map((grant) => grant.type).join(" · "),
+      ),
+    );
+    consumers.append(card);
+  }
+  connections.append(memory, consumers);
+  section.append(connections);
+  if (state.accessLogs.length) {
+    section.append(
+      node("h2", "subsection-title", "最近调用"),
+      renderAccessLogs(state.accessLogs.slice(0, 5)),
+    );
+  }
+  return section;
+}
+function renderGrants(consumer) {
+  const container = node("div", "grant-list");
+  for (const grant of consumer.content.grants || []) {
+    const row = node("section", "grant");
+    row.append(node("h3", "", grant.type));
+    const fields = node("div", "grant-fields");
+    for (const field of grant.fields || [])
+      fields.append(node("span", "", label(field)));
+    row.append(fields);
+    if (grant.relations?.length)
+      row.append(
+        node(
+          "p",
+          "grant-relations",
+          `可访问关系：${grant.relations.join("、")}`,
+        ),
+      );
+    container.append(row);
+  }
+  return container;
+}
+function consumerEndpoint(consumer) {
+  const url = new URL("/v1/objects", location.origin);
+  const type = consumer.content.grants?.[0]?.type;
+  if (type) url.searchParams.set("type", type);
+  return url.href;
+}
+function renderConsumerDetail(consumer) {
+  const section = detailFrame(
+    consumerName(consumer),
+    closeDetail,
+    "返回数据消费",
+  );
+  const title = section.querySelector(".canvas-heading > div");
+  if (consumer.content.purpose)
+    title.append(node("p", "", consumer.content.purpose));
+  const actions = node("div", "detail-heading-actions");
+  const adjust = button("调整范围", "quiet-button", () =>
+    adjustArtifact(consumer, consumerName(consumer)),
+  );
+  adjust.disabled = ui.requesting || state.busy;
+  actions.append(adjust);
+  section.querySelector(".canvas-heading").append(actions);
+  section.append(
+    node("h2", "subsection-title", "可读取的内容"),
+    renderGrants(consumer),
+    node(
+      "p",
+      "detail-note",
+      "只允许读取这里列出的对象、字段和关系。来源原文不对调用方开放。",
+    ),
+  );
+  if (consumer.status === "draft") {
+    const decision = node("div", "consumer-decision");
+    decision.append(
+      node("p", "", "确认以上范围后，这个调用方才能访问企业记忆。"),
+    );
+    const activate = button("启用访问", "primary-button", () =>
+      activateConsumer(consumer),
+    );
+    const pending =
+      state.pending?.consumerId === consumer.id &&
+      Number(state.pending.version) === consumer.version;
+    activate.disabled = ui.requesting || state.busy || !pending;
+    if (pending) decision.append(activate);
+    else
+      decision.append(
+        button("通过对话确认范围", "quiet-button", () =>
+          adjustArtifact(consumer, consumerName(consumer)),
+        ),
+      );
+    section.append(decision);
+  } else if (consumer.status === "active") {
+    const endpoint = node("section", "consumer-endpoint");
+    endpoint.append(
+      node("h2", "subsection-title", "接入方式"),
+      node(
+        "pre",
+        "request-example",
+        `GET ${consumerEndpoint(consumer)}\nAuthorization: Bearer <本调用方 API Key>`,
+      ),
+      node(
+        "p",
+        "detail-note",
+        "使用启用时保存的调用方密钥。密钥遗失时，先停用，再通过对话创建新的访问授权。",
+      ),
+    );
+    const revoke = button("停用访问", "quiet-button", () =>
+      revokeConsumer(consumer),
+    );
+    revoke.disabled = ui.requesting;
+    endpoint.append(revoke);
+    section.append(endpoint);
+  } else {
+    section.append(
+      node("p", "consumer-revoked", "访问已停用，原来的密钥不再有效。"),
+    );
+  }
+  section.append(
+    node(
+      "p",
+      "detail-note",
+      `授权依据：本体第 ${consumer.content.modelVersion} 版。新定义不会自动扩大这份授权。`,
+    ),
+    node("h2", "subsection-title", "最近调用"),
+    renderAccessLogs(
+      state.accessLogs
+        .filter((log) => log.consumerId === consumer.id)
+        .slice(0, 12),
+      false,
+    ),
+  );
+  return section;
+}
+function openConsumer(consumer) {
+  showDetail(
+    {
+      key: `consumer:${consumer.id}`,
+      kind: "consumer",
+      consumerId: consumer.id,
+    },
+    renderConsumerDetail(consumer),
+  );
+}
+function accessTime(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : new Intl.DateTimeFormat("zh-CN", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      }).format(date);
+}
+const accessReasons = {
+  ok: "请求在授权范围内完成。",
+  invalid_credential: "调用凭据无效或已停用。",
+  method_not_allowed: "只允许读取数据。",
+  unsupported_resource: "请求的入口没有开放。",
+  unsupported_parameter: "请求使用了未开放的查询方式。",
+  type_denied: "对象类型没有获得授权。",
+  identity_denied: "对象编号没有获得授权。",
+  relation_denied: "关系、目标或连接字段没有获得完整授权，或缺少起始对象编号。",
+  field_denied: "请求包含未获授权的字段。",
+  invalid_page: "分页参数需要修正。",
+  memory_unavailable: "授权对应的企业记忆暂时无法读取。",
+};
+function renderAccessLogs(logs, showConsumer = true) {
+  const list = node("div", "access-list");
+  if (!logs.length) {
+    list.append(
+      node(
+        "p",
+        "detail-note",
+        showConsumer ? "还没有真实调用。" : "最近的记录中没有该调用方的访问。",
+      ),
+    );
+    return list;
+  }
+  for (const log of logs) {
+    const item = node("details", "access-log");
+    const summary = node("summary");
+    const allowed = log.result === "allowed";
+    const consumer = state.consumers.find(
+      (entry) => entry.id === log.consumerId,
+    );
+    const identity =
+      log.consumerName ||
+      (consumer && consumerName(consumer)) ||
+      "未识别调用方";
+    const operation = log.operation === "read" ? "读取" : "未开放的操作";
+    const resource = [log.resource?.type, log.resource?.relation]
+      .filter(Boolean)
+      .join(" / ");
+    summary.append(
+      node(
+        "span",
+        "access-resource",
+        `${showConsumer ? `${identity} · ` : ""}${operation}${resource ? ` ${resource}` : ""}`,
+      ),
+      node("span", "access-result", allowed ? "允许" : "拒绝"),
+      node("time", "access-time", accessTime(log.at)),
+    );
+    item.append(summary);
+    const detail = node("div", "access-detail");
+    detail.append(
+      node(
+        "p",
+        "",
+        accessReasons[log.reason] ||
+          (allowed ? "请求在授权范围内完成。" : "请求未通过访问校验。"),
+      ),
+    );
+    if (log.model?.version)
+      detail.append(node("p", "", `本体第 ${log.model.version} 版`));
+    if (log.sourceVersions && typeof log.sourceVersions === "object") {
+      const sources = Object.entries(log.sourceVersions).map(
+        ([id, version]) => {
+          const source = state.sources.find((entry) => entry.id === id);
+          return `${source?.title || "来源资料"} · 第 ${version} 版`;
+        },
+      );
+      if (sources.length) detail.append(node("p", "", sources.join("、")));
+    }
+    item.append(detail);
+    list.append(item);
+  }
+  return list;
+}
+async function activateConsumer(consumer) {
+  await mutate(
+    "/api/consumers/activate",
+    { id: consumer.id, version: consumer.version },
+    (result) => {
+      if (result.credential?.apiKey)
+        showCredential(result.credential, consumerName(consumer));
+    },
+  );
+}
+async function revokeConsumer(consumer) {
+  await mutate("/api/consumers/revoke", {
+    id: consumer.id,
+    version: consumer.version,
+  });
+}
+function showCredential(credential, name) {
+  $("#credential-consumer").textContent =
+    `${name}现在可以按已确认的范围读取企业记忆。`;
+  $("#consumer-api-key").value = credential.apiKey;
+  $("#credential-status").textContent = "";
+  $("#credential-status").hidden = true;
+  $("#credential-dialog").showModal();
 }
 
 function closeDetail() {
@@ -1011,7 +1335,9 @@ function hasCanvasContent() {
     ? statements().length > 0
     : ui.page === "sources"
       ? state.sources.length > 0
-      : Boolean(currentOntology()?.content.types?.length);
+      : ui.page === "ontology"
+        ? Boolean(currentOntology()?.content.types?.length)
+        : state.consumers.length > 0;
 }
 function updateComposer() {
   const input = $("#message-input");
@@ -1023,6 +1349,7 @@ function updateComposer() {
   $("#send-button").disabled = blocked || !input.value.trim();
   $("#stop-button").disabled = ui.requesting;
   $("#upload-button").disabled = blocked || busy;
+  $("#upload-button").hidden = ui.page === "consumption";
   $("#composer-note").textContent = ui.uploading
     ? "正在接入资料…"
     : busy
@@ -1081,6 +1408,10 @@ async function sendMessage() {
 }
 async function uploadFile(file) {
   if (!file || ui.requesting || ui.uploading || state.busy) return;
+  if (ui.page === "consumption") {
+    errorMessage("请返回数据页接入资料。");
+    return;
+  }
   if (!/\.(csv|md|txt)$/i.test(file.name)) {
     errorMessage("请先上传 CSV、Markdown 或 TXT 文件。");
     return;
@@ -1200,6 +1531,27 @@ $("#close-settings").addEventListener("click", () =>
 $("#settings-dialog").addEventListener("close", () => {
   $("#api-key-input").value = "";
 });
+for (const selector of ["#close-credential", "#finish-credential"])
+  $(selector).addEventListener("click", () => $("#credential-dialog").close());
+$("#credential-dialog").addEventListener("close", () => {
+  $("#consumer-api-key").value = "";
+  $("#credential-consumer").textContent = "";
+  $("#credential-status").textContent = "";
+});
+$("#copy-credential").addEventListener("click", async () => {
+  const status = $("#credential-status");
+  try {
+    await navigator.clipboard.writeText($("#consumer-api-key").value);
+    if (!$("#credential-dialog").open) return;
+    status.textContent = "密钥已复制。";
+  } catch {
+    if (!$("#credential-dialog").open) return;
+    $("#consumer-api-key").focus();
+    $("#consumer-api-key").select();
+    status.textContent = "请复制选中的密钥。";
+  }
+  status.hidden = false;
+});
 $("#settings-form").addEventListener("submit", (event) => {
   event.preventDefault();
   saveSettings();
@@ -1221,7 +1573,8 @@ window.addEventListener("dragenter", (event) => {
   if (!event.dataTransfer?.types.includes("Files")) return;
   event.preventDefault();
   dragDepth += 1;
-  if (!state.busy && !ui.requesting) $("#drop-overlay").hidden = false;
+  if (!state.busy && !ui.requesting && ui.page !== "consumption")
+    $("#drop-overlay").hidden = false;
 });
 window.addEventListener("dragover", (event) => {
   if (event.dataTransfer?.types.includes("Files")) event.preventDefault();

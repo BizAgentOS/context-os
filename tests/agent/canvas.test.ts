@@ -38,7 +38,11 @@ test("a failed message save can be retried with the same id and then really exec
       service.server.listen(0, "127.0.0.1", resolve),
     );
     const url = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
-    const bootstrap = await (await fetch(`${url}/api/canvas/bootstrap`)).json();
+    const bootstrap = await (
+      await fetch(`${url}/api/canvas/bootstrap`, {
+        headers: { "x-dataengine-token": service.adminToken },
+      })
+    ).json();
     const request = {
       method: "POST",
       headers: {
@@ -54,13 +58,21 @@ test("a failed message save can be retried with the same id and then really exec
     const failed = await fetch(`${url}/api/canvas/message`, request);
     assert.equal(failed.status, 400);
     assert.equal(runs, 0);
-    const beforeRetry = await (await fetch(`${url}/api/canvas`)).json();
+    const beforeRetry = await (
+      await fetch(`${url}/api/canvas`, {
+        headers: { "x-dataengine-token": service.adminToken },
+      })
+    ).json();
     assert.equal(beforeRetry.messages.length, 0);
     fault.exec("DROP TRIGGER reject_message_once");
     const retried = await fetch(`${url}/api/canvas/message`, request);
     assert.equal(retried.status, 202);
     await service.app.idle();
-    const afterRetry = await (await fetch(`${url}/api/canvas`)).json();
+    const afterRetry = await (
+      await fetch(`${url}/api/canvas`, {
+        headers: { "x-dataengine-token": service.adminToken },
+      })
+    ).json();
     assert.equal(runs, 1);
     assert.equal(
       afterRetry.messages.filter(
@@ -147,7 +159,9 @@ test("the canvas creates a company from real user facts and advances only after 
   };
   try {
     let url = await start();
-    const initialResponse = await fetch(`${url}/api/canvas/bootstrap`);
+    const initialResponse = await fetch(`${url}/api/canvas/bootstrap`, {
+      headers: { "x-dataengine-token": service.adminToken },
+    });
     assert.equal(initialResponse.status, 200);
     const initial = await initialResponse.json();
     assert.equal(initial.currentPage, "company");
@@ -174,12 +188,20 @@ test("the canvas creates a company from real user facts and advances only after 
       }),
     });
     await savedPromise;
-    const during = await (await fetch(`${url}/api/canvas`)).json();
+    const during = await (
+      await fetch(`${url}/api/canvas`, {
+        headers: { "x-dataengine-token": service.adminToken },
+      })
+    ).json();
     assert.equal(during.currentPage, "company");
     assert.match(JSON.stringify(during.profile), /澄川热力/);
     finish();
     await service.app.idle();
-    const after = await (await fetch(`${url}/api/canvas`)).json();
+    const after = await (
+      await fetch(`${url}/api/canvas`, {
+        headers: { "x-dataengine-token": service.adminToken },
+      })
+    ).json();
     assert.equal(after.currentPage, "sources");
     assert.equal(after.page, "sources");
     assert.equal(after.messages.length, 0);
@@ -192,7 +214,11 @@ test("the canvas creates a company from real user facts and advances only after 
     await service.close();
     service = await createServer({ directory, driver });
     url = await start();
-    const reopened = await (await fetch(`${url}/api/canvas/bootstrap`)).json();
+    const reopened = await (
+      await fetch(`${url}/api/canvas/bootstrap`, {
+        headers: { "x-dataengine-token": service.adminToken },
+      })
+    ).json();
     assert.equal(reopened.currentPage, "sources");
     assert.match(JSON.stringify(reopened.profile), /居民供热/);
     assert.equal(requests.length, 1);

@@ -1,8 +1,9 @@
 import { createServer as httpServer, type IncomingMessage } from "node:http";
 import { readFile } from "node:fs/promises";
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { join, resolve } from "node:path";
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { AgentApplication } from "./app.ts";
 import type { AgentDriver } from "./runtime.ts";
 
@@ -35,11 +36,34 @@ async function readBody(
 export async function createServer(
   options: { directory?: string; driver?: AgentDriver } = {},
 ) {
-  const app = new AgentApplication(
-    options.directory ?? resolve("local-state/agent"),
-    options.driver,
-  );
-  const token = randomBytes(32).toString("hex");
+  const directory = options.directory ?? resolve("local-state/agent");
+  const app = new AgentApplication(directory, options.driver);
+  const tokenFile = join(directory, "admin-token");
+  try {
+    writeFileSync(
+      tokenFile,
+      `de_admin_${randomBytes(32).toString("base64url")}`,
+      { flag: "wx", mode: 0o600 },
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+      await app.close();
+      throw error;
+    }
+  }
+  chmodSync(tokenFile, 0o600);
+  const token = readFileSync(tokenFile, "utf8").trim();
+  if (!/^de_admin_[A-Za-z0-9_-]{43}$/.test(token)) {
+    await app.close();
+    throw new Error("管理员凭据文件无效");
+  }
+  const cookieName = `dataengine_admin_${createHash("sha256").update(token).digest("hex").slice(0, 16)}`;
+  const matchesToken = (value: unknown) => {
+    if (typeof value !== "string") return false;
+    const bytes = Buffer.from(value);
+    const expected = Buffer.from(token);
+    return bytes.length === expected.length && timingSafeEqual(bytes, expected);
+  };
   let closed = false;
   let mutation = Promise.resolve<unknown>(undefined);
   const queue = <T>(operation: () => Promise<T>) => {
@@ -67,6 +91,49 @@ export async function createServer(
         return;
       }
       const url = new URL(request.url ?? "/", `http://${host}`);
+      if (url.pathname === "/v1" || url.pathname.startsWith("/v1/")) {
+        const result = app.consumption.handle({
+          method: request.method ?? "",
+          path: url.pathname,
+          query: url.searchParams,
+          authorization: request.headers.authorization,
+        });
+        send(result.status, result.body);
+        return;
+      }
+      if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
+        const supplied = request.headers["x-dataengine-token"];
+        const cookie = request.headers.cookie
+          ?.split(";")
+          .map((part) => part.trim())
+          .find((part) => part.startsWith(`${cookieName}=`))
+          ?.slice(cookieName.length + 1);
+        const origin = request.headers.origin;
+        const authorized =
+          supplied !== undefined
+            ? matchesToken(supplied)
+            : request.method === "GET" && matchesToken(cookie);
+        // Consumer credentials never establish a management session, even if a browser also has an admin cookie.
+        if (
+          !authorized ||
+          request.headers.authorization !== undefined ||
+          (origin && origin !== `http://${host}`)
+        ) {
+          send(403, {
+            error: "需要管理员入口，请使用本机启动时提供的管理链接",
+          });
+          return;
+        }
+        if (
+          request.method === "GET" &&
+          (url.pathname === "/api/bootstrap" ||
+            url.pathname === "/api/canvas/bootstrap")
+        )
+          response.setHeader(
+            "Set-Cookie",
+            `${cookieName}=${token}; HttpOnly; SameSite=Strict; Path=/api`,
+          );
+      }
       if (request.method === "GET") {
         if (url.pathname === "/api/canvas/bootstrap") {
           send(200, { token, ...app.canvasState() });
@@ -82,6 +149,15 @@ export async function createServer(
         }
         if (url.pathname === "/api/state") {
           send(200, app.state(url.searchParams.get("taskId") ?? undefined));
+          return;
+        }
+        if (url.pathname === "/api/consumers") {
+          send(200, {
+            consumers: app.consumption.list(),
+            audit: app.consumption.logs(
+              url.searchParams.get("consumerId") ?? undefined,
+            ),
+          });
           return;
         }
         if (url.pathname === "/api/objects") {
@@ -123,20 +199,19 @@ export async function createServer(
         send(405, { error: "不支持的请求方式" });
         return;
       }
-      const provided = request.headers["x-dataengine-token"];
-      const origin = request.headers.origin;
-      if (
-        typeof provided !== "string" ||
-        provided.length !== token.length ||
-        !timingSafeEqual(Buffer.from(provided), Buffer.from(token)) ||
-        (origin && origin !== `http://${host}`)
-      ) {
-        send(403, { error: "会话已失效，请刷新页面" });
+      if (!url.pathname.startsWith("/api/")) {
+        send(404, { error: "接口不存在" });
         return;
       }
       const body = await readBody(request);
       let result: unknown;
       switch (url.pathname) {
+        case "/api/consumers/activate":
+          result = await queue(() => app.activateConsumer(body));
+          break;
+        case "/api/consumers/revoke":
+          result = await app.revokeConsumer(body);
+          break;
         case "/api/canvas/message":
           result = await queue(() => app.canvasMessage(body));
           send(202, result);
@@ -198,6 +273,7 @@ export async function createServer(
   return {
     app,
     server,
+    adminToken: token,
     async close() {
       if (closed) return;
       closed = true;
@@ -218,7 +294,9 @@ if (
     directory: process.env.DATAENGINE_STATE_DIR,
   });
   service.server.listen(port, "127.0.0.1", () => {
-    console.log(`DataEngine Agent: http://127.0.0.1:${port}`);
+    console.log(
+      `DataEngine: http://127.0.0.1:${port}/#access=${service.adminToken}`,
+    );
   });
   const shutdown = () => {
     void service.close().then(() => process.exit(0));

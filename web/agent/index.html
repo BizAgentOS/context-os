@@ -59,6 +59,9 @@
           </button>
           <button type="button" data-page="sources" disabled>数据</button>
           <button type="button" data-page="ontology" disabled>本体</button>
+          <button type="button" data-page="consumption" disabled>
+            数据消费
+          </button>
         </nav>
         <button
           class="icon-button settings-button"
@@ -199,6 +202,51 @@
           </button>
         </div>
       </form>
+    </dialog>
+
+    <dialog
+      id="credential-dialog"
+      class="settings-dialog credential-dialog"
+      aria-labelledby="credential-title"
+    >
+      <div class="dialog-heading">
+        <h2 id="credential-title">访问已启用</h2>
+        <button
+          class="icon-button"
+          id="close-credential"
+          type="button"
+          aria-label="关闭凭据交付"
+        >
+          <svg class="icon" aria-hidden="true"><use href="#i-close" /></svg>
+        </button>
+      </div>
+      <p class="credential-intro" id="credential-consumer"></p>
+      <label for="consumer-api-key">调用方 API Key</label>
+      <input
+        id="consumer-api-key"
+        type="text"
+        readonly
+        autocomplete="off"
+        autocapitalize="off"
+        spellcheck="false"
+      />
+      <p class="field-note">
+        只在这里显示一次。请保存到调用应用的凭据配置中，关闭后无法再次查看。
+      </p>
+      <p
+        class="settings-status"
+        id="credential-status"
+        role="status"
+        hidden
+      ></p>
+      <div class="dialog-actions">
+        <button class="quiet-button" id="copy-credential" type="button">
+          复制密钥
+        </button>
+        <button class="primary-button" id="finish-credential" type="button">
+          已保存
+        </button>
+      </div>
     </dialog>
   </body>
 </html>

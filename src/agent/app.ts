@@ -5,6 +5,7 @@ import { join, basename } from "node:path";
 import { MemoryStore } from "./memory.ts";
 import { Workspace, domainTools } from "./workspace.ts";
 import { ObjectView } from "./domain-objects.ts";
+import { ConsumptionService, consumptionTools } from "./consumption.ts";
 import {
   KodaXDriver,
   providers,
@@ -27,11 +28,17 @@ import type {
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const system = readFileSync(join(ROOT, "config/agent/system.md"), "utf8");
 const canvasSystem = readFileSync(join(ROOT, "config/agent/canvas.md"), "utf8");
-const canvasPages: CanvasPage[] = ["company", "sources", "ontology"];
+const canvasPages: CanvasPage[] = [
+  "company",
+  "sources",
+  "ontology",
+  "consumption",
+];
 const canvasPrompts: Record<CanvasPage, string> = {
   company: "你的企业叫什么？",
   sources: "上传第一份企业资料。",
   ontology: "从哪些业务对象开始？",
+  consumption: "哪些应用需要使用这些企业记忆？",
 };
 const pageCompleteTool: DomainTool = {
   name: "page_complete",
@@ -68,6 +75,7 @@ const controlTools: DomainTool[] = [
         question: { type: "string" },
         reason: { type: "string" },
         candidateId: { type: "string" },
+        consumerId: { type: "string" },
         version: { type: "integer" },
       },
       ["question", "reason"],
@@ -90,6 +98,7 @@ const controlTools: DomainTool[] = [
 
 export class AgentApplication {
   readonly memory: MemoryStore;
+  readonly consumption: ConsumptionService;
   readonly driver: AgentDriver;
   private actualDriver?: KodaXDriver;
   private active?: { context: WriteContext; promise: Promise<void> };
@@ -100,6 +109,7 @@ export class AgentApplication {
 
   constructor(directory: string, driver?: AgentDriver) {
     this.memory = new MemoryStore(directory);
+    this.consumption = new ConsumptionService(directory, this.memory);
     const saved = this.memory.getSettings();
     const provider = (
       typeof saved.provider === "string" && saved.provider in providers
@@ -143,7 +153,18 @@ export class AgentApplication {
 
   private canvasProgress(): CanvasProgress {
     const saved = this.memory.getCanvas();
-    if (saved) return saved;
+    if (saved) {
+      const adopted = this.memory
+        .listArtifacts("ontology")
+        .some((a) => a.status === "adopted");
+      if (adopted && !saved.reached.includes("consumption")) {
+        saved.reached = [...new Set([...saved.reached, ...canvasPages])];
+        for (const id of ["company", "sources", "ontology"] as CanvasPage[])
+          if (!saved.completed.includes(id)) saved.completed.push(id);
+        this.memory.saveCanvas(saved);
+      }
+      return saved;
+    }
     // Existing spaces keep their saved memory; the new canvas does not reset them.
     const completed: CanvasPage[] = [];
     const hasModel = this.memory.listArtifacts("ontology").length > 0;
@@ -158,7 +179,12 @@ export class AgentApplication {
     const progress: CanvasProgress = {
       currentPage,
       completed,
-      reached: canvasPages.slice(0, canvasPages.indexOf(currentPage) + 1),
+      reached: canvasPages.slice(
+        0,
+        completed.includes("ontology")
+          ? 4
+          : canvasPages.indexOf(currentPage) + 1,
+      ),
       taskIds: {},
     };
     this.memory.saveCanvas(progress);
@@ -230,6 +256,7 @@ export class AgentApplication {
           company: "建立企业信息",
           sources: "接入企业资料",
           ontology: "建立本体与对象",
+          consumption: "管理企业记忆消费",
         }[page],
       ).id;
       progress.taskIds[page] = taskId;
@@ -248,6 +275,7 @@ export class AgentApplication {
     const profile = this.memory.listArtifacts("profile")[0] ?? null;
     const sources = this.memory.listArtifacts("source");
     const ontologies = this.memory.listArtifacts("ontology");
+    const consumers = this.consumption.list();
     const prompt =
       page === "company" && this.companyReady()
         ? "有哪些企业信息需要调整？"
@@ -255,7 +283,9 @@ export class AgentApplication {
           ? "还需要接入哪些资料？"
           : page === "ontology" && ontologies.length
             ? "想查看或调整哪些对象？"
-            : canvasPrompts[page];
+            : page === "consumption" && consumers.length
+              ? "哪些访问范围需要调整？"
+              : canvasPrompts[page];
     return {
       currentPage: progress.currentPage,
       page,
@@ -281,9 +311,14 @@ export class AgentApplication {
       profile,
       sources,
       ontologies,
+      consumers,
+      accessLogs: page === "consumption" ? this.consumption.logs() : [],
       pending: pending
         ? {
             question: pending.question,
+            ...(pending.consumerId
+              ? { consumerId: pending.consumerId, version: pending.version }
+              : {}),
             ...(pending.candidateId
               ? { candidateId: pending.candidateId, version: pending.version }
               : {}),
@@ -331,7 +366,15 @@ export class AgentApplication {
       typeof body.focusId === "string"
         ? this.memory.getArtifact(body.focusId, focusVersion)
         : undefined;
-    if (focus && !["profile", "source", "ontology"].includes(focus.kind))
+    if (
+      focus &&
+      ![
+        "profile",
+        "source",
+        "ontology",
+        ...(page === "consumption" ? ["consumer"] : []),
+      ].includes(focus.kind)
+    )
       throw new Error("当前页面不支持此内容");
     const task = this.canvasTask(page);
     if (this.memory.hasMessageReceipt(messageId, task.id, "user", text))
@@ -387,6 +430,7 @@ export class AgentApplication {
   async canvasUpload(body: Record<string, unknown>) {
     if (this.modelTest) throw new Error("正在测试连接，请稍后上传");
     const page = this.canvasPage(body.page);
+    if (page === "consumption") throw new Error("请在数据页接入资料。");
     if (page !== this.canvasProgress().currentPage)
       throw new Error("页面已变化，请回到当前页面后继续");
     await this.stopActive("正在接入资料。");
@@ -459,11 +503,66 @@ export class AgentApplication {
     }
   }
 
+  async activateConsumer(body: Record<string, unknown>) {
+    if (this.canvasProgress().currentPage !== "consumption")
+      throw new Error("请在数据消费页启用访问");
+    const id = string(body.id, "调用方");
+    const version = Number(body.version);
+    const task = this.canvasTask("consumption");
+    if (task.pending?.consumerId !== id || task.pending.version !== version)
+      throw new Error("该授权不对应当前待确认版本，请查看最新范围");
+    await this.stopActive("正在保存你的授权。");
+    const result = this.consumption.activate(id, version);
+    this.memory.attachArtifact(task.id, result.consumer);
+    this.memory.dismissPending(task.id);
+    this.memory.addMessage(
+      task.id,
+      "assistant",
+      "已启用这组访问范围。接入凭据在单独的窗口中交付。",
+    );
+    this.memory.trimMessages(task.id);
+    const progress = this.canvasProgress();
+    if (!progress.completed.includes("consumption"))
+      progress.completed.push("consumption");
+    this.memory.saveCanvas(progress);
+    return {
+      ...this.canvasState("consumption"),
+      credential: {
+        consumerId: result.consumer.id,
+        apiKey: result.apiKey,
+        endpoint: "/v1/objects",
+      },
+    };
+  }
+
+  async revokeConsumer(body: Record<string, unknown>) {
+    if (this.canvasProgress().currentPage !== "consumption")
+      throw new Error("请在数据消费页停用访问");
+    const id = string(body.id, "调用方");
+    const version = Number(body.version);
+    const consumer = this.consumption.revoke(id, version);
+    // Access is revoked before contacting the model. A stalled provider must
+    // never delay an owner's decision to stop data access.
+    void this.stopActive("访问已停用，正在结束当前对话。").catch(() => {});
+    const task = this.canvasTask("consumption");
+    this.memory.attachArtifact(task.id, consumer);
+    if (task.pending?.consumerId === id) this.memory.dismissPending(task.id);
+    this.memory.addMessage(
+      task.id,
+      "assistant",
+      "该调用方已停用，下一次 API 请求会被拒绝。",
+    );
+    this.memory.trimMessages(task.id);
+    return this.canvasState("consumption");
+  }
+
   private canvasWorkspace(context: WriteContext, page: CanvasPage): Workspace {
     const kinds =
-      page === "ontology"
-        ? ["profile", "source", "ontology"]
-        : ["profile", "source"];
+      page === "consumption"
+        ? ["profile", "ontology", "consumer"]
+        : page === "ontology"
+          ? ["profile", "source", "ontology"]
+          : ["profile", "source"];
     const repository: Repository = {
       listArtifacts: (kind) =>
         this.memory.listArtifacts(kind).filter((a) => kinds.includes(a.kind)),
@@ -631,14 +730,14 @@ export class AgentApplication {
             [
               "workspace_overview",
               "memory_read",
-              "profile_update",
+              ...(page !== "consumption" ? ["profile_update"] : []),
               ...(page === "ontology"
                 ? ["ontology_propose", "ontology_preview", "object_execute"]
                 : []),
             ].includes(tool.name),
           ),
           ...controlTools.filter((tool) => tool.name === "task_ask"),
-          pageCompleteTool,
+          ...(page === "consumption" ? consumptionTools : [pageCompleteTool]),
         ]
       : [...domainTools, ...controlTools];
     let pageCompleted = false;
@@ -649,7 +748,7 @@ export class AgentApplication {
     let writeSequence = 0;
     const startClosing = () => {
       closingTimer ??= setTimeout(() => {
-        void this.driver.stop();
+        void this.driver.stop().catch(() => {});
       }, 15_000);
     };
     try {
@@ -670,6 +769,14 @@ export class AgentApplication {
                 },
               }),
           enterprise: workspace.overview(),
+          ...(page === "consumption"
+            ? {
+                consumption: {
+                  consumers: this.consumption.list(),
+                  recentAccess: this.consumption.logs(undefined, 10),
+                },
+              }
+            : {}),
           focus: focused
             ? {
                 id: focused.id,
@@ -702,7 +809,7 @@ export class AgentApplication {
           try {
             this.memory.assertWritable(context);
           } catch (error) {
-            void this.driver.stop();
+            void this.driver.stop().catch(() => {});
             throw error;
           }
           if (page && !tools.some((tool) => tool.name === name))
@@ -782,6 +889,23 @@ export class AgentApplication {
               pending.candidateId = candidate.id;
               pending.version = candidate.version;
             }
+            if (args.consumerId) {
+              if (page !== "consumption" || args.candidateId)
+                throw new Error("请在数据消费页确认访问范围");
+              const consumer = this.memory.getArtifact(
+                string(args.consumerId, "调用方"),
+                Number(args.version),
+              );
+              if (
+                consumer.kind !== "consumer" ||
+                consumer.status !== "draft" ||
+                this.memory.getArtifact(consumer.id).version !==
+                  consumer.version
+              )
+                throw new Error("请先展示最新的访问范围草稿");
+              pending.consumerId = consumer.id;
+              pending.version = consumer.version;
+            }
             const result = this.memory.ask(context, pending);
             startClosing();
             return serializable(result);
@@ -803,7 +927,7 @@ export class AgentApplication {
           const signature = createHash("sha256")
             .update(name + JSON.stringify(args))
             .digest("hex");
-          const mutates = domainTools.find(
+          const mutates = [...domainTools, ...consumptionTools].find(
             (tool) => tool.name === name,
           )?.mutates;
           const operationId = mutates
@@ -811,7 +935,12 @@ export class AgentApplication {
               ? lastWrite.operationId
               : `write-${++writeSequence}`
             : undefined;
-          const result = await workspace.execute(name, args, operationId);
+          const result =
+            name === "consumer_propose" && page === "consumption"
+              ? serializable(
+                  this.consumption.propose(args, context, operationId),
+                )
+              : await workspace.execute(name, args, operationId);
           if (page && name === "memory_read" && typeof args.id === "string") {
             const artifact = result as unknown as Artifact;
             if (
@@ -1137,6 +1266,7 @@ export class AgentApplication {
   async close() {
     await this.stopActive();
     await this.driver.close();
+    this.consumption.close();
     this.memory.close();
   }
 }

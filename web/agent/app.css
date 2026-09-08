@@ -443,6 +443,7 @@ p {
 }
 .sources-canvas,
 .ontology-canvas,
+.consumption-canvas,
 .detail-canvas {
   animation: arrive 0.35s ease both;
 }
@@ -895,6 +896,236 @@ tr.highlight td {
   color: #555;
   font-size: 22px;
 }
+.consumer-connections {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.5fr);
+  align-items: center;
+  column-gap: 72px;
+  max-width: 850px;
+  margin: 38px auto 45px;
+}
+.memory-origin {
+  position: relative;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 25px;
+}
+.memory-origin::after {
+  content: "";
+  position: absolute;
+  right: -37px;
+  top: 50%;
+  width: 36px;
+  border-top: 1px solid #d7d7d7;
+}
+.memory-origin-label {
+  display: block;
+  color: #999;
+  font-size: 11px;
+  margin-bottom: 13px;
+}
+.memory-origin h2 {
+  font-size: 20px;
+  line-height: 1.6;
+  font-weight: 450;
+  letter-spacing: -0.6px;
+  overflow-wrap: anywhere;
+}
+.consumer-list {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.consumer-list::before {
+  content: "";
+  position: absolute;
+  left: -36px;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid #d7d7d7;
+}
+.consumer-card {
+  position: relative;
+  text-align: left;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 20px 23px;
+  min-width: 0;
+}
+.consumer-card::before {
+  content: "";
+  position: absolute;
+  left: -37px;
+  top: 50%;
+  width: 36px;
+  border-top: 1px solid #d7d7d7;
+}
+.consumer-card:hover {
+  border-color: #929292;
+  background: #fdfdfd;
+}
+.consumer-card[data-status="draft"] {
+  border-style: dashed;
+}
+.consumer-card[data-status="revoked"] {
+  color: #888;
+  border-color: #eee;
+}
+.consumer-card-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+.consumer-card h2 {
+  font-size: 15px;
+  line-height: 1.65;
+  font-weight: 480;
+  overflow-wrap: anywhere;
+}
+.consumer-status {
+  font-size: 10px;
+  color: #999;
+  white-space: nowrap;
+}
+.consumer-purpose {
+  color: #929292;
+  font-size: 11px;
+  line-height: 1.8;
+  margin-top: 9px;
+  overflow-wrap: anywhere;
+}
+.consumer-types {
+  font-size: 11px;
+  line-height: 1.8;
+  color: #656565;
+  margin-top: 14px;
+  overflow-wrap: anywhere;
+}
+.grant-list {
+  border-top: 1px solid var(--line);
+}
+.grant {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.4fr) minmax(0, 1fr);
+  gap: 10px 25px;
+  border-bottom: 1px solid var(--line);
+  padding: 20px 0;
+}
+.grant h3 {
+  font-size: 13px;
+  line-height: 1.8;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.grant-fields {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  font-size: 12px;
+  color: #646464;
+  line-height: 1.9;
+  overflow-wrap: anywhere;
+}
+.grant-relations {
+  grid-column: 2;
+  font-size: 11px;
+  line-height: 1.8;
+  color: #929292;
+  overflow-wrap: anywhere;
+}
+.consumer-decision {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 24px 0 8px;
+}
+.consumer-decision p,
+.consumer-revoked {
+  color: #666;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.consumer-revoked {
+  margin-top: 24px;
+}
+.request-example {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  line-height: 2;
+  border: 1px solid #e8e8e8;
+  border-radius: 5px;
+  background: #fcfcfc;
+  color: #666;
+  padding: 16px 18px;
+  margin: 0;
+}
+.consumer-endpoint > .quiet-button {
+  margin-top: 15px;
+}
+.access-list {
+  border-top: 1px solid var(--line);
+}
+.access-log {
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  line-height: 1.8;
+}
+.access-log summary {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 14px 0;
+  cursor: pointer;
+  list-style: none;
+}
+.access-log summary::-webkit-details-marker {
+  display: none;
+}
+.access-log summary:focus-visible {
+  outline: 2px solid #292929;
+  outline-offset: 3px;
+}
+.access-resource {
+  flex: 1;
+  color: #555;
+  overflow-wrap: anywhere;
+}
+.access-result {
+  color: #777;
+  white-space: nowrap;
+}
+.access-time {
+  font-size: 10px;
+  color: #aaa;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.access-detail {
+  color: #929292;
+  font-size: 10px;
+  line-height: 1.9;
+  padding: 0 0 15px;
+  overflow-wrap: anywhere;
+}
+.credential-dialog {
+  width: min(480px, calc(100vw - 36px));
+}
+.credential-intro {
+  color: #777;
+  font-size: 12px;
+  line-height: 1.9;
+  overflow-wrap: anywhere;
+}
+#consumer-api-key {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+}
 @keyframes arrive {
   from {
     opacity: 0;
@@ -990,7 +1221,7 @@ tr.highlight td {
     letter-spacing: -0.5px;
   }
   .page-nav {
-    gap: 21px;
+    gap: 16px;
   }
   .page-nav button {
     font-size: 11px;
@@ -1103,6 +1334,69 @@ tr.highlight td {
   }
   .ontology-graph {
     margin: 0;
+  }
+  .consumer-connections {
+    grid-template-columns: minmax(0, 1fr);
+    margin: 25px 0;
+    gap: 25px;
+  }
+  .memory-origin {
+    padding: 18px 21px;
+  }
+  .memory-origin::after {
+    top: 100%;
+    left: 23px;
+    width: 0;
+    height: 26px;
+    border-left: 1px solid #d7d7d7;
+  }
+  .consumer-list {
+    padding-left: 43px;
+  }
+  .consumer-list::before {
+    left: 23px;
+  }
+  .consumer-card::before {
+    left: -21px;
+    width: 20px;
+  }
+  .consumer-card {
+    padding: 16px 18px;
+  }
+  .consumer-card h2 {
+    font-size: 13px;
+  }
+  .grant {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 17px 0;
+  }
+  .grant-relations {
+    grid-column: 1;
+  }
+  .consumer-decision {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .access-log summary {
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .access-time {
+    text-align: right;
+    width: 100%;
+  }
+}
+@media (max-width: 380px) {
+  .topbar {
+    padding: 0 15px;
+  }
+  .wordmark {
+    font-size: 12px;
+  }
+  .page-nav {
+    gap: 12px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

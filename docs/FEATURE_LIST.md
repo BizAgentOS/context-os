@@ -15,7 +15,7 @@ Last Updated: 2026-09-08
 
 | Version | Status | Planned | InProgress | Completed | Progress |
 |---|---|---:|---:|---:|---:|
-| v0.1.0 | InProgress | 3 | 2 | 2 | 2/7 |
+| v0.1.0 | InProgress | 2 | 2 | 3 | 3/7 |
 
 ## Feature Index
 
@@ -27,9 +27,9 @@ Last Updated: 2026-09-08
 | 004 | 本体演变与结果恢复 | New | High | Planned | v0.1.0 | 003 | [设计](features/v0.1.0.md#feature-004) |
 | 005 | 简单本地工作台 | New | High | InProgress | v0.1.0 | 001；维护页依赖 004 | [设计](features/v0.1.0.md#feature-005) |
 | 006 | 对照实验与规模验证 | Internal | High | Planned | v0.1.0 | 001、002、004 | [设计](features/v0.1.0.md#feature-006) |
-| 007 | 数据消费与访问治理 | New | High | Planned | v0.1.0 | 复用已实现的 003/005 | [设计](features/v0.1.0.md#feature-007) |
+| 007 | 数据消费与访问治理 | New | High | Completed | v0.1.0 | 复用已实现的 003/005 | [设计](features/v0.1.0.md#feature-007) |
 
-此表保留已有能力与票的实际完成记录，计数不代表新 MVP 体验的完成比例。首轮按 [MVP 完成条件](MVP.md)验收，不等待全部六项扩展能力。未完成票的依赖将在主 Agent 体验设计后重排；006、完整外部消费和完整回归/恢复保留为后续工作，不因范围调整标为完成。
+此表保留已有能力与票的实际完成记录，计数不代表新 MVP 体验的完成比例。首轮按 [MVP 完成条件](MVP.md)验收，不等待全部后续扩展能力。未完成票的依赖将在主 Agent 体验设计后重排；006、完整外部 MCP 消费和完整回归/恢复保留为后续工作，不因范围调整标为完成。
 
 ## Feature Details
 
@@ -95,21 +95,21 @@ Last Updated: 2026-09-08
 
 ### 007: 数据消费与访问治理
 
-- **Status:** Planned
+- **Status:** Completed
 - **Category / Priority:** New / High
 - **Planned / Released:** v0.1.0 / —
-- **Created / Started / Completed:** 2026-09-08 / — / —
-- **Description:** 用户新增第四页，负责谁通过 API 消费企业记忆、可读范围与真实访问记录。拟以两个实验调用方验证只读对象/字段授权、拒绝越权、撤销及第四页交互；本轮仅沉淀设计，尚未实现消费权限或新增页面。
+- **Created / Started / Completed:** 2026-09-08 / 2026-09-08 / 2026-09-08
+- **Description:** T007-01/02 实现完成：采用本体后解锁第四页，对话提出调用方及字段/关系范围，用户确认后使用独立凭据访问只读 API；可查看真实记录并停用。类型检查与 35 项 Agent、22 项 Python 测试通过；真实模型、浏览器及两个独立客户端已验证不同范围、允许/拒绝、停用与重启，结果见[运行记录](experiment/CONSUMPTION.md)。
 - **Blocked by:** 复用 T003-02/04 与 T005-04（已实现）；不等待完整外部 MCP 或企业 IAM。
 - **Design:** [FEATURE_007](features/v0.1.0.md#feature-007)；[第四页设计](DATA_CONSUMPTION_DESIGN.md)。
 
 ## Summary
 
 - Total: 7
-- Planned: 3
+- Planned: 2
 - InProgress: 2
-- Completed: 2
+- Completed: 3
 - New: 6；Internal: 1；High: 7。
-- **当前：按用户手绘与产品定位实现[企业记忆画布](CANVAS_DESIGN.md)，T003-04 / T005-04 已完成，验证见[画布运行记录](experiment/CANVAS.md)。既有 KodaX 与企业记忆能力复用；运行前端已有企业、数据、本体与对象三页；新增第四页“数据消费与访问治理”为 FEATURE_007，Planned。四页目标分别解决企业是什么、接入什么、如何组织本体、谁消费记忆。继续保持无任务/历史聊天/报告与更新页。旧完成记录保留，T004/T006 的扩展能力继续延后。**
+- **当前：按用户手绘与产品定位实现[企业记忆画布](CANVAS_DESIGN.md)，T003-04 / T005-04 已完成，验证见[画布运行记录](experiment/CANVAS.md)。既有 KodaX 与企业记忆能力复用；运行前端已有企业、数据、本体与对象、数据消费四页；第四页已通过类型检查、35 项 Agent 测试、22 项 Python 测试及真实消费链验收，FEATURE_007 已完成，见[消费链记录](experiment/CONSUMPTION.md)。四页目标分别解决企业是什么、接入什么、如何组织本体、谁消费记忆。继续保持无任务/历史聊天/报告与更新页。旧完成记录保留，T004/T006 的扩展能力继续延后。**
 
 项目初始化和开发文档已完成，记录在 [CHANGELOG](CHANGELOG.md)；它们不计入产品功能完成数。功能状态在本文维护，具体票的完成状态在对应设计块维护。

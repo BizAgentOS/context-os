@@ -6,7 +6,7 @@ export type Json =
   | Json[]
   | { [key: string]: Json };
 export type Data = { [key: string]: Json };
-export type CanvasPage = "company" | "sources" | "ontology";
+export type CanvasPage = "company" | "sources" | "ontology" | "consumption";
 export interface CanvasProgress {
   currentPage: CanvasPage;
   reached: CanvasPage[];
