@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DataEngine · 企业记忆引擎 · 产品说明</title>
+<style>
+@page { size: A4 portrait; margin: 0; }
+:root { --ink:#17191b; --body:#34383a; --muted:#686e72; --line:#d8dcde; --soft:#f3f4f4; }
+* { box-sizing:border-box; }
+html, body { margin:0; padding:0; background:#e8e9e9; color:var(--ink); font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",Arial,sans-serif; -webkit-font-smoothing:antialiased; }
+body { display:flex; justify-content:center; }
+.sheet { width:210mm; height:297mm; padding:11mm 14mm 10mm; background:#fff; display:flex; flex-direction:column; }
+.sheet > * { flex-shrink:0; }
+.topline { display:flex; justify-content:space-between; align-items:center; padding-bottom:3mm; border-bottom:.45mm solid var(--ink); }
+.brand { font-size:12pt; font-weight:750; letter-spacing:-.04em; }
+.meta { font-size:8pt; color:var(--muted); }
+.hero { padding:5mm 0 3.2mm; }
+h1 { font-size:27pt; line-height:1.2; letter-spacing:-.04em; margin:0; font-weight:700; }
+.subtitle { font-size:11pt; margin:2mm 0 0; color:var(--body); }
+.thesis { border-left:1mm solid var(--ink); padding-left:3.4mm; font-size:10pt; line-height:1.6; margin:3.5mm 0 0; }
+.section { border-top:.25mm solid var(--line); padding-top:3.5mm; margin-top:1mm; }
+.section-head { display:flex; align-items:center; gap:2.4mm; margin-bottom:3mm; }
+.section-no { width:6.3mm; height:6.3mm; border:.3mm solid var(--ink); border-radius:50%; display:grid; place-items:center; font-size:8pt; font-weight:650; }
+h2 { font-size:12pt; margin:0; font-weight:680; }
+.section-hint { margin-left:auto; font-size:8.3pt; color:var(--muted); }
+.agent-columns { display:grid; grid-template-columns:1fr 1fr; gap:0; }
+.agent-col { padding:0 5mm 0 0; }
+.agent-col + .agent-col { padding:0 0 0 5mm; border-left:.25mm solid var(--line); }
+h3 { margin:0 0 1.4mm; font-size:10.8pt; font-weight:650; }
+.agent-col p { margin:0; font-size:9.4pt; line-height:1.65; color:var(--body); }
+.agent-flow { margin:3.5mm 0 2.2mm; padding:2.4mm 0; border-top:.25mm solid var(--line); border-bottom:.25mm solid var(--line); display:flex; align-items:center; justify-content:space-between; font-size:9pt; }
+.arrow { color:var(--muted); padding:0 2mm; font-size:11pt; }
+.agent-foot { font-size:8.5pt; line-height:1.6; color:var(--muted); margin:0 0 3.4mm; }
+.journey { display:flex; align-items:center; justify-content:space-between; font-size:9.6pt; font-weight:600; margin:0 0 2mm; padding:0 0 2mm; }
+.steps { display:flex; flex-direction:column; }
+.step { display:grid; grid-template-columns:8mm 29mm 1fr; gap:2mm; padding:2.6mm 0; border-top:.25mm solid var(--line); align-items:start; }
+.step-num { font-size:8.5pt; color:var(--muted); padding-top:.6mm; }
+.step-title { font-size:10.1pt; line-height:1.5; font-weight:650; }
+.step-title small { display:block; font-size:8.2pt; line-height:1.5; font-weight:400; color:var(--muted); margin-top:.8mm; }
+.step p { margin:0; font-size:9.4pt; line-height:1.65; color:var(--body); }
+.result { display:block; margin-top:1mm; color:var(--ink); font-weight:550; font-size:9pt; }
+.step.core { background:var(--soft); margin:0 -3mm; padding:2.6mm 3mm; border-color:transparent; }
+.example { font-size:8.6pt; color:var(--body); border-top:.25mm solid #d5d8da; padding-top:1.7mm; margin-top:2mm; line-height:1.65; }
+.example b { font-weight:650; }
+.maintenance { margin-top:2.2mm; padding-bottom:3mm; }
+.maintenance .section-head { margin-bottom:2mm; }
+.update-flow { display:flex; justify-content:space-between; align-items:center; font-size:9.4pt; font-weight:550; margin-bottom:2mm; }
+.maintenance p { font-size:9pt; line-height:1.6; color:var(--body); margin:0; }
+.footer { margin-top:auto; padding-top:3mm; border-top:.45mm solid var(--ink); }
+.footer strong { display:block; font-size:10.6pt; font-weight:650; line-height:1.55; }
+.footer p { margin:1.8mm 0 0; font-size:8pt; color:var(--muted); line-height:1.6; }
+@media print { html,body { background:#fff; } }
+</style>
+</head>
+<body>
+<main class="sheet">
+  <div class="topline"><span class="brand">DataEngine.</span><span class="meta">产品说明 / 本地 MVP · 2026.09</span></div>
+  <header class="hero">
+    <h1>用 Agent 构建企业记忆</h1>
+    <p class="subtitle">以本体组织知识，让企业信息被持续维护、共同使用。</p>
+    <p class="thesis">DataEngine 是企业记忆引擎。Agent 协助理解企业、整理资料、构建本体，将分散信息变成<strong>有业务含义、可追溯、可查询</strong>的企业记忆，再提供给其他 Agent 和应用使用。</p>
+  </header>
+
+  <section class="section">
+    <div class="section-head"><span class="section-no">01</span><h2>Agent 怎么做：执行能力 + 对象工作区</h2></div>
+    <div class="agent-columns">
+      <article class="agent-col"><h3>KodaX · 负责执行</h3><p>通过 SDK 管理模型调用、会话与工具执行循环。Agent 选择下一步，根据工具返回的实际结果继续工作。</p></article>
+      <article class="agent-col"><h3>NOOA 思路 · 组织操作环境</h3><p>把企业信息、资料、本体和业务记录组织成有状态的对象，供 Agent 按需读取、关联和执行方法。</p></article>
+    </div>
+    <div class="agent-flow"><span>用户提出目标</span><span class="arrow">→</span><span>KodaX 驱动 Agent</span><span class="arrow">⇄</span><span>对象工作区执行并返回结果</span></div>
+    <p class="agent-foot"><strong>本体本身可被检查与修订；采用后的定义，决定业务对象的结构与方法。</strong><br>DataEngine 负责保存、检查和版本管理；NOOA 作为对象工作区的设计参考。</p>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><span class="section-no">02</span><h2>四步建立企业记忆系统</h2><span class="section-hint">企业 → 数据 → 本体 → 连接</span></div>
+    <div class="steps">
+      <article class="step"><span class="step-num">01</span><div class="step-title">建立企业认知<small>这家企业是什么？</small></div><p>通过问答明确名称、业务、职责和目标。Agent 补问关键缺口，用户纠正，保存可持续完善的企业基础信息。<span class="result">产出：企业画像与业务目标</span></p></article>
+      <article class="step"><span class="step-num">02</span><div class="step-title">创建数据基础<small>需要哪些资料？</small></div><p>实验准备虚构热力公司的文档与记录；实际使用时接入企业资料。Agent 检查内容，保留原文、用途和版本。<span class="result">产出：有来源、有版本的资料库</span></p></article>
+      <article class="step core"><span class="step-num">03</span><div class="step-title">构建业务本体<small>数据代表什么？</small></div><div><p>Agent 依据资料提出概念、身份、属性、关系与业务口径，将记录映射为对象；程序检查并预览，用户确认采用。<span class="result">产出：本体定义 + 业务对象 + 来源依据</span></p><div class="example"><b>热力示例：</b>投诉 → 处理工单 / 居民回访。<br>“工单办结”与“供热恢复”分别定义，沿关联查证，避免混为一谈。</div></div></article>
+      <article class="step"><span class="step-num">04</span><div class="step-title">连接第三方<small>谁可以使用？</small></div><p>通过 MCP 或 HTTP API 提供只读查询。第三方 Agent 和应用各用独立密钥，限定对象、字段与关系范围，可查看调用记录并停用。<span class="result">产出：可授权、可复用的企业记忆服务</span></p></article>
+    </div>
+  </section>
+
+  <section class="section maintenance">
+    <div class="section-head"><span class="section-no">03</span><h2>建好后，持续维护与更新</h2></div>
+    <div class="update-flow"><span>补充资料</span><span class="arrow">→</span><span>检查变化</span><span class="arrow">→</span><span>确认发布</span><span class="arrow">→</span><span>下次查询读取新数据</span></div>
+    <p>记录更新沿用本体与密钥；定义和权限变更需确认。历史来源与依据持续保留。</p>
+  </section>
+
+  <footer class="footer"><strong>用户维护企业知识，Agent 协助建设，多个应用共享同一套业务理解。</strong><p>当前 MVP：单机实验；支持 CSV / Markdown / TXT 与只读 MCP / HTTP 接入。<br>真实系统连接器、云端部署后续扩展；随附 HTML 为虚构数据的离线演示。</p></footer>
+</main>
+</body>
+</html>

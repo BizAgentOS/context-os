@@ -9,6 +9,7 @@
 ## 从这里开始
 
 - [产品目标](docs/PRODUCT.md)：产品是什么、解决什么问题、边界在哪里。
+- [一页 A4 产品说明](docs/PRODUCT_ONEPAGE.html)：用于对外介绍 KodaX 与 NOOA 思路的结合、四步建立企业记忆和持续更新；浏览器可按 A4 打印。
 - [MVP 目标](docs/MVP.md)：首轮体验、最小范围、验收方式。
 - [记忆画布设计](docs/CANVAS_DESIGN.md)：四页目标、对话渐隐、上下文与持久化边界。
 - [连接与访问治理](docs/DATA_CONSUMPTION_DESIGN.md)：第四页的调用方、字段/关系权限与实际访问记录。
