@@ -15,6 +15,18 @@ const staticFiles: Record<string, { file: string; type: string }> = {
   "/index.html": { file: "index.html", type: "text/html; charset=utf-8" },
   "/app.js": { file: "app.js", type: "text/javascript; charset=utf-8" },
   "/app.css": { file: "app.css", type: "text/css; charset=utf-8" },
+  "/ontology-workspace.js": {
+    file: "ontology-workspace.js",
+    type: "text/javascript; charset=utf-8",
+  },
+  "/memory-graph.js": {
+    file: "memory-graph.js",
+    type: "text/javascript; charset=utf-8",
+  },
+  "/memory-graph.css": {
+    file: "memory-graph.css",
+    type: "text/css; charset=utf-8",
+  },
 };
 
 async function readBody(
@@ -89,7 +101,10 @@ export async function createServer(
         "Content-Type": "application/json; charset=utf-8",
       });
       const payload =
-        options.demo && body && typeof body === "object" && "currentPage" in body
+        options.demo &&
+        body &&
+        typeof body === "object" &&
+        "currentPage" in body
           ? { ...body, demo: options.demo }
           : body;
       response.end(JSON.stringify(payload));

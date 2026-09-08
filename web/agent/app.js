@@ -1,3 +1,8 @@
+import {
+  renderDefinitionGraph,
+  renderObjectGraph,
+} from "./ontology-workspace.js";
+
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const pageLabels = {
@@ -98,6 +103,7 @@ const ui = {
   drafts: new Map(),
   ontologyView: "definitions",
   definitionId: null,
+  graphSelections: new Map(),
   canvasKey: "",
   dialogueKey: "",
   pendingMessage: null,
@@ -249,7 +255,8 @@ async function navigate(page) {
 }
 function render() {
   $("#demo-badge").hidden = !state.demo;
-  $("#demo-badge").title = "虚构企业与样本数据；演示问答在本地运行，无需模型密钥。";
+  $("#demo-badge").title =
+    "虚构企业与样本数据；演示问答在本地运行，无需模型密钥。";
   $("#open-settings").hidden = !!state.demo;
   for (const control of $$("[data-page]")) {
     const page = control.dataset.page;
@@ -506,6 +513,7 @@ function ontologyViews() {
     ["verification", "验证"],
   ]) {
     const control = button(title, "view-tab", () => {
+      ui.detailRequest += 1;
       ui.ontologyView = id;
       renderCanvas(true);
       $("#canvas").scrollTop = 0;
@@ -564,15 +572,48 @@ function renderOntology() {
   }
   select.value = artifact.id;
   select.addEventListener("change", () => {
+    ui.detailRequest += 1;
     ui.definitionId = select.value;
     renderCanvas(true);
   });
   modelBar.append(select);
   section.append(modelBar);
+  const outlined = artifact.kind === "ontology_outline";
+  const selectionKey = `${artifact.id}:${artifact.version}:${ui.ontologyView}`;
+  if (!ui.graphSelections.has(selectionKey))
+    ui.graphSelections.set(selectionKey, {});
+  const graphOptions = {
+    selection: ui.graphSelections.get(selectionKey),
+    api,
+    onSelectionChange: () => {
+      ui.detailRequest += 1;
+    },
+    renderEvidence: (refs) => evidenceButtons(refs, closeDetail),
+    onAsk: (suffix) => askAbout(artifact, suffix),
+    onOpenRelated: (entity, relation) =>
+      loadObjects(artifact, entity.type, {
+        id: entity.id,
+        relation: relation.name,
+        back: closeDetail,
+      }),
+    onAdjust: (suffix) => adjustArtifact(artifact, suffix),
+    onOpenType: (type) =>
+      outlined
+        ? openConcept(artifact, type)
+        : openType(artifact, typeof type === "string" ? type : type.name),
+    onOpenObjects: (type) => {
+      ui.ontologyView = "objects";
+      ui.graphSelections.set(`${artifact.id}:${artifact.version}:objects`, {
+        type,
+      });
+      renderCanvas(true);
+    },
+  };
   if (ui.ontologyView === "objects") {
     if (
-      artifact.kind === "ontology_outline" ||
-      !artifact.content.validation?.valid
+      outlined ||
+      !artifact.content.validation?.valid ||
+      !artifact.content.preview
     ) {
       section.append(
         node(
@@ -582,75 +623,15 @@ function renderOntology() {
         ),
       );
     } else {
-      section.append(
-        node(
-          "p",
-          "detail-note",
-          artifact.status === "adopted"
-            ? "这里是所选定义保存时的记录。查看资料更新后的结果，可在“验证”中重新查证。"
-            : "这是候选定义对应的对象预览，尚未采用。",
-        ),
-      );
-      const list = node("div", "definition-list");
-      for (const type of artifact.content.types) {
-        const count = artifact.content.preview?.types?.find?.(
-          (entry) => entry.name === type.name,
-        )?.total;
-        const item = button("", "definition-card", () =>
-          openType(artifact, type.name),
+      if (artifact.status !== "adopted")
+        section.append(
+          node("p", "detail-note", "这是候选定义对应的对象预览，尚未采用。"),
         );
-        item.append(
-          node("h2", "", type.name),
-          node("p", "", type.description),
-          node(
-            "span",
-            "source-meta",
-            count === undefined ? "查看对象与依据 →" : `${count} 个对象 →`,
-          ),
-        );
-        list.append(item);
-      }
-      section.append(list);
+      section.append(renderObjectGraph(artifact, graphOptions));
     }
     return section;
   }
-  const outlined = artifact.kind === "ontology_outline";
-  const types = outlined ? artifact.content.concepts : artifact.content.types;
-  const list = node("div", "definition-list");
-  for (const type of types || []) {
-    const item = button("", "definition-card", () =>
-      outlined ? openConcept(artifact, type) : openType(artifact, type.name),
-    );
-    item.append(
-      node("h2", "", type.name),
-      node("p", "", type.description),
-      node(
-        "span",
-        "source-meta",
-        outlined ? "概念草稿 · 查看定义依据 →" : "查看含义、映射与依据 →",
-      ),
-    );
-    list.append(item);
-  }
-  section.append(list);
-  if (artifact.content.relations?.length) {
-    const relations = node("div", "definition-relations");
-    for (const relation of artifact.content.relations) {
-      const row = button(
-        `${relation.from}  →  ${relation.name}  →  ${relation.to}`,
-        "relation-row",
-        () =>
-          outlined
-            ? openConcept(artifact, relation, true)
-            : adjustArtifact(
-                artifact,
-                `${relation.from}的${relation.name}关系`,
-              ),
-      );
-      relations.append(row);
-    }
-    section.append(node("h2", "subsection-title", "关系"), relations);
-  }
+  section.append(renderDefinitionGraph(artifact, graphOptions));
   if (outlined)
     section.append(
       node(
@@ -751,7 +732,9 @@ function renderVerifications(artifact) {
   input.placeholder = "例如：这条投诉办结后，有没有供暖恢复的依据？";
   input.value =
     ui.verificationQuestion ||
-    (state.demo ? demoQuestions.ontology : findStatement(["company.goal", "goal", "goals"])?.text) ||
+    (state.demo
+      ? demoQuestions.ontology
+      : findStatement(["company.goal", "goal", "goals"])?.text) ||
     "";
   input.addEventListener("input", () => {
     ui.verificationQuestion = input.value;
