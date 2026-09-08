@@ -1,0 +1,62 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { AddressInfo } from "node:net";
+import { createHeatingDemo } from "../../src/demo/server.ts";
+import { seedHeatingDemo } from "../../src/demo/heating-seed.ts";
+import { Workspace } from "../../src/agent/workspace.ts";
+import type { Data } from "../../src/agent/contracts.ts";
+
+test("heating demo opens four populated pages, runs evidence checks locally and preserves edits on restart", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "dataengine-heating-demo-"));
+  let service = await createHeatingDemo(directory);
+  try {
+    await new Promise<void>((resolve) => service.server.listen(0, "127.0.0.1", resolve));
+    const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
+    assert.equal((await fetch(`${base}/api/canvas/bootstrap`)).status, 403);
+    const bootstrap = await fetch(`${base}/api/canvas/bootstrap`, {
+      headers: {"X-DataEngine-Token": service.adminToken},
+    }).then((response) => response.json());
+    assert.equal(bootstrap.demo.name, "澄川热力");
+    assert.equal(bootstrap.model.configured, true);
+    assert.equal(bootstrap.currentPage, "company");
+    assert.equal(bootstrap.sources.length, 8);
+    assert(bootstrap.pages.every((page: {available: boolean}) => page.available));
+
+    await service.app.canvasNavigate({page: "ontology"});
+    const before = service.app.memory.listArtifacts("verification").length;
+    await service.app.canvasMessage({page: "ontology", text: "哪些投诉还缺恢复依据？", refreshSources: true});
+    await service.app.idle();
+    const records = service.app.memory.listArtifacts("verification");
+    assert.equal(records.length, before + 1);
+    const latest = records.filter((record) => record.content.question === "哪些投诉还缺恢复依据？")
+      .sort((a, b) => Number(b.content.runNumber) - Number(a.content.runNumber))[0];
+    const results = (latest.content.result as Data).results as Data;
+    const items = (results.recovery as Data).items as Data[];
+    assert.equal(items.length, 6);
+    assert.equal(items.filter((item) => item.status === "positive_callback_evidence").length, 2);
+    assert.equal(items.filter((item) => item.status === "negative_callback_evidence").length, 2);
+    assert.equal(items.filter((item) => item.status === "no_evidence").length, 1);
+    assert.equal(items.filter((item) => item.status === "unknown_callback_evidence").length, 1);
+
+    await service.app.canvasMessage({page: "ontology", text: "请用已保存的本体与真实对象验证这个业务问题：预计下月收入？。请保存实际查询结果和依据；如果资料不足，保留具体缺口。"});
+    await service.app.idle();
+    assert.equal(service.app.memory.listArtifacts("verification").length, before + 1);
+    assert.match(service.app.canvasState().messages.at(-1)!.content, /自定义问题需要接入真实模型/);
+    assert(service.app.consumption.logs().some((entry) => entry.result === "allowed"));
+    assert(service.app.consumption.logs().some((entry) => entry.result === "denied" && entry.status === 401));
+
+    new Workspace(service.app.memory).editProfile("company.goal", "保留这次演示中的修改");
+    assert.equal(seedHeatingDemo(service.app).seeded, false);
+    await service.close();
+    service = await createHeatingDemo(directory);
+    const statements = service.app.canvasState().profile!.content.statements as Data[];
+    assert.equal(statements.find((item) => item.key === "company.goal")!.text, "保留这次演示中的修改");
+    assert.equal(service.app.memory.listArtifacts("verification").length, before + 1);
+  } finally {
+    await service.close();
+    rmSync(directory, {recursive: true, force: true});
+  }
+});

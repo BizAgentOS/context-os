@@ -36,7 +36,11 @@ async function readBody(
 }
 
 export async function createServer(
-  options: { directory?: string; driver?: AgentDriver } = {},
+  options: {
+    directory?: string;
+    driver?: AgentDriver;
+    demo?: { name: string };
+  } = {},
 ) {
   const directory = options.directory ?? resolve("local-state/agent");
   const app = new AgentApplication(directory, options.driver);
@@ -84,7 +88,11 @@ export async function createServer(
       response.writeHead(status, {
         "Content-Type": "application/json; charset=utf-8",
       });
-      response.end(JSON.stringify(body));
+      const payload =
+        options.demo && body && typeof body === "object" && "currentPage" in body
+          ? { ...body, demo: options.demo }
+          : body;
+      response.end(JSON.stringify(payload));
     };
     try {
       const host = request.headers.host ?? "";

@@ -154,6 +154,26 @@ p {
 .settings-button {
   justify-self: end;
 }
+.demo-badge {
+  justify-self: end;
+  color: #8b8b8b;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.demo-question {
+  padding: 4px 0;
+  font-size: 11px;
+  color: #777;
+  text-align: left;
+}
+.demo-question:hover {
+  color: #111;
+}
+@media (max-width: 600px) {
+  .demo-badge {
+    font-size: 10px;
+  }
+}
 .canvas {
   min-height: 0;
   overflow: auto;

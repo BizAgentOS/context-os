@@ -12,6 +12,12 @@ const placeholders = {
   ontology: "我们需要理解哪些业务对象？",
   consumption: "哪些应用需要使用这些企业记忆？",
 };
+const demoQuestions = {
+  company: "这家企业是什么样的？",
+  sources: "这些资料如何连起来？",
+  ontology: "哪些投诉还缺恢复依据？",
+  consumption: "谁可以调用这些记忆？",
+};
 const fieldLabels = {
   "company.name": "企业名称",
   "company.business": "业务",
@@ -23,6 +29,11 @@ const fieldLabels = {
   "company.customer": "服务对象",
   customers: "服务对象",
   "company.departments": "部门",
+  "company.process": "业务流程",
+  "company.boundary": "业务边界",
+  "company.scale": "服务规模",
+  "company.stations": "换热站",
+  "company.communities": "服务小区",
   "company.organization": "组织",
   "company.role": "你的职责",
   name: "名称",
@@ -71,6 +82,7 @@ const state = {
   consumers: [],
   accessLogs: [],
   pending: null,
+  demo: null,
 };
 initialAccess = "";
 const ui = {
@@ -236,6 +248,9 @@ async function navigate(page) {
   await mutate("/api/canvas/navigate", { page });
 }
 function render() {
+  $("#demo-badge").hidden = !state.demo;
+  $("#demo-badge").title = "虚构企业与样本数据；演示问答在本地运行，无需模型密钥。";
+  $("#open-settings").hidden = !!state.demo;
   for (const control of $$("[data-page]")) {
     const page = control.dataset.page;
     const entry = state.pages.find((item) => item.id === page);
@@ -399,6 +414,7 @@ function renderSources() {
     const excerpt = columns.length
       ? columns.slice(0, 4).join(" · ")
       : String(source.content.raw || "")
+          .replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "")
           .replace(/^#+\s*/gm, "")
           .slice(0, 100);
     card.append(
@@ -579,7 +595,7 @@ function renderOntology() {
       for (const type of artifact.content.types) {
         const count = artifact.content.preview?.types?.find?.(
           (entry) => entry.name === type.name,
-        )?.count;
+        )?.total;
         const item = button("", "definition-card", () =>
           openType(artifact, type.name),
         );
@@ -735,7 +751,7 @@ function renderVerifications(artifact) {
   input.placeholder = "例如：这条投诉办结后，有没有供暖恢复的依据？";
   input.value =
     ui.verificationQuestion ||
-    findStatement(["company.goal", "goal", "goals"])?.text ||
+    (state.demo ? demoQuestions.ontology : findStatement(["company.goal", "goal", "goals"])?.text) ||
     "";
   input.addEventListener("input", () => {
     ui.verificationQuestion = input.value;
@@ -1945,6 +1961,9 @@ function updateComposer() {
   const busy = state.busy;
   const blocked = ui.requesting || ui.uploading || !ui.initialized;
   input.placeholder = placeholders[ui.page];
+  $("#demo-question").hidden = !state.demo || busy || !!input.value.trim();
+  $("#demo-question").textContent = `试问：${demoQuestions[ui.page]}`;
+  $("#demo-question").disabled = blocked;
   $("#send-button").hidden = busy;
   $("#stop-button").hidden = !busy;
   $("#send-button").disabled = blocked || !input.value.trim();
@@ -1957,7 +1976,9 @@ function updateComposer() {
       ? "正在整理…"
       : !state.model.configured && ui.initialized
         ? "先连接一个模型"
-        : "";
+        : state.demo
+          ? "模拟问答"
+          : "";
   $("#focus-context").hidden = !ui.focus;
   $("#focus-label").textContent = ui.focus?.label || "";
   for (const control of $$("[data-page]")) {
@@ -2104,6 +2125,11 @@ for (const control of $$("[data-page]"))
   control.addEventListener("click", () => navigate(control.dataset.page));
 $("#composer").addEventListener("submit", (event) => {
   event.preventDefault();
+  sendMessage();
+});
+$("#demo-question").addEventListener("click", () => {
+  $("#message-input").value = demoQuestions[ui.page];
+  resizeInput();
   sendMessage();
 });
 $("#message-input").addEventListener("input", () => {

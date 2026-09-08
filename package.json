@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "node src/agent/server.ts",
+    "demo": "node src/demo/server.ts",
     "test": "node --test tests/agent/*.test.ts",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test"
