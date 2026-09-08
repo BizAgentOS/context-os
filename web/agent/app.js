@@ -1594,6 +1594,13 @@ window.addEventListener("drop", (event) => {
   }
   uploadFile(event.dataTransfer.files[0]);
 });
+new ResizeObserver(([entry]) => {
+  $(".canvas-app").style.setProperty(
+    "--interaction-height",
+    `${entry.target.getBoundingClientRect().height}px`,
+  );
+}).observe($(".interaction"));
+
 window.addEventListener("resize", drawConnections);
 window.addEventListener("focus", () => refresh());
 refresh(true);
