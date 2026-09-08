@@ -9,7 +9,7 @@ const pageLabels = {
   company: "企业",
   sources: "数据",
   ontology: "本体",
-  consumption: "数据消费",
+  consumption: "连接",
 };
 const placeholders = {
   company: "从你的企业开始…",
@@ -1608,7 +1608,7 @@ function renderConsumerDetail(consumer) {
   const section = detailFrame(
     consumerName(consumer),
     closeDetail,
-    "返回数据消费",
+    "返回连接",
   );
   section.classList.add("consumer-detail");
   const title = section.querySelector(".canvas-heading > div");

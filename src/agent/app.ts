@@ -794,7 +794,7 @@ export class AgentApplication {
 
   prepareConsumer(body: Record<string, unknown>) {
     if (this.canvasProgress().currentPage !== "consumption")
-      throw new Error("请在数据消费页创建接入");
+      throw new Error("请在连接页创建接入");
     if (this.active || this.modelTest)
       throw new Error("请等待当前整理结束后再创建接入");
     const task = this.canvasTask("consumption");
@@ -833,7 +833,7 @@ export class AgentApplication {
 
   async activateConsumer(body: Record<string, unknown>) {
     if (this.canvasProgress().currentPage !== "consumption")
-      throw new Error("请在数据消费页启用访问");
+      throw new Error("请在连接页启用访问");
     const id = string(body.id, "调用方");
     const version = Number(body.version);
     const task = this.canvasTask("consumption");
@@ -865,7 +865,7 @@ export class AgentApplication {
 
   async revokeConsumer(body: Record<string, unknown>) {
     if (this.canvasProgress().currentPage !== "consumption")
-      throw new Error("请在数据消费页停用访问");
+      throw new Error("请在连接页停用访问");
     const id = string(body.id, "调用方");
     const version = Number(body.version);
     const consumer = this.consumption.revoke(id, version);
@@ -1263,7 +1263,7 @@ export class AgentApplication {
             }
             if (args.consumerId) {
               if (page !== "consumption" || args.candidateId)
-                throw new Error("请在数据消费页确认访问范围");
+                throw new Error("请在连接页确认访问范围");
               const consumer = this.memory.getArtifact(
                 string(args.consumerId, "调用方"),
                 Number(args.version),
