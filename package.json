@@ -9,12 +9,15 @@
   "scripts": {
     "start": "node src/agent/server.ts",
     "demo": "node src/demo/server.ts",
+    "mcp": "node scripts/dataengine-mcp.ts",
     "test": "node --test tests/agent/*.test.ts",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test"
   },
   "dependencies": {
-    "@kodax-ai/kodax": "0.7.96-beta.2"
+    "@kodax-ai/kodax": "0.7.96-beta.2",
+    "@modelcontextprotocol/server": "2.0.0",
+    "zod": "4.5.4"
   },
   "devDependencies": {
     "@types/node": "26.4.1",

@@ -185,6 +185,36 @@ export async function createServer(
           });
           return;
         }
+        if (url.pathname === "/api/consumers/connection") {
+          const origin = `http://${host}`;
+          send(200, {
+            mcp: {
+              mcpServers: {
+                dataengine: {
+                  command: process.execPath,
+                  args: [
+                    fileURLToPath(
+                      new URL(
+                        "../../scripts/dataengine-mcp.ts",
+                        import.meta.url,
+                      ),
+                    ),
+                  ],
+                  env: {
+                    DATAENGINE_URL: origin,
+                    DATAENGINE_CONSUMER_KEY: "<本调用方 API Key>",
+                  },
+                },
+              },
+            },
+            http: {
+              schema: `${origin}/v1/schema`,
+              objects: `${origin}/v1/objects`,
+            },
+            localOnly: true,
+          });
+          return;
+        }
         if (url.pathname === "/api/objects") {
           send(200, app.objectDetails(url.searchParams));
           return;
@@ -247,6 +277,25 @@ export async function createServer(
           break;
         case "/api/consumers/activate":
           result = await queue(() => app.activateConsumer(body));
+          break;
+        case "/api/consumers/prepare":
+          result = await queue(async () => app.prepareConsumer(body));
+          break;
+        case "/api/consumers/data-preview":
+          result = app.consumption.previewDataUpdate(
+            String(body.id ?? ""),
+            Number(body.version),
+          );
+          break;
+        case "/api/consumers/data-publish":
+          result = await queue(async () => {
+            const consumer = app.consumption.publishDataUpdate(
+              String(body.id ?? ""),
+              Number(body.version),
+              body.sourceVersions as Record<string, number>,
+            );
+            return { ...app.canvasState(), consumer };
+          });
           break;
         case "/api/consumers/revoke":
           result = await app.revokeConsumer(body);

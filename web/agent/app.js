@@ -104,6 +104,7 @@ const ui = {
   ontologyView: "definitions",
   definitionId: null,
   graphSelections: new Map(),
+  consumerPanels: new Map(),
   canvasKey: "",
   dialogueKey: "",
   pendingMessage: null,
@@ -308,7 +309,24 @@ function renderCanvas(force = false) {
       );
       if (consumer) {
         const scroll = $("#canvas").scrollTop;
+        const input = document.activeElement?.matches(
+          ".consumer-clone-form input",
+        )
+          ? document.activeElement
+          : null;
+        const selection = input && {
+          name: input.name,
+          start: input.selectionStart,
+          end: input.selectionEnd,
+        };
         $("#canvas").replaceChildren(renderConsumerDetail(consumer));
+        if (selection) {
+          const restored = $$(".consumer-clone-form input").find(
+            (item) => item.name === selection.name,
+          );
+          restored?.focus({ preventScroll: true });
+          restored?.setSelectionRange(selection.start, selection.end);
+        }
         $("#canvas").scrollTop = scroll;
       }
     }
@@ -1021,6 +1039,61 @@ const consumerStatuses = {
 function consumerName(consumer) {
   return consumer.content.name || consumer.title || "调用方";
 }
+function consumerPanel(consumer) {
+  const key = `${consumer.id}:${consumer.version}`;
+  if (!ui.consumerPanels.has(key)) {
+    ui.consumerPanels.set(key, {
+      connectionOpen: false,
+      connection: null,
+      connectionBusy: false,
+      connectionError: "",
+      connectionTab: "mcp",
+      copyStatus: "",
+      preview: null,
+      previewBusy: false,
+      previewError: "",
+      publishBusy: false,
+      cloneOpen: false,
+      cloneName: "",
+      clonePurpose: "",
+      notice: "",
+      grantsOpen: false,
+    });
+  }
+  return ui.consumerPanels.get(key);
+}
+function consumerScreenCurrent(consumer, request) {
+  return (
+    ui.page === "consumption" &&
+    ui.detail?.consumerId === consumer.id &&
+    (request === undefined || request === ui.detailRequest) &&
+    state.consumers.some(
+      (item) => item.id === consumer.id && item.version === consumer.version,
+    )
+  );
+}
+function changedConsumerSources(consumer) {
+  const model = state.ontologies.find(
+    (item) =>
+      item.id === consumer.content.modelId &&
+      item.version === consumer.content.modelVersion,
+  );
+  if (!model) return null;
+  const ids = new Set((model.content.types || []).map((type) => type.sourceId));
+  return state.sources.filter(
+    (source) =>
+      ids.has(source.id) &&
+      source.version >
+        Number(consumer.content.sourceVersions?.[source.id] || 0),
+  );
+}
+function consumerDataLabel(consumer) {
+  if (consumer.status === "draft") return "确认范围后启用";
+  if (consumer.status === "revoked") return "已停止数据访问";
+  const changed = changedConsumerSources(consumer);
+  if (changed?.length) return `${changed.length} 份资料有更新，待发布`;
+  return changed ? "已发布的数据与当前资料一致" : "可检查并发布数据更新";
+}
 function renderConsumption() {
   if (
     !state.consumers.length &&
@@ -1037,17 +1110,37 @@ function renderConsumption() {
     return section;
   }
   if (!state.consumers.length)
-    return emptyCanvas("哪些应用需要使用这些企业记忆？");
+    return emptyCanvas("哪个 Agent 需要使用这些企业记忆？");
   const section = node("section", "consumption-canvas");
-  section.append(heading("数据消费"));
+  section.append(
+    heading(
+      "连接与使用企业记忆",
+      "让外部 Agent 按明确范围读取企业对象。资料持续维护，检查后发布给调用方。",
+    ),
+  );
   const connections = node("div", "consumer-connections");
   const memory = node("div", "memory-origin");
   memory.append(
     node("span", "memory-origin-label", "企业记忆"),
     node("h2", "", companyName()),
+    node(
+      "p",
+      "memory-origin-description",
+      `本体定义业务含义
+数据持续补充与更新`,
+    ),
+  );
+  const bridge = node("div", "consumer-bridge");
+  bridge.append(
+    node("strong", "", "MCP / HTTP API"),
+    node("span", "", "独立密钥 · 按范围只读"),
   );
   const consumers = node("div", "consumer-list");
-  for (const consumer of state.consumers) {
+  const order = { active: 0, draft: 1, revoked: 2 };
+  const ordered = [...state.consumers].sort(
+    (a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3),
+  );
+  for (const consumer of ordered) {
     const card = button("", "consumer-card", () => openConsumer(consumer));
     card.dataset.consumerId = consumer.id;
     card.dataset.status = consumer.status;
@@ -1057,6 +1150,10 @@ function renderConsumption() {
       node("span", "consumer-status", consumerStatuses[consumer.status] || ""),
     );
     card.append(title);
+    if (consumer.status === "revoked") {
+      consumers.append(card);
+      continue;
+    }
     if (consumer.content.purpose)
       card.append(node("p", "consumer-purpose", consumer.content.purpose));
     card.append(
@@ -1065,17 +1162,29 @@ function renderConsumption() {
         "consumer-types",
         (consumer.content.grants || []).map((grant) => grant.type).join(" · "),
       ),
+      node("p", "consumer-data-label", consumerDataLabel(consumer)),
+      node(
+        "span",
+        "consumer-version-label",
+        `本体 v${consumer.content.modelVersion} · 数据 v${consumer.version}`,
+      ),
     );
     consumers.append(card);
   }
-  connections.append(memory, consumers);
+  connections.append(memory, bridge, consumers);
   section.append(connections);
-  if (state.accessLogs.length) {
+  section.append(
+    node(
+      "p",
+      "consumption-local-note",
+      "当前是本机实验：支持本机 Agent 的 MCP 配置，或可访问此服务的 HTTP 客户端。",
+    ),
+  );
+  if (state.accessLogs.length)
     section.append(
       node("h2", "subsection-title", "最近调用"),
       renderAccessLogs(state.accessLogs.slice(0, 5)),
     );
-  }
   return section;
 }
 function renderGrants(consumer) {
@@ -1099,11 +1208,401 @@ function renderGrants(consumer) {
   }
   return container;
 }
-function consumerEndpoint(consumer) {
-  const url = new URL("/v1/objects", location.origin);
-  const type = consumer.content.grants?.[0]?.type;
-  if (type) url.searchParams.set("type", type);
-  return url.href;
+async function loadConsumerConnection(consumer) {
+  const panel = consumerPanel(consumer);
+  panel.connectionOpen = !panel.connectionOpen;
+  renderCanvas(true);
+  if (!panel.connectionOpen || panel.connection || panel.connectionBusy) return;
+  panel.connectionBusy = true;
+  panel.connectionError = "";
+  const request = ui.detailRequest;
+  renderCanvas(true);
+  try {
+    const connection = await api("/api/consumers/connection");
+    if (consumerScreenCurrent(consumer, request)) panel.connection = connection;
+  } catch (error) {
+    if (consumerScreenCurrent(consumer, request))
+      panel.connectionError = error.message;
+  } finally {
+    panel.connectionBusy = false;
+    if (consumerScreenCurrent(consumer)) renderCanvas(true);
+  }
+}
+function consumerConnectionText(consumer, panel) {
+  if (panel.connectionTab === "mcp")
+    return JSON.stringify(panel.connection.mcp, null, 2);
+  const objects = new URL(panel.connection.http.objects);
+  if (consumer.content.grants?.[0]?.type)
+    objects.searchParams.set("type", consumer.content.grants[0].type);
+  return `GET ${panel.connection.http.schema}
+Authorization: Bearer <本调用方 API Key>
+
+GET ${objects.href}
+Authorization: Bearer <本调用方 API Key>`;
+}
+async function copyConsumerConnection(consumer, text, success) {
+  const panel = consumerPanel(consumer);
+  const request = ui.detailRequest;
+  try {
+    await navigator.clipboard.writeText(text);
+    if (consumerScreenCurrent(consumer, request)) panel.copyStatus = success;
+  } catch {
+    if (consumerScreenCurrent(consumer, request))
+      panel.copyStatus = "浏览器未允许复制，请选中配置文字复制。";
+  }
+  if (consumerScreenCurrent(consumer, request)) renderCanvas(true);
+}
+function renderConsumerConnection(consumer) {
+  const panel = consumerPanel(consumer);
+  const section = node("section", "consumer-connection-panel");
+  const heading = node("div", "consumer-section-heading");
+  const text = node("div");
+  text.append(
+    node("h2", "subsection-title", "接入你的 Agent"),
+    node(
+      "p",
+      "detail-note",
+      "支持 MCP 的 Agent 添加配置；其他应用通过 HTTP API 读取相同的授权内容。",
+    ),
+  );
+  const toggle = button(
+    panel.connectionOpen ? "收起配置" : "接入配置",
+    "quiet-button",
+    () => loadConsumerConnection(consumer),
+  );
+  toggle.setAttribute("aria-expanded", String(panel.connectionOpen));
+  heading.append(text, toggle);
+  section.append(heading);
+  if (panel.connectionOpen) {
+    const box = node("div", "connection-config");
+    if (panel.connectionBusy)
+      box.append(node("p", "detail-note", "正在读取接入配置…"));
+    else if (panel.connectionError)
+      box.append(node("p", "detail-note", panel.connectionError));
+    else if (panel.connection) {
+      const tabs = node("nav", "view-tabs connection-tabs");
+      tabs.setAttribute("aria-label", "接入方式");
+      for (const [id, name] of [
+        ["mcp", "MCP 配置"],
+        ["http", "HTTP API"],
+      ]) {
+        const tab = button(name, "view-tab", () => {
+          panel.connectionTab = id;
+          panel.copyStatus = "";
+          renderCanvas(true);
+        });
+        tab.setAttribute("aria-pressed", String(panel.connectionTab === id));
+        tabs.append(tab);
+      }
+      const code = consumerConnectionText(consumer, panel);
+      box.append(
+        tabs,
+        node(
+          "p",
+          "detail-note",
+          panel.connectionTab === "mcp"
+            ? "将配置加入本机 Agent，填入此调用方启用时获得的 API Key。连接后可了解对象定义、查询对象及授权关系。"
+            : "先读取可用对象定义，再按类型、编号或关系查询。两个接口都使用此调用方的 API Key。",
+        ),
+      );
+      const pre = node("pre", "request-example", code);
+      pre.tabIndex = 0;
+      pre.setAttribute(
+        "aria-label",
+        panel.connectionTab === "mcp" ? "MCP 接入配置" : "HTTP 请求示例",
+      );
+      const actions = node("div", "connection-copy-actions");
+      actions.append(
+        button(
+          panel.connectionTab === "mcp" ? "复制 MCP 配置" : "复制请求示例",
+          "quiet-button",
+          () =>
+            copyConsumerConnection(
+              consumer,
+              code,
+              "已复制，请替换 API Key 占位文字。",
+            ),
+        ),
+        button("复制 API 地址", "quiet-button", () =>
+          copyConsumerConnection(
+            consumer,
+            panel.connection.http.objects,
+            "已复制对象接口地址。",
+          ),
+        ),
+      );
+      box.append(pre, actions);
+      if (panel.copyStatus) {
+        const status = node("p", "detail-note", panel.copyStatus);
+        status.setAttribute("role", "status");
+        box.append(status);
+      }
+      box.append(
+        node(
+          "p",
+          "detail-note",
+          "每个调用方使用自己的密钥。这里显示配置模板，已有密钥不会再次展示；需要新密钥时可创建独立接入。",
+        ),
+      );
+      if (panel.connection.localOnly)
+        box.append(
+          node(
+            "p",
+            "detail-note",
+            "当前 MCP 桥接程序在本机运行，需要 DataEngine 服务保持开启。云端 Agent 尚不能直接连接此本机地址。",
+          ),
+        );
+    } else
+      box.append(
+        button("读取接入配置", "quiet-button", () => {
+          panel.connectionOpen = false;
+          loadConsumerConnection(consumer);
+        }),
+      );
+    section.append(box);
+  }
+  return section;
+}
+async function checkConsumerData(consumer) {
+  const panel = consumerPanel(consumer);
+  if (panel.previewBusy || ui.requesting) return;
+  panel.previewBusy = true;
+  panel.previewError = "";
+  panel.preview = null;
+  panel.notice = "";
+  const request = ui.detailRequest;
+  renderCanvas(true);
+  try {
+    const preview = await api("/api/consumers/data-preview", {
+      id: consumer.id,
+      version: consumer.version,
+    });
+    if (consumerScreenCurrent(consumer, request)) panel.preview = preview;
+  } catch (error) {
+    if (consumerScreenCurrent(consumer, request))
+      panel.previewError = error.message;
+  } finally {
+    panel.previewBusy = false;
+    if (consumerScreenCurrent(consumer)) renderCanvas(true);
+  }
+}
+async function publishConsumerData(consumer) {
+  const panel = consumerPanel(consumer);
+  const preview = panel.preview;
+  if (
+    !preview?.valid ||
+    !preview.changedSources?.length ||
+    panel.publishBusy ||
+    ui.requesting
+  )
+    return;
+  panel.publishBusy = true;
+  renderCanvas(true);
+  const completed = await mutate(
+    "/api/consumers/data-publish",
+    {
+      id: consumer.id,
+      version: consumer.version,
+      sourceVersions: preview.nextSourceVersions,
+    },
+    (result) => {
+      const next = result.consumers?.find((item) => item.id === consumer.id);
+      if (next)
+        ui.consumerPanels.set(`${next.id}:${next.version}`, {
+          ...panel,
+          preview: null,
+          previewBusy: false,
+          previewError: "",
+          publishBusy: false,
+          notice:
+            "数据已发布。此调用方下一次请求将读取新数据，原密钥继续有效。",
+        });
+    },
+  );
+  panel.publishBusy = false;
+  if (!completed && consumerScreenCurrent(consumer)) renderCanvas(true);
+}
+function renderConsumerData(consumer) {
+  const panel = consumerPanel(consumer);
+  const section = node("section", "consumer-data-panel");
+  const heading = node("div", "consumer-section-heading");
+  const text = node("div");
+  text.append(
+    node("h2", "subsection-title", "持续更新的数据"),
+    node("p", "detail-note", consumerDataLabel(consumer)),
+  );
+  const check = button(
+    panel.previewBusy ? "正在检查…" : "检查数据更新",
+    "quiet-button",
+    () => checkConsumerData(consumer),
+  );
+  check.disabled =
+    panel.previewBusy || panel.publishBusy || ui.requesting || state.busy;
+  heading.append(text, check);
+  section.append(heading);
+  const current = node("div", "consumer-data-current");
+  current.append(
+    node("span", "", `已发布数据 v${consumer.version}`),
+    node("span", "", `本体 v${consumer.content.modelVersion}`),
+  );
+  if (consumer.content.dataPublishedAt)
+    current.append(
+      node(
+        "span",
+        "",
+        `发布于 ${accessTime(consumer.content.dataPublishedAt)}`,
+      ),
+    );
+  section.append(
+    current,
+    node(
+      "p",
+      "detail-note",
+      "先在数据页补充或更新资料，再检查并发布。发布保留原密钥、本体定义和访问范围；后续请求读取新数据，旧结果仍保留原来的依据。",
+    ),
+  );
+  if (panel.previewError)
+    section.append(node("p", "consumer-update-status", panel.previewError));
+  if (panel.notice) {
+    const notice = node("p", "consumer-update-status", panel.notice);
+    notice.setAttribute("role", "status");
+    section.append(notice);
+  }
+  if (panel.preview) {
+    const preview = panel.preview;
+    const box = node("div", "consumer-update-preview");
+    const changes = preview.changedSources || [];
+    for (const source of changes) {
+      const row = node("div", "consumer-source-change");
+      row.append(
+        node("span", "", source.title),
+        node("span", "", `v${source.fromVersion} → v${source.toVersion}`),
+      );
+      box.append(row);
+    }
+    if (!preview.valid) {
+      box.append(
+        node("p", "consumer-update-status", "暂时不能发布，请先修正以下问题。"),
+      );
+      for (const error of preview.errors || [])
+        box.append(
+          node(
+            "p",
+            "detail-note",
+            typeof error === "string" ? error : plain(error),
+          ),
+        );
+    } else if (!changes.length)
+      box.append(
+        node(
+          "p",
+          "consumer-update-status",
+          "检查完成，当前没有需要发布的数据更新。",
+        ),
+      );
+    else {
+      box.append(
+        node(
+          "p",
+          "detail-note",
+          "已检查对象映射与访问范围。确认后，这组资料版本一起生效。",
+        ),
+      );
+      const publish = button(
+        panel.publishBusy ? "正在发布…" : "发布给此调用方",
+        "primary-button",
+        () => publishConsumerData(consumer),
+      );
+      publish.disabled = panel.publishBusy || ui.requesting || state.busy;
+      box.append(publish);
+    }
+    section.append(box);
+  }
+  section.append(
+    node(
+      "p",
+      "detail-note",
+      "字段或关系的含义发生变化时，需要回到本体页确认新定义，再单独调整授权。当前不自动同步，也不开放外部写入。",
+    ),
+  );
+  return section;
+}
+function renderConsumerClone(consumer) {
+  const panel = consumerPanel(consumer);
+  const section = node("section", "consumer-clone-panel");
+  const toggle = button(
+    panel.cloneOpen ? "收起独立接入" : "创建同范围的独立接入",
+    "quiet-button",
+    () => {
+      panel.cloneOpen = !panel.cloneOpen;
+      if (panel.cloneOpen) panel.grantsOpen = true;
+      renderCanvas(true);
+    },
+  );
+  toggle.setAttribute("aria-expanded", String(panel.cloneOpen));
+  toggle.disabled = ui.requesting || state.busy;
+  section.append(toggle);
+  if (!panel.cloneOpen) return section;
+  const form = node("form", "consumer-clone-form");
+  form.append(
+    node(
+      "p",
+      "detail-note",
+      "为另一个 Agent 创建单独的身份和密钥。沿用上面的可读范围，提交后先确认，再启用。新接入从本体保存时的数据起步，启用后可检查并发布资料更新。",
+    ),
+  );
+  for (const [field, title, placeholder, max] of [
+    ["cloneName", "调用方名称", "例如：供热客服 Agent", 120],
+    ["clonePurpose", "使用目的", "例如：查询投诉和回访，辅助客服答复", 500],
+  ]) {
+    const label = node("label", "consumer-form-label");
+    label.append(node("span", "", title));
+    const input = node("input");
+    input.name = field;
+    input.required = true;
+    input.maxLength = max;
+    input.placeholder = placeholder;
+    input.value = panel[field];
+    input.addEventListener("input", () => {
+      panel[field] = input.value;
+    });
+    label.append(input);
+    form.append(label);
+  }
+  const submit = node("button", "primary-button", "创建接入草稿");
+  submit.type = "submit";
+  submit.disabled = ui.requesting || state.busy;
+  form.append(submit);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!panel.cloneName.trim() || !panel.clonePurpose.trim()) return;
+    const request = ui.detailRequest;
+    await mutate(
+      "/api/consumers/prepare",
+      {
+        templateId: consumer.id,
+        templateVersion: consumer.version,
+        name: panel.cloneName.trim(),
+        purpose: panel.clonePurpose.trim(),
+      },
+      (result) => {
+        if (
+          result.preparedConsumerId &&
+          consumerScreenCurrent(consumer, request)
+        ) {
+          ui.detail = {
+            key: `consumer:${result.preparedConsumerId}`,
+            kind: "consumer",
+            consumerId: result.preparedConsumerId,
+          };
+          ui.detailRequest += 1;
+          $("#canvas").scrollTop = 0;
+        }
+      },
+    );
+  });
+  section.append(form);
+  return section;
 }
 function renderConsumerDetail(consumer) {
   const section = detailFrame(
@@ -1111,70 +1610,87 @@ function renderConsumerDetail(consumer) {
     closeDetail,
     "返回数据消费",
   );
+  section.classList.add("consumer-detail");
   const title = section.querySelector(".canvas-heading > div");
   if (consumer.content.purpose)
     title.append(node("p", "", consumer.content.purpose));
   const actions = node("div", "detail-heading-actions");
+  actions.append(
+    node(
+      "span",
+      "consumer-detail-status",
+      consumerStatuses[consumer.status] || "",
+    ),
+  );
   const adjust = button("调整范围", "quiet-button", () =>
     adjustArtifact(consumer, consumerName(consumer)),
   );
   adjust.disabled = ui.requesting || state.busy;
   actions.append(adjust);
   section.querySelector(".canvas-heading").append(actions);
-  section.append(
-    node("h2", "subsection-title", "可读取的内容"),
-    renderGrants(consumer),
-    node(
-      "p",
-      "detail-note",
-      "只允许读取这里列出的对象、字段和关系。来源原文不对调用方开放。",
-    ),
-  );
-  if (consumer.status === "draft") {
-    const decision = node("div", "consumer-decision");
-    decision.append(
-      node("p", "", "确认以上范围后，这个调用方才能访问企业记忆。"),
+  if (consumer.status === "active") {
+    section.append(
+      renderConsumerConnection(consumer),
+      renderConsumerData(consumer),
     );
-    const activate = button("启用访问", "primary-button", () =>
-      activateConsumer(consumer),
-    );
-    const pending =
-      state.pending?.consumerId === consumer.id &&
-      Number(state.pending.version) === consumer.version;
-    activate.disabled = ui.requesting || state.busy || !pending;
-    if (pending) decision.append(activate);
-    else
-      decision.append(
-        button("通过对话确认范围", "quiet-button", () =>
-          adjustArtifact(consumer, consumerName(consumer)),
-        ),
-      );
-    section.append(decision);
-  } else if (consumer.status === "active") {
-    const endpoint = node("section", "consumer-endpoint");
-    endpoint.append(
-      node("h2", "subsection-title", "接入方式"),
+    const grants = node("details", "consumer-grants-disclosure");
+    const panel = consumerPanel(consumer);
+    grants.open = panel.grantsOpen;
+    grants.addEventListener("toggle", () => {
+      panel.grantsOpen = grants.open;
+    });
+    grants.append(
       node(
-        "pre",
-        "request-example",
-        `GET ${consumerEndpoint(consumer)}\nAuthorization: Bearer <本调用方 API Key>`,
+        "summary",
+        "",
+        `可读取的内容 · ${consumer.content.grants?.length || 0} 类对象`,
       ),
+      renderGrants(consumer),
       node(
         "p",
         "detail-note",
-        "使用启用时保存的调用方密钥。密钥遗失时，先停用，再通过对话创建新的访问授权。",
+        "只允许读取这里列出的对象、字段和关系。来源原文不对调用方开放。",
       ),
     );
-    const revoke = button("停用访问", "quiet-button", () =>
-      revokeConsumer(consumer),
-    );
-    revoke.disabled = ui.requesting;
-    endpoint.append(revoke);
-    section.append(endpoint);
+    section.append(grants, renderConsumerClone(consumer));
   } else {
     section.append(
-      node("p", "consumer-revoked", "访问已停用，原来的密钥不再有效。"),
+      node("h2", "subsection-title", "可读取的内容"),
+      renderGrants(consumer),
+      node(
+        "p",
+        "detail-note",
+        "只允许读取这里列出的对象、字段和关系。来源原文不对调用方开放。",
+      ),
     );
+    if (consumer.status === "draft") {
+      const decision = node("div", "consumer-decision");
+      decision.append(
+        node(
+          "p",
+          "",
+          "确认以上范围后，这个调用方才能访问企业记忆。启用时会交付一次独立密钥。",
+        ),
+      );
+      const activate = button("启用访问", "primary-button", () =>
+        activateConsumer(consumer),
+      );
+      const pending =
+        state.pending?.consumerId === consumer.id &&
+        Number(state.pending.version) === consumer.version;
+      activate.disabled = ui.requesting || state.busy || !pending;
+      if (pending) decision.append(activate);
+      else
+        decision.append(
+          button("通过对话确认范围", "quiet-button", () =>
+            adjustArtifact(consumer, consumerName(consumer)),
+          ),
+        );
+      section.append(decision);
+    } else
+      section.append(
+        node("p", "consumer-revoked", "访问已停用，原来的密钥不再有效。"),
+      );
   }
   section.append(
     node(
@@ -1190,6 +1706,15 @@ function renderConsumerDetail(consumer) {
       false,
     ),
   );
+  if (consumer.status === "active") {
+    const revoke = button(
+      "停用访问",
+      "quiet-button consumer-revoke-action",
+      () => revokeConsumer(consumer),
+    );
+    revoke.disabled = ui.requesting;
+    section.append(revoke);
+  }
   return section;
 }
 function openConsumer(consumer) {
@@ -2146,13 +2671,19 @@ $("#close-settings").addEventListener("click", () =>
 $("#settings-dialog").addEventListener("close", () => {
   $("#api-key-input").value = "";
 });
-for (const selector of ["#close-credential", "#finish-credential"])
-  $(selector).addEventListener("click", () => $("#credential-dialog").close());
-$("#credential-dialog").addEventListener("close", () => {
+function clearCredential() {
   $("#consumer-api-key").value = "";
   $("#credential-consumer").textContent = "";
   $("#credential-status").textContent = "";
-});
+  $("#credential-status").hidden = true;
+}
+for (const selector of ["#close-credential", "#finish-credential"])
+  $(selector).addEventListener("click", () => {
+    clearCredential();
+    $("#credential-dialog").close();
+  });
+$("#credential-dialog").addEventListener("cancel", clearCredential);
+$("#credential-dialog").addEventListener("close", clearCredential);
 $("#copy-credential").addEventListener("click", async () => {
   const status = $("#credential-status");
   try {

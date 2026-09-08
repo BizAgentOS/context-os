@@ -792,6 +792,45 @@ export class AgentApplication {
     }
   }
 
+  prepareConsumer(body: Record<string, unknown>) {
+    if (this.canvasProgress().currentPage !== "consumption")
+      throw new Error("请在数据消费页创建接入");
+    if (this.active || this.modelTest)
+      throw new Error("请等待当前整理结束后再创建接入");
+    const task = this.canvasTask("consumption");
+    if (task.pending?.consumerId)
+      throw new Error("已有待确认的接入草稿，请先查看并处理该范围");
+    const template = this.memory.getArtifact(
+      string(body.templateId, "范围模板"),
+    );
+    if (
+      template.kind !== "consumer" ||
+      template.status !== "active" ||
+      template.version !== Number(body.templateVersion)
+    )
+      throw new Error("接入范围已变化，请重新查看当前启用的调用方");
+    // This host-only action copies a reviewed scope; callers cannot supply new grants.
+    // The independent draft starts from the adopted model's saved sources.
+    const draft = this.consumption.propose({
+      name: string(body.name, "Agent 名称", 120),
+      purpose: string(body.purpose, "使用目的", 600),
+      modelId: template.content.modelId,
+      modelVersion: template.content.modelVersion,
+      grants: template.content.grants,
+    });
+    this.memory.attachArtifact(task.id, draft);
+    this.memory.restoreWaiting(
+      task.id,
+      {
+        question: "请查看这份独立接入的读取范围，确认后再启用。",
+        consumerId: draft.id,
+        version: draft.version,
+      },
+      "接入范围等待确认",
+    );
+    return { ...this.canvasState("consumption"), preparedConsumerId: draft.id };
+  }
+
   async activateConsumer(body: Record<string, unknown>) {
     if (this.canvasProgress().currentPage !== "consumption")
       throw new Error("请在数据消费页启用访问");

@@ -24,6 +24,24 @@ interface ConsumerDefinition {
   modelVersion: number;
   sourceVersions: Record<string, number>;
   grants: Grant[];
+  credentialVersion?: number;
+}
+export interface ConsumerDataUpdate {
+  consumerId: string;
+  consumerVersion: number;
+  modelId: string;
+  modelVersion: number;
+  currentSourceVersions: Record<string, number>;
+  nextSourceVersions: Record<string, number>;
+  changedSources: {
+    sourceId: string;
+    title: string;
+    fromVersion: number;
+    toVersion: number;
+  }[];
+  valid: boolean;
+  errors: string[];
+  preview?: Data;
 }
 export interface AccessLog {
   id: number;
@@ -330,6 +348,161 @@ export class ConsumptionService {
       throw new Error("授权版本已变化，请重新查看后确认");
     return consumer;
   }
+  private matchesCredential(
+    consumer: Artifact,
+    credentialVersion: number,
+  ): boolean {
+    const definition = consumer.content as unknown as ConsumerDefinition;
+    const anchor = definition.credentialVersion ?? consumer.version;
+    if (anchor !== credentialVersion || !Number.isSafeInteger(anchor))
+      return false;
+    if (anchor === consumer.version) return true;
+    if (anchor < 1 || anchor >= consumer.version) return false;
+    // A data publication may carry the original credential forward, but its
+    // adopted model and explicit grants must still match the activation.
+    try {
+      const original = this.memory.getArtifact(consumer.id, anchor);
+      return (
+        original.kind === "consumer" &&
+        original.status === "active" &&
+        original.content.modelId === definition.modelId &&
+        original.content.modelVersion === definition.modelVersion &&
+        JSON.stringify(original.content.grants) ===
+          JSON.stringify(definition.grants)
+      );
+    } catch {
+      return false;
+    }
+  }
+  previewDataUpdate(id: string, version: number): ConsumerDataUpdate {
+    const consumer = this.current(id, version);
+    if (consumer.status !== "active")
+      throw new Error("只有已启用调用方可以更新数据");
+    const definition = consumer.content as unknown as ConsumerDefinition;
+    const result: ConsumerDataUpdate = {
+      consumerId: consumer.id,
+      consumerVersion: consumer.version,
+      modelId: definition.modelId,
+      modelVersion: definition.modelVersion,
+      currentSourceVersions: { ...definition.sourceVersions },
+      nextSourceVersions: { ...definition.sourceVersions },
+      changedSources: [],
+      valid: false,
+      errors: [],
+    };
+    try {
+      const model = this.adoptedModel(
+        definition.modelId,
+        definition.modelVersion,
+      );
+      const modelDefinition = model.content as unknown as ModelDefinition;
+      // Advance records only. Documents defining business meaning remain part
+      // of the reviewed ontology version and are never silently substituted.
+      for (const sourceId of new Set(
+        modelDefinition.types.map((type) => type.sourceId),
+      )) {
+        const source = this.memory.getArtifact(sourceId);
+        if (source.kind !== "source") throw new Error("本体对应的来源不可读取");
+        const fromVersion = versionNumber(definition.sourceVersions[sourceId]);
+        result.nextSourceVersions[sourceId] = source.version;
+        if (source.version !== fromVersion)
+          result.changedSources.push({
+            sourceId,
+            title: source.title,
+            fromVersion,
+            toVersion: source.version,
+          });
+      }
+      this.grants(definition.grants, modelDefinition);
+      const view = new ObjectView(
+        this.memory,
+        model,
+        result.nextSourceVersions,
+      );
+      // ObjectView checks CSV schemas and unique nonempty identities. Also
+      // reject malformed rows rather than publishing absent mapped values.
+      for (const type of modelDefinition.types) {
+        const source = this.memory.getArtifact(
+          type.sourceId,
+          result.nextSourceVersions[type.sourceId],
+        );
+        const columns = [type.idField, ...Object.values(type.fields)];
+        for (const [index, row] of (source.content.rows as Data[]).entries()) {
+          if (
+            !row ||
+            typeof row !== "object" ||
+            Array.isArray(row) ||
+            columns.some(
+              (column) =>
+                !Object.hasOwn(row, column) || row[column] === undefined,
+            )
+          )
+            throw new Error(
+              `类型 ${type.name} 的来源第 ${index + 1} 条记录缺少映射字段`,
+            );
+        }
+      }
+      result.preview = view.preview();
+      result.valid = true;
+    } catch (error) {
+      result.errors.push(
+        error instanceof Error ? error.message : "数据更新检查失败",
+      );
+    }
+    return result;
+  }
+  publishDataUpdate(
+    id: string,
+    version: number,
+    sourceVersions: unknown,
+  ): Artifact {
+    const consumer = this.current(id, version);
+    const preview = this.previewDataUpdate(id, version);
+    if (
+      !sourceVersions ||
+      typeof sourceVersions !== "object" ||
+      Array.isArray(sourceVersions)
+    )
+      throw new Error("发布数据需要已预览的明确来源版本");
+    const supplied = sourceVersions as Record<string, unknown>;
+    if (
+      Object.keys(supplied).length !==
+        Object.keys(preview.nextSourceVersions).length ||
+      Object.entries(preview.nextSourceVersions).some(
+        ([sourceId, sourceVersion]) => supplied[sourceId] !== sourceVersion,
+      )
+    )
+      throw new Error("来源版本已变化，请重新预览后发布");
+    if (!preview.valid)
+      throw new Error(`数据更新未通过检查：${preview.errors.join("；")}`);
+    if (!preview.changedSources.length)
+      throw new Error("当前已经使用最新数据，无需发布");
+    const definition = consumer.content as unknown as ConsumerDefinition;
+    const credentialVersion = definition.credentialVersion ?? consumer.version;
+    const credential = this.db
+      .prepare("SELECT consumer_version FROM credentials WHERE consumer_id=?")
+      .get(consumer.id);
+    if (
+      !credential ||
+      !this.matchesCredential(consumer, Number(credential.consumer_version))
+    )
+      throw new Error("调用方凭据不可用，不能发布数据");
+    // One memory write is atomic; failure leaves both the previous records and
+    // the original API key usable. Publication does not touch the key store.
+    return this.memory.putArtifact({
+      id,
+      expectedVersion: version,
+      kind: "consumer",
+      title: consumer.title,
+      status: "active",
+      content: {
+        ...consumer.content,
+        credentialVersion,
+        sourceVersions: preview.nextSourceVersions,
+        dataPublishedAt: new Date().toISOString(),
+      },
+    });
+  }
   activate(
     id: string,
     version: number,
@@ -429,7 +602,7 @@ export class ConsumptionService {
         !consumer ||
         consumer.kind !== "consumer" ||
         consumer.status !== "active" ||
-        consumer.version !== credential?.consumer_version
+        !this.matchesCredential(consumer, Number(credential?.consumer_version))
       )
         throw new AccessError(
           401,
@@ -439,16 +612,21 @@ export class ConsumptionService {
       definition = consumer.content as unknown as ConsumerDefinition;
       if (request.method !== "GET")
         throw new AccessError(405, "method_not_allowed", "仅支持只读查询");
-      if (request.path !== "/v1/objects")
+      if (request.path !== "/v1/objects" && request.path !== "/v1/schema")
         throw new AccessError(404, "unsupported_resource", "消费接口不存在");
-      const allowed = new Set([
-        "type",
-        "id",
-        "fields",
-        "relation",
-        "offset",
-        "limit",
-      ]);
+      const allowed = new Set(
+        request.path === "/v1/schema"
+          ? ["dataVersion"]
+          : [
+              "type",
+              "id",
+              "fields",
+              "relation",
+              "offset",
+              "limit",
+              "dataVersion",
+            ],
+      );
       for (const key of request.query.keys())
         if (!allowed.has(key) || request.query.getAll(key).length !== 1)
           throw new AccessError(
@@ -456,148 +634,212 @@ export class ConsumptionService {
             "unsupported_parameter",
             "请求包含未开放的查询参数",
           );
-      const type = request.query.get("type") ?? "";
-      const grant = definition.grants.find(
-        (candidate) => candidate.type === type,
-      );
-      if (!grant)
-        throw new AccessError(403, "type_denied", "没有此对象类型的读取权限");
-      resource.type = grant.type;
-      const id = request.query.get("id");
-      if (id !== null && !grant.fields.includes("$id"))
-        throw new AccessError(403, "identity_denied", "对象编号未获授权");
-      const model = this.adoptedModel(
-        definition.modelId,
-        definition.modelVersion,
-      );
-      const modelDefinition = model.content as unknown as ModelDefinition;
-      if (id !== null) this.assertNonSensitive(modelDefinition, type, ["$id"]);
-      const relationName = request.query.get("relation");
-      let outputGrant = grant;
-      if (relationName !== null) {
-        if (!id || !grant.relations.includes(relationName))
-          throw new AccessError(
-            403,
-            "relation_denied",
-            "关系未获授权或缺少起始对象编号",
-          );
-        const relation = modelDefinition.relations.find(
-          (candidate) =>
-            candidate.from === type && candidate.name === relationName,
-        );
-        const target = definition.grants.find(
-          (candidate) => candidate.type === relation?.to,
-        );
-        if (
-          !relation ||
-          !target ||
-          !grant.fields.includes(relation.fromField) ||
-          !target.fields.includes(relation.toField)
-        )
-          throw new AccessError(
-            403,
-            "relation_denied",
-            "关系的目标或连接字段未获授权",
-          );
-        resource.relation = relation.name;
-        this.assertNonSensitive(modelDefinition, relation.from, [
-          relation.fromField,
-        ]);
-        this.assertNonSensitive(modelDefinition, relation.to, [
-          relation.toField,
-        ]);
-        outputGrant = target;
-      }
-      const fields = request.query.has("fields")
-        ? request.query.get("fields")!.split(",")
-        : outputGrant.fields;
+      const dataVersion = request.query.get("dataVersion");
       if (
-        !fields.length ||
-        fields.some((field) => !outputGrant.fields.includes(field)) ||
-        new Set(fields).size !== fields.length
+        dataVersion !== null &&
+        (!/^[1-9]\d*$/.test(dataVersion) ||
+          !Number.isSafeInteger(Number(dataVersion)))
       )
-        throw new AccessError(403, "field_denied", "请求字段未获授权");
-      // Source classification is current even when the consumer's data version is fixed.
-      this.assertNonSensitive(modelDefinition, outputGrant.type, fields);
-      const integer = (name: string, fallback: number, max: number) => {
-        const value = request.query.get(name);
-        if (value === null) return fallback;
+        throw new AccessError(400, "invalid_data_version", "数据版本无效");
+      if (dataVersion !== null && Number(dataVersion) !== consumer.version)
+        throw new AccessError(
+          409,
+          "data_version_changed",
+          "数据已发布新版本，请重新读取结构后再查询",
+        );
+      if (request.path === "/v1/schema") {
+        const model = this.adoptedModel(
+          definition.modelId,
+          definition.modelVersion,
+        );
+        const modelDefinition = model.content as unknown as ModelDefinition;
+        try {
+          this.grants(definition.grants, modelDefinition);
+        } catch {
+          throw new AccessError(
+            403,
+            "scope_unavailable",
+            "当前授权范围受使用限制，请联系管理员调整",
+          );
+        }
+        response = {
+          status: 200,
+          body: plain({
+            name: definition.name,
+            purpose: definition.purpose,
+            model: { id: model.id, version: model.version },
+            dataVersion: consumer.version,
+            types: definition.grants.map((grant) => {
+              const type = modelDefinition.types.find(
+                (candidate) => candidate.name === grant.type,
+              )!;
+              return {
+                name: type.name,
+                description: type.description,
+                fields: grant.fields.map((name) => ({ name })),
+                relations: grant.relations.map((name) => {
+                  const relation = modelDefinition.relations.find(
+                    (candidate) =>
+                      candidate.from === grant.type && candidate.name === name,
+                  )!;
+                  return { name, to: relation.to };
+                }),
+              };
+            }),
+          }),
+        };
+      } else {
+        const type = request.query.get("type") ?? "";
+        const grant = definition.grants.find(
+          (candidate) => candidate.type === type,
+        );
+        if (!grant)
+          throw new AccessError(403, "type_denied", "没有此对象类型的读取权限");
+        resource.type = grant.type;
+        const id = request.query.get("id");
+        if (id !== null && !grant.fields.includes("$id"))
+          throw new AccessError(403, "identity_denied", "对象编号未获授权");
+        const model = this.adoptedModel(
+          definition.modelId,
+          definition.modelVersion,
+        );
+        const modelDefinition = model.content as unknown as ModelDefinition;
+        if (id !== null)
+          this.assertNonSensitive(modelDefinition, type, ["$id"]);
+        const relationName = request.query.get("relation");
+        let outputGrant = grant;
+        if (relationName !== null) {
+          if (!id || !grant.relations.includes(relationName))
+            throw new AccessError(
+              403,
+              "relation_denied",
+              "关系未获授权或缺少起始对象编号",
+            );
+          const relation = modelDefinition.relations.find(
+            (candidate) =>
+              candidate.from === type && candidate.name === relationName,
+          );
+          const target = definition.grants.find(
+            (candidate) => candidate.type === relation?.to,
+          );
+          if (
+            !relation ||
+            !target ||
+            !grant.fields.includes(relation.fromField) ||
+            !target.fields.includes(relation.toField)
+          )
+            throw new AccessError(
+              403,
+              "relation_denied",
+              "关系的目标或连接字段未获授权",
+            );
+          resource.relation = relation.name;
+          this.assertNonSensitive(modelDefinition, relation.from, [
+            relation.fromField,
+          ]);
+          this.assertNonSensitive(modelDefinition, relation.to, [
+            relation.toField,
+          ]);
+          outputGrant = target;
+        }
+        const fields = request.query.has("fields")
+          ? request.query.get("fields")!.split(",")
+          : outputGrant.fields;
         if (
-          !/^\d+$/.test(value) ||
-          !Number.isSafeInteger(Number(value)) ||
-          Number(value) > max ||
-          (name === "limit" && Number(value) < 1)
+          !fields.length ||
+          fields.some((field) => !outputGrant.fields.includes(field)) ||
+          new Set(fields).size !== fields.length
         )
-          throw new AccessError(400, "invalid_page", "分页参数无效");
-        return Number(value);
-      };
-      const offset = integer("offset", 0, Number.MAX_SAFE_INTEGER);
-      const limit = integer("limit", 20, 100);
-      const view = new ObjectView(
-        this.memory,
-        model,
-        definition.sourceVersions,
-      );
-      const output = view.execute(
-        relationName === null
-          ? [
-              {
-                op: "query",
-                type,
-                ...(id === null ? {} : { where: { $id: id } }),
-                offset,
-                limit,
-                as: "objects",
-              },
-            ]
-          : [
-              { op: "query", type, where: { $id: id }, limit: 1, as: "origin" },
-              {
-                op: "related",
-                input: "$origin",
-                relation: relationName,
-                as: "objects",
-              },
-            ],
-      );
-      const collection = (output.results as Data).objects as Data;
-      const pageItems =
-        relationName === null
-          ? (collection.items as Data[])
-          : (collection.items as Data[]).slice(offset, offset + limit);
-      const items = pageItems.map((entity) => ({
-        type: entity.type,
-        ...(fields.includes("$id") ? { id: entity.id } : {}),
-        fields: Object.fromEntries(
-          fields
-            .filter((field) => field !== "$id")
-            .map((field) => [field, (entity.fields as Data)[field]]),
-        ),
-      }));
-      const usedTypes = new Set([type, outputGrant.type]);
-      const sourceVersions = Object.fromEntries(
-        view.definition.types
-          .filter((candidate) => usedTypes.has(candidate.name))
-          .map((candidate) => [
-            candidate.sourceId,
-            view.sourceVersions[candidate.sourceId],
-          ]),
-      );
-      const hasMore = offset + items.length < Number(collection.total);
-      response = {
-        status: 200,
-        body: plain({
-          items,
-          page: {
-            offset,
-            limit,
-            hasMore,
-            nextOffset: hasMore ? offset + items.length : null,
-          },
-          model: { id: model.id, version: model.version },
-          sourceVersions,
-        }),
-      };
+          throw new AccessError(403, "field_denied", "请求字段未获授权");
+        // Source classification is current even when the consumer's data version is fixed.
+        this.assertNonSensitive(modelDefinition, outputGrant.type, fields);
+        const integer = (name: string, fallback: number, max: number) => {
+          const value = request.query.get(name);
+          if (value === null) return fallback;
+          if (
+            !/^\d+$/.test(value) ||
+            !Number.isSafeInteger(Number(value)) ||
+            Number(value) > max ||
+            (name === "limit" && Number(value) < 1)
+          )
+            throw new AccessError(400, "invalid_page", "分页参数无效");
+          return Number(value);
+        };
+        const offset = integer("offset", 0, Number.MAX_SAFE_INTEGER);
+        const limit = integer("limit", 20, 100);
+        const view = new ObjectView(
+          this.memory,
+          model,
+          definition.sourceVersions,
+        );
+        const output = view.execute(
+          relationName === null
+            ? [
+                {
+                  op: "query",
+                  type,
+                  ...(id === null ? {} : { where: { $id: id } }),
+                  offset,
+                  limit,
+                  as: "objects",
+                },
+              ]
+            : [
+                {
+                  op: "query",
+                  type,
+                  where: { $id: id },
+                  limit: 1,
+                  as: "origin",
+                },
+                {
+                  op: "related",
+                  input: "$origin",
+                  relation: relationName,
+                  as: "objects",
+                },
+              ],
+        );
+        const collection = (output.results as Data).objects as Data;
+        const pageItems =
+          relationName === null
+            ? (collection.items as Data[])
+            : (collection.items as Data[]).slice(offset, offset + limit);
+        const items = pageItems.map((entity) => ({
+          type: entity.type,
+          ...(fields.includes("$id") ? { id: entity.id } : {}),
+          fields: Object.fromEntries(
+            fields
+              .filter((field) => field !== "$id")
+              .map((field) => [field, (entity.fields as Data)[field]]),
+          ),
+        }));
+        const usedTypes = new Set([type, outputGrant.type]);
+        const sourceVersions = Object.fromEntries(
+          view.definition.types
+            .filter((candidate) => usedTypes.has(candidate.name))
+            .map((candidate) => [
+              candidate.sourceId,
+              view.sourceVersions[candidate.sourceId],
+            ]),
+        );
+        const hasMore = offset + items.length < Number(collection.total);
+        response = {
+          status: 200,
+          body: plain({
+            items,
+            page: {
+              offset,
+              limit,
+              hasMore,
+              nextOffset: hasMore ? offset + items.length : null,
+            },
+            model: { id: model.id, version: model.version },
+            dataVersion: consumer.version,
+            sourceVersions,
+          }),
+        };
+      }
     } catch (error) {
       const known =
         error instanceof AccessError

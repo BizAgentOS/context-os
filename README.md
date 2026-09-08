@@ -14,6 +14,7 @@
 - [数据消费与访问治理](docs/DATA_CONSUMPTION_DESIGN.md)：第四页的调用方、字段/关系权限与实际访问记录。
 - [画布运行与验收](docs/experiment/CANVAS.md)：启动、创建企业、接入来源与构建本体。
 - [四页维护与业务验证](docs/experiment/MAINTENANCE.md)：文档概念草稿、实际对象验证、资料更新和来源使用限制。
+- [第三方 Agent 接入与数据发布](docs/experiment/AGENT_CONNECTION.md)：本地 MCP、HTTP、独立密钥、同连接的数据更新与实际验收。
 - [消费链运行与验收](docs/experiment/CONSUMPTION.md)：调用方启用、独立客户端访问、拒绝与停用。
 - [历史 Agent 验收](docs/experiment/AGENT.md)：此前模型、对象、报告与维护能力的运行记录。
 - [Agent 设计方案](docs/AGENT_BLUEPRINT.md)：组成、身份说明、五种工作方法、上下文、对象工作区及应用接口。
@@ -22,7 +23,7 @@
 - [企业数据样本](data/samples/chengchuan-heating/README.md)与 [实验说明](docs/experiment/README.md)：业务资料、公开开发问题和输入边界。
 - [执行清单](docs/PLAN.md)：每次完成一个部分，记录真实进度。
 - [功能与版本台账](docs/FEATURE_LIST.md)：当前计划版本、功能状态和依赖。
-- [v0.1.0 设计与开发步骤](docs/features/v0.1.0.md)：七项功能的设计、开发任务及验收。
+- [v0.1.0 设计与开发步骤](docs/features/v0.1.0.md)：九项功能的设计、开发任务及验收。
 - [开发流程](docs/DEVELOPMENT.md)与 [变更日志](docs/CHANGELOG.md)：CodingSkills 使用方式和已发生的变更。
 
 ## 当前状态
@@ -53,7 +54,7 @@ npm start
 
 首次打开终端输出的本机管理链接（默认端口 8788），页面会移除地址中的管理凭据片段并建立浏览器管理会话；同一浏览器后续可直接打开 <http://127.0.0.1:8788>。在模型设置中配置模型凭据，或沿用宿主环境变量。管理凭据与消费方 API Key 分开：消费方使用第四页启用时单独交付的密钥，只能访问其明确范围。详情见[画布运行与验收](docs/experiment/CANVAS.md)和[消费链运行与验收](docs/experiment/CONSUMPTION.md)。
 
-`npm run check` 已通过类型检查与 52 项 Agent 测试，包括热力演示、四页维护、文档概念、业务验证与第四页上下文、真实 HTTP 权限检查、访问记录及重启后的停用结果；此前 22 项 Python 回归测试也通过；浏览器与真实模型及两个客户端的历史验收记录单独保存，本次演示入口使用本地模拟问答。
+`npm run check` 已通过类型检查与 66 项 Agent 测试，包括第三方 MCP 接入与数据版本发布、热力演示、四页维护、文档概念、业务验证与第四页上下文、真实 HTTP 权限检查、访问记录及重启后的停用结果；此前 22 项 Python 回归测试也通过；浏览器与真实模型及两个客户端的历史验收记录单独保存，本次演示入口使用本地模拟问答。
 
 检查第一批样本（Python 3.9+，仅标准库）：
 
