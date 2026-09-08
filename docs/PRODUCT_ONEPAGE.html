@@ -55,11 +55,11 @@ h3 { margin:0 0 1.4mm; font-size:10.8pt; font-weight:650; }
 </head>
 <body>
 <main class="sheet">
-  <div class="topline"><span class="brand">DataEngine.</span><span class="meta">产品说明 / 本地 MVP · 2026.09</span></div>
+  <div class="topline"><span class="brand">DataEngine.</span><span class="meta">产品说明 / 设计与 MVP · 2026.09</span></div>
   <header class="hero">
     <h1>用 Agent 构建企业记忆</h1>
     <p class="subtitle">以本体组织知识，让企业信息被持续维护、共同使用。</p>
-    <p class="thesis">DataEngine 是企业记忆引擎。Agent 协助理解企业、整理资料、构建本体，将分散信息变成<strong>有业务含义、可追溯、可查询</strong>的企业记忆，再提供给其他 Agent 和应用使用。</p>
+    <p class="thesis">DataEngine 是企业记忆引擎。Agent 协助理解企业、连接数据、构建本体，将分散信息变成<strong>有业务含义、可追溯、可查询</strong>的企业记忆，再提供给其他 Agent 和应用使用。</p>
   </header>
 
   <section class="section">
@@ -76,19 +76,19 @@ h3 { margin:0 0 1.4mm; font-size:10.8pt; font-weight:650; }
     <div class="section-head"><span class="section-no">02</span><h2>四步建立企业记忆系统</h2><span class="section-hint">企业 → 数据 → 本体 → 连接</span></div>
     <div class="steps">
       <article class="step"><span class="step-num">01</span><div class="step-title">建立企业认知<small>这家企业是什么？</small></div><p>通过问答明确名称、业务、职责和目标。Agent 补问关键缺口，用户纠正，保存可持续完善的企业基础信息。<span class="result">产出：企业画像与业务目标</span></p></article>
-      <article class="step"><span class="step-num">02</span><div class="step-title">创建数据基础<small>需要哪些资料？</small></div><p>实验准备虚构热力公司的文档与记录；实际使用时接入企业资料。Agent 检查内容，保留原文、用途和版本。<span class="result">产出：有来源、有版本的资料库</span></p></article>
-      <article class="step core"><span class="step-num">03</span><div class="step-title">构建业务本体<small>数据代表什么？</small></div><div><p>Agent 依据资料提出概念、身份、属性、关系与业务口径，将记录映射为对象；程序检查并预览，用户确认采用。<span class="result">产出：本体定义 + 业务对象 + 来源依据</span></p><div class="example"><b>热力示例：</b>投诉 → 处理工单 / 居民回访。<br>“工单办结”与“供热恢复”分别定义，沿关联查证，避免混为一谈。</div></div></article>
-      <article class="step"><span class="step-num">04</span><div class="step-title">连接第三方<small>谁可以使用？</small></div><p>通过 MCP 或 HTTP API 提供只读查询。第三方 Agent 和应用各用独立密钥，限定对象、字段与关系范围，可查看调用记录并停用。<span class="result">产出：可授权、可复用的企业记忆服务</span></p></article>
+      <article class="step"><span class="step-num">02</span><div class="step-title">连接企业数据<small>数据从哪里读？</small></div><p>通过 API 或 MCP 连接企业系统，Agent 按授权、按需读取。原始数据保留在原系统，DataEngine 保存连接与来源引用。<span class="result">产出：数据源连接 + 可用能力目录</span></p></article>
+      <article class="step core"><span class="step-num">03</span><div class="step-title">构建业务本体<small>数据代表什么？</small></div><div><p>Agent 结合接口结构与数据样例提出概念、身份和关系，定义业务口径，建立对象到源接口的映射；程序检查，用户确认采用。<span class="result">产出：本体定义 + 数据源映射 + 对象视图</span></p><div class="example"><b>热力示例：</b>投诉 → 处理工单 / 居民回访。<br>“工单办结”与“供热恢复”分别定义，沿关联查证，避免混为一谈。</div></div></article>
+      <article class="step"><span class="step-num">04</span><div class="step-title">连接第三方<small>谁可以使用？</small></div><p>对外提供基于本体的只读 MCP / HTTP API。第三方 Agent 按授权查询对象与关系；独立密钥限定读取范围，调用可追踪、可停用。<span class="result">产出：可授权、可复用的企业记忆服务</span></p></article>
     </div>
   </section>
 
   <section class="section maintenance">
-    <div class="section-head"><span class="section-no">03</span><h2>建好后，持续维护与更新</h2></div>
-    <div class="update-flow"><span>补充资料</span><span class="arrow">→</span><span>检查变化</span><span class="arrow">→</span><span>确认发布</span><span class="arrow">→</span><span>下次查询读取新数据</span></div>
-    <p>记录更新沿用本体与密钥；定义和权限变更需确认。历史来源与依据持续保留。</p>
+    <div class="section-head"><span class="section-no">03</span><h2>保持连接，持续维护企业记忆</h2></div>
+    <div class="update-flow"><span>源系统更新</span><span class="arrow">→</span><span>按需读取</span><span class="arrow">→</span><span>检查影响</span><span class="arrow">→</span><span>必要时修订本体</span></div>
+    <p>业务数据由源系统维护；本体、映射和权限由 DataEngine 管理，定义变化需确认。</p>
   </section>
 
-  <footer class="footer"><strong>用户维护企业知识，Agent 协助建设，多个应用共享同一套业务理解。</strong><p>当前 MVP：单机实验；支持 CSV / Markdown / TXT 与只读 MCP / HTTP 接入。<br>真实系统连接器、云端部署后续扩展；随附 HTML 为虚构数据的离线演示。</p></footer>
+  <footer class="footer"><strong>连接企业数据，沉淀业务理解，让多个 Agent 共享同一套企业记忆。</strong><p>实现边界：来源端 API / MCP 接入待开发；现有对外只读接口已实现。<br>当前文件样本用于实验，随附 HTML 为虚构数据的离线演示。</p></footer>
 </main>
 </body>
 </html>
