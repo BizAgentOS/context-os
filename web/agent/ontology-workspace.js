@@ -172,10 +172,9 @@ export function renderDefinitionGraph(artifact, options) {
             "primary-button",
           ),
         );
-      actions.append(
-        action("查看完整定义", () => onOpenType(type)),
-        action("调整定义", () => onAdjust(type.name)),
-      );
+      actions.append(action("查看完整定义", () => onOpenType(type)));
+      if (!options.readOnly)
+        actions.append(action("调整定义", () => onAdjust(type.name)));
       inspector.append(actions);
     } else if (relation) {
       title(
@@ -203,11 +202,12 @@ export function renderDefinitionGraph(artifact, options) {
             .filter((item) => [relation.from, relation.to].includes(item.name))
             .flatMap((type) => sourceRef(artifact, type));
       evidence(inspector, refs, renderEvidence);
-      inspector.append(
-        action("讨论这条关系", () =>
-          onAdjust(`${relation.from}的${relation.name}关系`),
-        ),
-      );
+      if (!options.readOnly)
+        inspector.append(
+          action("讨论这条关系", () =>
+            onAdjust(`${relation.from}的${relation.name}关系`),
+          ),
+        );
     } else {
       title(
         inspector,
@@ -469,7 +469,9 @@ export function renderObjectGraph(artifact, options) {
             ),
           );
         actions.append(
-          action("围绕它提问", () => onAsk(`${entity.type} / ${entity.id}`)),
+          action(options.readOnly ? "查看示例问题" : "围绕它提问", () =>
+            onAsk(`${entity.type} / ${entity.id}`),
+          ),
           action("查看对象定义", () => onOpenType(entity.type)),
         );
         inspector.append(actions);

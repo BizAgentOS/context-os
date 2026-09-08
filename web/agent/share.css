@@ -1,0 +1,51 @@
+html[data-share-mode="true"] .demo-badge {
+  white-space: nowrap;
+}
+
+.share-connection-methods {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px;
+  padding: 22px 0 30px;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.share-connection-method h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.share-connection-method p {
+  margin: 0;
+  color: #777;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.share-update-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 18px 0 10px;
+  font-size: 13px;
+}
+
+.share-update-flow span:not(:last-child)::after {
+  content: " →";
+  color: #999;
+  margin-left: 10px;
+}
+
+.share-source-policy {
+  margin: 20px 0;
+  padding: 16px 0;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+@media (max-width: 620px) {
+  .share-connection-methods {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}

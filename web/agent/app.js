@@ -2,6 +2,9 @@ import {
   renderDefinitionGraph,
   renderObjectGraph,
 } from "./ontology-workspace.js";
+import { createShareMode } from "./share-mode.js";
+
+const shareMode = createShareMode(document);
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -148,6 +151,7 @@ function errorMessage(message = "") {
   $("#request-error").hidden = !message;
 }
 async function api(path, body) {
+  if (shareMode) return shareMode.request(path, body);
   const response = await fetch(path, {
     method: body === undefined ? "GET" : "POST",
     headers: {
@@ -256,8 +260,10 @@ async function navigate(page) {
 }
 function render() {
   $("#demo-badge").hidden = !state.demo;
-  $("#demo-badge").title =
-    "虚构企业与样本数据；演示问答在本地运行，无需模型密钥。";
+  $("#demo-badge").title = shareMode
+    ? "虚构热力企业的离线快照，可直接浏览；示例问答不调用 AI，也不修改数据。"
+    : "虚构企业与样本数据；演示问答在本地运行，无需模型密钥。";
+  $("#demo-badge").textContent = shareMode ? "离线演示" : "演示数据";
   $("#open-settings").hidden = !!state.demo;
   for (const control of $$("[data-page]")) {
     const page = control.dataset.page;
@@ -393,8 +399,10 @@ function renderCompany() {
     .querySelector("h1")
     .addEventListener("click", () => nameRow && openStatement(nameRow));
   if (nameRow) {
-    const edit = button("编辑企业信息", "quiet-button", () =>
-      openStatement(nameRow),
+    const edit = button(
+      shareMode ? "查看企业信息" : "编辑企业信息",
+      "quiet-button",
+      () => openStatement(nameRow),
     );
     intro.append(edit);
   }
@@ -417,7 +425,7 @@ function renderCompany() {
     }
     section.append(facts);
   }
-  if (!findStatement(["company.goal", "goal", "goals"])) {
+  if (!shareMode && !findStatement(["company.goal", "goal", "goals"])) {
     const prompt = button("先选一个想解决的业务问题", "inline-prompt", () => {
       $("#message-input").value = "我们这次最想解决的问题是：";
       resizeInput();
@@ -601,6 +609,7 @@ function renderOntology() {
   if (!ui.graphSelections.has(selectionKey))
     ui.graphSelections.set(selectionKey, {});
   const graphOptions = {
+    readOnly: !!shareMode,
     selection: ui.graphSelections.get(selectionKey),
     api,
     onSelectionChange: () => {
@@ -661,7 +670,7 @@ function renderOntology() {
   else {
     for (const error of artifact.content.validation?.errors || [])
       section.append(node("p", "persistent-note", `需要修正：${error}`));
-    if (canAdopt(artifact)) {
+    if (!shareMode && canAdopt(artifact)) {
       const decision = node("div", "decision-strip");
       decision.append(node("p", "", "这些定义和关系，是否符合你的业务？"));
       const adopt = button("采用这组定义", "primary-button", () =>
@@ -700,13 +709,14 @@ function openConcept(artifact, concept, relation = false) {
       openConcept(artifact, concept, relation),
     ),
   );
-  section
-    .querySelector(".canvas-heading")
-    .append(
-      button("调整定义", "quiet-button", () =>
-        adjustArtifact(artifact, concept.name),
-      ),
-    );
+  if (!shareMode)
+    section
+      .querySelector(".canvas-heading")
+      .append(
+        button("调整定义", "quiet-button", () =>
+          adjustArtifact(artifact, concept.name),
+        ),
+      );
   showDetail(
     {
       key: `concept:${artifact.id}:${artifact.version}:${concept.name}`,
@@ -772,7 +782,7 @@ function renderVerifications(artifact) {
     ui.nextRefreshSources = true;
     sendMessage();
   });
-  section.append(form);
+  if (!shareMode) section.append(form);
   if (!state.verifications.length)
     section.append(
       node(
@@ -987,13 +997,14 @@ function openVerification(record) {
       closeDetail();
     }),
   );
-  section.append(actions);
+  if (!shareMode) section.append(actions);
   showDetail(
     { key: `verification:${record.id}:${record.version}`, artifact: record },
     section,
   );
 }
 function renderAttention(canvas) {
+  if (shareMode) return;
   const entries = (state.attention || []).filter(
     (item) =>
       item.page === ui.page &&
@@ -1177,12 +1188,14 @@ function renderConsumption() {
     node(
       "p",
       "consumption-local-note",
-      "当前是本机实验：支持本机 Agent 的 MCP 配置，或可访问此服务的 HTTP 客户端。",
+      shareMode
+        ? "此页展示接入方式、读取范围与示例调用记录。离线文件不开放实际连接，也不包含密钥。"
+        : "当前是本机实验：支持本机 Agent 的 MCP 配置，或可访问此服务的 HTTP 客户端。",
     ),
   );
   if (state.accessLogs.length)
     section.append(
-      node("h2", "subsection-title", "最近调用"),
+      node("h2", "subsection-title", shareMode ? "示例调用记录" : "最近调用"),
       renderAccessLogs(state.accessLogs.slice(0, 5)),
     );
   return section;
@@ -1438,7 +1451,8 @@ function renderConsumerData(consumer) {
   );
   check.disabled =
     panel.previewBusy || panel.publishBusy || ui.requesting || state.busy;
-  heading.append(text, check);
+  heading.append(text);
+  if (!shareMode) heading.append(check);
   section.append(heading);
   const current = node("div", "consumer-data-current");
   current.append(
@@ -1461,6 +1475,20 @@ function renderConsumerData(consumer) {
       "先在数据页补充或更新资料，再检查并发布。发布保留原密钥、本体定义和访问范围；后续请求读取新数据，旧结果仍保留原来的依据。",
     ),
   );
+  if (shareMode) {
+    const flow = node("div", "share-update-flow");
+    for (const step of ["更新资料", "检查变化", "确认发布", "Agent 读取新版本"])
+      flow.append(node("span", "", step));
+    section.append(
+      flow,
+      node(
+        "p",
+        "detail-note",
+        "这里展示产品中的更新流程。当前 HTML 保留导出时的数据快照，不会自动更新。",
+      ),
+    );
+    return section;
+  }
   if (panel.previewError)
     section.append(node("p", "consumer-update-status", panel.previewError));
   if (panel.notice) {
@@ -1604,12 +1632,26 @@ function renderConsumerClone(consumer) {
   section.append(form);
   return section;
 }
+function renderShareConnection() {
+  const section = node("section", "share-connection");
+  section.append(node("h2", "subsection-title", "接入方式"));
+  const methods = node("div", "share-connection-methods");
+  for (const [name, description] of [
+    ["MCP", "Agent 先了解获准读取的对象、字段和关系，再查询企业记忆。"],
+    [
+      "HTTP API",
+      "应用直接读取授权范围内的对象，通过数据版本判断内容是否更新。",
+    ],
+  ]) {
+    const method = node("div", "share-connection-method");
+    method.append(node("h3", "", name), node("p", "", description));
+    methods.append(method);
+  }
+  section.append(methods);
+  return section;
+}
 function renderConsumerDetail(consumer) {
-  const section = detailFrame(
-    consumerName(consumer),
-    closeDetail,
-    "返回连接",
-  );
+  const section = detailFrame(consumerName(consumer), closeDetail, "返回连接");
   section.classList.add("consumer-detail");
   const title = section.querySelector(".canvas-heading > div");
   if (consumer.content.purpose)
@@ -1626,16 +1668,16 @@ function renderConsumerDetail(consumer) {
     adjustArtifact(consumer, consumerName(consumer)),
   );
   adjust.disabled = ui.requesting || state.busy;
-  actions.append(adjust);
+  if (!shareMode) actions.append(adjust);
   section.querySelector(".canvas-heading").append(actions);
   if (consumer.status === "active") {
     section.append(
-      renderConsumerConnection(consumer),
+      shareMode ? renderShareConnection() : renderConsumerConnection(consumer),
       renderConsumerData(consumer),
     );
     const grants = node("details", "consumer-grants-disclosure");
     const panel = consumerPanel(consumer);
-    grants.open = panel.grantsOpen;
+    grants.open = shareMode || panel.grantsOpen;
     grants.addEventListener("toggle", () => {
       panel.grantsOpen = grants.open;
     });
@@ -1652,7 +1694,8 @@ function renderConsumerDetail(consumer) {
         "只允许读取这里列出的对象、字段和关系。来源原文不对调用方开放。",
       ),
     );
-    section.append(grants, renderConsumerClone(consumer));
+    section.append(grants);
+    if (!shareMode) section.append(renderConsumerClone(consumer));
   } else {
     section.append(
       node("h2", "subsection-title", "可读取的内容"),
@@ -1663,7 +1706,7 @@ function renderConsumerDetail(consumer) {
         "只允许读取这里列出的对象、字段和关系。来源原文不对调用方开放。",
       ),
     );
-    if (consumer.status === "draft") {
+    if (consumer.status === "draft" && !shareMode) {
       const decision = node("div", "consumer-decision");
       decision.append(
         node(
@@ -1687,7 +1730,7 @@ function renderConsumerDetail(consumer) {
           ),
         );
       section.append(decision);
-    } else
+    } else if (consumer.status === "revoked")
       section.append(
         node("p", "consumer-revoked", "访问已停用，原来的密钥不再有效。"),
       );
@@ -1698,7 +1741,7 @@ function renderConsumerDetail(consumer) {
       "detail-note",
       `授权依据：本体第 ${consumer.content.modelVersion} 版。新定义不会自动扩大这份授权。`,
     ),
-    node("h2", "subsection-title", "最近调用"),
+    node("h2", "subsection-title", shareMode ? "示例调用记录" : "最近调用"),
     renderAccessLogs(
       state.accessLogs
         .filter((log) => log.consumerId === consumer.id)
@@ -1706,7 +1749,7 @@ function renderConsumerDetail(consumer) {
       false,
     ),
   );
-  if (consumer.status === "active") {
+  if (consumer.status === "active" && !shareMode) {
     const revoke = button(
       "停用访问",
       "quiet-button consumer-revoke-action",
@@ -1873,6 +1916,14 @@ function setFocus(artifact, suffix = "") {
   updateComposer();
 }
 function askAbout(artifact, suffix = "") {
+  if (shareMode) {
+    ui.focus = null;
+    $("#message-input").value = shareMode.question(ui.page);
+    resizeInput();
+    updateComposer();
+    $("#message-input").focus();
+    return;
+  }
   setFocus(artifact, suffix);
   const input = $("#message-input");
   if (suffix && !input.value.trim()) input.value = `关于${suffix}，`;
@@ -1943,7 +1994,8 @@ function openStatement(statement, artifact = state.profile) {
     );
     if (ok) await refresh();
   });
-  section.append(form);
+  if (shareMode) section.append(node("p", "source-text", statement.text));
+  else section.append(form);
   if (statement.evidence?.length) {
     section.append(
       node("h2", "subsection-title", "来源"),
@@ -1958,7 +2010,7 @@ function openStatement(statement, artifact = state.profile) {
       adjustArtifact(artifact, label(statement.key)),
     ),
   );
-  section.querySelector(".canvas-heading").append(actions);
+  if (!shareMode) section.querySelector(".canvas-heading").append(actions);
   showDetail(
     {
       key: `statement:${artifact.id}:${artifact.version}:${statement.key}`,
@@ -1979,7 +2031,11 @@ function openSource(artifact, options = {}) {
   );
   const actions = node("div", "detail-heading-actions");
   actions.append(
-    button("围绕这份资料提问", "quiet-button", () => askAbout(artifact)),
+    button(
+      shareMode ? "查看示例问题" : "围绕这份资料提问",
+      "quiet-button",
+      () => askAbout(artifact),
+    ),
   );
   section.querySelector(".canvas-heading").append(actions);
   if (
@@ -2061,6 +2117,19 @@ function sourcePolicyEditor(source) {
   const policy = state.sourcePolicies.find(
     (item) => item.content.sourceId === source.id,
   );
+  if (shareMode) {
+    const section = node("details", "share-source-policy");
+    section.append(node("summary", "", "用途与使用范围"));
+    section.append(
+      propertyList({
+        用途: policy?.content.purpose,
+        资料负责人: policy?.content.owner,
+        限制对外使用的字段:
+          policy?.content.sensitiveFields?.join("、") || "未标记",
+      }),
+    );
+    return section;
+  }
   const details = node("details", "source-policy");
   const summary = node("summary", "", "用途与使用范围");
   details.append(summary);
@@ -2167,7 +2236,7 @@ function openType(artifact, typeName) {
       adjustArtifact(artifact, type.name),
     ),
   );
-  section.querySelector(".canvas-heading").append(actions);
+  if (!shareMode) section.querySelector(".canvas-heading").append(actions);
   section.append(
     node("h2", "subsection-title", "业务属性对应的资料列"),
     propertyList(type.fields || {}, "definition-fields"),
@@ -2338,7 +2407,7 @@ function renderObject(artifact, type, data, options) {
   const section = detailFrame(`${type} · ${entity.id}`, back, "返回对象");
   const actions = node("div", "detail-heading-actions");
   actions.append(
-    button("围绕它提问", "quiet-button", () =>
+    button(shareMode ? "查看示例问题" : "围绕它提问", "quiet-button", () =>
       askAbout(artifact, `${type} / ${entity.id}`),
     ),
   );
@@ -2468,25 +2537,30 @@ function updateComposer() {
   const input = $("#message-input");
   const busy = state.busy;
   const blocked = ui.requesting || ui.uploading || !ui.initialized;
-  input.placeholder = placeholders[ui.page];
+  input.placeholder = shareMode
+    ? "选择下方示例问题，了解这一页…"
+    : placeholders[ui.page];
   $("#demo-question").hidden = !state.demo || busy || !!input.value.trim();
-  $("#demo-question").textContent = `试问：${demoQuestions[ui.page]}`;
+  $("#demo-question").textContent =
+    `试问：${shareMode ? shareMode.question(ui.page) : demoQuestions[ui.page]}`;
   $("#demo-question").disabled = blocked;
   $("#send-button").hidden = busy;
   $("#stop-button").hidden = !busy;
   $("#send-button").disabled = blocked || !input.value.trim();
   $("#stop-button").disabled = ui.requesting;
   $("#upload-button").disabled = blocked || busy;
-  $("#upload-button").hidden = ui.page === "consumption";
-  $("#composer-note").textContent = ui.uploading
-    ? "正在接入资料…"
-    : busy
-      ? "正在整理…"
-      : !state.model.configured && ui.initialized
-        ? "先连接一个模型"
-        : state.demo
-          ? "模拟问答"
-          : "";
+  $("#upload-button").hidden = !!shareMode || ui.page === "consumption";
+  $("#composer-note").textContent = shareMode
+    ? "示例问答"
+    : ui.uploading
+      ? "正在接入资料…"
+      : busy
+        ? "正在整理…"
+        : !state.model.configured && ui.initialized
+          ? "先连接一个模型"
+          : state.demo
+            ? "模拟问答"
+            : "";
   $("#focus-context").hidden = !ui.focus;
   $("#focus-label").textContent = ui.focus?.label || "";
   for (const control of $$("[data-page]")) {
@@ -2542,6 +2616,8 @@ async function sendMessage() {
   );
 }
 async function uploadFile(file) {
+  if (shareMode)
+    return errorMessage("离线演示只提供已保存的样本资料，不能上传或修改数据。");
   if (!file || ui.requesting || ui.uploading || state.busy) return;
   if (ui.page === "consumption") {
     errorMessage("请返回数据页接入资料。");
@@ -2636,7 +2712,9 @@ $("#composer").addEventListener("submit", (event) => {
   sendMessage();
 });
 $("#demo-question").addEventListener("click", () => {
-  $("#message-input").value = demoQuestions[ui.page];
+  $("#message-input").value = shareMode
+    ? shareMode.question(ui.page)
+    : demoQuestions[ui.page];
   resizeInput();
   sendMessage();
 });
@@ -2719,7 +2797,7 @@ window.addEventListener("dragenter", (event) => {
   if (!event.dataTransfer?.types.includes("Files")) return;
   event.preventDefault();
   dragDepth += 1;
-  if (!state.busy && !ui.requesting && ui.page !== "consumption")
+  if (!shareMode && !state.busy && !ui.requesting && ui.page !== "consumption")
     $("#drop-overlay").hidden = false;
 });
 window.addEventListener("dragover", (event) => {
@@ -2756,8 +2834,9 @@ $("#canvas").addEventListener("wheel", readCanvas, { passive: true });
 $("#message-input").addEventListener("focus", () => {
   $(".canvas-app").dataset.reading = "false";
 });
-window.addEventListener("focus", () => refresh());
+if (!shareMode) window.addEventListener("focus", () => refresh());
 refresh(true);
-setInterval(() => {
-  if (!document.hidden) refresh();
-}, 1200);
+if (!shareMode)
+  setInterval(() => {
+    if (!document.hidden) refresh();
+  }, 1200);
