@@ -1,11 +1,11 @@
 # DataEngine Feature List
 
-Last Updated: 2026-09-07
+Last Updated: 2026-09-08
 
 ## Version Info
 
 - **Current Release:** 无，尚未发布产品版本。
-- **Planned Version:** v0.1.0 开发档案 — 首轮交付 Agent 企业记忆体验。
+- **Planned Version:** v0.1.0 开发档案 — 首轮交付企业记忆画布。
 - **版本状态:** InProgress；首个实验版本开发中，尚未发布。
 - **状态规则:** `Planned → InProgress → Completed`；`Released` 仅填写实际发布版本。
 - **设计:** [v0.1.0 设计与开发步骤](features/v0.1.0.md)。
@@ -57,8 +57,8 @@ Last Updated: 2026-09-07
 - **Status:** Completed
 - **Category / Priority:** New / High
 - **Planned / Released:** v0.1.0 / —
-- **Created / Started / Completed:** 2026-09-07 / 2026-09-07 / 2026-09-07
-- **Description:** 已完成 T003-01/02/03：真实 KodaX SDK 主 Agent、来源与企业记忆、本体候选/采用、对象组合、报告、更新和恢复；16 项 Agent 检查及实际模型链路验证见运行记录。
+- **Created / Started / Completed:** 2026-09-07 / 2026-09-07 / 2026-09-08
+- **Description:** 已完成 T003-01/02/03/04：真实 KodaX 与对象工作区复用；新增每页单一有界上下文、实际完成后推进、聊天裁剪不删企业记忆。24 项 Agent 测试与真实画布链路见[运行记录](experiment/CANVAS.md)。
 - **Blocked by:** 企业理解/来源首段无；后续对象与建模能力依赖 002，不等待完整 MCP。
 - **Design:** [FEATURE_003](features/v0.1.0.md#feature-003)。
 
@@ -78,7 +78,7 @@ Last Updated: 2026-09-07
 - **Category / Priority:** New / High
 - **Planned / Released:** v0.1.0 / —
 - **Created / Started / Completed:** 2026-09-07 / 2026-09-07 / —
-- **Description:** T005-01 保留浏览型实验室；T005-03 已交付主 Agent 对话、模型配置和来源/本体/对象/报告工作台，完整演变与对照视图仍由 T005-02 承接。
+- **Description:** T005-04 已将主界面改为企业、数据、本体与对象三个记忆画布；底部输入、近清远淡对话，真实成果可直接查看。T005-01/03 作为历史交付；T005-02 完整演变与对照视图暂缓。
 - **Blocked by:** 基础查看依赖 001 和已有技术试样，不等待正式本体；维护页依赖 004。
 - **Design:** [FEATURE_005](features/v0.1.0.md#feature-005)。
 
@@ -99,6 +99,6 @@ Last Updated: 2026-09-07
 - InProgress: 2
 - Completed: 2
 - New: 5；Internal: 1；High: 6。
-- **当前：FEATURE_003 与 T005-03 主 Agent 工作台已完成，真实 SDK、企业理解、资料、本体对象、报告与一次记忆更新已跑通。见[运行与验收](experiment/AGENT.md)。下一步先体验并检查业务建模质量；T002 后续只读 MCP、T004 完整语义演变/恢复、T005-02 对照视图与 T006 方法评测继续保持未完成。旧浏览型实验室与技术试样仍可查看。**
+- **当前：按用户手绘与产品定位实现[企业记忆画布](CANVAS_DESIGN.md)，T003-04 / T005-04 已完成，验证见[画布运行记录](experiment/CANVAS.md)。既有 KodaX 与企业记忆能力复用；前端只创建企业、接入资料、建立本体与对象，去掉任务/历史聊天/报告与更新页。旧完成记录保留，T004/T006 的扩展能力继续延后。**
 
 项目初始化和开发文档已完成，记录在 [CHANGELOG](CHANGELOG.md)；它们不计入产品功能完成数。功能状态在本文维护，具体票的完成状态在对应设计块维护。

@@ -1,10 +1,11 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import type {
   Artifact,
   ArtifactInput,
+  CanvasProgress,
   Data,
   Investigation,
   Repository,
@@ -40,6 +41,7 @@ export class MemoryStore implements Repository {
       CREATE TABLE IF NOT EXISTS artifacts (id TEXT, version INTEGER, kind TEXT, body TEXT NOT NULL, PRIMARY KEY(id,version));
       CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, body TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS message_receipts (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, fingerprint TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS events (task_id TEXT, seq INTEGER, body TEXT NOT NULL, PRIMARY KEY(task_id,seq));
       CREATE TABLE IF NOT EXISTS operations (id TEXT PRIMARY KEY, body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY, body TEXT NOT NULL);`);
@@ -309,6 +311,15 @@ export class MemoryStore implements Repository {
     return this.saveTask(task);
   }
 
+  dismissPending(taskId: string): Task {
+    const task = this.getTask(taskId);
+    if (task.executionId) throw new Error("运行尚未结束");
+    task.pending = null;
+    task.status = "paused";
+    task.nextStep = "可以继续查看和完善当前页面。";
+    return this.saveTask(task);
+  }
+
   pauseTask(taskId: string, reason = "已停止，已保存的成果保留。"): Task {
     const task = this.getTask(taskId);
     task.revision++;
@@ -354,10 +365,38 @@ export class MemoryStore implements Repository {
       return message;
     }
     const message: Message = { id, taskId, role, content, createdAt: now() };
-    this.db
-      .prepare("INSERT INTO messages VALUES (?,?,?)")
-      .run(id, taskId, JSON.stringify(message));
+    const fingerprint = createHash("sha256")
+      .update(role + ":" + content)
+      .digest("hex");
+    this.transaction(() => {
+      this.db
+        .prepare(
+          "INSERT INTO message_receipts VALUES (?,?,?) ON CONFLICT(id) DO NOTHING",
+        )
+        .run(id, taskId, fingerprint);
+      this.db
+        .prepare("INSERT INTO messages VALUES (?,?,?)")
+        .run(id, taskId, JSON.stringify(message));
+    });
     return message;
+  }
+
+  hasMessageReceipt(
+    id: string,
+    taskId: string,
+    role: Message["role"],
+    content: string,
+  ): boolean {
+    const receipt = this.db
+      .prepare("SELECT task_id,fingerprint FROM message_receipts WHERE id=?")
+      .get(id) as { task_id: string; fingerprint: string } | undefined;
+    if (!receipt) return false;
+    const fingerprint = createHash("sha256")
+      .update(role + ":" + content)
+      .digest("hex");
+    if (receipt.task_id !== taskId || receipt.fingerprint !== fingerprint)
+      throw new Error("消息标识已使用");
+    return true;
   }
 
   getMessage(id: string): Message | null {
@@ -370,6 +409,40 @@ export class MemoryStore implements Repository {
       .prepare("SELECT body FROM messages WHERE task_id=? ORDER BY rowid")
       .all(taskId)
       .map((row) => parse<Message>(row));
+  }
+
+  trimMessages(taskId: string, limit = 12, characterLimit = 12000): Message[] {
+    const messages = this.messages(taskId);
+    let count = 0;
+    let size = 0;
+    const retained: Message[] = [];
+    for (const message of messages.reverse()) {
+      if (count >= limit || size + message.content.length > characterLimit)
+        break;
+      retained.unshift(message);
+      count++;
+      size += message.content.length;
+    }
+    const ids = new Set(retained.map((message) => message.id));
+    const remove = this.db.prepare("DELETE FROM messages WHERE id=?");
+    for (const message of messages)
+      if (!ids.has(message.id)) remove.run(message.id);
+    return retained;
+  }
+
+  getCanvas(): CanvasProgress | null {
+    const row = this.db
+      .prepare("SELECT body FROM settings WHERE id='canvas'")
+      .get();
+    return row ? parse<CanvasProgress>(row) : null;
+  }
+
+  saveCanvas(progress: CanvasProgress) {
+    this.db
+      .prepare(
+        "INSERT INTO settings VALUES ('canvas',?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
+      )
+      .run(JSON.stringify(progress));
   }
 
   event(taskId: string, kind: string, data: Data): TaskEvent {

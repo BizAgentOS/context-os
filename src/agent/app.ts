@@ -14,15 +14,32 @@ import {
 } from "./runtime.ts";
 import type {
   Artifact,
+  CanvasPage,
+  CanvasProgress,
   Data,
   DomainTool,
   Json,
+  Repository,
   Task,
   WriteContext,
 } from "./contracts.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const system = readFileSync(join(ROOT, "config/agent/system.md"), "utf8");
+const canvasSystem = readFileSync(join(ROOT, "config/agent/canvas.md"), "utf8");
+const canvasPages: CanvasPage[] = ["company", "sources", "ontology"];
+const canvasPrompts: Record<CanvasPage, string> = {
+  company: "你的企业叫什么？",
+  sources: "上传第一份企业资料。",
+  ontology: "从哪些业务对象开始？",
+};
+const pageCompleteTool: DomainTool = {
+  name: "page_complete",
+  description:
+    "完成当前页。必须先保存有依据的企业名称与业务，或实际检查有记录的 CSV；本体页必须用户已采用。成功后只简短收尾，不再调用工具。",
+  mutates: true,
+  inputSchema: { type: "object", properties: {}, additionalProperties: false },
+};
 const string = (value: unknown, label: string, max = 12000) => {
   if (typeof value !== "string" || !value.trim() || value.length > max)
     throw new Error(`${label} 不能为空且不能超过 ${max} 字`);
@@ -122,6 +139,351 @@ export class AgentApplication {
       busy: !!this.active || this.modelTest,
       streaming: task?.id === this.active?.context.taskId ? this.streaming : "",
     };
+  }
+
+  private canvasProgress(): CanvasProgress {
+    const saved = this.memory.getCanvas();
+    if (saved) return saved;
+    // Existing spaces keep their saved memory; the new canvas does not reset them.
+    const completed: CanvasPage[] = [];
+    const hasModel = this.memory.listArtifacts("ontology").length > 0;
+    if (this.companyReady() || hasModel) completed.push("company");
+    if ((completed.length && this.sourcesReady()) || hasModel)
+      completed.push("sources");
+    if (
+      this.memory.listArtifacts("ontology").some((a) => a.status === "adopted")
+    )
+      completed.push("ontology");
+    const currentPage = canvasPages[Math.min(completed.length, 2)];
+    const progress: CanvasProgress = {
+      currentPage,
+      completed,
+      reached: canvasPages.slice(0, canvasPages.indexOf(currentPage) + 1),
+      taskIds: {},
+    };
+    this.memory.saveCanvas(progress);
+    return progress;
+  }
+
+  private companyReady(): boolean {
+    const profile = this.memory.listArtifacts("profile")[0];
+    const statements = (profile?.content.statements ?? []) as Data[];
+    const has = (keys: string[]) =>
+      statements.some(
+        (statement) =>
+          keys.includes(String(statement.key)) &&
+          ["user", "source"].includes(String(statement.origin)) &&
+          typeof statement.text === "string" &&
+          statement.text.trim().length > 1 &&
+          !/^(未知|待定|未提供|不知道|无|公司|企业)$/.test(
+            statement.text.trim(),
+          ),
+      );
+    return (
+      has([
+        "company.name",
+        "company_name",
+        "enterprise.name",
+        "name",
+        "企业名称",
+        "公司名称",
+      ]) &&
+      has([
+        "company.business",
+        "company_business",
+        "enterprise.business",
+        "business",
+        "主营业务",
+        "业务",
+        "业务范围",
+      ])
+    );
+  }
+
+  private sourcesReady(): boolean {
+    return this.memory
+      .listArtifacts("source")
+      .some(
+        (source) =>
+          source.status === "ready" &&
+          source.content.format === "csv" &&
+          Array.isArray(source.content.rows) &&
+          source.content.rows.length > 0,
+      );
+  }
+
+  private canvasPage(value?: unknown): CanvasPage {
+    const progress = this.canvasProgress();
+    const page = value ?? progress.currentPage;
+    if (!canvasPages.includes(page as CanvasPage)) throw new Error("无效页面");
+    if (!progress.reached.includes(page as CanvasPage))
+      throw new Error("请先完成前一页");
+    return page as CanvasPage;
+  }
+
+  private canvasTask(page: CanvasPage): Task {
+    const progress = this.canvasProgress();
+    let taskId = progress.taskIds[page];
+    if (!taskId) {
+      taskId = this.memory.createTask(
+        {
+          company: "建立企业信息",
+          sources: "接入企业资料",
+          ontology: "建立本体与对象",
+        }[page],
+      ).id;
+      progress.taskIds[page] = taskId;
+      this.memory.saveCanvas(progress);
+    }
+    return this.memory.getTask(taskId);
+  }
+
+  canvasState(value?: unknown) {
+    const page = this.canvasPage(value);
+    const progress = this.canvasProgress();
+    const task = progress.taskIds[page]
+      ? this.memory.getTask(progress.taskIds[page]!)
+      : null;
+    const pending = task?.pending;
+    const profile = this.memory.listArtifacts("profile")[0] ?? null;
+    const sources = this.memory.listArtifacts("source");
+    const ontologies = this.memory.listArtifacts("ontology");
+    const prompt =
+      page === "company" && this.companyReady()
+        ? "有哪些企业信息需要调整？"
+        : page === "sources" && sources.length
+          ? "还需要接入哪些资料？"
+          : page === "ontology" && ontologies.length
+            ? "想查看或调整哪些对象？"
+            : canvasPrompts[page];
+    return {
+      currentPage: progress.currentPage,
+      page,
+      pages: canvasPages.map((id) => ({
+        id,
+        ready: progress.completed.includes(id),
+        available: progress.reached.includes(id),
+      })),
+      model: this.model(),
+      busy: !!this.active || this.modelTest,
+      streaming: task?.id === this.active?.context.taskId ? this.streaming : "",
+      messages: task
+        ? this.memory
+            .messages(task.id)
+            .map(({ id, role, content }) => ({ id, role, content }))
+        : [],
+      prompt: String(
+        pending?.question ??
+          (!this.model().configured
+            ? "先配置模型，就可以开始创建企业记忆。"
+            : prompt),
+      ),
+      profile,
+      sources,
+      ontologies,
+      pending: pending
+        ? {
+            question: pending.question,
+            ...(pending.candidateId
+              ? { candidateId: pending.candidateId, version: pending.version }
+              : {}),
+          }
+        : null,
+    };
+  }
+
+  async canvasNavigate(body: Record<string, unknown>) {
+    const page = this.canvasPage(body.page);
+    await this.stopActive("已切换页面，保存的内容保留。");
+    const progress = this.canvasProgress();
+    progress.currentPage = page;
+    this.memory.saveCanvas(progress);
+    return this.canvasState(page);
+  }
+
+  async canvasStop(body: Record<string, unknown>) {
+    const page = this.canvasPage(body.page);
+    const taskId = this.canvasProgress().taskIds[page];
+    if (taskId) await this.stop(taskId);
+    return this.canvasState(page);
+  }
+
+  async canvasMessage(
+    body: Record<string, unknown>,
+  ): Promise<ReturnType<AgentApplication["canvasState"]>> {
+    if (this.modelTest) throw new Error("正在测试连接，请稍后发送");
+    const page = this.canvasPage(body.page);
+    if (page !== this.canvasProgress().currentPage)
+      throw new Error("页面已变化，请回到当前页面后继续");
+    const text = string(body.text, "消息", 6000);
+    const messageId =
+      body.messageId === undefined
+        ? randomUUID()
+        : string(body.messageId, "消息标识", 150);
+    const focusVersion =
+      body.focusVersion === undefined ? undefined : Number(body.focusVersion);
+    if (
+      focusVersion !== undefined &&
+      (!Number.isInteger(focusVersion) || focusVersion < 1)
+    )
+      throw new Error("无效的来源版本");
+    const focus =
+      typeof body.focusId === "string"
+        ? this.memory.getArtifact(body.focusId, focusVersion)
+        : undefined;
+    if (focus && !["profile", "source", "ontology"].includes(focus.kind))
+      throw new Error("当前页面不支持此内容");
+    const task = this.canvasTask(page);
+    if (this.memory.hasMessageReceipt(messageId, task.id, "user", text))
+      return this.canvasState();
+    const previous = this.memory.getMessage(messageId);
+    if (previous) {
+      if (
+        previous.taskId !== task.id ||
+        previous.content !== text ||
+        previous.role !== "user"
+      )
+        throw new Error("消息标识已使用");
+      return this.canvasState();
+    }
+    if (
+      task.pending?.candidateId &&
+      /^(?:采用这版|确认采用|采用当前候选|采用这个候选|我确认采用这版)[。！!]?$/u.test(
+        text,
+      )
+    ) {
+      if (
+        focus &&
+        (focus.id !== task.pending.candidateId ||
+          focus.version !== task.pending.version)
+      )
+        throw new Error(
+          "当前引用与待决定的候选版本不同，请打开具体候选后再决定",
+        );
+      await this.stopActive("正在保存你的决定。");
+      this.memory.addMessage(task.id, "user", text, messageId);
+      return this.canvasDecision({
+        page,
+        candidateId: task.pending.candidateId,
+        version: task.pending.version,
+        decision: "adopt",
+      });
+    }
+    await this.stopActive("已收到新的输入。");
+    const message = this.memory.addMessage(task.id, "user", text, messageId);
+    this.memory.trimMessages(task.id);
+    if (!this.model().configured)
+      this.memory.pauseTask(task.id, "请先配置模型，内容已保存。");
+    else
+      this.launch(
+        task.id,
+        `请处理本页最新的用户消息 ${message.id}。`,
+        focus,
+        page,
+      );
+    return this.canvasState(page);
+  }
+
+  async canvasUpload(body: Record<string, unknown>) {
+    if (this.modelTest) throw new Error("正在测试连接，请稍后上传");
+    const page = this.canvasPage(body.page);
+    if (page !== this.canvasProgress().currentPage)
+      throw new Error("页面已变化，请回到当前页面后继续");
+    await this.stopActive("正在接入资料。");
+    const artifact = new Workspace(this.memory).upload(
+      string(body.name, "文件名", 180),
+      typeof body.content === "string" ? body.content : "",
+    );
+    const task = this.canvasTask(page);
+    this.memory.clearInvestigation(task.id, "已接入新资料。");
+    this.memory.attachArtifact(task.id, artifact);
+    this.memory.addMessage(
+      task.id,
+      "user",
+      `我上传了 ${artifact.title}，请查看资料并继续当前页。`,
+    );
+    this.memory.trimMessages(task.id);
+    if (this.model().configured)
+      this.launch(
+        task.id,
+        "请检查最新上传的资料并继续当前页。",
+        artifact,
+        page,
+      );
+    return this.canvasState(page);
+  }
+
+  async canvasDecision(
+    body: Record<string, unknown>,
+  ): Promise<ReturnType<AgentApplication["canvasState"]>> {
+    if (this.modelTest) throw new Error("正在测试连接，请稍后处理");
+    const page = this.canvasPage(body.page);
+    if (page !== "ontology" || this.canvasProgress().currentPage !== page)
+      throw new Error("请在本体页面处理候选");
+    const task = this.canvasTask(page);
+    const candidateId = string(body.candidateId, "候选");
+    const version = Number(body.version);
+    if (
+      task.pending?.candidateId !== candidateId ||
+      task.pending.version !== version
+    )
+      throw new Error("该决定不对应当前等待的候选版本");
+    if (!["adopt", "reject"].includes(String(body.decision)))
+      throw new Error("无效的决定");
+    await this.stopActive("正在保存你的决定。");
+    if (body.decision === "reject")
+      return this.canvasMessage({
+        page,
+        text: "暂不采用这版，请问我最需要调整的地方。",
+      });
+    try {
+      const artifact = new Workspace(this.memory).adopt(candidateId, version);
+      this.memory.attachArtifact(task.id, artifact);
+      this.memory.clearInvestigation(task.id, "已采用本体。");
+      const progress = this.canvasProgress();
+      if (!progress.completed.includes("ontology"))
+        progress.completed.push("ontology");
+      this.memory.saveCanvas(progress);
+      this.memory.addMessage(task.id, "user", "采用这版本体。");
+      this.memory.addMessage(
+        task.id,
+        "assistant",
+        "已采用。现在可以查看企业的对象和关系。",
+      );
+      this.memory.dismissPending(task.id);
+      this.memory.trimMessages(task.id);
+      return this.canvasState(page);
+    } catch (error) {
+      this.memory.restoreWaiting(task.id, task.pending!, this.safeError(error));
+      throw error;
+    }
+  }
+
+  private canvasWorkspace(context: WriteContext, page: CanvasPage): Workspace {
+    const kinds =
+      page === "ontology"
+        ? ["profile", "source", "ontology"]
+        : ["profile", "source"];
+    const repository: Repository = {
+      listArtifacts: (kind) =>
+        this.memory.listArtifacts(kind).filter((a) => kinds.includes(a.kind)),
+      getArtifact: (id, version) => {
+        const artifact = this.memory.getArtifact(id, version);
+        if (!kinds.includes(artifact.kind))
+          throw new Error("当前页面不支持此内容");
+        return artifact;
+      },
+      putArtifact: (input, writeContext, operationId) => {
+        if (!kinds.includes(input.kind))
+          throw new Error("当前页面不支持保存此内容");
+        return this.memory.putArtifact(input, writeContext, operationId);
+      },
+      getMessage: (id) => this.memory.getMessage(id),
+      getInvestigation: (id) => this.memory.getInvestigation(id),
+      bindInvestigation: (writeContext, scope) =>
+        this.memory.bindInvestigation(writeContext, scope),
+    };
+    return new Workspace(repository, context);
   }
 
   async idle() {
@@ -232,12 +594,17 @@ export class AgentApplication {
     return { task: this.memory.getTask(task.id) };
   }
 
-  private launch(taskId: string, input: string, focus?: Artifact) {
+  private launch(
+    taskId: string,
+    input: string,
+    focus?: Artifact,
+    page?: CanvasPage,
+  ) {
     const context = this.memory.beginExecution(taskId);
     this.streaming = "";
     // Publish the active slot before the SDK can invoke tools or another request arrives.
     const promise = Promise.resolve().then(() =>
-      this.run(context, input, focus),
+      this.run(context, input, focus, page),
     );
     this.active = { context, promise };
     void promise
@@ -248,9 +615,34 @@ export class AgentApplication {
       .catch(() => {});
   }
 
-  private async run(context: WriteContext, input: string, focused?: Artifact) {
+  private async run(
+    context: WriteContext,
+    input: string,
+    focused?: Artifact,
+    page?: CanvasPage,
+  ) {
     const task = this.memory.getTask(context.taskId);
-    const workspace = new Workspace(this.memory, context);
+    const workspace = page
+      ? this.canvasWorkspace(context, page)
+      : new Workspace(this.memory, context);
+    const tools = page
+      ? [
+          ...domainTools.filter((tool) =>
+            [
+              "workspace_overview",
+              "memory_read",
+              "profile_update",
+              ...(page === "ontology"
+                ? ["ontology_propose", "ontology_preview", "object_execute"]
+                : []),
+            ].includes(tool.name),
+          ),
+          ...controlTools.filter((tool) => tool.name === "task_ask"),
+          pageCompleteTool,
+        ]
+      : [...domainTools, ...controlTools];
+    let pageCompleted = false;
+    const inspectedSources = new Map<string, number>();
     let closingTimer: ReturnType<typeof setTimeout> | undefined;
     let failure: string | undefined;
     let lastWrite: { signature: string; operationId: string } | undefined;
@@ -262,17 +654,21 @@ export class AgentApplication {
     };
     try {
       const outcome = await this.driver.run({
-        sessionId: task.sessionId ?? undefined,
+        sessionId: page ? undefined : (task.sessionId ?? undefined),
         title: task.goal,
-        system,
-        tools: [...domainTools, ...controlTools],
+        system: page ? canvasSystem : system,
+        tools,
         input: JSON.stringify({
-          task: {
-            goal: task.goal,
-            nextStep: task.nextStep,
-            artifactRefs: task.artifactRefs,
-            investigation: task.investigation ?? null,
-          },
+          ...(page
+            ? { page }
+            : {
+                task: {
+                  goal: task.goal,
+                  nextStep: task.nextStep,
+                  artifactRefs: task.artifactRefs,
+                  investigation: task.investigation ?? null,
+                },
+              }),
           enterprise: workspace.overview(),
           focus: focused
             ? {
@@ -282,14 +678,21 @@ export class AgentApplication {
                 kind: focused.kind,
               }
             : null,
-          recentMessages: this.memory.messages(task.id).slice(-8),
+          recentMessages: page
+            ? this.memory.trimMessages(task.id)
+            : this.memory.messages(task.id).slice(-8),
           input,
         }),
         onSession: (id) => {
-          this.memory.session(task.id, id);
+          if (!page) this.memory.session(task.id, id);
         },
         onEvent: (kind, data) => {
           if (kind === "assistant.delta") {
+            if (
+              page &&
+              this.memory.getTask(task.id).revision !== context.taskRevision
+            )
+              return;
             this.streaming += String(data.text);
             return;
           }
@@ -301,6 +704,48 @@ export class AgentApplication {
           } catch (error) {
             void this.driver.stop();
             throw error;
+          }
+          if (page && !tools.some((tool) => tool.name === name))
+            throw new Error("当前页面没有这项能力");
+          if (page && name === "page_complete") {
+            let artifacts: Artifact[];
+            if (page === "company") {
+              if (!this.companyReady())
+                throw new Error("请先保存有依据的企业名称与业务");
+              artifacts = this.memory.listArtifacts("profile").slice(0, 1);
+            } else if (page === "sources") {
+              artifacts = this.memory
+                .listArtifacts("source")
+                .filter(
+                  (a) =>
+                    a.status === "ready" &&
+                    a.content.format === "csv" &&
+                    Array.isArray(a.content.rows) &&
+                    a.content.rows.length > 0 &&
+                    inspectedSources.get(a.id) === a.version,
+                );
+              if (!artifacts.length)
+                throw new Error("请先读取并检查一份有记录的 CSV 业务资料");
+            } else {
+              artifacts = this.memory
+                .listArtifacts("ontology")
+                .filter((a) => a.status === "adopted");
+              if (!artifacts.length)
+                throw new Error("请先让用户采用已检查的本体候选");
+            }
+            for (const artifact of artifacts)
+              this.memory.attachArtifact(task.id, artifact);
+            this.memory.complete(
+              context,
+              artifacts.map((a) => a.id),
+              "当前页面已建立。",
+            );
+            pageCompleted = true;
+            startClosing();
+            return {
+              saved: true,
+              message: "当前页面已完成，回复简短收尾后由产品进入下一页。",
+            };
           }
           if (name === "task_checkpoint")
             return serializable(
@@ -315,6 +760,8 @@ export class AgentApplication {
               reason: string(args.reason, "原因", 3000),
             };
             if (args.candidateId) {
+              if (page && page !== "ontology")
+                throw new Error("请在本体页面处理候选");
               const candidate = this.memory.getArtifact(
                 string(args.candidateId, "候选"),
                 Number(args.version),
@@ -324,6 +771,14 @@ export class AgentApplication {
                 candidate.status !== "candidate"
               )
                 throw new Error("需要有效本体候选");
+              if (
+                page &&
+                (this.memory.getArtifact(candidate.id).version !==
+                  candidate.version ||
+                  !(candidate.content.validation as Data)?.valid ||
+                  !candidate.content.preview)
+              )
+                throw new Error("请先检查并展示最新候选版本");
               pending.candidateId = candidate.id;
               pending.version = candidate.version;
             }
@@ -357,6 +812,15 @@ export class AgentApplication {
               : `write-${++writeSequence}`
             : undefined;
           const result = await workspace.execute(name, args, operationId);
+          if (page && name === "memory_read" && typeof args.id === "string") {
+            const artifact = result as unknown as Artifact;
+            if (
+              artifact.kind === "source" &&
+              Array.isArray(artifact.content.rows) &&
+              artifact.content.rows.length > 0
+            )
+              inspectedSources.set(artifact.id, artifact.version);
+          }
           if (mutates && operationId) lastWrite = { signature, operationId };
           return result;
         },
@@ -364,9 +828,21 @@ export class AgentApplication {
       failure = outcome.error
         ? this.safeError(new Error(outcome.error))
         : undefined;
-      if (outcome.text.trim())
-        this.memory.addMessage(task.id, "assistant", outcome.text);
-      else if (this.memory.getTask(task.id).pending)
+      const interrupted =
+        page && this.memory.getTask(task.id).revision !== context.taskRevision;
+      if (page && failure && !interrupted) {
+        this.memory.addMessage(
+          task.id,
+          "assistant",
+          `本次执行未完成：${failure}。已保存的内容仍然保留。`,
+        );
+      } else if (!interrupted && outcome.text.trim())
+        this.memory.addMessage(
+          task.id,
+          "assistant",
+          page ? outcome.text.slice(0, 6000) : outcome.text,
+        );
+      else if (!interrupted && this.memory.getTask(task.id).pending)
         this.memory.addMessage(
           task.id,
           "assistant",
@@ -380,14 +856,37 @@ export class AgentApplication {
       });
     } catch (error) {
       failure = this.safeError(error);
-      this.memory.addMessage(
-        task.id,
-        "assistant",
-        `本次执行未完成：${failure}。已保存的资料和成果仍然可以查看。`,
-      );
+      if (
+        !page ||
+        this.memory.getTask(task.id).revision === context.taskRevision
+      )
+        this.memory.addMessage(
+          task.id,
+          "assistant",
+          `本次执行未完成：${failure}。已保存的资料和成果仍然可以查看。`,
+        );
     } finally {
       if (closingTimer) clearTimeout(closingTimer);
       this.memory.endExecution(context, failure);
+      if (page) {
+        this.memory.trimMessages(task.id);
+        const current = this.memory.getTask(task.id);
+        if (
+          pageCompleted &&
+          !failure &&
+          current.status === "completed" &&
+          current.revision === context.taskRevision
+        ) {
+          const progress = this.canvasProgress();
+          if (!progress.completed.includes(page)) progress.completed.push(page);
+          const next = canvasPages[canvasPages.indexOf(page) + 1];
+          if (next && !progress.reached.includes(next)) {
+            progress.reached.push(next);
+            if (progress.currentPage === page) progress.currentPage = next;
+          }
+          this.memory.saveCanvas(progress);
+        }
+      }
       this.streaming = "";
     }
   }

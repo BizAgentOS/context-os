@@ -6,6 +6,13 @@ export type Json =
   | Json[]
   | { [key: string]: Json };
 export type Data = { [key: string]: Json };
+export type CanvasPage = "company" | "sources" | "ontology";
+export interface CanvasProgress {
+  currentPage: CanvasPage;
+  reached: CanvasPage[];
+  completed: CanvasPage[];
+  taskIds: Partial<Record<CanvasPage, string>>;
+}
 export interface Artifact {
   id: string;
   kind: string;

@@ -68,6 +68,14 @@ export async function createServer(
       }
       const url = new URL(request.url ?? "/", `http://${host}`);
       if (request.method === "GET") {
+        if (url.pathname === "/api/canvas/bootstrap") {
+          send(200, { token, ...app.canvasState() });
+          return;
+        }
+        if (url.pathname === "/api/canvas") {
+          send(200, app.canvasState(url.searchParams.get("page") ?? undefined));
+          return;
+        }
         if (url.pathname === "/api/bootstrap") {
           send(200, { token, ...app.state() });
           return;
@@ -129,6 +137,22 @@ export async function createServer(
       const body = await readBody(request);
       let result: unknown;
       switch (url.pathname) {
+        case "/api/canvas/message":
+          result = await queue(() => app.canvasMessage(body));
+          send(202, result);
+          return;
+        case "/api/canvas/upload":
+          result = await queue(() => app.canvasUpload(body));
+          break;
+        case "/api/canvas/navigate":
+          result = await queue(() => app.canvasNavigate(body));
+          break;
+        case "/api/canvas/stop":
+          result = await app.canvasStop(body);
+          break;
+        case "/api/canvas/decision":
+          result = await queue(() => app.canvasDecision(body));
+          break;
         case "/api/messages":
           result = await queue(() => app.message(body));
           send(202, result);

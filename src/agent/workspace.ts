@@ -101,7 +101,7 @@ export const domainTools: DomainTool[] = [
   {
     name: "profile_update",
     description:
-      "增量保存企业理解。source 必须有来源证据；suggestion 是待查证建议；user 必须提供当前任务真实用户消息的 messageId、quote，text 与 quote 完全一致。人工编辑不会被覆盖，冲突单独保留。",
+      "增量保存企业理解。source 必须有来源证据；suggestion 是待查证建议；user 必须提供当前任务真实用户消息的 messageId、quote，text 与 quote 完全一致。核验通过的用户原话可更正同一陈述；来源或建议不能覆盖人工编辑，冲突单独保留。",
     inputSchema: schema(
       {
         statements: {
@@ -759,7 +759,7 @@ export class Workspace {
         userEdited: trusted || update.origin === "user",
         ...(userEvidence ? { userEvidence } : {}),
       };
-      if (existing?.userEdited && !trusted) {
+      if (existing?.userEdited && !trusted && !userEvidence) {
         if (existing.text !== text)
           conflicts.push({
             key,
