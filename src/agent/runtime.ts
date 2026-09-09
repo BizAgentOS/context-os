@@ -11,6 +11,7 @@ import type { Data, DomainTool, Json } from "./contracts.ts";
 
 export interface RunRequest {
   sessionId?: string;
+  ephemeral?: boolean;
   title: string;
   input: string;
   system: string;
@@ -213,6 +214,7 @@ export class KodaXDriver implements AgentDriver {
       clearTimeout(timeout);
       subscription.close();
       this.handle = undefined;
+      if (request.ephemeral) await runtime.sessions.delete(session.id);
     }
   }
 

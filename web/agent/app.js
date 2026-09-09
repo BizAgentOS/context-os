@@ -2,6 +2,7 @@ import {
   renderDefinitionGraph,
   renderObjectGraph,
 } from "./ontology-workspace.js";
+import { renderLiveWorkspace } from "./live-workspace.js";
 import { createShareMode } from "./share-mode.js";
 
 const shareMode = createShareMode(document);
@@ -16,7 +17,7 @@ const pageLabels = {
 };
 const placeholders = {
   company: "从你的企业开始…",
-  sources: "告诉我资料在哪里，或上传一份文件…",
+  sources: "告诉我需要连接哪个企业系统…",
   ontology: "我们需要理解哪些业务对象？",
   consumption: "哪些应用需要使用这些企业记忆？",
 };
@@ -91,6 +92,7 @@ const state = {
   accessLogs: [],
   pending: null,
   demo: null,
+  live: { connections: [], models: [], consumers: [], audit: [] },
 };
 initialAccess = "";
 const ui = {
@@ -286,6 +288,7 @@ function canvasFingerprint() {
     page: ui.page,
     profile: state.profile && `${state.profile.id}:${state.profile.version}`,
     sources: refs(state.sources),
+    live: state.live,
     ontologies: refs(state.ontologies),
     outlines: refs(state.outlines),
     verifications: refs(state.verifications),
@@ -339,7 +342,32 @@ function renderCanvas(force = false) {
     return;
   }
   const canvas = $("#canvas");
-  if (ui.page === "company") canvas.replaceChildren(renderCompany());
+  if (!shareMode && !state.demo && ui.page !== "company") {
+    const live = renderLiveWorkspace(ui.page, state.live, {
+      api,
+      mutate,
+      showCredential,
+    });
+    const legacy =
+      ui.page === "sources"
+        ? state.sources.length
+        : ui.page === "ontology"
+          ? state.ontologies.length || state.outlines.length
+          : state.consumers.length;
+    if (legacy) {
+      const details = node("details", "live-legacy");
+      details.append(
+        node("summary", "", "查看已有文件实验"),
+        ui.page === "sources"
+          ? renderSources()
+          : ui.page === "ontology"
+            ? renderOntology()
+            : renderConsumption(),
+      );
+      live.append(details);
+    }
+    canvas.replaceChildren(live);
+  } else if (ui.page === "company") canvas.replaceChildren(renderCompany());
   else if (ui.page === "sources") canvas.replaceChildren(renderSources());
   else if (ui.page === "ontology") canvas.replaceChildren(renderOntology());
   else canvas.replaceChildren(renderConsumption());

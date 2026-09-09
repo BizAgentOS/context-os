@@ -13,10 +13,13 @@
     "test": "node --test tests/agent/*.test.ts",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test",
-    "export:html": "node scripts/export-heating-html.ts"
+    "export:html": "node scripts/export-heating-html.ts",
+    "live:demo": "node scripts/live-heating.ts",
+    "sources:demo": "node src/live/heating-sources.ts"
   },
   "dependencies": {
     "@kodax-ai/kodax": "0.7.96-beta.2",
+    "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
     "zod": "4.5.4"
   },

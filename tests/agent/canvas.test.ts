@@ -211,7 +211,7 @@ test("the canvas creates a company from real user facts and advances only after 
     assert.equal(after.currentPage, "sources");
     assert.equal(after.page, "sources");
     assert.equal(after.messages.length, 0);
-    assert.match(after.prompt, /上传/);
+    assert.match(after.prompt, /连接/);
     assert.equal(
       after.pages.find((page: { id: string }) => page.id === "company").ready,
       true,

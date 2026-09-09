@@ -14,7 +14,14 @@ const staticFiles: Record<string, { file: string; type: string }> = {
   "/": { file: "index.html", type: "text/html; charset=utf-8" },
   "/index.html": { file: "index.html", type: "text/html; charset=utf-8" },
   "/app.js": { file: "app.js", type: "text/javascript; charset=utf-8" },
-  "/share-mode.js": { file: "share-mode.js", type: "text/javascript; charset=utf-8" },
+  "/live-workspace.js": {
+    file: "live-workspace.js",
+    type: "text/javascript; charset=utf-8",
+  },
+  "/share-mode.js": {
+    file: "share-mode.js",
+    type: "text/javascript; charset=utf-8",
+  },
   "/app.css": { file: "app.css", type: "text/css; charset=utf-8" },
   "/ontology-workspace.js": {
     file: "ontology-workspace.js",
@@ -117,6 +124,19 @@ export async function createServer(
         return;
       }
       const url = new URL(request.url ?? "/", `http://${host}`);
+      if (url.pathname.startsWith("/v2/")) {
+        if (request.method !== "GET") {
+          send(405, { error: "仅支持只读请求" });
+          return;
+        }
+        const result = await app.live.handle(
+          url.pathname,
+          url.searchParams,
+          request.headers.authorization,
+        );
+        send(result.status, result.body);
+        return;
+      }
       if (url.pathname === "/v1" || url.pathname.startsWith("/v1/")) {
         const result = app.consumption.handle({
           method: request.method ?? "",
@@ -262,6 +282,79 @@ export async function createServer(
       const body = await readBody(request);
       let result: unknown;
       switch (url.pathname) {
+        case "/api/live/connect":
+        case "/api/live/propose":
+        case "/api/live/adopt":
+        case "/api/live/prepare":
+        case "/api/live/activate":
+          result = await queue(async () => {
+            if (app.canvasState().busy)
+              throw new Error("请先停止当前整理，再修改连接或本体");
+            let saved: unknown;
+            switch (url.pathname) {
+              case "/api/live/connect":
+                saved = await app.live.sources.connect(body);
+                break;
+              case "/api/live/propose":
+                saved = await app.live.propose(body);
+                break;
+              case "/api/live/adopt":
+                saved = await app.live.adopt(
+                  String(body.id),
+                  Number(body.version),
+                );
+                {
+                  const progress = app.memory.getCanvas();
+                  if (progress) {
+                    progress.completed = [
+                      ...new Set([
+                        ...progress.completed,
+                        "sources" as const,
+                        "ontology" as const,
+                      ]),
+                    ];
+                    app.memory.saveCanvas(progress);
+                  }
+                }
+                break;
+              case "/api/live/prepare":
+                saved = app.live.prepare(body);
+                break;
+              case "/api/live/activate":
+                saved = app.live.activate(
+                  String(body.id),
+                  Number(body.version),
+                );
+                break;
+            }
+            return { ...app.canvasState(), saved };
+          });
+          break;
+        case "/api/live/disable": {
+          const saved = app.live.sources.disable(
+            String(body.id),
+            Number(body.version),
+          );
+          result = { ...app.canvasState(), saved };
+          break;
+        }
+        case "/api/live/revoke": {
+          const saved = app.live.revoke(String(body.id), Number(body.version));
+          result = { ...app.canvasState(), saved };
+          break;
+        }
+        case "/api/live/read":
+          result = await app.live.sources.read(
+            String(body.sourceId),
+            String(body.capability),
+            (body.where ?? {}) as import("./contracts.ts").Data,
+            Number(body.offset ?? 0),
+            Number(body.limit ?? 3),
+          );
+          break;
+        case "/api/live/query":
+          result = await app.live.query(body);
+          break;
         case "/api/sources/policy":
           result = await queue(async () => {
             const policy = new SourcePolicyService(app.memory).update(body);

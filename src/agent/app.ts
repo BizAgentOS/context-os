@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { join, basename } from "node:path";
 import { MemoryStore } from "./memory.ts";
 import { Workspace, domainTools } from "./workspace.ts";
+import { LiveMemory, liveTools } from "../live/memory.ts";
 import { ObjectView } from "./domain-objects.ts";
 import { ConsumptionService, consumptionTools } from "./consumption.ts";
 import { SourcePolicyService } from "./source-policy.ts";
@@ -37,7 +38,7 @@ const canvasPages: CanvasPage[] = [
 ];
 const canvasPrompts: Record<CanvasPage, string> = {
   company: "你的企业叫什么，主要提供什么服务？",
-  sources: "上传第一份企业资料。",
+  sources: "企业数据在哪个系统？连接它的 API 或 MCP。",
   ontology: "从哪些业务对象开始？",
   consumption: "哪些应用需要使用这些企业记忆？",
 };
@@ -107,6 +108,7 @@ const controlTools: DomainTool[] = [
 
 export class AgentApplication {
   readonly memory: MemoryStore;
+  readonly live: LiveMemory;
   readonly consumption: ConsumptionService;
   readonly driver: AgentDriver;
   private actualDriver?: KodaXDriver;
@@ -118,6 +120,7 @@ export class AgentApplication {
 
   constructor(directory: string, driver?: AgentDriver) {
     this.memory = new MemoryStore(directory);
+    this.live = new LiveMemory(directory, this.memory);
     this.consumption = new ConsumptionService(directory, this.memory);
     const saved = this.memory.getSettings();
     const provider = (
@@ -577,6 +580,7 @@ export class AgentApplication {
       ontologies,
       outlines: this.memory.listArtifacts("ontology_outline"),
       verifications: this.memory.listArtifacts("verification"),
+      live: this.live.overview(),
       sourcePolicies: this.memory.listArtifacts("source_policy"),
       sourcePolicyFields: Object.fromEntries(
         sources.map((source) => [
@@ -1085,6 +1089,16 @@ export class AgentApplication {
                 : []),
             ].includes(tool.name),
           ),
+          ...liveTools.filter(
+            (tool) =>
+              tool.name === "live_overview" ||
+              (page === "sources" && tool.name === "live_read") ||
+              (page === "ontology" &&
+                ["live_read", "live_propose", "live_query"].includes(
+                  tool.name,
+                )) ||
+              (page === "consumption" && tool.name === "live_consumer_propose"),
+          ),
           ...controlTools.filter((tool) => tool.name === "task_ask"),
           ...(page === "consumption" ? consumptionTools : [pageCompleteTool]),
         ]
@@ -1103,6 +1117,7 @@ export class AgentApplication {
     try {
       const outcome = await this.driver.run({
         sessionId: page ? undefined : (task.sessionId ?? undefined),
+        ephemeral: !!page,
         title: task.goal,
         system: page ? canvasSystem : system,
         tools,
@@ -1138,6 +1153,7 @@ export class AgentApplication {
                       title,
                       status,
                     })),
+                  live: this.live.overview(),
                   sourcePolicies: this.memory.listArtifacts("source_policy"),
                 },
               }
@@ -1185,7 +1201,7 @@ export class AgentApplication {
             void this.driver.stop().catch(() => {});
             throw error;
           }
-          if (page && !tools.some((tool) => tool.name === name))
+          if (!tools.some((tool) => tool.name === name))
             throw new Error("当前页面没有这项能力");
           if (page && name === "page_complete") {
             let artifacts: Artifact[];
@@ -1201,14 +1217,26 @@ export class AgentApplication {
                     this.sourceUsable(a) &&
                     inspectedSources.get(a.id) === a.version,
                 );
+              artifacts.push(
+                ...this.live.sources
+                  .list()
+                  .filter(
+                    (a) =>
+                      a.status === "ready" &&
+                      inspectedSources.get(a.id) === a.version,
+                  ),
+              );
               if (!artifacts.length)
-                throw new Error(
-                  "请先读取并检查一份有记录的 CSV 或有内容的 Markdown、TXT 企业资料",
-                );
+                throw new Error("请先读取并检查有记录的来源能力或实验文件");
             } else {
               artifacts = this.memory
                 .listArtifacts("ontology")
                 .filter((a) => a.status === "adopted");
+              artifacts.push(
+                ...this.memory
+                  .listArtifacts("live_ontology")
+                  .filter((a) => a.status === "adopted"),
+              );
               if (!artifacts.length)
                 throw new Error("请先让用户采用已检查的本体候选");
             }
@@ -1299,9 +1327,11 @@ export class AgentApplication {
           const signature = createHash("sha256")
             .update(name + JSON.stringify(args))
             .digest("hex");
-          const mutates = [...domainTools, ...consumptionTools].find(
-            (tool) => tool.name === name,
-          )?.mutates;
+          const mutates = [
+            ...domainTools,
+            ...consumptionTools,
+            ...liveTools,
+          ].find((tool) => tool.name === name)?.mutates;
           const operationId = mutates
             ? lastWrite?.signature === signature
               ? lastWrite.operationId
@@ -1312,7 +1342,18 @@ export class AgentApplication {
               ? serializable(
                   this.consumption.propose(args, context, operationId),
                 )
-              : await workspace.execute(name, args, operationId);
+              : name.startsWith("live_")
+                ? await this.live.execute(name, args, context, operationId)
+                : await workspace.execute(name, args, operationId);
+          if (
+            name === "live_read" &&
+            (result as Data).items &&
+            ((result as Data).items as Data[]).length
+          )
+            inspectedSources.set(
+              String(args.sourceId),
+              this.memory.getArtifact(String(args.sourceId)).version,
+            );
           if (page && name === "memory_read" && typeof args.id === "string") {
             const artifact = result as unknown as Artifact;
             if (this.sourceUsable(artifact))

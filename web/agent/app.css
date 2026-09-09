@@ -2304,3 +2304,117 @@ tr.highlight td {
 .consumer-detail {
   animation: none;
 }
+
+.live-canvas {
+  width: min(1100px, 100%);
+  margin: 0 auto;
+  padding: 60px 28px 220px;
+}
+.live-canvas h1 {
+  font-size: clamp(28px, 4vw, 42px);
+  font-weight: 500;
+  margin-bottom: 12px;
+}
+.live-lead {
+  color: #777;
+  margin-bottom: 28px;
+  line-height: 1.8;
+}
+.live-card {
+  border: 1px solid #e5e5e5;
+  border-radius: 14px;
+  padding: 22px;
+  margin: 20px 0;
+  overflow-wrap: anywhere;
+}
+.live-card h2,
+.live-model h2 {
+  font-size: 20px;
+  font-weight: 500;
+}
+.live-card p,
+.live-model p {
+  line-height: 1.7;
+}
+.live-actions {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 16px 0;
+}
+.live-dialog {
+  width: min(680px, 92vw);
+  max-height: 85vh;
+  padding: 28px;
+  border: 1px solid #ddd;
+  border-radius: 18px;
+  overflow: auto;
+}
+.live-dialog::backdrop {
+  background: #0003;
+}
+.live-field {
+  display: grid;
+  gap: 8px;
+  margin: 18px 0;
+}
+.live-field input,
+.live-field textarea,
+.live-dialog select {
+  width: 100%;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 10px;
+  background: white;
+  color: #222;
+  box-sizing: border-box;
+}
+.live-field textarea {
+  min-height: 200px;
+  font: 12px/1.5 monospace;
+}
+.live-dialog pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.live-dialog fieldset {
+  border: 1px solid #ddd;
+  margin: 16px 0;
+}
+.live-dialog fieldset label {
+  display: inline-flex;
+  gap: 5px;
+  margin: 8px;
+}
+.live-table {
+  overflow-x: auto;
+  margin: 20px 0;
+}
+.live-table table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+.live-table th,
+.live-table td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+  white-space: nowrap;
+}
+.live-model {
+  margin: 35px 0;
+}
+.live-legacy {
+  margin-top: 36px;
+  color: #666;
+}
+@media (max-width: 600px) {
+  .live-canvas {
+    padding: 28px 16px 220px;
+  }
+  .live-dialog {
+    padding: 20px;
+  }
+}

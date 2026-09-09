@@ -1,6 +1,6 @@
 # DataEngine Feature List
 
-Last Updated: 2026-09-08
+Last Updated: 2026-09-09
 
 ## Version Info
 
@@ -15,7 +15,7 @@ Last Updated: 2026-09-08
 
 | Version | Status | Planned | InProgress | Completed | Progress |
 |---|---|---:|---:|---:|---:|
-| v0.1.0 | InProgress | 2 | 2 | 5 | 5/9 |
+| v0.1.0 | InProgress | 2 | 2 | 6 | 6/10 |
 
 ## Feature Index
 
@@ -30,6 +30,8 @@ Last Updated: 2026-09-08
 | 007 | 数据消费与访问治理 | New | High | Completed | v0.1.0 | 复用已实现的 003/005 | [设计](features/v0.1.0.md#feature-007) |
 | 008 | 四页企业记忆的持续维护 | Enhancement | High | Completed | v0.1.0 | 复用 003/005/007 | [设计](features/v0.1.0.md#feature-008) |
 | 009 | 第三方 Agent 接入与数据发布 | Enhancement | High | Completed | v0.1.0 | 007、008 | [设计](features/v0.1.0.md#feature-009) |
+
+| 010 | 源系统连接与按需企业记忆 | New | High | Completed | v0.1.0 | 复用 003/009 | [设计](features/v0.1.0.md#feature-010) |
 
 此表保留已有能力与票的实际完成记录，计数不代表新 MVP 体验的完成比例。首轮按 [MVP 完成条件](MVP.md)验收，不等待全部后续扩展能力。未完成票的依赖将在主 Agent 体验设计后重排；006、远程 MCP 服务和完整回归/恢复保留为后续工作，不因范围调整标为完成。
 
@@ -129,13 +131,23 @@ Last Updated: 2026-09-08
 - **Design:** [FEATURE_009](features/v0.1.0.md#feature-009)。
 - **页面名称（2026-09-08）：**第四页统一使用“连接”，同步导航、页面标题、返回入口与操作说明；浏览器验证入口和标题，JS 语法检查通过，功能状态不变。
 
+### 010: 源系统连接与按需企业记忆
+
+- **Status:** Completed
+- **Planned / Released:** v0.1.0 / —
+- **Created / Started / Completed:** 2026-09-09 / 2026-09-09 / 2026-09-09
+- **Description:** 将 API/MCP 来源连接、按需对象执行、KodaX 领域工具和四页维护接为实际链路；保留文件实验。
+- **Design:** [FEATURE_010](features/v0.1.0.md#feature-010)。
+
+- **Validation:** 类型检查、75 项测试、真实 KodaX/DeepSeek、本机第三方 MCP 与浏览器验收通过；范围和限制见[连接验收](experiment/LIVE_MEMORY.md)。
+
 ## Summary
 
-- Total: 9
+- Total: 10
 - Planned: 2
 - InProgress: 2
-- Completed: 5
-- New: 6；Internal: 1；Enhancement: 2；High: 9。
-- **当前：FEATURE_009 已完成：第三方 Agent 可通过本地 MCP 或 HTTP 读取获准的企业记忆，第四页提供配置、独立接入与事实数据检查/发布；同一密钥保持本体和权限，只切换明确发布的记录版本。66 项自动检查、真实 MCP/HTTP 与桌面/窄屏浏览器验证通过。完整方法评测、远程部署和自动来源同步继续按后续范围推进。**
+- Completed: 6
+- New: 7；Internal: 1；Enhancement: 2；High: 10。
+- **当前：FEATURE_010 已完成本地来源连接链路。HTTP/MCP 按需读取、Agent 本体候选、人工采用、第三方授权与源变化重读已验收；正式发布、多租户、专用 OAuth 连接器与自动演变仍未完成。**
 
 项目初始化和开发文档已完成，记录在 [CHANGELOG](CHANGELOG.md)；它们不计入产品功能完成数。功能状态在本文维护，具体票的完成状态在对应设计块维护。
