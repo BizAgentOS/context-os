@@ -13,6 +13,10 @@ const webRoot = fileURLToPath(new URL("../../web/agent/", import.meta.url));
 const staticFiles: Record<string, { file: string; type: string }> = {
   "/": { file: "index.html", type: "text/html; charset=utf-8" },
   "/index.html": { file: "index.html", type: "text/html; charset=utf-8" },
+  "/capabilities.js": {
+    file: "capabilities.js",
+    type: "text/javascript; charset=utf-8",
+  },
   "/app.js": { file: "app.js", type: "text/javascript; charset=utf-8" },
   "/live-workspace.js": {
     file: "live-workspace.js",
@@ -197,6 +201,10 @@ export async function createServer(
           send(200, app.state(url.searchParams.get("taskId") ?? undefined));
           return;
         }
+        if (url.pathname === "/api/capabilities") {
+          send(200, await app.capabilities.overview());
+          return;
+        }
         if (url.pathname === "/api/consumers") {
           send(200, {
             consumers: app.consumption.list(),
@@ -282,6 +290,43 @@ export async function createServer(
       const body = await readBody(request);
       let result: unknown;
       switch (url.pathname) {
+        case "/api/capabilities/mcp/disconnect":
+          await app.capabilities.mcp.disconnect(String(body.name));
+          result = await app.capabilities.overview();
+          break;
+        case "/api/capabilities/mcp/grant":
+          if (
+            !Array.isArray(body.ids) ||
+            body.ids.some((id) => typeof id !== "string")
+          )
+            throw new Error("请选择具体能力");
+          if (!Number.isInteger(body.revision))
+            throw new Error("缺少能力目录版本，请重新打开设置");
+          app.capabilities.mcp.grant(
+            String(body.name),
+            body.ids as string[],
+            Number(body.revision),
+          );
+          result = await app.capabilities.overview();
+          break;
+        case "/api/capabilities/mcp/refresh":
+        case "/api/capabilities/mcp/connect":
+        case "/api/capabilities/skill/install":
+          result = await queue(async () => {
+            if (app.canvasState().busy)
+              throw new Error("请先停止当前整理，再添加能力");
+            if (url.pathname.endsWith("/refresh"))
+              await app.capabilities.mcp.refresh(String(body.name));
+            else if (url.pathname.endsWith("/connect"))
+              await app.capabilities.mcp.connect(body);
+            else
+              await app.capabilities.installSkill(
+                String(body.name),
+                String(body.content),
+              );
+            return app.capabilities.overview();
+          });
+          break;
         case "/api/live/connect":
         case "/api/live/propose":
         case "/api/live/adopt":

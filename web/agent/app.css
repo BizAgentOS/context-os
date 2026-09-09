@@ -2418,3 +2418,102 @@ tr.highlight td {
     padding: 20px;
   }
 }
+
+/* Agent capabilities live in a compact settings layer, leaving the four-page canvas intact. */
+.capabilities-button {
+  position: absolute;
+  right: 78px;
+  top: 24px;
+  font-size: 13px;
+}
+.capabilities-dialog {
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+}
+.capability-section {
+  padding: 20px 0;
+  border-top: 1px solid #e9e9e9;
+}
+.capability-section h3 {
+  font-size: 15px;
+  margin: 0 0 10px;
+}
+.capability-section p {
+  font-size: 13px;
+  line-height: 1.65;
+  margin: 6px 0 12px;
+}
+.capability-section .muted {
+  color: #777;
+}
+.capability-row {
+  padding: 12px 0;
+  font-size: 13px;
+}
+.capability-section summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+.capability-section form {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+.capability-section label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+.capability-section input:not([type="checkbox"]),
+.capability-section textarea,
+.capability-section select {
+  width: 100%;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 10px;
+  font: inherit;
+  color: #222;
+  background: #fff;
+}
+.capability-section .capability-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+}
+.capability-check input {
+  margin-top: 3px;
+  width: auto;
+}
+.capability-check small {
+  display: block;
+  color: #777;
+  line-height: 1.6;
+}
+.capability-section pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  color: #666;
+}
+@media (max-width: 600px) {
+  .capabilities-button {
+    top: 18px;
+    right: 62px;
+  }
+}
+.capabilities-dialog > .dialog-heading {
+  position: sticky;
+  top: -28px;
+  background: white;
+  padding: 16px 0;
+  z-index: 1;
+  border-bottom: 1px solid #eee;
+}
+.capability-row > button {
+  margin: 8px 8px 0 0;
+}
+.capability-check input {
+  accent-color: #111;
+}

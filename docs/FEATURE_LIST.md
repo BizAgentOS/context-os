@@ -15,7 +15,7 @@ Last Updated: 2026-09-09
 
 | Version | Status | Planned | InProgress | Completed | Progress |
 |---|---|---:|---:|---:|---:|
-| v0.1.0 | InProgress | 2 | 2 | 6 | 6/10 |
+| v0.1.0 | InProgress | 2 | 2 | 7 | 7/11 |
 
 ## Feature Index
 
@@ -30,8 +30,8 @@ Last Updated: 2026-09-09
 | 007 | 数据消费与访问治理 | New | High | Completed | v0.1.0 | 复用已实现的 003/005 | [设计](features/v0.1.0.md#feature-007) |
 | 008 | 四页企业记忆的持续维护 | Enhancement | High | Completed | v0.1.0 | 复用 003/005/007 | [设计](features/v0.1.0.md#feature-008) |
 | 009 | 第三方 Agent 接入与数据发布 | Enhancement | High | Completed | v0.1.0 | 007、008 | [设计](features/v0.1.0.md#feature-009) |
-
 | 010 | 源系统连接与按需企业记忆 | New | High | Completed | v0.1.0 | 复用 003/009 | [设计](features/v0.1.0.md#feature-010) |
+| 011 | 通用 Agent 搜索、Skill、MCP 与业务 SDK | Enhancement | High | Completed | v0.1.0 | 003、010 | [设计](features/v0.1.0.md#feature-011) |
 
 此表保留已有能力与票的实际完成记录，计数不代表新 MVP 体验的完成比例。首轮按 [MVP 完成条件](MVP.md)验收，不等待全部后续扩展能力。未完成票的依赖将在主 Agent 体验设计后重排；006、远程 MCP 服务和完整回归/恢复保留为后续工作，不因范围调整标为完成。
 
@@ -141,13 +141,21 @@ Last Updated: 2026-09-09
 
 - **Validation:** 类型检查、75 项测试、真实 KodaX/DeepSeek、本机第三方 MCP 与浏览器验收通过；范围和限制见[连接验收](experiment/LIVE_MEMORY.md)。
 
+### 011: 通用 Agent 搜索、Skill、MCP 与业务 SDK
+
+- **Status:** Completed
+- **Planned / Released:** v0.1.0 / —
+- **Created / Started / Completed:** 2026-09-09 / 2026-09-09 / 2026-09-09
+- **Description:** 用户明确同时需要 KodaX 原生通用能力及第三方 SDK 调用；开放搜索、渐进 Skill 加载、MCP 发现和授权调用、SDK 适配器注册，保留企业记忆对象工具。
+- **Design:** [FEATURE_011](features/v0.1.0.md#feature-011)。
+
 ## Summary
 
-- Total: 10
+- Total: 11
 - Planned: 2
 - InProgress: 2
-- Completed: 6
-- New: 7；Internal: 1；Enhancement: 2；High: 10。
-- **当前：FEATURE_010 已完成本地来源连接链路。HTTP/MCP 按需读取、Agent 本体候选、人工采用、第三方授权与源变化重读已验收；正式发布、多租户、专用 OAuth 连接器与自动演变仍未完成。**
+- Completed: 7
+- New: 7；Internal: 1；Enhancement: 3；High: 11。
+- **当前：FEATURE_011 已完成搜索、Skill、MCP 和业务 SDK 入口（[验收](experiment/AGENT_CAPABILITIES.md)）；FEATURE_010 已完成本地来源连接链路。HTTP/MCP 按需读取、Agent 本体候选、人工采用、第三方授权与源变化重读已验收；正式发布、多租户、专用 OAuth 连接器与自动演变仍未完成。**
 
 项目初始化和开发文档已完成，记录在 [CHANGELOG](CHANGELOG.md)；它们不计入产品功能完成数。功能状态在本文维护，具体票的完成状态在对应设计块维护。

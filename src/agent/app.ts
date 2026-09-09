@@ -1,3 +1,9 @@
+import {
+  AgentCapabilities,
+  capabilityTools,
+  nativeCapabilityTools,
+  executeCapability,
+} from "../capabilities/service.ts";
 import { randomUUID, createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -109,6 +115,7 @@ const controlTools: DomainTool[] = [
 export class AgentApplication {
   readonly memory: MemoryStore;
   readonly live: LiveMemory;
+  readonly capabilities: AgentCapabilities;
   readonly consumption: ConsumptionService;
   readonly driver: AgentDriver;
   private actualDriver?: KodaXDriver;
@@ -121,6 +128,7 @@ export class AgentApplication {
   constructor(directory: string, driver?: AgentDriver) {
     this.memory = new MemoryStore(directory);
     this.live = new LiveMemory(directory, this.memory);
+    this.capabilities = new AgentCapabilities(directory);
     this.consumption = new ConsumptionService(directory, this.memory);
     const saved = this.memory.getSettings();
     const provider = (
@@ -1099,6 +1107,7 @@ export class AgentApplication {
                 )) ||
               (page === "consumption" && tool.name === "live_consumer_propose"),
           ),
+          ...capabilityTools,
           ...controlTools.filter((tool) => tool.name === "task_ask"),
           ...(page === "consumption" ? consumptionTools : [pageCompleteTool]),
         ]
@@ -1118,6 +1127,12 @@ export class AgentApplication {
       const outcome = await this.driver.run({
         sessionId: page ? undefined : (task.sessionId ?? undefined),
         ephemeral: !!page,
+        ...(page
+          ? {
+              nativeTools: nativeCapabilityTools,
+              capabilities: this.capabilities,
+            }
+          : {}),
         title: task.goal,
         system: page ? canvasSystem : system,
         tools,
@@ -1203,6 +1218,15 @@ export class AgentApplication {
           }
           if (!tools.some((tool) => tool.name === name))
             throw new Error("当前页面没有这项能力");
+          if (capabilityTools.some((t) => t.name === name)) {
+            const result = await executeCapability(
+              this.capabilities,
+              name,
+              args,
+            );
+            this.memory.assertWritable(context);
+            return result;
+          }
           if (page && name === "page_complete") {
             let artifacts: Artifact[];
             if (page === "company") {
@@ -1683,6 +1707,7 @@ export class AgentApplication {
   async close() {
     await this.stopActive();
     await this.driver.close();
+    await this.capabilities.close();
     this.consumption.close();
     this.memory.close();
   }

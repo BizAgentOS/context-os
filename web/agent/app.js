@@ -1,3 +1,4 @@
+import { createCapabilitiesPanel } from "./capabilities.js";
 import {
   renderDefinitionGraph,
   renderObjectGraph,
@@ -260,7 +261,10 @@ async function navigate(page) {
   if (page === ui.page || ui.requesting) return;
   await mutate("/api/canvas/navigate", { page });
 }
+const capabilityPanel = createCapabilitiesPanel(api);
+
 function render() {
+  capabilityPanel.button.hidden = !!shareMode || !!state.demo;
   $("#demo-badge").hidden = !state.demo;
   $("#demo-badge").title = shareMode
     ? "虚构热力企业的离线快照，可直接浏览；示例问答不调用 AI，也不修改数据。"

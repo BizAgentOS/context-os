@@ -9,7 +9,11 @@ import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Data, DomainTool, Json } from "./contracts.ts";
 
+import type { AgentCapabilities } from "../capabilities/service.ts";
+
 export interface RunRequest {
+  nativeTools?: string[];
+  capabilities?: AgentCapabilities;
   sessionId?: string;
   ephemeral?: boolean;
   title: string;
@@ -87,7 +91,30 @@ export class KodaXDriver implements AgentDriver {
           surface: "dataengine",
         });
     request.onSession(session.id);
-    const allowed = new Set(request.tools.map((t) => t.name));
+    const allowed = new Set([
+      ...request.tools.map((t) => t.name),
+      ...(request.nativeTools ?? []),
+    ]);
+    const external = request.capabilities?.mcp;
+    const assertExternal = () => {
+      if (this.stopping || !external) throw new Error("外部能力不可用");
+      return external;
+    };
+    const externalResult = async (
+      id: string,
+      args: Record<string, unknown> = {},
+    ) => {
+      request.onEvent("operation.started", { name: id });
+      try {
+        const result = await assertExternal().call(id, args);
+        if (this.stopping) throw new Error("已停止本次调用");
+        request.onEvent("operation.completed", { name: id });
+        return { kind: "tool" as const, content: JSON.stringify(result) };
+      } catch (error) {
+        request.onEvent("operation.failed", { name: id });
+        throw error;
+      }
+    };
     const extension: NonNullable<RuntimeKodaXOptions["extensionRuntime"]> = {
       listRunTools: () =>
         request.tools.map((t) => ({
@@ -98,15 +125,30 @@ export class KodaXDriver implements AgentDriver {
           sideEffect: t.mutates ? "mutates-state" : "readonly",
           planModeAllowed: !t.mutates,
         })),
-      searchCapabilities: async () => [],
+      searchCapabilities: async (provider, query, options) =>
+        provider === "mcp" && external
+          ? external
+              .snapshot(query, options)
+              .items.slice(0, options?.limit ?? 20)
+          : [],
+      searchCapabilitySnapshot: async (provider, query, options) =>
+        provider === "mcp" && external
+          ? external.snapshot(query, options)
+          : { items: [], complete: true, freshness: "unknown" },
       describeCapability: async (_provider, id) =>
-        request.tools.find((t) => t.name === id),
-      readCapability: async () => {
-        throw new Error("请使用当前工作区工具");
+        id.startsWith("mcp:")
+          ? assertExternal().describe(id)
+          : request.tools.find((t) => t.name === id),
+      readCapability: async (_provider, id) => {
+        const result = await externalResult(id);
+        return { ...result, kind: "resource" };
       },
-      getCapabilityPrompt: async () => null,
+      getCapabilityPrompt: async (_provider, id, args) =>
+        externalResult(id, args),
       getCapabilityPromptContext: async () => undefined,
       executeCapability: async (provider, id, args) => {
+        if (provider === "mcp" && id.startsWith("mcp:"))
+          return externalResult(id, args);
         if (provider !== "mcp" || !allowed.has(id) || this.stopping)
           throw new Error("当前运行不允许这个操作");
         request.onEvent("operation.started", { name: id });
@@ -133,6 +175,17 @@ export class KodaXDriver implements AgentDriver {
       { sessionId: session.id },
       (event) => {
         const payload = event.payload as Record<string, unknown>;
+        if (event.type === "tool.started" || event.type === "tool.finished") {
+          const detail = (payload.tool ?? payload.result) as
+            { name?: string } | undefined;
+          if (detail?.name && request.nativeTools?.includes(detail.name))
+            request.onEvent(
+              event.type === "tool.started"
+                ? "capability.started"
+                : "capability.finished",
+              { name: detail.name },
+            );
+        }
         if (event.type === "permission.requested") {
           const permission = event.payload as RuntimePermissionRequest;
           void runtime.permissions
