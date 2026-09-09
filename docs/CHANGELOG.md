@@ -4,6 +4,8 @@
 
 ### Added
 
+- 完成 FEATURE_011：四页 Agent 开放 KodaX 原生网页搜索/读取、SkillRegistry 渐进加载、McpManager 通用工具/资源/提示词与具体权限、Octokit 业务 SDK 适配器注册。新增“能力”设置浮窗、Skill 安装、MCP 连接/刷新/撤销/断开。修复目录分页、刷新授权竞态和同名重连旧版本问题。82 项测试、类型检查、独立双轴评审、真实 KodaX/DeepSeek 与桌面/390px 浏览器验收通过；搜索相关性与长页面截断限制如实记录，详见[能力说明](experiment/AGENT_CAPABILITIES.md)（`6469eb3`）。
+
 - 完成 FEATURE_010：声明式 HTTP GET / MCP Streamable HTTP 来源连接、按需本体对象与关系查询、画布 Agent 工具、人工采用及独立第三方 /v2 与 MCP 访问。新增 `npm run live:demo`（8796）连接两个独立热力模拟源，源事实变化在下次读取体现；原文件/HTML 演示保留。来源凭据隔离，字段关系范围与在途撤销检查，数字身份与分页边界修复。75 项测试、类型检查、真实 KodaX/DeepSeek、第三方 MCP 与桌面/390px 浏览器验收通过。尚未公网部署或发布，详见[连接验收](experiment/LIVE_MEMORY.md)（`d7b55ca`）。
 
 - 完成 T005-07：新增 `npm run export:html`，生成约 3.9 MB 的单文件热力公司演示；保留四页、可交互本体图、对象关联、来源证据、验证和连接范围，内嵌样式及隔离生成的虚构快照。无需服务器或密钥，示例问答明确标注，后台修改入口不进入离线演示。类型检查与 67 项 Agent 测试、断网 `file://` 桌面/390px 浏览及 TS002→HF002→原始记录验证通过，无网络请求或凭据；原在线页面刷新正常，详见[分享说明](experiment/SHARE_HTML.md)（`ac030e3`）。
@@ -62,4 +64,4 @@
 
 - 接入项目级 CodingSkills 固定副本，建立 v0.1.0 计划版本、六项 Feature、14 张开发票及依赖与验收；统一状态入口和开发流程（`b8cd901`）。
 
-<!-- last-sync: d7b55ca1477df35c580b917dc1eb171a52dfea67 -->
+<!-- last-sync: 6469eb3a1eeb48bb40ab82e90b8041a70225812a -->
