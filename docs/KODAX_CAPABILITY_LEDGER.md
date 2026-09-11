@@ -94,3 +94,7 @@ Skill 的包目录、已安装方法与变更流程只在[内置 Skill](BUILTIN_
 ## 公开研究接入（T013-03）
 
 仍使用固定版本的同一 KodaX 循环和原生 `web_search`。新宿主工具 `foundation_web_read` 从实际 HTTP 响应保存结构化证据，复用 SDK 公共导出的 `stripHtmlToText/extractHtmlTitle`；没有解析原生工具面向模型的展示文本，也没有增加模型循环。网络、读取回执、企业身份、快照与采用检查由 DataEngine 实施。字段与界限见[方法契约第 12 节](COMPANY_FOUNDATION_SKILL.md#12-t013-03-公开网页证据)，真实调用见[验收](experiment/FOUNDATION_WEB.md)。
+
+## 知识来源接入（T014-01）
+
+同一 KodaX 循环新增宿主 `source_catalog/knowledge_query/knowledge_read`；运行 Skill 指导先发现再读取，引用复用 FoundationService。HTTP/MCP 传输沿 SourceConnections 的明确授权与契约检查，MCP 为实际 Streamable HTTP SDK 调用。没有新增第二个 Agent、提升 Skill 权限或升级 SDK。精确过滤、上游分段要求、每轮预算和证据范围见[语义合同](SEMANTIC_CONTRACTS.md#t014-01-知识来源与片段证据已接入合同)。

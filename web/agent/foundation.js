@@ -50,15 +50,17 @@ export function renderFoundation(
           el(
             "small",
             "muted",
-            evidence.kind === "web"
-              ? `${evidence.title} · 公开网页 · 已读取 ${new Date(evidence.readAt).toLocaleString("zh-CN")} · ${evidence.coverage?.complete ? "该次已读完整正文" : "部分正文，覆盖不完整"} · 适用时间未说明`
-              : evidence.kind === "document"
-                ? `${evidence.title} · v${evidence.sourceVersion} · 已读取 ${new Date(evidence.readAt).toLocaleString("zh-CN")} · 适用时间未说明`
-                : `用户陈述 · ${new Date(evidence.capturedAt).toLocaleString("zh-CN")} · 适用时间未说明`,
+            evidence.kind === "knowledge"
+              ? `${evidence.title} · 知识文档 ${evidence.documentId} / ${evidence.segmentId} · 版本 ${evidence.revision} · 读取 ${new Date(evidence.readAt).toLocaleString("zh-CN")} · ${evidence.coverage?.complete ? "当前片段完整" : "部分片段"} · 适用时间未说明`
+              : evidence.kind === "web"
+                ? `${evidence.title} · 公开网页 · 已读取 ${new Date(evidence.readAt).toLocaleString("zh-CN")} · ${evidence.coverage?.complete ? "该次已读完整正文" : "部分正文，覆盖不完整"} · 适用时间未说明`
+                : evidence.kind === "document"
+                  ? `${evidence.title} · v${evidence.sourceVersion} · 已读取 ${new Date(evidence.readAt).toLocaleString("zh-CN")} · 适用时间未说明`
+                  : `用户陈述 · ${new Date(evidence.capturedAt).toLocaleString("zh-CN")} · 适用时间未说明`,
           ),
         );
         if (
-          (evidence.kind === "document" || evidence.kind === "web") &&
+          ["document", "web", "knowledge"].includes(evidence.kind) &&
           locate
         ) {
           if (evidence.kind === "web") {
@@ -97,9 +99,11 @@ export function renderFoundation(
                 el(
                   "p",
                   "muted",
-                  found.kind === "web"
-                    ? `${found.url} · 读取时快照，不代表网页当前内容`
-                    : `${found.title} · 依据版本 v${found.sourceVersion} · 当前资料 v${found.currentSourceVersion}`,
+                  found.kind === "knowledge"
+                    ? `${found.title} · 读取时版本 ${found.revision} · 连接${found.connectionStatus === "ready" ? "可用" : "已停用"} · 保存的片段不代表当前源内容`
+                    : found.kind === "web"
+                      ? `${found.url} · 读取时快照，不代表网页当前内容`
+                      : `${found.title} · 依据版本 v${found.sourceVersion} · 当前资料 v${found.currentSourceVersion}`,
                 ),
                 paragraph,
               );

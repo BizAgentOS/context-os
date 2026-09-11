@@ -67,6 +67,130 @@ function showResult(result) {
     );
   });
 }
+function knowledgeDialog(source, cap, api) {
+  modal(source.title + " · 知识文档", (dialog) => {
+    const form = el("form");
+    const filter = formField(form, "精确过滤（JSON，可留空）", "{}", true);
+    const search = button("查询目录", () => {});
+    search.type = "submit";
+    const result = el("div", "knowledge-results");
+    result.setAttribute("aria-live", "polite");
+    const excerpt = el("section", "foundation-excerpt");
+    excerpt.setAttribute("aria-live", "polite");
+    let offset = 0,
+      where = {},
+      sequence = 0;
+    const next = button("下一页", () => load(offset + 5));
+    next.hidden = true;
+    const args = {
+      sourceId: source.id,
+      capability: cap.name,
+      connectionVersion: source.version,
+    };
+    const load = async (position) => {
+      const seq = ++sequence;
+      search.disabled = true;
+      next.disabled = true;
+      excerpt.replaceChildren();
+      result.replaceChildren(el("p", "source-meta", "正在查询目录…"));
+      next.hidden = true;
+      try {
+        const page = await api("/api/live/knowledge/query", {
+          ...args,
+          where,
+          offset: position,
+          limit: 5,
+        });
+        if (seq !== sequence || !dialog.isConnected) return;
+        offset = position;
+        result.replaceChildren();
+        result.append(
+          el(
+            "p",
+            "source-meta",
+            `已读目录 ${page.coverage.shown} 条 · ${page.coverage.complete ? "当前查询目录完整" : "部分目录，非全库覆盖"}`,
+          ),
+        );
+        for (const item of page.items) {
+          const row = el("article", "live-card");
+          row.append(
+            el("h3", "", item.title),
+            el(
+              "p",
+              "source-meta",
+              `文档 ${item.documentId} · 片段 ${item.segmentId} · 版本 ${item.revision}`,
+            ),
+          );
+          const read = async (position = 0) => {
+            const request = ++sequence;
+            try {
+              const part = await api("/api/live/knowledge/read", {
+                ...args,
+                segmentId: item.segmentId,
+                revision: item.revision,
+                offset: position,
+                limit: 4000,
+              });
+              if (request !== sequence || !dialog.isConnected) return;
+              excerpt.replaceChildren(
+                el("h3", "", part.title),
+                el(
+                  "p",
+                  "source-meta",
+                  `版本 ${part.revision} · ${new Date(part.readAt).toLocaleString("zh-CN")} · ${part.coverage.complete ? "当前片段完整，不代表整份文档" : "当前片段部分正文"}`,
+                ),
+                el("pre", "", part.text),
+              );
+              if (part.coverage.nextOffset !== null)
+                excerpt.append(
+                  button("继续读取片段", () => read(part.coverage.nextOffset)),
+                );
+            } catch (error) {
+              if (request === sequence)
+                excerpt.replaceChildren(el("p", "", error.message));
+            }
+          };
+          row.append(button("读取片段", () => read()));
+          result.append(row);
+        }
+        next.hidden =
+          page.coverage.total !== null
+            ? offset + page.coverage.shown >= page.coverage.total
+            : page.coverage.shown < 5;
+      } catch (error) {
+        if (seq === sequence) {
+          result.replaceChildren(el("p", "", error.message));
+          next.hidden = true;
+        }
+      } finally {
+        search.disabled = false;
+        next.disabled = false;
+      }
+    };
+    form.append(
+      search,
+      el(
+        "p",
+        "source-meta",
+        `可过滤字段：${Object.keys(cap.filters).join("、")}。预览不保存本体；告诉助手使用这些资料，可生成带依据的候选。`,
+      ),
+    );
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      try {
+        where = JSON.parse(filter.value || "{}");
+        void load(0);
+      } catch {
+        ++sequence;
+        excerpt.replaceChildren();
+        next.hidden = true;
+        result.replaceChildren(el("p", "", "过滤条件需要有效 JSON"));
+      }
+    };
+    dialog.append(form, result, next, excerpt);
+    void load(0);
+  });
+}
 export function renderLiveWorkspace(
   page,
   live,
@@ -84,7 +208,11 @@ export function renderLiveWorkspace(
   if (page === "sources") {
     section.append(
       el("h1", "", "连接企业数据"),
-      el("p", "live-lead", "数据保留在企业原系统。连接后，按需读取业务信息。"),
+      el(
+        "p",
+        "live-lead",
+        "统一来源目录：文件资料、知识文档与业务记录。远程数据保留在原系统，按需读取并引用。",
+      ),
     );
     section.append(
       button("连接 API / MCP", () =>
@@ -106,6 +234,17 @@ export function renderLiveWorkspace(
             protocol.append(option);
           }
           form.append(protocol);
+          const contentKind = el("select");
+          contentKind.setAttribute("aria-label", "内容类型");
+          for (const [value, title] of [
+            ["records", "业务记录"],
+            ["knowledge", "知识文档片段"],
+          ]) {
+            const option = el("option", "", title);
+            option.value = value;
+            contentKind.append(option);
+          }
+          form.append(contentKind);
           const token = formField(
             form,
             "访问凭据（可选，仅交给此源系统）",
@@ -135,6 +274,44 @@ export function renderLiveWorkspace(
             ),
             true,
           );
+          contentKind.onchange = () => {
+            config.value = JSON.stringify(
+              contentKind.value === "knowledge"
+                ? [
+                    {
+                      name: "documents",
+                      path: "/documents",
+                      contentKind: "knowledge",
+                      fields: ["id", "documentId", "title", "revision", "text"],
+                      idField: "id",
+                      filters: { id: "id", documentId: "documentId" },
+                      itemsPath: "items",
+                      totalPath: "total",
+                    },
+                  ]
+                : [
+                    {
+                      name: "list_records",
+                      path: "/records",
+                      contentKind: "records",
+                      fields: ["id", "name"],
+                      idField: "id",
+                      filters: { id: "id" },
+                      itemsPath: "items",
+                      totalPath: "total",
+                    },
+                  ],
+              null,
+              2,
+            );
+          };
+          form.append(
+            el(
+              "p",
+              "source-meta",
+              "知识源按片段提供 id、documentId、title、revision、text；每片段最多16000字符，过滤为精确匹配。此处编辑连接契约，企业定义仍由助手与您共同核对。",
+            ),
+          );
           form.append(
             el(
               "p",
@@ -150,7 +327,10 @@ export function renderLiveWorkspace(
             e.preventDefault();
             submit.disabled = true;
             try {
-              const capabilities = JSON.parse(config.value);
+              const capabilities = JSON.parse(config.value).map((cap) => ({
+                ...cap,
+                contentKind: contentKind.value,
+              }));
               const ok = await change("connect", {
                 name: name.value,
                 url: url.value,
@@ -185,7 +365,19 @@ export function renderLiveWorkspace(
         ),
       );
       for (const cap of source.content.capabilities) {
-        card.append(el("p", "", `${cap.name} · ${cap.fields.join("、")}`));
+        card.append(
+          el(
+            "p",
+            "",
+            `${cap.contentKind === "knowledge" ? "知识文档" : "业务记录"} · ${cap.name} · ${cap.fields.join("、")}`,
+          ),
+        );
+        if (source.status === "ready" && cap.contentKind === "knowledge") {
+          card.append(
+            button("查询知识文档", () => knowledgeDialog(source, cap, api)),
+          );
+          continue;
+        }
         if (source.status === "ready")
           card.append(
             button("读取样本", () =>

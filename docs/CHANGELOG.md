@@ -4,6 +4,8 @@
 
 ### Added
 
+- 完成 T014-01：统一来源目录与 HTTP/MCP 知识文档精确查询、分段读取、原文回执引用和历史定位；保留旧文件/记录，检查来源版本和撤销，基础概念继续人工采用。104项Node测试、22项Python回归、类型检查、HTML构建及真实KodaX/浏览器验证见[知识来源验收](experiment/KNOWLEDGE_SOURCES.md)。FEATURE_014 继续开发，下一项 T014-02。
+
 - 完成 T013-03 / FEATURE_013：确认企业后通过原生搜索发现、宿主实际读取网页，以 URL/时间/覆盖/精确片段补充同一基础本体；企业身份可跨页复用，网页快照按需查看，冲突保留且拒绝私网读取。101 项 Agent 测试、22 项 Python 回归、类型检查、HTML 构建及真实 KodaX/浏览器验证见[公开研究验收](experiment/FOUNDATION_WEB.md)。下一项 T014-01。
 
 - 完成 T013-02：Markdown/TXT 企业资料通过真实读取回执与精确引文补充同一基础本体；支持文档版本定位、冲突前后对照、新决定与采用版本检查，空白及损坏文本明确失败。97 项 Agent 测试、22 项 Python 回归、类型检查、HTML 构建和真实 KodaX/浏览器验证通过，见[资料验收](experiment/FOUNDATION_DOCUMENTS.md)。FEATURE_013 继续开发，下一项为确认企业后的公开研究。

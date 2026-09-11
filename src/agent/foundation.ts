@@ -1,3 +1,4 @@
+import { knowledgeTools } from "./knowledge.ts";
 import { foundationWebTool } from "./foundation-web.ts";
 import {
   FoundationDocuments,
@@ -82,6 +83,7 @@ function merge<T extends { id: string }>(previous: T[], updates: T[]): T[] {
 export const foundationTools: DomainTool[] = [
   foundationDocumentTool,
   foundationWebTool,
+  ...knowledgeTools,
   {
     name: "foundation_read",
     description:
@@ -125,7 +127,10 @@ export class FoundationService {
 
   project(artifact: Artifact): Artifact {
     const result = structuredClone(artifact);
-    for (const entry of content(result).evidence) delete entry.webSnapshot;
+    for (const entry of content(result).evidence) {
+      delete entry.webSnapshot;
+      delete entry.knowledgeSnapshot;
+    }
     return result;
   }
 
@@ -280,7 +285,9 @@ export class FoundationService {
               return (
                 (entry?.messageId === latestUser?.id ||
                   (allowDocument &&
-                    (entry?.kind === "document" || entry?.kind === "web") &&
+                    (entry?.kind === "document" ||
+                      entry?.kind === "web" ||
+                      entry?.kind === "knowledge") &&
                     input.evidence.some((e) => e.id === ref))) &&
                 !previous?.evidence.some((e) => e.id === ref)
               );
@@ -340,7 +347,11 @@ export class FoundationService {
         after.evidenceRefs.some(freshUser) ||
         !after.evidenceRefs.some((ref) =>
           evidence.some(
-            (e) => e.id === ref && (e.kind === "document" || e.kind === "web"),
+            (e) =>
+              e.id === ref &&
+              (e.kind === "document" ||
+                e.kind === "web" ||
+                e.kind === "knowledge"),
           ),
         )
       )
@@ -497,6 +508,22 @@ export class FoundationService {
     )) {
       if (this.memory.getArtifact(sourceId).version !== version)
         throw new Error("候选引用的资料已更新，请重新读取并检查后再采用");
+    }
+    const activeRefs = new Set([
+      ...draft.enterprise.evidenceRefs,
+      ...[...draft.concepts, ...draft.relations].flatMap(
+        (item) => item.evidenceRefs,
+      ),
+      ...[...draft.unknowns, ...draft.conflicts].flatMap(
+        (item) => item.resolvedBy ?? item.evidenceRefs ?? [],
+      ),
+    ]);
+    for (const e of draft.evidence.filter(
+      (e) => e.kind === "knowledge" && activeRefs.has(e.id),
+    )) {
+      const source = this.memory.getArtifact(e.sourceId!);
+      if (source.status !== "ready" || source.version !== e.connectionVersion)
+        throw new Error("候选引用的知识来源已停用或契约变化，请重新核对");
     }
     if (draft.conflicts.some((item) => !item.resolvedBy))
       throw new Error("请先解决候选中的冲突，再采用基础定义");

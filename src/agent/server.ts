@@ -1,3 +1,4 @@
+import { KnowledgeReader, sourceCatalog } from "./knowledge.ts";
 import { createServer as httpServer, type IncomingMessage } from "node:http";
 import { readFile } from "node:fs/promises";
 import { chmodSync, readFileSync, writeFileSync } from "node:fs";
@@ -414,13 +415,22 @@ export async function createServer(
           break;
         }
         case "/api/live/read":
-          result = await app.live.sources.read(
+          result = await app.live.sources.readRecords(
             String(body.sourceId),
             String(body.capability),
             (body.where ?? {}) as import("./contracts.ts").Data,
             Number(body.offset ?? 0),
             Number(body.limit ?? 3),
           );
+          break;
+        case "/api/live/catalog":
+          result = sourceCatalog(app.memory, body);
+          break;
+        case "/api/live/knowledge/query":
+          result = await new KnowledgeReader(app.live.sources).query(body);
+          break;
+        case "/api/live/knowledge/read":
+          result = await new KnowledgeReader(app.live.sources).read(body);
           break;
         case "/api/live/query":
           result = await app.live.query(body);

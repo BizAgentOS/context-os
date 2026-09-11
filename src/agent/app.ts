@@ -1,3 +1,4 @@
+import { sourceCatalog } from "./knowledge.ts";
 import { FoundationDocuments } from "./foundation-evidence.ts";
 import {
   WorkContexts,
@@ -1396,6 +1397,7 @@ export class AgentApplication {
       this.memory,
       context,
       this.researchTestOrigins,
+      this.live.sources,
     );
     let foundationSkill = "";
     let pageCompleted = false;
@@ -1706,6 +1708,16 @@ export class AgentApplication {
               ? lastWrite.operationId
               : `write-${++writeSequence}`
             : undefined;
+          if (name === "source_catalog")
+            return serializable(sourceCatalog(this.memory, args));
+          if (name === "knowledge_query" || name === "knowledge_read") {
+            const reader = foundationDocuments.knowledge!;
+            const result = await (name === "knowledge_query"
+              ? reader.query(args)
+              : reader.read(args));
+            this.memory.assertWritable(context);
+            return serializable(result);
+          }
           if (name === "foundation_web_read") {
             const result = await foundationDocuments.web!.read(args);
             this.memory.assertWritable(context);

@@ -18,6 +18,7 @@ const name = z.string().trim().min(1).max(200);
 const capabilitySchema = z
   .object({
     name,
+    contentKind: z.enum(["records", "knowledge"]).default("records"),
     path: z.string().max(500).optional(),
     fields: z.array(name).min(1).max(100),
     idField: name,
@@ -161,6 +162,19 @@ export class SourceConnections {
       throw new Error("能力名称重复");
     for (const c of config.capabilities) {
       if (
+        c.contentKind === "knowledge" &&
+        (c.idType !== "string" ||
+          !c.totalPath ||
+          !c.filters[c.idField] ||
+          ["documentId", "title", "revision", "text"].includes(c.idField) ||
+          !["documentId", "title", "revision", "text"].every((f) =>
+            c.fields.includes(f),
+          ))
+      )
+        throw new Error(
+          "知识能力需要字符串片段身份、身份过滤、总数及 documentId/title/revision/text 字段",
+        );
+      if (
         !c.fields.includes(c.idField) ||
         new Set(c.fields).size !== c.fields.length ||
         Object.keys(c.filters).some((f) => !c.fields.includes(f))
@@ -238,6 +252,22 @@ export class SourceConnections {
     const cap = savedCap ? capabilitySchema.parse(savedCap) : undefined;
     if (!cap) throw new Error("来源能力不存在");
     return { artifact: a, config, cap };
+  }
+  async readRecords(
+    id: string,
+    capability: string,
+    where: Data = {},
+    offset = 0,
+    limit = 20,
+    version?: number,
+  ) {
+    if (
+      this.capability(id, capability, version).cap.contentKind === "knowledge"
+    )
+      throw new Error(
+        "知识文档请使用 knowledge_query / knowledge_read 分段读取",
+      );
+    return this.read(id, capability, where, offset, limit, version);
   }
   async read(
     id: string,
@@ -352,6 +382,18 @@ export class SourceConnections {
       ids.add(String(identity));
       if (Object.entries(where).some(([k, v]) => row[k] !== v))
         throw new Error("来源未遵循过滤契约");
+      if (
+        cap.contentKind === "knowledge" &&
+        ([cap.idField, "documentId", "title", "revision"].some(
+          (f) =>
+            typeof row[f] !== "string" || !row[f].trim() || row[f].length > 500,
+        ) ||
+          typeof row.text !== "string" ||
+          !row.text.trim() ||
+          row.text.length > 16000 ||
+          /[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffd]/.test(row.text))
+      )
+        throw new Error("知识片段字段无效或正文超过16000字符，请在来源分段");
       return Object.fromEntries(cap.fields.map((f) => [f, row[f]]));
     });
     const total = cap.totalPath ? at(raw, cap.totalPath) : undefined;

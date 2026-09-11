@@ -1,4 +1,10 @@
 import {
+  KnowledgeReader,
+  locateKnowledge,
+  type KnowledgeSnapshot,
+} from "./knowledge.ts";
+import type { SourceConnections } from "../live/sources.ts";
+import {
   FoundationWeb,
   locateWeb,
   type WebCoverage,
@@ -23,7 +29,7 @@ export const foundationEvidenceInput = z.union([
   z
     .object({
       id: evidenceId,
-      kind: z.enum(["document", "web"]),
+      kind: z.enum(["document", "web", "knowledge"]),
       readId: identifier,
       quote: z.string().min(1).max(1500),
     })
@@ -32,10 +38,23 @@ export const foundationEvidenceInput = z.union([
 export type EvidenceInput = z.infer<typeof foundationEvidenceInput>;
 export interface FoundationEvidence {
   id: string;
-  kind: "user-statement" | "document" | "web";
+  kind: "user-statement" | "document" | "web" | "knowledge";
+  knowledgeSnapshot?: KnowledgeSnapshot;
+  connectionVersion?: number;
+  capability?: string;
+  segmentId?: string;
+  documentId?: string;
+  revision?: string;
   url?: string;
   requestedUrl?: string;
-  coverage?: WebCoverage;
+  coverage?:
+    | WebCoverage
+    | {
+        complete: boolean;
+        totalCharacters: number;
+        nextOffset: number | null;
+        unit: string;
+      };
   webSnapshot?: WebSnapshot;
   identity?: ResearchIdentity;
   quote: string;
@@ -93,12 +112,15 @@ export class FoundationDocuments {
   private receipts = new Map<string, ReadReceipt>();
   private characters = 0;
   readonly web?: FoundationWeb;
+  readonly knowledge?: KnowledgeReader;
   constructor(
     memory: MemoryStore,
     context?: WriteContext,
     testOrigins: ReadonlySet<string> = new Set(),
+    sources?: SourceConnections,
   ) {
     this.memory = memory;
+    if (sources) this.knowledge = new KnowledgeReader(sources);
     if (context) this.web = new FoundationWeb(memory, context, testOrigins);
   }
   read(args: unknown): ReadReceipt {
@@ -147,6 +169,10 @@ export class FoundationDocuments {
   }
   cite(input: EvidenceInput): FoundationEvidence {
     if (!("readId" in input)) throw new Error("需要文档读取引用");
+    if (input.kind === "knowledge") {
+      if (!this.knowledge) throw new Error("必须先实际读取知识片段");
+      return this.knowledge.cite(input);
+    }
     if (input.kind === "web") {
       if (!this.web) throw new Error("必须先实际读取网页");
       return this.web.cite(input);
@@ -175,6 +201,14 @@ export class FoundationDocuments {
     };
   }
   locate(evidence: FoundationEvidence) {
+    if (evidence.kind === "knowledge") {
+      const connection = this.memory.getArtifact(evidence.sourceId!);
+      return {
+        ...locateKnowledge(evidence),
+        connectionStatus: connection.status,
+        currentConnectionVersion: connection.version,
+      };
+    }
     if (evidence.kind === "web") return locateWeb(evidence);
     if (
       evidence.kind !== "document" ||

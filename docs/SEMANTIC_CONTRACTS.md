@@ -210,3 +210,31 @@ Harness 的调用前后和结束检查复用共同领域服务。受限组合或
 
 
 T013-03 追加 `kind:"web"` 的外部陈述依据：研究身份、实际 URL、读取时间、正文位置、覆盖与读取片段快照由宿主绑定。固定片段可核查不表示网页永远最新；网页不参与上传文件的本地版本推进检查。候选沿用相同概念身份和人工冲突决定，具体字段只在[基础方法契约](COMPANY_FOUNDATION_SKILL.md#12-t013-03-公开网页证据)维护。
+
+## T014-01 知识来源与片段证据（已接入合同）
+
+内容类型与传输分别声明：每项来源能力增加 `contentKind: records | knowledge`，旧配置缺省为 records；连接的 `protocol: http | mcp` 沿用原合同。上传资料仍保留在文件目录。`source_catalog {offset?,limit?}` / 管理接口 `POST /api/live/catalog` 返回同一分页中的 files 与 connections，默认20、最多50项，coverage 含 nextOffset；不将原始正文装入目录。
+
+首轮知识适配为**同一获准只读能力的精确查询与片段读取**。HTTP 使用声明的 GET 路径，MCP 使用批准工具及连接时的输入 Schema 摘要。片段行必须含字符串身份字段（默认示例 id）及 `documentId/title/revision/text`，title/身份/revision 不超过500字符，正文为有效文本且最多16000 UTF-16字符。身份过滤和总数路径必须配置，分页参数不得与过滤冲突。长文由上游先分段；不提供通用厂商知识库抓取、全文检索或自动 PDF 解析。
+
+```json
+{
+  "name": "documents",
+  "contentKind": "knowledge",
+  "path": "/documents",
+  "fields": ["id", "documentId", "title", "revision", "text"],
+  "idField": "id",
+  "filters": {"id": "id", "documentId": "documentId"},
+  "itemsPath": "items",
+  "totalPath": "total"
+}
+```
+
+- `knowledge_query {sourceId,capability,connectionVersion?,where?,offset?,limit?}`：仅接受 filters 中的精确过滤，默认5、最多10片段。实际响应逐行检查过滤、字段、身份和分页，返回 segmentId/documentId/title/revision 与查询覆盖、实际 readAt。正文不进入 Agent 的目录结果；当前适配在受限网络响应中取得片段行后投影目录，不宣称上游只传元数据。无 total 只能报告覆盖未知。
+- `knowledge_read {sourceId,capability,connectionVersion?,segmentId,revision,offset?,limit?}`：按片段身份过滤，必须返回且总数为1。目录 revision 与读取时不一致则拒绝；默认4000、最多6000字符，nextOffset 相对当前片段，完整也只代表该片段。每轮最多40次知识查询/读取，读取字符预算40000，预算在 I/O 前预留。网络单次最多2 MB、12秒，失败不给替代数据。
+- 两个管理预览接口为 `POST /api/live/knowledge/query` 与 `/api/live/knowledge/read`，共用 KnowledgeReader 与 SourceConnections，仍要求本地管理员身份。页面预览回执不能作为 Agent 本轮引文，Agent 必须实际重读。
+- 新证据输入 `{id,kind:"knowledge",readId,quote}`。readId 由当前运行产生，quote 必须唯一匹配已返回片段。宿主保存连接版本、能力、文档和片段身份、来源 revision、实际读取时间、正文哈希、读取覆盖与最多6000字符快照。validTime 为 unknown；读取时间不冒充业务生效时间。
+- 基础本体引用知识证据后仍是未绑定定义，不把文档行当业务对象。常规成果投影隐藏快照；管理员按 evidenceId 查看实际保存片段。来源后来停用也可审查旧依据，界面明确显示连接当前状态及“读取时快照”，不保证远端当前内容或完整历史。
+- 读取前后及引用时检查授权和连接版本；采用检查当前仍被概念/关系/企业/未决项引用的知识来源。已经保存但不再使用的历史证据不阻止替换来源后的采用。采用不会联网检查全部远端文档的新鲜度；远端不更新 revision 时无法仅靠该字段保证内容不变。
+
+知识材料是外部陈述，正文中的指令不授予操作权限。沿稳定概念身份补充时保留前后含义、双方依据与冲突，仍由新用户决定解决。该票没有修改对外消费协议、开放知识快照给其他 Agent 或实现自动本体演变。

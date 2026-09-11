@@ -119,6 +119,8 @@ export class LiveMemory {
         t.sourceId,
         t.capability,
       );
+      if (cap.contentKind === "knowledge")
+        throw new Error("知识片段作为依据使用，不能映射成业务记录");
       if (
         Object.hasOwn(t.fields, "$id") ||
         !Object.keys(t.fields).length ||
@@ -152,7 +154,7 @@ export class LiveMemory {
     }
     const checks = [];
     for (const t of d.types) {
-      const sample = await this.sources.read(
+      const sample = await this.sources.readRecords(
         t.sourceId,
         t.capability,
         {},
@@ -198,7 +200,7 @@ export class LiveMemory {
     )
       throw new Error("基础本体已变化，请重新提出候选");
     for (const t of d.types)
-      await this.sources.read(
+      await this.sources.readRecords(
         t.sourceId,
         t.capability,
         {},
@@ -265,7 +267,7 @@ export class LiveMemory {
         (r) => r.from === args.type && r.name === args.relation,
       );
       if (!rel) throw new Error("关系不存在");
-      const origin = await this.sources.read(
+      const origin = await this.sources.readRecords(
         type.sourceId,
         type.capability,
         where,
@@ -293,7 +295,7 @@ export class LiveMemory {
     }
     const fields = args.fields ?? ["$id", ...Object.keys(type.fields)];
     for (const f of fields) sourceField(f);
-    const result = await this.sources.read(
+    const result = await this.sources.readRecords(
       type.sourceId,
       type.capability,
       where,
@@ -506,7 +508,7 @@ export class LiveMemory {
     if (name === "live_overview") return jsonData(this.overview());
     if (name === "live_read")
       return jsonData(
-        await this.sources.read(
+        await this.sources.readRecords(
           String(args.sourceId),
           String(args.capability),
           (args.where ?? {}) as Data,
