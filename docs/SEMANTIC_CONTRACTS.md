@@ -238,3 +238,30 @@ T013-03 追加 `kind:"web"` 的外部陈述依据：研究身份、实际 URL、
 - 读取前后及引用时检查授权和连接版本；采用检查当前仍被概念/关系/企业/未决项引用的知识来源。已经保存但不再使用的历史证据不阻止替换来源后的采用。采用不会联网检查全部远端文档的新鲜度；远端不更新 revision 时无法仅靠该字段保证内容不变。
 
 知识材料是外部陈述，正文中的指令不授予操作权限。沿稳定概念身份补充时保留前后含义、双方依据与冲突，仍由新用户决定解决。该票没有修改对外消费协议、开放知识快照给其他 Agent 或实现自动本体演变。
+
+## T014-02 BI 指标定义与观测
+
+新增 `contentKind: metrics`，每项获准能力声明一个 `metricId`，协议仍为 HTTP GET / MCP Streamable HTTP。例：`{name:"metrics",path:"/metrics",contentKind:"metrics",metricId:"resolution_rate"}`。字段/过滤/总数不套用记录映射；指标不可通过 `live_read` 或映射为业务明细。配置来源仍由管理入口完成，Agent 只能调用获准能力。
+
+### 上游适配合同
+
+同一只读能力接受两种 operation。HTTP 用声明路径上的查询参数，`where` 为 JSON 字符串；MCP 参数中的 where 为对象。不是任意 BI SQL 或通用厂商连接器。
+
+- `describe` 请求为 `{operation:"describe",metricId}`，返回 `{definition}`。
+- definition 为 `{id,name,description,revision,unit,grain,timeZone,dimensions:[{name,label}],aggregation:{kind,additiveDimensions,timeAdditive}}`。id 必须等于配置的 metricId。grain 首轮支持 day/month，timeZone 是运行时认可的时区标识（包括固定偏移）；维度最多10个，名称唯一，值在观测中为字符串；定义、可加总维度、过滤与观测均拒绝保留名 `__proto__`，避免解析时静默丢失筛选。
+- aggregation.kind 为 sum/ratio/average/distinct_count/snapshot；可加总维度必须在声明维度内。ratio/average/distinct_count 不得声明可直接跨维度或期间加总，snapshot 不得跨期间加总。此处校验规则的一致性，不代替业务口径审核，也不执行跨行合计。
+- `query` 请求为 `{operation:"query",metricId,start,end,where,offset,limit}`；响应 `{definition,query,items,coverage:{total,dataComplete}}`，query 回显除 operation 以外的全部查询参数。total 为非负整数或 null，dataComplete 为 boolean 或 null，是**来源对数据覆盖的声明**。
+- 每项观测含 dimensions（必须与定义维度集合一致）、periodStart、periodEnd、status、value。observed 的 value 必须为有限数字；missing 必须 value=null 且带 missingReason。零与缺失不同，空结果不表示指标为零。
+- start/end 是指标时区的日历日期，左闭右开，跨度最多366天；月粒度两端必须为月首。每条观测必须对应恰好一日或一月，落在请求范围，符合精确维度过滤；同一维度与期间不能在当前页重复。首轮不支持小时/季度、任意时间窗口、数值维度或自动单位换算。
+
+### 人与 Agent 的共同接口
+
+`metric_describe {sourceId,capability,connectionVersion}` 实际读取定义，返回 definitionHash 和来源/连接版本/实际 readAt。`metric_query` 除这些定位字段外要求 `{definitionHash,start,end,where?,offset?,limit?}`，默认20、最多50项。
+
+每次 query 先重新读取定义并核对 hash、维度和粒度，才发出观测查询；观测响应携带的定义再次核对，覆盖两次读取之间的口径变化。名称、口径、单位、维度、粒度、时区、可加总性或 revision 变化都会导致重新检查，不静默延用旧定义。读取前后检查来源有效性；运行中停止后不交付迟到结果，也不从已完成定义读取继续发起第二次观测请求。
+
+回执为 `kind:metric_observations`，有 readId、definition、definitionHash、实际 query、逐项 observationId、coverage 与 provenance。observationId 根据来源/能力/定义/维度/期间确定；数值更新不改变同一定义下的定位身份，readId 和 readAt 区分读取时点。这不是持久观测库或来源历史快照，跨页也不保证数据原子一致。
+
+coverage 区分**查询结果分页完整性** complete 与 **来源数据覆盖** dataComplete；当前页出现 missing 会将 dataComplete 降为 false。总数未知的非空页允许按 offset+shown 续读，直到空页；结束也不把未知总数标为完整。每轮最多40次来源操作，describe消耗1次、query包含重读定义与读结果共2次；单次网络最多2 MB、12秒。
+
+管理预览使用 `POST /api/live/metrics/describe` 与 `/api/live/metrics/query`，共用 MetricReader，要求本地管理员身份。页面展示实际定义、维度、日期、数值单位、可加总规则、缺失原因和读取时点，不自行合计。当前不将指标 readId 当作 foundation 文档证据，不新增对外指标消费；共同跨源取证属于 T014-05。

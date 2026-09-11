@@ -1,3 +1,4 @@
+import { MetricReader } from "./metrics.ts";
 import { KnowledgeReader, sourceCatalog } from "./knowledge.ts";
 import { createServer as httpServer, type IncomingMessage } from "node:http";
 import { readFile } from "node:fs/promises";
@@ -18,6 +19,7 @@ const staticFiles: Record<string, { file: string; type: string }> = {
     file: "capabilities.js",
     type: "text/javascript; charset=utf-8",
   },
+  "/metrics.js": { file: "metrics.js", type: "text/javascript; charset=utf-8" },
   "/foundation.js": {
     file: "foundation.js",
     type: "text/javascript; charset=utf-8",
@@ -422,6 +424,12 @@ export async function createServer(
             Number(body.offset ?? 0),
             Number(body.limit ?? 3),
           );
+          break;
+        case "/api/live/metrics/describe":
+          result = await new MetricReader(app.live.sources).describe(body);
+          break;
+        case "/api/live/metrics/query":
+          result = await new MetricReader(app.live.sources).query(body);
           break;
         case "/api/live/catalog":
           result = sourceCatalog(app.memory, body);

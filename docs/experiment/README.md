@@ -6,6 +6,7 @@
 
 | 需要查看 | 记录 |
 |---|---|
+| BI定义、指标观测、期间维度与覆盖 | [指标验收](METRICS.md) |
 | 统一目录、HTTP/MCP知识查询与片段取证 | [知识来源验收](KNOWLEDGE_SOURCES.md) |
 | 公开研究、身份复用、网页快照与同名消歧 | [公开研究验收](FOUNDATION_WEB.md) |
 | 企业资料取证、补充、冲突与原文定位 | [资料验收](FOUNDATION_DOCUMENTS.md) |

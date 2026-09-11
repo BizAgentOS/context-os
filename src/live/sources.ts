@@ -18,10 +18,11 @@ const name = z.string().trim().min(1).max(200);
 const capabilitySchema = z
   .object({
     name,
-    contentKind: z.enum(["records", "knowledge"]).default("records"),
+    contentKind: z.enum(["records", "knowledge", "metrics"]).default("records"),
     path: z.string().max(500).optional(),
-    fields: z.array(name).min(1).max(100),
-    idField: name,
+    metricId: name.optional(),
+    fields: z.array(name).max(100).default([]),
+    idField: name.default("id"),
     idType: z.enum(["string", "number"]).default("string"),
     itemsPath: z.string().max(200).default("items"),
     totalPath: z.string().max(200).optional(),
@@ -162,6 +163,18 @@ export class SourceConnections {
       throw new Error("能力名称重复");
     for (const c of config.capabilities) {
       if (
+        c.contentKind === "metrics" &&
+        (!c.metricId ||
+          c.fields.length ||
+          Object.keys(c.filters).length ||
+          c.totalPath)
+      )
+        throw new Error(
+          "指标能力需要明确 metricId，使用固定指标合同，不配置记录字段/过滤/总数路径",
+        );
+      if (c.contentKind !== "metrics" && c.metricId)
+        throw new Error("metricId 仅用于指标能力");
+      if (
         c.contentKind === "knowledge" &&
         (c.idType !== "string" ||
           !c.totalPath ||
@@ -175,7 +188,7 @@ export class SourceConnections {
           "知识能力需要字符串片段身份、身份过滤、总数及 documentId/title/revision/text 字段",
         );
       if (
-        !c.fields.includes(c.idField) ||
+        (c.contentKind !== "metrics" && !c.fields.includes(c.idField)) ||
         new Set(c.fields).size !== c.fields.length ||
         Object.keys(c.filters).some((f) => !c.fields.includes(f))
       )
@@ -253,68 +266,23 @@ export class SourceConnections {
     if (!cap) throw new Error("来源能力不存在");
     return { artifact: a, config, cap };
   }
-  async readRecords(
+  /** Internal bounded transport shared by typed record, document and metric adapters. */
+  async invoke(
     id: string,
     capability: string,
-    where: Data = {},
-    offset = 0,
-    limit = 20,
-    version?: number,
-  ) {
-    if (
-      this.capability(id, capability, version).cap.contentKind === "knowledge"
-    )
-      throw new Error(
-        "知识文档请使用 knowledge_query / knowledge_read 分段读取",
-      );
-    return this.read(id, capability, where, offset, limit, version);
-  }
-  async read(
-    id: string,
-    capability: string,
-    where: Data = {},
-    offset = 0,
-    limit = 20,
+    args: Record<string, unknown>,
     version?: number,
   ) {
     const { artifact, config, cap } = this.capability(id, capability, version);
-    if (
-      !Number.isSafeInteger(offset) ||
-      offset < 0 ||
-      !Number.isInteger(limit) ||
-      limit < 1 ||
-      limit > 100
-    )
-      throw new Error("分页范围无效");
-    where = { ...where };
-    if (Object.hasOwn(where, cap.idField) && cap.idType === "number") {
-      const value = where[cap.idField];
-      if (
-        (typeof value !== "number" &&
-          (typeof value !== "string" || !value.trim())) ||
-        !Number.isFinite(Number(value))
-      )
-        throw new Error("对象编号需要数字");
-      where[cap.idField] = Number(value);
-    }
-    const args: Record<string, string | number | boolean> = {
-      [cap.limitParam]: limit,
-      [cap.offsetParam]: offset,
-    };
-    for (const [field, value] of Object.entries(where)) {
-      if (
-        !Object.hasOwn(cap.filters, field) ||
-        !["string", "number", "boolean"].includes(typeof value)
-      )
-        throw new Error("来源不支持此过滤条件");
-      args[cap.filters[field]] = value as string | number | boolean;
-    }
     let raw: unknown;
     try {
       if (config.protocol === "http") {
         const url = new URL(cap.path!, config.url);
         for (const [k, v] of Object.entries(args))
-          url.searchParams.set(k, String(v));
+          url.searchParams.set(
+            k,
+            typeof v === "object" ? JSON.stringify(v) : String(v),
+          );
         const response = await this.fetchBounded(url, {
           headers: this.secrets[id]
             ? { Authorization: `Bearer ${this.secrets[id]}` }
@@ -353,6 +321,78 @@ export class SourceConnections {
       raw = JSON.parse(
         JSON.stringify(raw).replaceAll(this.secrets[id], "[redacted]"),
       );
+    return {
+      raw,
+      provenance: {
+        sourceId: id,
+        connectionVersion: artifact.version,
+        capability,
+        readAt: new Date().toISOString(),
+        historicalReplay: false,
+      },
+    };
+  }
+  async readRecords(
+    id: string,
+    capability: string,
+    where: Data = {},
+    offset = 0,
+    limit = 20,
+    version?: number,
+  ) {
+    if (this.capability(id, capability, version).cap.contentKind === "metrics")
+      throw new Error("BI 指标请使用 metric_describe / metric_query");
+    if (
+      this.capability(id, capability, version).cap.contentKind === "knowledge"
+    )
+      throw new Error(
+        "知识文档请使用 knowledge_query / knowledge_read 分段读取",
+      );
+    return this.read(id, capability, where, offset, limit, version);
+  }
+  async read(
+    id: string,
+    capability: string,
+    where: Data = {},
+    offset = 0,
+    limit = 20,
+    version?: number,
+  ) {
+    const { artifact, cap } = this.capability(id, capability, version);
+    if (cap.contentKind === "metrics")
+      throw new Error("BI 指标不能作为记录读取，请使用 metric_query");
+    if (
+      !Number.isSafeInteger(offset) ||
+      offset < 0 ||
+      !Number.isInteger(limit) ||
+      limit < 1 ||
+      limit > 100
+    )
+      throw new Error("分页范围无效");
+    where = { ...where };
+    if (Object.hasOwn(where, cap.idField) && cap.idType === "number") {
+      const value = where[cap.idField];
+      if (
+        (typeof value !== "number" &&
+          (typeof value !== "string" || !value.trim())) ||
+        !Number.isFinite(Number(value))
+      )
+        throw new Error("对象编号需要数字");
+      where[cap.idField] = Number(value);
+    }
+    const args: Record<string, string | number | boolean> = {
+      [cap.limitParam]: limit,
+      [cap.offsetParam]: offset,
+    };
+    for (const [field, value] of Object.entries(where)) {
+      if (
+        !Object.hasOwn(cap.filters, field) ||
+        !["string", "number", "boolean"].includes(typeof value)
+      )
+        throw new Error("来源不支持此过滤条件");
+      args[cap.filters[field]] = value as string | number | boolean;
+    }
+    const { raw } = await this.invoke(id, capability, args, artifact.version);
     const rows = at(raw, cap.itemsPath);
     if (!Array.isArray(rows) || rows.length > limit)
       throw new Error("来源未遵循记录数组或分页契约");

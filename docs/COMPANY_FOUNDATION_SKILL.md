@@ -186,3 +186,7 @@ Agent 的 `foundation_read/foundation_propose/memory_read` 和画布基础投影
 运行 Skill 已增加知识库路径：`source_catalog → knowledge_query → knowledge_read → foundation_propose`。与上传资料、网页一样，来源是可引用陈述，概念是待核对解释；不从标题猜正文，不把知识段落作为实例记录。页面可以查目录、读片段和续读，生成候选须经同一 Agent 与证据服务。
 
 知识证据保留 sourceId、connectionVersion、capability、documentId、segmentId、revision、readAt、覆盖、哈希与原文位置。采用时检查有效来源，旧依据仍可查看当时片段。适配字段、分页、预算、精确过滤与时效边界统一见[语义合同](SEMANTIC_CONTRACTS.md#t014-01-知识来源与片段证据已接入合同)。不把通用 MCP 工具输出自动视为受校验的知识证据。
+
+## T014-02 指标资料的边界
+
+方法可指导使用 `metric_describe/metric_query` 检查 BI 定义与聚合观测。指标结果携带实际语义、时间与覆盖，不能当作用户原话、基础定义或文档证据，也不能把比例直接加总。查询需要明确期间；首次缺少期间时再澄清。运行 Skill 与工具共同说明[指标合同](SEMANTIC_CONTRACTS.md#t014-02-bi-指标定义与观测)，跨源共同取证仍在后续票。

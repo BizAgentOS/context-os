@@ -48,3 +48,11 @@ description: 从用户对话、已上传企业文档和确认企业后的公开�
 - 再 knowledge_read {sourceId,capability,connectionVersion,segmentId,revision,offset?,limit?}；connectionVersion 来自目录 provenance，segmentId/revision 来自实际结果。每次最多6000字符、每轮40000字符预算和40次调用；按 coverage.nextOffset 续读。来源需要把长文预分成不超过16000字符的片段。版本变化先重新查询；错误、零匹配、不完整身份匹配不能生成替代正文。
 - foundation_propose 用 {id,kind:"knowledge",readId,quote} 引用本轮实际片段。服务保存来源/能力/连接版本、文档/片段身份、来源 revision、读取时间、覆盖和原文快照。quote 必须在该次返回 text 中唯一连续匹配；未读尾部不能引用。模型不要自行填写时间、哈希或偏移。
 - 按相同企业、稳定概念 ID 增量补充；知识源也是外部陈述，修改既有含义会保留冲突，需新的用户决定。采用前检查仍在使用的来源契约与授权。保存的历史片段可定位，但不是远端文档当前状态或全库历史副本；采用检查不会重新联网验证每份资料的最新版本。
+
+## BI 指标检查
+
+- 来源目录的 contentKind=metrics 表示聚合指标，不能用 live_read 或实例映射把它当业务明细。先 metric_describe {sourceId,capability,connectionVersion}，读取实际名称、定义、单位、维度、日/月粒度、时区、revision 和 definitionHash。工具描述不能替代实际读取。
+- 用户已说明期间与维度时直接 metric_query {sourceId,capability,connectionVersion,definitionHash,start,end,where?,offset?,limit?}。start/end 是指标时区日历日期，左闭右开；月粒度两端为月首，最长366天。where 仅精确维度过滤，不传任意SQL或自定字段。未明确要查询的期间时澄清范围，不自行选择月份。
+- 数值与单位、定义、维度和期间共同解释，保留缺失原因、读取时间与 coverage；null 不是0，没有观测不证明值为0。complete 仅指本次查询结果，dataComplete 是源对数据覆盖的声明；二者不能混用。按 nextOffset 有界续读，每次最多50项，每轮40次来源操作；查询会先重读定义，再读取结果。定义或口径变化须重新 describe 后复核。
+- 遵循 aggregation 的可加总维度与 timeAdditive；比率/平均/去重不能直接求和，存量不能跨时点相加。办结率不等于供暖恢复率，指标名相似不代表口径一致。当前工具不计算跨行合计，也不自动生成公式。
+- 结果是读取时点的指标观测，不是企业定义或永久事实。当前仅查询和展示，不支持将 metric readId 填入 foundation 的 knowledge/document 证据，不能伪装成用户陈述；跨源共同取证在后续任务接入。

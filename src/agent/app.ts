@@ -1,3 +1,4 @@
+import { MetricReader, metricTools } from "./metrics.ts";
 import { sourceCatalog } from "./knowledge.ts";
 import { FoundationDocuments } from "./foundation-evidence.ts";
 import {
@@ -1384,7 +1385,9 @@ export class AgentApplication {
           ),
           ...(page === "setup" ? [historyReadTool] : []),
           ...(workContext?.target ? [contextReadTool] : []),
-          ...(page !== "consumption" ? foundationTools : []),
+          ...(page !== "consumption"
+            ? [...foundationTools, ...metricTools]
+            : []),
           ...capabilityTools,
           ...controlTools.filter((tool) => tool.name === "task_ask"),
           ...(page === "consumption" ? consumptionTools : [pageCompleteTool]),
@@ -1398,6 +1401,9 @@ export class AgentApplication {
       context,
       this.researchTestOrigins,
       this.live.sources,
+    );
+    const metricReader = new MetricReader(this.live.sources, () =>
+      this.memory.assertWritable(context),
     );
     let foundationSkill = "";
     let pageCompleted = false;
@@ -1708,6 +1714,13 @@ export class AgentApplication {
               ? lastWrite.operationId
               : `write-${++writeSequence}`
             : undefined;
+          if (name === "metric_describe" || name === "metric_query") {
+            const result = await (name === "metric_describe"
+              ? metricReader.describe(args)
+              : metricReader.query(args));
+            this.memory.assertWritable(context);
+            return serializable(result);
+          }
           if (name === "source_catalog")
             return serializable(sourceCatalog(this.memory, args));
           if (name === "knowledge_query" || name === "knowledge_read") {

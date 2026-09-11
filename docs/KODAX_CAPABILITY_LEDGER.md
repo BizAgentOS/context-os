@@ -98,3 +98,7 @@ Skill 的包目录、已安装方法与变更流程只在[内置 Skill](BUILTIN_
 ## 知识来源接入（T014-01）
 
 同一 KodaX 循环新增宿主 `source_catalog/knowledge_query/knowledge_read`；运行 Skill 指导先发现再读取，引用复用 FoundationService。HTTP/MCP 传输沿 SourceConnections 的明确授权与契约检查，MCP 为实际 Streamable HTTP SDK 调用。没有新增第二个 Agent、提升 Skill 权限或升级 SDK。精确过滤、上游分段要求、每轮预算和证据范围见[语义合同](SEMANTIC_CONTRACTS.md#t014-01-知识来源与片段证据已接入合同)。
+
+## BI 指标接入（T014-02）
+
+同一 KodaX 循环新增宿主 `metric_describe/metric_query`，企业与数据、本体工作区可用；来源目录显示 metrics 类型及获准 metricId。工具结果是指标定义与观测，保留维度、期间、单位、粒度、可加总规则和覆盖，不映射为记录实例。运行 Skill 增加指标检查方法；每次来源请求沿 SourceConnections 的同一 HTTP/MCP 传输、授权与契约复检。未升级 SDK 或增加模型循环。具体输入和真实限制见[语义契约](SEMANTIC_CONTRACTS.md#t014-02-bi-指标定义与观测)。

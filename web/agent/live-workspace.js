@@ -1,3 +1,4 @@
+import { renderMetricInspector } from "./metrics.js";
 import { renderDefinitionGraph } from "./ontology-workspace.js";
 const el = (tag, cls = "", text) => {
   const n = document.createElement(tag);
@@ -211,7 +212,7 @@ export function renderLiveWorkspace(
       el(
         "p",
         "live-lead",
-        "统一来源目录：文件资料、知识文档与业务记录。远程数据保留在原系统，按需读取并引用。",
+        "统一来源目录：文件资料、知识文档、BI 指标与业务记录。远程数据保留在原系统，按需读取并引用。",
       ),
     );
     section.append(
@@ -239,6 +240,7 @@ export function renderLiveWorkspace(
           for (const [value, title] of [
             ["records", "业务记录"],
             ["knowledge", "知识文档片段"],
+            ["metrics", "BI 指标"],
           ]) {
             const option = el("option", "", title);
             option.value = value;
@@ -276,31 +278,46 @@ export function renderLiveWorkspace(
           );
           contentKind.onchange = () => {
             config.value = JSON.stringify(
-              contentKind.value === "knowledge"
+              contentKind.value === "metrics"
                 ? [
                     {
-                      name: "documents",
-                      path: "/documents",
-                      contentKind: "knowledge",
-                      fields: ["id", "documentId", "title", "revision", "text"],
-                      idField: "id",
-                      filters: { id: "id", documentId: "documentId" },
-                      itemsPath: "items",
-                      totalPath: "total",
+                      name: "metrics",
+                      path: "/metrics",
+                      contentKind: "metrics",
+                      metricId: "resolution_rate",
                     },
                   ]
-                : [
-                    {
-                      name: "list_records",
-                      path: "/records",
-                      contentKind: "records",
-                      fields: ["id", "name"],
-                      idField: "id",
-                      filters: { id: "id" },
-                      itemsPath: "items",
-                      totalPath: "total",
-                    },
-                  ],
+                : contentKind.value === "knowledge"
+                  ? [
+                      {
+                        name: "documents",
+                        path: "/documents",
+                        contentKind: "knowledge",
+                        fields: [
+                          "id",
+                          "documentId",
+                          "title",
+                          "revision",
+                          "text",
+                        ],
+                        idField: "id",
+                        filters: { id: "id", documentId: "documentId" },
+                        itemsPath: "items",
+                        totalPath: "total",
+                      },
+                    ]
+                  : [
+                      {
+                        name: "list_records",
+                        path: "/records",
+                        contentKind: "records",
+                        fields: ["id", "name"],
+                        idField: "id",
+                        filters: { id: "id" },
+                        itemsPath: "items",
+                        totalPath: "total",
+                      },
+                    ],
               null,
               2,
             );
@@ -309,7 +326,7 @@ export function renderLiveWorkspace(
             el(
               "p",
               "source-meta",
-              "知识源按片段提供 id、documentId、title、revision、text；每片段最多16000字符，过滤为精确匹配。此处编辑连接契约，企业定义仍由助手与您共同核对。",
+              "知识源按片段提供 id、documentId、title、revision、text；每片段最多16000字符，过滤为精确匹配。BI 指标需声明 metricId，来源提供定义及按维度/期间查询的指标合同。此处编辑连接契约，企业定义仍由助手与您共同核对。",
             ),
           );
           form.append(
@@ -369,9 +386,19 @@ export function renderLiveWorkspace(
           el(
             "p",
             "",
-            `${cap.contentKind === "knowledge" ? "知识文档" : "业务记录"} · ${cap.name} · ${cap.fields.join("、")}`,
+            `${cap.contentKind === "metrics" ? "BI 指标" : cap.contentKind === "knowledge" ? "知识文档" : "业务记录"} · ${cap.name} · ${cap.contentKind === "metrics" ? cap.metricId : cap.fields.join("、")}`,
           ),
         );
+        if (source.status === "ready" && cap.contentKind === "metrics") {
+          card.append(
+            button("查看指标", () =>
+              modal(source.title + " · BI 指标", (dialog) =>
+                dialog.append(renderMetricInspector(source, cap, api)),
+              ),
+            ),
+          );
+          continue;
+        }
         if (source.status === "ready" && cap.contentKind === "knowledge") {
           card.append(
             button("查询知识文档", () => knowledgeDialog(source, cap, api)),

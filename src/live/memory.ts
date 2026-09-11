@@ -119,6 +119,8 @@ export class LiveMemory {
         t.sourceId,
         t.capability,
       );
+      if (cap.contentKind === "metrics")
+        throw new Error("BI 指标是聚合观测，不能映射成业务明细");
       if (cap.contentKind === "knowledge")
         throw new Error("知识片段作为依据使用，不能映射成业务记录");
       if (
