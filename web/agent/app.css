@@ -2715,3 +2715,16 @@ tr.highlight td {
     grid-template-columns: 1fr;
   }
 }
+
+.foundation-excerpt pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  line-height: 1.7;
+  padding: 12px;
+  background: #f5f5f5;
+}
+.foundation-excerpt mark {
+  background: #eee5bd;
+  color: inherit;
+}

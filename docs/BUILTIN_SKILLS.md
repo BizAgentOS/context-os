@@ -1,7 +1,7 @@
 # DataEngine 内置 Skill 目录与生命周期
 
 更新：2026-09-11。本文维护产品运行 Skill 的职责、发现方式、内容变更与验证要求。
-T013-01 已新增并通过真实 KodaX 加载基础本体方法；方法与领域操作的验证见[验收记录](experiment/COMPANY_FOUNDATION.md)。
+T013-01/02 已通过真实 KodaX 加载基础本体方法，对话与企业文档共用同一成果；方法与领域操作的验证见[验收记录](experiment/COMPANY_FOUNDATION.md)。
 Skill 是内部 Agent 按需使用的方法说明，KodaX 保持唯一模型循环，领域服务决定实际权限、保存和完成状态。
 
 ## 1. 当前目录与规划
@@ -10,10 +10,10 @@ Skill 是内部 Agent 按需使用的方法说明，KodaX 保持唯一模型循�
 |---|---|---|
 | `enterprise-research` | 已有运行包：查证企业公开信息并提出有出处的建议 | [SKILL.md](../config/skills/enterprise-research/SKILL.md)；明确名称/地区、核对官方网页，使用 `profile_update` 保存 suggestion，不伪造 user 陈述 |
 | `ontology-modeling` | 已有运行包：围绕业务问题检查实际源契约与样本，提出在线本体候选 | [SKILL.md](../config/skills/ontology-modeling/SKILL.md)；使用 `live_overview/read/propose`，用户采用前保持候选，工具结果不等于正式来源 |
-| `company-foundation-ontology` | 已实现对话路径：保存原话依据、基础候选、未知与冲突，人工采用 | [SKILL.md](../config/skills/company-foundation-ontology/SKILL.md)、[接口规格](COMPANY_FOUNDATION_SKILL.md)；文档/公开研究仍由 T013-02/03 承接 |
+| `company-foundation-ontology` | 已实现对话与 Markdown/TXT 路径：实际依据、基础候选、未知与冲突，人工采用 | [SKILL.md](../config/skills/company-foundation-ontology/SKILL.md)、[接口规格](COMPANY_FOUNDATION_SKILL.md)；资料验收见[记录](experiment/FOUNDATION_DOCUMENTS.md)，公开研究由 T013-03 承接 |
 
 “已有运行包”只说明文件和加载链路存在，不代表在当前这轮对话中已调用。
-基础方法复用前两项的取证与建模原则，先在同一循环内加载方法，再调用基础领域服务；本轮不扩展文档/网页证据路径。
+基础方法复用前两项的取证与建模原则，先在同一循环内加载方法，再调用基础领域服务；已接入 Markdown/TXT 文档证据，公开网页证据留给 T013-03。
 基础定义获采用不表示业务数据已映射、API 已有对象或消费者已获授权。
 
 ## 2. 目录与职责

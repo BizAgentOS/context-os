@@ -435,6 +435,8 @@ function foundationPanel() {
     busy: state.busy || ui.requesting,
     adopt: (body) => mutate("/api/canvas/foundation/adopt", body),
     discuss: (artifact) => askAbout(artifact, "基础定义"),
+    locate: (args) =>
+      api(`/api/foundation/evidence?${new URLSearchParams(args)}`),
   });
 }
 function renderSetup() {
@@ -615,7 +617,9 @@ function findStatement(keys) {
 function companyName() {
   return (
     findStatement(["company.name", "company_name", "companyName", "name"])
-      ?.text || "企业"
+      ?.text ||
+    state.foundation?.current?.content.enterprise.name ||
+    "企业"
   );
 }
 function renderCompany() {
@@ -623,11 +627,17 @@ function renderCompany() {
   if (!rows.length) {
     const intro = node("section", "company-canvas setup-intro");
     intro.append(
-      node("h1", "", "从你的企业开始"),
+      node(
+        "h1",
+        "",
+        state.foundation?.current ? companyName() : "从你的企业开始",
+      ),
       node(
         "p",
         "muted",
-        "在下方介绍企业名称与业务，也可以先接入资料或连接业务系统。",
+        state.foundation?.current
+          ? "企业基础定义来自已引用的资料，可继续核对与补充。"
+          : "在下方介绍企业名称与业务，也可以先接入资料或连接业务系统。",
       ),
     );
     return intro;
@@ -3154,7 +3164,14 @@ async function uploadFile(file) {
   ui.uploading = true;
   updateComposer();
   try {
-    const content = await file.text();
+    let content;
+    try {
+      content = new TextDecoder("utf-8", { fatal: true }).decode(
+        await file.arrayBuffer(),
+      );
+    } catch {
+      throw new Error("文件不是有效的 UTF-8 文本，请转换编码后再上传。");
+    }
     await mutate(
       "/api/canvas/upload",
       { page: ui.page, name: file.name, content },

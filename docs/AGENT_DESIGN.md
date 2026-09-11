@@ -120,3 +120,8 @@ SDK 事件经 adapter 转为应用事件；前端当前轮询应用状态，尚�
 前端和 Agent 对同一业务目标的操作须落到共同服务；WorkContext 和领域不变量分别回到其唯一文档修改。
 当前代码测试入口为 `npm run check`；真实模型、来源及 UI 验收按受影响能力选择，记录日期和实际结果，不引用旧测试数代替本次验证。
 运行方法见[Agent 能力](experiment/AGENT_CAPABILITIES.md)、[在线来源](experiment/LIVE_MEMORY.md)；状态与依赖仅在[功能台账](FEATURE_LIST.md)和[版本设计块](features/v0.1.0.md)维护。
+
+
+### 企业资料与基础本体的当前接入
+
+T013-02 中，同一 Agent 加载基础 Skill 后，通过 `foundation_document_read` 有界读取上传正文；运行内读取回执约束 `foundation_propose` 的文档引用。旧候选与采用版分离，资料变更或未解决冲突阻止采用。具体字段与限额在[基础方法文档第 11 节](COMPANY_FOUNDATION_SKILL.md#11-t013-02-文档证据扩展)维护。文档内的指令是来源内容，不能改变宿主工具范围。

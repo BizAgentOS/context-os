@@ -1,3 +1,4 @@
+import { FoundationDocuments } from "./foundation-evidence.ts";
 import {
   WorkContexts,
   parseWorkContext,
@@ -1383,6 +1384,7 @@ export class AgentApplication {
     const executionWorkContext = workContext
       ? structuredClone(workContext.context)
       : undefined;
+    const foundationDocuments = new FoundationDocuments(this.memory);
     let foundationSkill = "";
     let pageCompleted = false;
     const inspectedSources = new Map<string, number>();
@@ -1693,24 +1695,32 @@ export class AgentApplication {
               : `write-${++writeSequence}`
             : undefined;
           const result =
-            name === "foundation_read"
-              ? serializable(this.foundation.read())
-              : name === "foundation_propose"
-                ? serializable(
-                    this.foundation.propose(
-                      args,
-                      context,
-                      operationId!,
-                      foundationSkill,
-                    ),
-                  )
-                : name === "consumer_propose" && page === "consumption"
+            name === "foundation_document_read"
+              ? serializable(foundationDocuments.read(args))
+              : name === "foundation_read"
+                ? serializable(this.foundation.read())
+                : name === "foundation_propose"
                   ? serializable(
-                      this.consumption.propose(args, context, operationId),
+                      this.foundation.propose(
+                        args,
+                        context,
+                        operationId!,
+                        foundationSkill,
+                        foundationDocuments,
+                      ),
                     )
-                  : name.startsWith("live_")
-                    ? await this.live.execute(name, args, context, operationId)
-                    : await workspace.execute(name, args, operationId);
+                  : name === "consumer_propose" && page === "consumption"
+                    ? serializable(
+                        this.consumption.propose(args, context, operationId),
+                      )
+                    : name.startsWith("live_")
+                      ? await this.live.execute(
+                          name,
+                          args,
+                          context,
+                          operationId,
+                        )
+                      : await workspace.execute(name, args, operationId);
           if (
             name === "live_read" &&
             (result as Data).items &&

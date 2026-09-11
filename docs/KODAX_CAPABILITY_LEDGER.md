@@ -84,3 +84,8 @@ Skill 的包目录、已安装方法与变更流程只在[内置 Skill](BUILTIN_
 ## 基础本体方法接入（T013-01）
 
 沿现有 SkillRegistry 和同一 KodaX 循环，按需加载 `company-foundation-ontology`；宿主记录本轮加载摘要后才允许 `foundation_propose`。`foundation_read` 与画布读取同一 `FoundationService`。真实原话、基础版本、名称纠正、冲突与采用在服务端检查；SDK 不负责判断企业语义真伪。字段及限制见[Skill 接口契约](COMPANY_FOUNDATION_SKILL.md#10-t013-01-实际接口)。未新增模型循环、执行环境或 SDK 版本。
+
+
+## 企业资料接入（T013-02）
+
+在相同 KodaX 运行内增加 `foundation_document_read`，由宿主按运行保存读取回执；Skill 指导文档取证，FoundationService 校验引用并与对话成果合并。画布定位通过共同领域服务，无浏览器内容转述为用户原话。版本和冲突检查由宿主执行；未升级 SDK、增加模型循环或开放文件系统能力。真实 KodaX/DeepSeek 的资料生成与补充见[资料验收](experiment/FOUNDATION_DOCUMENTS.md)。

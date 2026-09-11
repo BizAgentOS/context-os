@@ -357,6 +357,10 @@ export class Workspace {
     let parseError: string | undefined;
     try {
       if (format === "csv") parsed = parseCsv(content);
+      else if (!content.trim())
+        throw new Error("资料正文为空，请提供有内容的 Markdown/TXT 文件");
+      else if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffd]/u.test(content))
+        throw new Error("资料包含无效文本或编码字符，请使用有效 UTF-8 文本");
     } catch (error) {
       parseError = (error as Error).message;
     }
@@ -467,7 +471,7 @@ export class Workspace {
           Number(ref.version),
         );
         if (source.status === "failed")
-          throw new Error("解析失败的来源不能作为概念依据，请先修正资料");
+          throw new Error("解析失败的来源不能作为概念依据，请先修正资料内容");
         const hasContent =
           source.content.format === "csv"
             ? Array.isArray(source.content.rows) &&

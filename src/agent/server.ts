@@ -194,6 +194,17 @@ export async function createServer(
           send(200, { token, ...app.canvasState() });
           return;
         }
+        if (url.pathname === "/api/foundation/evidence") {
+          send(
+            200,
+            app.foundation.evidence(
+              url.searchParams.get("foundationId") ?? "",
+              Number(url.searchParams.get("version")),
+              url.searchParams.get("evidenceId") ?? "",
+            ),
+          );
+          return;
+        }
         if (url.pathname === "/api/canvas/history") {
           send(200, app.canvasHistory(url.searchParams.get("section")));
           return;

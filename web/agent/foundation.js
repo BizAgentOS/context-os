@@ -5,7 +5,10 @@ const el = (tag, className, text) => {
   return element;
 };
 
-export function renderFoundation(value, { page, busy, adopt, discuss }) {
+export function renderFoundation(
+  value,
+  { page, busy, adopt, discuss, locate },
+) {
   const section = el("section", "foundation-panel");
   section.setAttribute("aria-label", "企业基础本体");
   section.append(el("h2", "", "企业基础本体"));
@@ -15,7 +18,7 @@ export function renderFoundation(value, { page, busy, adopt, discuss }) {
       el(
         "p",
         "muted",
-        "向助手介绍企业的业务与服务对象，即可整理基础概念和关系。也可以先接入数据。",
+        "向助手介绍企业，或上传 Markdown/TXT 企业资料，即可整理基础概念和关系。也可以先接入数据。",
       ),
     );
     return section;
@@ -35,8 +38,11 @@ export function renderFoundation(value, { page, busy, adopt, discuss }) {
     card.append(el("p", "muted", "未绑定来源 · 暂无可查询的业务对象"));
     const evidenceFor = (item) => {
       const details = el("details", "foundation-evidence");
-      details.append(el("summary", "", "查看原话依据"));
-      for (const ref of item.evidenceRefs || item.resolvedBy || []) {
+      details.append(el("summary", "", "查看依据"));
+      for (const ref of new Set([
+        ...(item.evidenceRefs || []),
+        ...(item.resolvedBy || []),
+      ])) {
         const evidence = body.evidence.find((entry) => entry.id === ref);
         if (!evidence) continue;
         details.append(el("blockquote", "", evidence.quote));
@@ -44,9 +50,51 @@ export function renderFoundation(value, { page, busy, adopt, discuss }) {
           el(
             "small",
             "muted",
-            `用户陈述 · ${new Date(evidence.capturedAt).toLocaleString("zh-CN")} · 适用时间未说明`,
+            evidence.kind === "document"
+              ? `${evidence.title} · v${evidence.sourceVersion} · 已读取 ${new Date(evidence.readAt).toLocaleString("zh-CN")} · 适用时间未说明`
+              : `用户陈述 · ${new Date(evidence.capturedAt).toLocaleString("zh-CN")} · 适用时间未说明`,
           ),
         );
+        if (evidence.kind === "document" && locate) {
+          const open = el("button", "quiet-button", "定位资料片段");
+          open.type = "button";
+          const result = el("div", "foundation-excerpt");
+          open.onclick = async () => {
+            open.disabled = true;
+            try {
+              const found = await locate({
+                foundationId: artifact.id,
+                version: String(artifact.version),
+                evidenceId: evidence.id,
+              });
+              const paragraph = el("pre", "");
+              paragraph.append(
+                document.createTextNode(
+                  found.text.slice(0, found.start - found.excerptStart),
+                ),
+                el("mark", "", found.quote),
+                document.createTextNode(
+                  found.text.slice(found.end - found.excerptStart),
+                ),
+              );
+              result.replaceChildren(
+                el(
+                  "p",
+                  "muted",
+                  `${found.title} · 依据版本 v${found.sourceVersion} · 当前资料 v${found.currentSourceVersion}`,
+                ),
+                paragraph,
+              );
+            } catch (error) {
+              const alert = el("p", "", error.message);
+              alert.setAttribute("role", "alert");
+              result.replaceChildren(alert);
+            } finally {
+              open.disabled = false;
+            }
+          };
+          details.append(open, result);
+        }
       }
       return details;
     };
@@ -106,7 +154,13 @@ export function renderFoundation(value, { page, busy, adopt, discuss }) {
           "",
           `${item.resolvedBy ? "已补充 · " : ""}${item.description}`,
         );
-        if (item.resolvedBy) entry.append(evidenceFor(item));
+        if (item.retained && item.proposed)
+          entry.append(
+            el("p", "", `原含义：${item.retained.description}`),
+            el("p", "", `资料建议：${item.proposed.description}`),
+          );
+        if (item.resolvedBy || item.evidenceRefs)
+          entry.append(evidenceFor(item));
         list.append(entry);
       }
       issues.append(list);

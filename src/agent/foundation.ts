@@ -1,3 +1,10 @@
+import {
+  FoundationDocuments,
+  foundationDocumentTool,
+  foundationEvidenceInput,
+  verifyFoundationEvidence,
+  type FoundationEvidence,
+} from "./foundation-evidence.ts";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { MemoryStore } from "./memory.ts";
@@ -11,7 +18,12 @@ const concept = z
   .strict();
 const relation = concept.extend({ from: id, to: id }).strict();
 const issue = z
-  .object({ id, description: text, resolvedBy: refs.optional() })
+  .object({
+    id,
+    description: text,
+    evidenceRefs: refs.optional(),
+    resolvedBy: refs.optional(),
+  })
   .strict();
 const proposal = z
   .object({
@@ -25,31 +37,21 @@ const proposal = z
       .strict(),
     concepts: z.array(concept).max(30),
     relations: z.array(relation).max(60),
-    evidence: z
-      .array(
-        z
-          .object({ id, messageId: z.string().min(1).max(200), quote: text })
-          .strict(),
-      )
-      .max(40),
+    evidence: z.array(foundationEvidenceInput).max(40),
     unknowns: z.array(issue).max(30),
     conflicts: z.array(issue).max(30),
   })
   .strict();
-type Evidence = {
-  id: string;
-  messageId: string;
-  quote: string;
-  kind: string;
-  capturedAt: string;
-  validTime: string;
-};
+type Evidence = FoundationEvidence;
 type Concept = z.infer<typeof concept> & {
   mappingStatus: "unbound";
   origin: "interpretation";
 };
 type Relation = Concept & z.infer<typeof relation>;
-type Issue = z.infer<typeof issue>;
+type Issue = z.infer<typeof issue> & {
+  retained?: Concept | Relation;
+  proposed?: Concept | Relation;
+};
 interface FoundationContent {
   enterprise: z.infer<typeof proposal>["enterprise"];
   concepts: Concept[];
@@ -57,6 +59,7 @@ interface FoundationContent {
   evidence: Evidence[];
   unknowns: Issue[];
   conflicts: Issue[];
+  documentVersions?: Record<string, number>;
   adoptedVersion: number | null;
   profileRef: { id: string; version: number } | null;
   operation: { hash: string };
@@ -76,6 +79,7 @@ function merge<T extends { id: string }>(previous: T[], updates: T[]): T[] {
 }
 
 export const foundationTools: DomainTool[] = [
+  foundationDocumentTool,
   {
     name: "foundation_read",
     description:
@@ -90,7 +94,7 @@ export const foundationTools: DomainTool[] = [
   {
     name: "foundation_propose",
     description:
-      "加载 company-foundation-ontology Skill 后，按基础版本保存有真实对话依据的候选。概念/关系/未决项按稳定 id 增量合并；证据 id 不可改写。检查只保证结构与引文可定位。",
+      "加载 company-foundation-ontology Skill 后，按基础版本保存有真实对话或文档依据的候选。概念/关系/未决项按稳定 id 增量合并；证据 id 不可改写。检查只保证结构与引文可定位。",
     mutates: true,
     inputSchema: z.toJSONSchema(proposal),
   },
@@ -122,6 +126,7 @@ export class FoundationService {
     context: WriteContext,
     operationId: string,
     skillDigest: string,
+    documents?: FoundationDocuments,
   ): Artifact {
     this.memory.assertWritable(context);
     if (!skillDigest)
@@ -151,32 +156,13 @@ export class FoundationService {
       "conflicts",
     ] as const)
       unique(input[key], key);
-    const evidence = [...(previous?.evidence ?? [])];
-    for (const item of input.evidence) {
-      const existing = evidence.find((entry) => entry.id === item.id);
-      if (existing) {
-        if (
-          existing.messageId !== item.messageId ||
-          existing.quote !== item.quote
-        )
-          throw new Error("已有证据不可改写，请使用新的证据标识");
-        continue;
-      }
-      const message = this.memory.getMessage(item.messageId);
-      if (
-        !message ||
-        message.role !== "user" ||
-        message.taskId !== context.taskId ||
-        !message.content.includes(item.quote)
-      )
-        throw new Error("证据必须引用当前任务的真实用户原话");
-      evidence.push({
-        ...item,
-        kind: "user-statement",
-        capturedAt: message.createdAt,
-        validTime: "unknown",
-      });
-    }
+    const evidence = verifyFoundationEvidence(
+      this.memory,
+      input.evidence,
+      previous?.evidence ?? [],
+      context,
+      documents,
+    );
     const checkRefs = (references: string[]) => {
       if (references.some((ref) => !evidence.some((entry) => entry.id === ref)))
         throw new Error("依据引用不存在；没有依据的内容请保留为未知");
@@ -189,7 +175,7 @@ export class FoundationService {
           .quote.includes(input.enterprise.name),
       )
     )
-      throw new Error("企业名称必须出现在引用的用户原话中");
+      throw new Error("企业名称必须出现在引用的用户原话或文档片段中");
     if (previous && previous.enterprise.name !== input.enterprise.name) {
       const correction = input.identityCorrection;
       const latestUser = this.memory
@@ -242,7 +228,11 @@ export class FoundationService {
         !concepts.some((c) => c.id === item.to)
       )
         throw new Error("关系端点必须引用已有概念标识");
-    const mergeIssues = (prior: Issue[], updates: Issue[]) => {
+    const mergeIssues = (
+      prior: Issue[],
+      updates: Issue[],
+      allowDocument = false,
+    ) => {
       const latestUser = this.memory
         .messages(context.taskId)
         .filter((message) => message.role === "user")
@@ -262,28 +252,92 @@ export class FoundationService {
             !item.resolvedBy.some((ref) => {
               const entry = evidence.find((e) => e.id === ref);
               return (
-                entry?.messageId === latestUser?.id &&
+                (entry?.messageId === latestUser?.id ||
+                  (allowDocument &&
+                    entry?.kind === "document" &&
+                    input.evidence.some((e) => e.id === ref))) &&
                 !previous?.evidence.some((e) => e.id === ref)
               );
             })
           )
-            throw new Error("解决未决项需要本轮新增的用户原话依据");
+            throw new Error(
+              "解决未决项需要本轮新增的用户原话依据（未知项也可使用已读取的新文档依据）",
+            );
         }
       }
       return merge(
         prior,
         updates.map((item) => {
           const existing = prior.find((entry) => entry.id === item.id);
-          return existing?.resolvedBy && !item.resolvedBy
-            ? { ...item, resolvedBy: existing.resolvedBy }
-            : item;
+          return {
+            ...existing,
+            ...item,
+            ...(existing?.resolvedBy && !item.resolvedBy
+              ? { resolvedBy: existing.resolvedBy }
+              : {}),
+          };
         }),
       );
     };
-    const unknowns = mergeIssues(previous?.unknowns ?? [], input.unknowns);
+    const unknowns = mergeIssues(
+      previous?.unknowns ?? [],
+      input.unknowns,
+      true,
+    );
     const conflicts = mergeIssues(previous?.conflicts ?? [], input.conflicts);
-    for (const item of [...unknowns, ...conflicts])
+    const latestUserId = this.memory
+      .messages(context.taskId)
+      .filter((m) => m.role === "user")
+      .at(-1)?.id;
+    const freshUser = (ref: string) =>
+      evidence.some(
+        (e) =>
+          e.id === ref &&
+          e.kind === "user-statement" &&
+          e.messageId === latestUserId &&
+          !previous?.evidence.some((old) => old.id === ref),
+      );
+    const meaning = (item: Concept | Relation) =>
+      JSON.stringify({
+        name: item.name,
+        description: item.description,
+        ...("from" in item ? { from: item.from, to: item.to } : {}),
+      });
+    for (const after of [...concepts, ...relations]) {
+      const before = [
+        ...(previous?.concepts ?? []),
+        ...(previous?.relations ?? []),
+      ].find((item) => item.id === after.id);
+      if (
+        !before ||
+        meaning(before) === meaning(after) ||
+        after.evidenceRefs.some(freshUser) ||
+        !after.evidenceRefs.some((ref) =>
+          evidence.some((e) => e.id === ref && e.kind === "document"),
+        )
+      )
+        continue;
+      const conflictId = `doc-${after.id.slice(0, 60)}-${createHash("sha256")
+        .update(
+          JSON.stringify({ baseVersion: current?.version, before, after }),
+        )
+        .digest("hex")
+        .slice(0, 12)}`;
+      if (!conflicts.some((item) => item.id === conflictId))
+        conflicts.push({
+          id: conflictId,
+          description: `资料对「${before.name}」给出不同含义，需要核对。`,
+          evidenceRefs: [
+            ...new Set([...before.evidenceRefs, ...after.evidenceRefs]),
+          ],
+          retained: before,
+          proposed: after,
+        });
+    }
+    for (const item of [...unknowns, ...conflicts]) {
       if (item.resolvedBy) checkRefs(item.resolvedBy);
+      if (item.evidenceRefs) checkRefs(item.evidenceRefs);
+    }
     if (
       concepts.length > 60 ||
       relations.length > 120 ||
@@ -333,6 +387,18 @@ export class FoundationService {
           profileRef: profile
             ? { id: profile.id, version: profile.version }
             : null,
+          documentVersions: evidence
+            .filter((e) => e.kind === "document")
+            .reduce<Record<string, number>>(
+              (versions, e) => {
+                versions[e.sourceId!] = Math.max(
+                  versions[e.sourceId!] ?? 0,
+                  e.sourceVersion!,
+                );
+                return versions;
+              },
+              { ...previous?.documentVersions },
+            ),
           method: { name: "company-foundation-ontology", digest: skillDigest },
           operation: { hash },
           enterpriseChange:
@@ -347,7 +413,7 @@ export class FoundationService {
           checks: {
             valid: true,
             version: 1,
-            description: "已核对结构、关系端点和用户原话；业务含义仍需人工核对",
+            description: "已核对结构、关系端点与引文；业务含义仍需人工核对",
           },
           consumerReadiness: {
             objectsQueryable: false,
@@ -358,6 +424,16 @@ export class FoundationService {
       context,
       operationId,
     );
+  }
+
+  evidence(id: string, version: number, evidenceId: string) {
+    const artifact = this.memory.getArtifact(id, version);
+    if (artifact.kind !== "foundation") throw new Error("需要基础本体引用");
+    const evidence = content(artifact).evidence.find(
+      (item) => item.id === evidenceId,
+    );
+    if (!evidence) throw new Error("依据不存在");
+    return new FoundationDocuments(this.memory).locate(evidence);
   }
 
   candidate(id: string, version: number) {
@@ -388,6 +464,12 @@ export class FoundationService {
       (profile?.id ?? null) !== (draft.profileRef?.id ?? null)
     )
       throw new Error("企业信息已变化，请重新生成并核对基础候选");
+    for (const [sourceId, version] of Object.entries(
+      candidate.content.documentVersions ?? {},
+    )) {
+      if (this.memory.getArtifact(sourceId).version !== version)
+        throw new Error("候选引用的资料已更新，请重新读取并检查后再采用");
+    }
     if (draft.conflicts.some((item) => !item.resolvedBy))
       throw new Error("请先解决候选中的冲突，再采用基础定义");
     return this.memory.putArtifact({
