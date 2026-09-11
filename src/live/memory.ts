@@ -52,6 +52,7 @@ type Grant = z.infer<typeof grantSchema>;
 const querySchema = z
   .object({
     modelId: name,
+    modelVersion: z.number().int().positive().optional(),
     type: name,
     id: name.optional(),
     relation: name.optional(),
@@ -238,6 +239,8 @@ export class LiveMemory {
   }> {
     const args = querySchema.parse(input);
     const model = this.model(args.modelId);
+    if (args.modelVersion !== undefined && args.modelVersion !== model.version)
+      throw new Error("本体版本已变化，请重新读取目标");
     const d = this.definition(model);
     this.checkConnections(d);
     const type = d.types.find((t) => t.name === args.type);
@@ -276,6 +279,7 @@ export class LiveMemory {
         throw new Error("关联字段为空，无法解析关系");
       const result = await this.query({
         modelId: model.id,
+        modelVersion: model.version,
         type: rel.to,
         where: { [rel.toField]: value },
         fields: args.fields,
@@ -283,6 +287,8 @@ export class LiveMemory {
         limit: args.limit,
       });
       this.checkConnections(d);
+      if (this.repo.getArtifact(model.id).version !== model.version)
+        throw new Error("本体版本已变化，请重新读取目标");
       return { ...result, reads: [origin.provenance, ...result.reads] };
     }
     const fields = args.fields ?? ["$id", ...Object.keys(type.fields)];
@@ -296,6 +302,8 @@ export class LiveMemory {
       d.connections[type.sourceId],
     );
     this.checkConnections(d);
+    if (this.repo.getArtifact(model.id).version !== model.version)
+      throw new Error("本体版本已变化，请重新读取目标");
     return {
       model: { id: model.id, version: model.version },
       type: type.name,

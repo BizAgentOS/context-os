@@ -2593,3 +2593,50 @@ tr.highlight td {
     padding: 24px 0;
   }
 }
+
+.message-context {
+  pointer-events: auto;
+  display: block;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted, #777);
+  background: transparent;
+  border: 0;
+  padding: 4px 0 0;
+  text-align: left;
+  cursor: pointer;
+}
+.message-context:hover {
+  text-decoration: underline;
+}
+.focus-context {
+  flex-wrap: wrap;
+}
+#focus-label {
+  overflow-wrap: anywhere;
+}
+.context-detail .memory-properties dd {
+  overflow-wrap: anywhere;
+}
+.memory-property-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.memory-property-actions button {
+  font-size: 12px;
+}
+
+.canvas-app[data-reading="true"] .message-context {
+  pointer-events: none;
+  visibility: hidden;
+}
+.dialogue-line:has(.message-context) {
+  display: block;
+}
+.dialogue-line > .message-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

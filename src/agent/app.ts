@@ -1,4 +1,10 @@
 import {
+  WorkContexts,
+  parseWorkContext,
+  contextReadTool,
+  type ResolvedWorkContext,
+} from "./work-context.ts";
+import {
   canvasPages,
   normalizeCanvasPage,
   setupSection,
@@ -128,6 +134,7 @@ const controlTools: DomainTool[] = [
 export class AgentApplication {
   readonly memory: MemoryStore;
   readonly live: LiveMemory;
+  readonly contexts: WorkContexts;
   readonly capabilities: AgentCapabilities;
   readonly consumption: ConsumptionService;
   readonly driver: AgentDriver;
@@ -141,6 +148,7 @@ export class AgentApplication {
   constructor(directory: string, driver?: AgentDriver) {
     this.memory = new MemoryStore(directory);
     this.live = new LiveMemory(directory, this.memory);
+    this.contexts = new WorkContexts(this.memory, this.live);
     this.capabilities = new AgentCapabilities(directory);
     this.consumption = new ConsumptionService(directory, this.memory);
     const saved = this.memory.getSettings();
@@ -656,7 +664,12 @@ export class AgentApplication {
       messages: task
         ? this.memory
             .messages(task.id)
-            .map(({ id, role, content }) => ({ id, role, content }))
+            .map(({ id, role, content, workContext }) => ({
+              id,
+              role,
+              content,
+              ...(workContext ? { workContext } : {}),
+            }))
         : [],
       prompt: String(
         pending?.question ??
@@ -720,13 +733,34 @@ export class AgentApplication {
     return this.canvasState(page);
   }
 
+  canvasMessageReceipt(body: Record<string, unknown>) {
+    const page = this.canvasPage(body.page);
+    const progress = this.canvasProgress();
+    const tasks = [
+      progress.taskIds[page],
+      ...(page === "setup" ? Object.values(progress.legacyTaskIds ?? {}) : []),
+    ].filter((id): id is string => !!id);
+    const received = this.memory.messageReceived(
+      string(body.messageId, "消息标识", 150),
+      tasks,
+    );
+    // Older browser drafts did not preserve a full request. Never reconstruct
+    // or execute it from the user's possibly changed current selection.
+    return { ...this.canvasState(), messageReceipt: { received } };
+  }
+
+  canvasContext(body: Record<string, unknown>) {
+    return this.contexts.resolve(
+      parseWorkContext(this.canvasPage(body.page), body.context),
+    );
+  }
+
   async canvasMessage(
     body: Record<string, unknown>,
   ): Promise<ReturnType<AgentApplication["canvasState"]>> {
     if (this.modelTest) throw new Error("正在测试连接，请稍后发送");
     const page = this.canvasPage(body.page);
-    if (page !== this.canvasProgress().currentPage)
-      throw new Error("页面已变化，请回到当前页面后继续");
+
     if (
       body.refreshSources !== undefined &&
       typeof body.refreshSources !== "boolean"
@@ -739,6 +773,44 @@ export class AgentApplication {
       body.messageId === undefined
         ? randomUUID()
         : string(body.messageId, "消息标识", 150);
+    const parsedContext =
+      body.workContext === undefined
+        ? undefined
+        : parseWorkContext(page, body.workContext);
+    if (
+      parsedContext &&
+      (body.focusId !== undefined || body.focusVersion !== undefined)
+    )
+      throw new Error("请只提供一种目标引用");
+    const binding =
+      parsedContext || body.focusId || body.refreshSources === true
+        ? (serializable({
+            workContext: parsedContext ?? null,
+            focusId: body.focusId ?? null,
+            focusVersion: body.focusVersion ?? null,
+            refreshSources: body.refreshSources === true,
+          }) as Data)
+        : undefined;
+    const progress = this.canvasProgress();
+    const receiptTasks = [
+      progress.taskIds[page],
+      ...(page === "setup" ? Object.values(progress.legacyTaskIds ?? {}) : []),
+    ].filter((id): id is string => !!id);
+    if (
+      this.memory.hasMessageReceipt(
+        messageId,
+        receiptTasks,
+        "user",
+        text,
+        binding,
+      )
+    )
+      return this.canvasState();
+    if (page !== progress.currentPage)
+      throw new Error("页面已变化，请回到当前页面后继续");
+    const workContext = parsedContext
+      ? this.contexts.resolve(parsedContext)
+      : undefined;
     const focusVersion =
       body.focusVersion === undefined ? undefined : Number(body.focusVersion);
     if (
@@ -763,16 +835,7 @@ export class AgentApplication {
       ].includes(focus.kind)
     )
       throw new Error("当前页面不支持此内容");
-    const progress = this.canvasProgress();
-    const receiptTasks = [
-      progress.taskIds[page],
-      ...(page === "setup" ? Object.values(progress.legacyTaskIds ?? {}) : []),
-    ].filter((id): id is string => !!id);
-    if (this.memory.hasMessageReceipt(messageId, receiptTasks, "user", text))
-      return this.canvasState();
     const task = this.canvasTask(page);
-    if (this.memory.hasMessageReceipt(messageId, task.id, "user", text))
-      return this.canvasState();
     const previous = this.memory.getMessage(messageId);
     if (previous) {
       if (
@@ -789,16 +852,24 @@ export class AgentApplication {
         text,
       )
     ) {
+      const selected = workContext?.target?.ref ?? focus;
       if (
-        focus &&
-        (focus.id !== task.pending.candidateId ||
-          focus.version !== task.pending.version)
+        selected &&
+        (selected.id !== task.pending.candidateId ||
+          selected.version !== task.pending.version)
       )
         throw new Error(
           "当前引用与待决定的候选版本不同，请打开具体候选后再决定",
         );
       await this.stopActive("正在保存你的决定。");
-      this.memory.addMessage(task.id, "user", text, messageId);
+      this.memory.addMessage(
+        task.id,
+        "user",
+        text,
+        messageId,
+        binding,
+        workContext,
+      );
       return this.canvasDecision({
         page,
         candidateId: task.pending.candidateId,
@@ -812,7 +883,14 @@ export class AgentApplication {
         task.id,
         "用户明确要求使用最新资料重新验证，旧验证记录保留原依据。",
       );
-    const message = this.memory.addMessage(task.id, "user", text, messageId);
+    const message = this.memory.addMessage(
+      task.id,
+      "user",
+      text,
+      messageId,
+      binding,
+      workContext,
+    );
     this.memory.trimMessages(task.id);
     if (!this.model().configured)
       this.memory.pauseTask(task.id, "请先配置模型，内容已保存。");
@@ -822,6 +900,7 @@ export class AgentApplication {
         `请处理本页最新的用户消息 ${message.id}。`,
         focus,
         page,
+        workContext,
       );
     return this.canvasState(page);
   }
@@ -1151,12 +1230,13 @@ export class AgentApplication {
     input: string,
     focus?: Artifact,
     page?: CanvasPage,
+    workContext?: ResolvedWorkContext,
   ) {
     const context = this.memory.beginExecution(taskId);
     this.streaming = "";
     // Publish the active slot before the SDK can invoke tools or another request arrives.
     const promise = Promise.resolve().then(() =>
-      this.run(context, input, focus, page),
+      this.run(context, input, focus, page, workContext),
     );
     this.active = { context, promise };
     void promise
@@ -1172,6 +1252,7 @@ export class AgentApplication {
     input: string,
     focused?: Artifact,
     page?: CanvasPage,
+    workContext?: ResolvedWorkContext,
   ) {
     const task = this.memory.getTask(context.taskId);
     const workspace = page
@@ -1206,11 +1287,15 @@ export class AgentApplication {
               (page === "consumption" && tool.name === "live_consumer_propose"),
           ),
           ...(page === "setup" ? [historyReadTool] : []),
+          ...(workContext?.target ? [contextReadTool] : []),
           ...capabilityTools,
           ...controlTools.filter((tool) => tool.name === "task_ask"),
           ...(page === "consumption" ? consumptionTools : [pageCompleteTool]),
         ]
       : [...domainTools, ...controlTools];
+    const executionWorkContext = workContext
+      ? structuredClone(workContext.context)
+      : undefined;
     let pageCompleted = false;
     const inspectedSources = new Map<string, number>();
     let closingTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1246,6 +1331,13 @@ export class AgentApplication {
                   investigation: task.investigation ?? null,
                 },
               }),
+          ...(workContext
+            ? {
+                workContext,
+                workContextPolicy:
+                  "workContext 固定到本条用户消息，表示讨论目标而不是授权。先用 context_read 按固定版本和范围核对所指的关系、属性或对象；不要用后来的页面选择替换。业务记录为当前源读取，不是历史快照。修改仅形成候选，保存与采用分开报告。",
+              }
+            : {}),
           enterprise: workspace.overview(),
           ...(page
             ? {
@@ -1318,6 +1410,11 @@ export class AgentApplication {
           }
           if (!tools.some((tool) => tool.name === name))
             throw new Error("当前页面没有这项能力");
+          if (name === "context_read" && workContext) {
+            const result = await this.contexts.read(workContext.context);
+            this.memory.assertWritable(context);
+            return serializable(result);
+          }
           if (page === "setup" && name === "canvas_history_read")
             return serializable(
               this.historyMessages(args.section, args.offset),
@@ -1464,6 +1561,8 @@ export class AgentApplication {
             ...consumptionTools,
             ...liveTools,
           ].find((tool) => tool.name === name)?.mutates;
+          if (mutates && executionWorkContext)
+            this.contexts.assertCurrent(executionWorkContext);
           const operationId = mutates
             ? lastWrite?.signature === signature
               ? lastWrite.operationId
@@ -1491,7 +1590,20 @@ export class AgentApplication {
             if (this.sourceUsable(artifact))
               inspectedSources.set(artifact.id, artifact.version);
           }
-          if (mutates && operationId) lastWrite = { signature, operationId };
+          if (mutates && operationId) {
+            lastWrite = { signature, operationId };
+            // Only the trusted write receipt may advance this run's concurrency
+            // basis. The message still refers to the user's original version.
+            const ref = executionWorkContext?.selection[0];
+            const saved = result as Data;
+            if (
+              ref &&
+              saved.id === ref.id &&
+              typeof saved.version === "number" &&
+              this.memory.getArtifact(ref.id).version === saved.version
+            )
+              ref.version = saved.version;
+          }
           return result;
         },
       });
@@ -1505,18 +1617,27 @@ export class AgentApplication {
           task.id,
           "assistant",
           `本次执行未完成：${failure}。已保存的内容仍然保留。`,
+          randomUUID(),
+          undefined,
+          workContext,
         );
       } else if (!interrupted && outcome.text.trim())
         this.memory.addMessage(
           task.id,
           "assistant",
           page ? outcome.text.slice(0, 6000) : outcome.text,
+          randomUUID(),
+          undefined,
+          workContext,
         );
       else if (!interrupted && this.memory.getTask(task.id).pending)
         this.memory.addMessage(
           task.id,
           "assistant",
           String(this.memory.getTask(task.id).pending?.question),
+          randomUUID(),
+          undefined,
+          workContext,
         );
       this.memory.event(task.id, "run.result", {
         runId: outcome.runId,
@@ -1534,6 +1655,9 @@ export class AgentApplication {
           task.id,
           "assistant",
           `本次执行未完成：${failure}。已保存的资料和成果仍然可以查看。`,
+          randomUUID(),
+          undefined,
+          workContext,
         );
     } finally {
       if (closingTimer) clearTimeout(closingTimer);

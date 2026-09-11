@@ -2,7 +2,7 @@
 
 更新：2026-09-11。本文只负责模块、数据流与责任分工。产品价值见[PRD](PRODUCT.md)，内部 Agent 行为见[Agent 设计](AGENT_DESIGN.md)，领域协议见[语义契约](SEMANTIC_CONTRACTS.md)。
 
-当前实现小节基于源码 `0b264fa6eb34668b9741af2208098d07334f61c0` 与已有验证记录，本轮只整理文档，未重跑产品验收。目标能力在 FEATURE_012—016 实现；逻辑分层不要求拆分部署服务。
+当前实现小节已随 FEATURE_012 更新三页和消息工作上下文，并保留既有能力证据；后续融合/治理目标在 FEATURE_013—016 实现。逻辑分层不要求拆分部署服务。
 
 ## 1. 系统总览
 
@@ -48,6 +48,7 @@ flowchart TB
 |---|---|---|
 | 模型循环适配 | [runtime.ts](../src/agent/runtime.ts) | SDK 运行、工具注册与事件转换 |
 | 产品运行编排 | [app.ts](../src/agent/app.ts) | 页面/任务、上下文、工具范围、完成与停止 |
+| 共同工作上下文 | [work-context.ts](../src/agent/work-context.ts) | 服务解析同一领域引用；浏览器与 Agent 固定版本、范围并按需读取 |
 | 产品持久化 | [memory.ts](../src/agent/memory.ts) | 领域成果、版本、任务、事件与写入资格 |
 | Skill/MCP/业务 SDK | [capabilities](../src/capabilities/) | 产品选择性接入的通用能力 |
 | 文件对象工作区 | [workspace.ts](../src/agent/workspace.ts)、[domain-objects.ts](../src/agent/domain-objects.ts) | 已有有界方法与句柄，不能直接等同在线融合 |

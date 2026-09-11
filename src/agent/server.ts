@@ -444,6 +444,15 @@ export async function createServer(
         case "/api/consumers/revoke":
           result = await app.revokeConsumer(body);
           break;
+        case "/api/canvas/message/receipt":
+          result = app.canvasMessageReceipt(body);
+          break;
+        case "/api/canvas/context":
+          result = app.canvasContext(body);
+          break;
+        case "/api/canvas/context/read":
+          result = await app.contexts.read(app.canvasContext(body).context);
+          break;
         case "/api/canvas/message":
           result = await queue(() => app.canvasMessage(body));
           send(202, result);

@@ -150,8 +150,24 @@ export function renderDefinitionGraph(artifact, options) {
       if (type.fields) {
         inspector.append(
           el("h3", "memory-section-title", "业务属性"),
-          el("p", "memory-field-names", Object.keys(type.fields).join(" · ")),
+          el(
+            "p",
+            "memory-field-names",
+            options.onSelectProperty
+              ? "点击属性，引用到对话"
+              : Object.keys(type.fields).join(" · "),
+          ),
         );
+        if (options.onSelectProperty) {
+          const properties = el("div", "memory-property-actions");
+          for (const name of ["$id", ...Object.keys(type.fields)])
+            properties.append(
+              action(name === "$id" ? "对象编号" : name, () =>
+                options.onSelectProperty(type.name, name),
+              ),
+            );
+          inspector.append(properties);
+        }
       }
       evidence(
         inspector,
@@ -174,7 +190,11 @@ export function renderDefinitionGraph(artifact, options) {
         );
       actions.append(action("查看完整定义", () => onOpenType(type)));
       if (!options.readOnly)
-        actions.append(action("调整定义", () => onAdjust(type.name)));
+        actions.append(
+          action(options.adjustLabel || "调整定义", () =>
+            onAdjust(type.name, { kind: "type", type: type.name }),
+          ),
+        );
       inspector.append(actions);
     } else if (relation) {
       title(
@@ -205,7 +225,11 @@ export function renderDefinitionGraph(artifact, options) {
       if (!options.readOnly)
         inspector.append(
           action("讨论这条关系", () =>
-            onAdjust(`${relation.from}的${relation.name}关系`),
+            onAdjust(`${relation.from}的${relation.name}关系`, {
+              kind: "relation",
+              type: relation.from,
+              member: relation.name,
+            }),
           ),
         );
     } else {

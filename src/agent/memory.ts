@@ -1,4 +1,5 @@
 import { normalizeCanvasPage, setupSection } from "./canvas-pages.ts";
+import type { ResolvedWorkContext } from "./work-context.ts";
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -20,6 +21,7 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   createdAt: string;
+  workContext?: ResolvedWorkContext;
 }
 export interface TaskEvent {
   seq: number;
@@ -31,6 +33,24 @@ export interface TaskEvent {
 const now = () => new Date().toISOString();
 const parse = <T>(row: unknown): T =>
   JSON.parse((row as { body: string }).body) as T;
+
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
+  if (value && typeof value === "object")
+    return (
+      "{" +
+      Object.entries(value)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, v]) => JSON.stringify(k) + ":" + canonical(v))
+        .join(",") +
+      "}"
+    );
+  return JSON.stringify(value);
+}
+const messageFingerprint = (role: string, content: string, binding?: Data) =>
+  createHash("sha256")
+    .update(role + ":" + content + (binding ? ":" + canonical(binding) : ""))
+    .digest("hex");
 
 export class MemoryStore implements Repository {
   private db: DatabaseSync;
@@ -351,7 +371,10 @@ export class MemoryStore implements Repository {
     role: Message["role"],
     content: string,
     id: string = randomUUID(),
+    binding?: Data,
+    workContext?: ResolvedWorkContext,
   ): Message {
+    this.hasMessageReceipt(id, taskId, role, content, binding);
     const previous = this.db
       .prepare("SELECT body FROM messages WHERE id=?")
       .get(id);
@@ -365,10 +388,15 @@ export class MemoryStore implements Repository {
         throw new Error("消息标识已使用");
       return message;
     }
-    const message: Message = { id, taskId, role, content, createdAt: now() };
-    const fingerprint = createHash("sha256")
-      .update(role + ":" + content)
-      .digest("hex");
+    const message: Message = {
+      id,
+      taskId,
+      role,
+      content,
+      createdAt: now(),
+      ...(workContext ? { workContext } : {}),
+    };
+    const fingerprint = messageFingerprint(role, content, binding);
     this.transaction(() => {
       this.db
         .prepare(
@@ -387,20 +415,28 @@ export class MemoryStore implements Repository {
     taskId: string | string[],
     role: Message["role"],
     content: string,
+    binding?: Data,
   ): boolean {
     const receipt = this.db
       .prepare("SELECT task_id,fingerprint FROM message_receipts WHERE id=?")
       .get(id) as { task_id: string; fingerprint: string } | undefined;
     if (!receipt) return false;
-    const fingerprint = createHash("sha256")
-      .update(role + ":" + content)
-      .digest("hex");
+    const fingerprint = messageFingerprint(role, content, binding);
     if (
       !(Array.isArray(taskId) ? taskId : [taskId]).includes(receipt.task_id) ||
       receipt.fingerprint !== fingerprint
     )
       throw new Error("消息标识已使用");
     return true;
+  }
+
+  messageReceived(id: string, taskIds: string[]): boolean {
+    const receipt = this.db
+      .prepare("SELECT task_id FROM message_receipts WHERE id=?")
+      .get(id) as { task_id: string } | undefined;
+    if (receipt && !taskIds.includes(receipt.task_id))
+      throw new Error("消息标识属于其他页面");
+    return !!receipt;
   }
 
   getMessage(id: string): Message | null {

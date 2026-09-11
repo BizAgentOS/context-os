@@ -47,7 +47,7 @@ Skill 的包目录、已安装方法与变更流程只在[内置 Skill](BUILTIN_
 
 | 产品能力 | 当前归属与证据 | 不应归给 SDK 的含义 |
 |---|---|---|
-| 目标、页面范围、上下文 | [app.ts](../src/agent/app.ts) 组装 RunRequest | SDK 不自动知道企业范围、选择或正确下一步 |
+| 目标、页面范围、上下文 | [app.ts](../src/agent/app.ts) 组装 RunRequest，[work-context.ts](../src/agent/work-context.ts) 解析消息固定引用；`context_read` 与前端复用读取服务 | SDK 不自动知道企业范围、选择或正确下一步 |
 | 成果版本与运行写入资格 | [memory.ts](../src/agent/memory.ts) 的事务、revision、executionId | SDK session、abort 不替代业务并发和提交校验 |
 | 本体与对象执行 | [workspace.ts](../src/agent/workspace.ts)、[domain-objects.ts](../src/agent/domain-objects.ts) | NOOA 式受限组合是产品实现；未集成完整 NOOA runtime |
 | 来源、映射与在线读取 | [sources.ts](../src/live/sources.ts)、[memory.ts](../src/live/memory.ts) | MCP 工具目录不能自动产生语义映射、身份和证据 |

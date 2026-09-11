@@ -107,6 +107,10 @@ const ui = {
   detailRequest: 0,
   detail: null,
   focus: null,
+  contextRequest: 0,
+  contextResolving: false,
+  contextRevision: 0,
+  draftRef: { id: crypto.randomUUID(), revision: 0 },
   drafts: new Map(),
   draftStore: null,
   importedDrafts: [],
@@ -172,26 +176,39 @@ async function api(path, body) {
   if (response.status === 401)
     throw new Error("请使用本机服务启动时提供的链接打开企业记忆。");
   if (!response.ok || data.error)
-    throw new Error(data.error || "请求未完成，请重试。");
+    throw Object.assign(new Error(data.error || "请求未完成，请重试。"), {
+      status: response.status,
+    });
   return data;
 }
 function rememberDraft() {
+  const text = $("#message-input").value;
+  if (ui.drafts.get(ui.page)?.text !== text) ui.draftRef.revision += 1;
   const draft = {
-    text: $("#message-input").value,
+    draftRef: { ...ui.draftRef },
+    contextRevision: ui.contextRevision,
+    text,
     focus: ui.focus,
     pendingMessage: ui.pendingMessage,
   };
   ui.drafts.set(ui.page, draft);
   ui.draftStore?.save(ui.page, draft);
 }
+function restoreDraft(draft) {
+  $("#message-input").value = draft?.text || "";
+  ui.focus = draft?.focus || null;
+  ui.pendingMessage = draft?.pendingMessage || null;
+  ui.draftRef = draft?.draftRef || { id: crypto.randomUUID(), revision: 0 };
+  ui.contextRevision = draft?.contextRevision || 0;
+  ui.contextRequest += 1;
+  ui.contextResolving = false;
+}
 function changePage(page) {
   if (ui.page === page) return;
   rememberDraft();
   ui.page = page;
   const draft = ui.drafts.get(page) ?? ui.draftStore?.read(page);
-  $("#message-input").value = draft?.text || "";
-  ui.focus = draft?.focus || null;
-  ui.pendingMessage = draft?.pendingMessage || null;
+  restoreDraft(draft);
   ui.detail = null;
   ui.detailRequest += 1;
   ui.canvasKey = "";
@@ -213,9 +230,8 @@ function applySnapshot(snapshot) {
       ui.importedDrafts = ui.draftStore.read("legacy") || [];
       const draft = ui.draftStore.read(snapshot.currentPage);
       ui.page = snapshot.currentPage;
-      $("#message-input").value = draft?.text || "";
-      ui.focus = draft?.focus || null;
-      ui.pendingMessage = draft?.pendingMessage || null;
+      restoreDraft(draft);
+      if (draft) ui.drafts.set(ui.page, draft);
       resizeInput();
     } catch {
       errorMessage("浏览器无法保存草稿，请复制内容后再关闭页面。");
@@ -269,7 +285,7 @@ async function refresh(bootstrap = false) {
     ui.polling = false;
   }
 }
-async function mutate(path, body, after) {
+async function mutate(path, body, after, onError) {
   if (ui.requesting) return false;
   ui.requesting = true;
   ui.generation += 1;
@@ -281,6 +297,7 @@ async function mutate(path, body, after) {
     applySnapshot(result);
     return true;
   } catch (error) {
+    onError?.(error);
     errorMessage(error.message);
     return false;
   } finally {
@@ -387,6 +404,8 @@ function renderCanvas(force = false) {
       api,
       mutate,
       showCredential,
+      selections: ui.graphSelections,
+      onSelectContext: selectLiveContext,
     });
     const legacy =
       ui.page === "ontology"
@@ -2137,12 +2156,182 @@ function detailFrame(
   section.append(heading(title));
   return section;
 }
+function currentWorkContext() {
+  return {
+    view:
+      ui.focus?.view ||
+      (ui.page === "setup"
+        ? `setup.${state.setupSection}`
+        : ui.page === "ontology"
+          ? "ontology.definitions"
+          : "consumption"),
+    revision: ui.contextRevision,
+    selection: ui.focus
+      ? [
+          ui.focus.ref || {
+            spaceId: state.workspaceId,
+            kind: "artifact",
+            id: ui.focus.id,
+            version: ui.focus.version,
+          },
+        ]
+      : [],
+    scope: ui.focus?.scope || { where: {}, offset: 0, limit: 20 },
+    draftRef: { ...ui.draftRef },
+  };
+}
+async function selectLiveContext(
+  model,
+  target,
+  scope = { where: {}, offset: 0, limit: 20 },
+) {
+  const request = ++ui.contextRequest;
+  const page = ui.page;
+  ui.contextResolving = true;
+  updateComposer();
+  try {
+    const context = {
+      ...currentWorkContext(),
+      view: target.objectId ? "ontology.objects" : "ontology.definitions",
+      revision: ui.contextRevision + 1,
+      selection: [
+        {
+          spaceId: state.workspaceId,
+          id: model.id,
+          version: model.version,
+          ...target,
+        },
+      ],
+      scope,
+    };
+    const resolved = await api("/api/canvas/context", { page, context });
+    if (request !== ui.contextRequest || page !== ui.page) return false;
+    ui.focus = {
+      id: model.id,
+      version: model.version,
+      label: resolved.target.label,
+      ref: resolved.target.ref,
+      view: context.view,
+      scope,
+    };
+    ui.contextRevision += 1;
+    rememberDraft();
+    errorMessage();
+    $("#message-input").focus();
+    return true;
+  } catch (error) {
+    if (request === ui.contextRequest) errorMessage(error.message);
+    return false;
+  } finally {
+    if (request === ui.contextRequest) {
+      ui.contextResolving = false;
+      updateComposer();
+    }
+  }
+}
+async function inspectContext(context, page = ui.page) {
+  const dialog = node("dialog", "live-dialog");
+  dialog.append(
+    node("h2", "", "本次讨论的内容"),
+    button("关闭", "quiet-button", () => dialog.close()),
+  );
+  const body = node("div", "context-detail", "正在读取…");
+  dialog.append(body);
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+  try {
+    const value = await api("/api/canvas/context/read", { page, context });
+    if (!dialog.isConnected) return;
+    body.replaceChildren(node("h3", "", value.target?.label || "当前页面"));
+    if (value.target) {
+      body.append(
+        node(
+          "p",
+          "source-meta",
+          `本体 / 成果第 ${value.target.ref.version} 版 · ${{ adopted: "已采用", candidate: "待确认", draft: "草稿", ready: "可用", confirmed: "已确认", active: "已启用", disabled: "已停用", revoked: "已停用" }[value.target.status] || "已保存"}`,
+        ),
+      );
+      const details = node("dl", "memory-properties");
+      for (const [key, item] of Object.entries(value.target.definition)) {
+        const row = node("div");
+        row.append(
+          node(
+            "dt",
+            "",
+            {
+              from: "起点类型",
+              to: "终点类型",
+              name: "名称",
+              description: "说明",
+              fromField: "起点属性",
+              toField: "终点属性",
+              property: "业务属性",
+              sourceField: "来源字段",
+              type: "对象类型",
+              fields: "属性映射",
+              sourceId: "来源标识",
+              capability: "读取能力",
+              title: "成果名称",
+              kind: "内容类别",
+            }[key] || key,
+          ),
+          node("dd", "", plain(item)),
+        );
+        details.append(row);
+      }
+      body.append(details);
+    }
+    body.append(
+      node(
+        "p",
+        "source-meta",
+        `范围：${Object.keys(context.scope.where).length ? JSON.stringify(context.scope.where) : "无额外筛选"} · 从第 ${context.scope.offset + 1} 条起，最多 ${context.scope.limit} 条`,
+      ),
+    );
+    if (value.result) {
+      const table = node("table");
+      const keys = Object.keys(value.result.items[0] || {});
+      const head = node("tr");
+      keys.forEach((key) => head.append(node("th", "", key)));
+      table.append(head);
+      value.result.items.forEach((item) => {
+        const row = node("tr");
+        keys.forEach((key) => row.append(node("td", "", plain(item[key]))));
+        table.append(row);
+      });
+      const wrap = node("div", "live-table");
+      wrap.append(table);
+      body.append(wrap);
+      body.append(
+        node(
+          "p",
+          "source-meta",
+          `当前显示 ${value.result.coverage.shown} 条 · ${value.result.coverage.complete ? "当前结果完整" : "仅当前页"} · 读取于 ${value.result.reads.map((r) => r.readAt).join(" / ")}`,
+        ),
+      );
+      body.append(
+        node(
+          "p",
+          "source-meta",
+          "按消息原范围重新读取当前来源；不是历史数据快照。",
+        ),
+      );
+    }
+  } catch (error) {
+    body.textContent = error.message;
+  }
+}
 function setFocus(artifact, suffix = "") {
+  ui.contextRequest += 1;
+  ui.contextResolving = false;
+  ui.contextRevision += 1;
   ui.focus = {
     id: artifact.id,
     version: artifact.version,
     label: suffix ? `${artifact.title} · ${suffix}` : artifact.title,
   };
+  rememberDraft();
   updateComposer();
 }
 function askAbout(artifact, suffix = "") {
@@ -2749,8 +2938,22 @@ function renderDialogue() {
     const line = node(
       "p",
       `dialogue-line ${message.role} ${age}${message.streaming ? " streaming" : ""}`,
-      text,
     );
+    line.append(node("span", "message-text", text));
+    if (message.workContext?.target) {
+      const ref = message.workContext.target;
+      line.append(
+        button(
+          `引用：${ref.label} · 第 ${ref.ref.version} 版`,
+          "message-context",
+          () =>
+            inspectContext(
+              message.workContext.context,
+              message.workContext.context.view.split(".")[0],
+            ),
+        ),
+      );
+    }
     container.append(line);
   });
 }
@@ -2766,7 +2969,8 @@ function hasCanvasContent() {
 function updateComposer() {
   const input = $("#message-input");
   const busy = state.busy;
-  const blocked = ui.requesting || ui.uploading || !ui.initialized;
+  const blocked =
+    ui.requesting || ui.uploading || ui.contextResolving || !ui.initialized;
   input.placeholder = shareMode
     ? "选择下方示例问题，了解这一页…"
     : placeholders[ui.page];
@@ -2776,23 +2980,45 @@ function updateComposer() {
   $("#demo-question").disabled = blocked;
   $("#send-button").hidden = busy;
   $("#stop-button").hidden = !busy;
-  $("#send-button").disabled = blocked || !input.value.trim();
+  $("#send-button").disabled =
+    blocked || (!input.value.trim() && !ui.pendingMessage);
+  $("#send-button").setAttribute(
+    "aria-label",
+    ui.pendingMessage
+      ? ui.pendingMessage.body
+        ? "重试上次发送"
+        : "核对上次发送"
+      : "发送消息",
+  );
+  $("#send-button").title = ui.pendingMessage?.body
+    ? "重试上次发送，保留原目标与原范围"
+    : "发送消息";
   $("#stop-button").disabled = ui.requesting;
   $("#upload-button").disabled = blocked || busy;
   $("#upload-button").hidden = !!shareMode || ui.page === "consumption";
   $("#composer-note").textContent = shareMode
     ? "示例问答"
-    : ui.uploading
-      ? "正在接入资料…"
-      : busy
-        ? "正在整理…"
-        : !state.model.configured && ui.initialized
-          ? "先连接一个模型"
-          : state.demo
-            ? "模拟问答"
-            : "";
+    : ui.contextResolving
+      ? "正在核对引用…"
+      : ui.pendingMessage && !busy
+        ? ui.pendingMessage.body
+          ? `待核对上次发送：${ui.pendingMessage.label || "当前页面"}（点击发送重试原消息）`
+          : "旧版请求结果待核对，点击发送只查询原回执"
+        : ui.uploading
+          ? "正在接入资料…"
+          : busy
+            ? "正在整理…"
+            : !state.model.configured && ui.initialized
+              ? "先连接一个模型"
+              : state.demo
+                ? "模拟问答"
+                : "";
   $("#focus-context").hidden = !ui.focus;
-  $("#focus-label").textContent = ui.focus?.label || "";
+  $("#focus-label").textContent = ui.focus
+    ? `${ui.focus.label} · 第 ${ui.focus.version} 版${ui.focus.ref ? "" : " · 整份成果"}`
+    : "";
+  $("#inspect-focus").hidden = !ui.focus || !!shareMode;
+  $("#focus-context").dataset.kind = ui.focus?.ref?.kind || "artifact";
   for (const control of $$("[data-page]")) {
     const entry = state.pages.find((page) => page.id === control.dataset.page);
     control.disabled =
@@ -2810,39 +3036,88 @@ function resizeInput() {
 async function sendMessage() {
   const input = $("#message-input");
   const text = input.value.trim();
-  if (!text || ui.requesting || state.busy) return;
+  if (
+    (!text && !ui.pendingMessage) ||
+    ui.requesting ||
+    state.busy ||
+    ui.contextResolving
+  )
+    return;
+  if (ui.pendingMessage?.id && !ui.pendingMessage.body) {
+    const legacy = ui.pendingMessage;
+    await mutate(
+      "/api/canvas/message/receipt",
+      { page: ui.page, text: legacy.text, messageId: legacy.id },
+      (result) => {
+        ui.pendingMessage = null;
+        rememberDraft();
+        errorMessage(
+          result.messageReceipt.received
+            ? "旧消息已被服务接收，没有重复执行。当前草稿已保留。"
+            : "旧消息尚未被服务接收。当前输入和引用已保留，可作为新消息发送。",
+        );
+      },
+    );
+    return;
+  }
   if (!state.model.configured) {
     openSettings();
     return;
   }
   $(".canvas-app").dataset.reading = "false";
-  const page = ui.page;
-  const focus = ui.focus;
-  const contextKey = `${page}:${focus?.id || ""}:${focus?.version || ""}`;
-  if (
-    !ui.pendingMessage ||
-    ui.pendingMessage.text !== text ||
-    ui.pendingMessage.contextKey !== contextKey
-  )
-    ui.pendingMessage = { text, contextKey, id: crypto.randomUUID() };
+  rememberDraft();
+  if (!ui.pendingMessage?.body) {
+    const body = {
+      page: ui.page,
+      text,
+      messageId: crypto.randomUUID(),
+      ...(ui.page === "ontology" && ui.nextRefreshSources
+        ? { refreshSources: true }
+        : {}),
+      ...(!shareMode && !state.demo
+        ? { workContext: currentWorkContext() }
+        : ui.focus
+          ? { focusId: ui.focus.id, focusVersion: ui.focus.version }
+          : {}),
+    };
+    // Keep the entire request until its receipt is known. Retrying must never
+    // pick up a later selection, input edit or source-refresh flag.
+    ui.pendingMessage = {
+      body: structuredClone(body),
+      text,
+      label: ui.focus?.label,
+      draftRevision: ui.draftRef.revision,
+      contextRevision: ui.contextRevision,
+    };
+  }
+  const pending = ui.pendingMessage;
   rememberDraft();
   await mutate(
     "/api/canvas/message",
-    {
-      page,
-      text,
-      messageId: ui.pendingMessage.id,
-      ...(page === "ontology" && ui.nextRefreshSources
-        ? { refreshSources: true }
-        : {}),
-      ...(focus ? { focusId: focus.id, focusVersion: focus.version } : {}),
-    },
+    pending.body,
     () => {
       ui.pendingMessage = null;
       ui.nextRefreshSources = false;
-      if (input.value.trim() === text) input.value = "";
+      if (
+        ui.draftRef.revision === pending.draftRevision &&
+        ui.contextRevision === pending.contextRevision &&
+        input.value.trim() === pending.text
+      )
+        input.value = "";
       rememberDraft();
       resizeInput();
+    },
+    (error) => {
+      // A definitive rejection permits correcting this draft. A lost response
+      // keeps the original request, even after selecting or clearing a target.
+      if (
+        error.status >= 400 &&
+        error.status < 500 &&
+        ![408, 429].includes(error.status)
+      ) {
+        ui.pendingMessage = null;
+        rememberDraft();
+      }
     },
   );
 }
@@ -2965,10 +3240,15 @@ $("#stop-button").addEventListener("click", () =>
 );
 $("#clear-focus").addEventListener("click", () => {
   ui.focus = null;
-  ui.pendingMessage = null;
+  ui.contextRequest += 1;
+  ui.contextResolving = false;
+  ui.contextRevision += 1;
   updateComposer();
   rememberDraft();
 });
+$("#inspect-focus").addEventListener("click", () =>
+  inspectContext(currentWorkContext()),
+);
 $("#upload-button").addEventListener("click", () => $("#file-input").click());
 $("#file-input").addEventListener("change", (event) =>
   uploadFile(event.target.files[0]),

@@ -70,7 +70,7 @@ function showResult(result) {
 export function renderLiveWorkspace(
   page,
   live,
-  { api, mutate, showCredential },
+  { api, mutate, showCredential, selections = new Map(), onSelectContext },
 ) {
   const section = el("section", "live-canvas");
   const action = async (fn) => {
@@ -242,6 +242,12 @@ export function renderLiveWorkspace(
         ),
         el("p", "", model.content.rationale),
       );
+      const cite = async (target, scope, dialog) => {
+        if (await onSelectContext?.(model, target, scope)) {
+          dialog?.close();
+          document.getElementById("message-input")?.focus();
+        }
+      };
       const browse = (type, relation, id) => {
         modal(relation || type.name, (dialog) => {
           const body = el("div");
@@ -253,6 +259,7 @@ export function renderLiveWorkspace(
             try {
               const result = await api("/api/live/query", {
                 modelId: model.id,
+                modelVersion: model.version,
                 type: type.name,
                 offset,
                 limit: 20,
@@ -283,16 +290,50 @@ export function renderLiveWorkspace(
                   button("下一页", () => action(() => load(offset + 20))),
                 );
               body.append(pages);
+              const scope = { where: {}, offset, limit: 20 };
+              if (relation && onSelectContext)
+                body.append(
+                  button("讨论这条对象关系", () =>
+                    cite(
+                      {
+                        kind: "relation",
+                        type: type.name,
+                        member: relation,
+                        objectId: id,
+                      },
+                      scope,
+                      dialog,
+                    ),
+                  ),
+                );
               if (!relation)
-                for (const row of result.items)
+                for (const row of result.items) {
+                  const rowActions = el("div", "live-actions");
+                  if (onSelectContext)
+                    rowActions.append(
+                      button(`讨论对象 ${row.$id}`, () =>
+                        cite(
+                          {
+                            kind: "object",
+                            type: type.name,
+                            objectId: String(row.$id),
+                          },
+                          { where: {}, offset: 0, limit: 1 },
+                          dialog,
+                        ),
+                      ),
+                    );
                   for (const link of model.content.relations.filter(
                     (r) => r.from === type.name,
                   ))
-                    body.append(
-                      button(`${row.$id} → ${link.name}`, () =>
-                        browse(type, link.name, String(row.$id)),
-                      ),
+                    rowActions.append(
+                      button(`${row.$id} → ${link.name}`, () => {
+                        dialog.close();
+                        browse(type, link.name, String(row.$id));
+                      }),
                     );
+                  body.append(rowActions);
+                }
             } finally {
               loading = false;
             }
@@ -327,6 +368,12 @@ export function renderLiveWorkspace(
             el("p", "", model.content.rationale),
           );
         });
+      const graphKey = `live:${model.id}:${model.version}`;
+      if (!selections.has(graphKey))
+        selections.set(graphKey, {
+          kind: "node",
+          id: model.content.types[0].name,
+        });
       const displayModel = {
         ...model,
         content: {
@@ -336,9 +383,13 @@ export function renderLiveWorkspace(
       };
       block.append(
         renderDefinitionGraph(displayModel, {
-          selection: { kind: "node", id: model.content.types[0].name },
+          selection: selections.get(graphKey),
           onSelectionChange: () => {},
-          readOnly: true,
+          readOnly: !onSelectContext,
+          adjustLabel: "讨论这类对象",
+          onSelectProperty: onSelectContext
+            ? (type, member) => cite({ kind: "property", type, member })
+            : undefined,
           renderEvidence: (refs) => {
             const list = el("div");
             for (const ref of refs)
@@ -353,7 +404,7 @@ export function renderLiveWorkspace(
           },
           onOpenObjects: readType,
           onOpenType: openDefinition,
-          onAdjust: () => {},
+          onAdjust: (_label, target) => cite(target),
         }),
       );
       const actions = el("div", "live-actions");

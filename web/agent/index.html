@@ -58,7 +58,9 @@
           <button type="button" data-page="setup" aria-current="page">
             企业与数据
           </button>
-          <button type="button" data-page="ontology" disabled>本体工作区</button>
+          <button type="button" data-page="ontology" disabled>
+            本体工作区
+          </button>
           <button type="button" data-page="consumption" disabled>
             消费与治理
           </button>
@@ -90,6 +92,9 @@
           <p class="request-error" id="request-error" role="alert" hidden></p>
           <div class="focus-context" id="focus-context" hidden>
             <span id="focus-label"></span>
+            <button class="quiet-button" id="inspect-focus" type="button">
+              查看引用
+            </button>
             <button
               class="icon-button"
               id="clear-focus"
@@ -121,7 +126,12 @@
                   </svg>
                 </button>
                 <span class="composer-note" id="composer-note"></span>
-                <button class="demo-question" id="demo-question" type="button" hidden></button>
+                <button
+                  class="demo-question"
+                  id="demo-question"
+                  type="button"
+                  hidden
+                ></button>
               </div>
               <button
                 class="send-button"
