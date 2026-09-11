@@ -1,3 +1,4 @@
+import { foundationWebTool } from "./foundation-web.ts";
 import {
   FoundationDocuments,
   foundationDocumentTool,
@@ -80,6 +81,7 @@ function merge<T extends { id: string }>(previous: T[], updates: T[]): T[] {
 
 export const foundationTools: DomainTool[] = [
   foundationDocumentTool,
+  foundationWebTool,
   {
     name: "foundation_read",
     description:
@@ -119,6 +121,20 @@ export class FoundationService {
             )
           : null;
     return { current, adopted };
+  }
+
+  project(artifact: Artifact): Artifact {
+    const result = structuredClone(artifact);
+    for (const entry of content(result).evidence) delete entry.webSnapshot;
+    return result;
+  }
+
+  view() {
+    const { current, adopted } = this.read();
+    return {
+      current: current ? this.project(current) : null,
+      adopted: adopted ? this.project(adopted) : null,
+    };
   }
 
   propose(
@@ -163,6 +179,16 @@ export class FoundationService {
       context,
       documents,
     );
+    for (const item of input.evidence) {
+      const saved = evidence.find((e) => e.id === item.id)!;
+      if (
+        saved.kind === "web" &&
+        saved.identity?.name !== input.enterprise.name
+      )
+        throw new Error(
+          "网页研究主体与当前企业不一致，请先消歧，不合并不同企业",
+        );
+    }
     const checkRefs = (references: string[]) => {
       if (references.some((ref) => !evidence.some((entry) => entry.id === ref)))
         throw new Error("依据引用不存在；没有依据的内容请保留为未知");
@@ -254,7 +280,7 @@ export class FoundationService {
               return (
                 (entry?.messageId === latestUser?.id ||
                   (allowDocument &&
-                    entry?.kind === "document" &&
+                    (entry?.kind === "document" || entry?.kind === "web") &&
                     input.evidence.some((e) => e.id === ref))) &&
                 !previous?.evidence.some((e) => e.id === ref)
               );
@@ -313,7 +339,9 @@ export class FoundationService {
         meaning(before) === meaning(after) ||
         after.evidenceRefs.some(freshUser) ||
         !after.evidenceRefs.some((ref) =>
-          evidence.some((e) => e.id === ref && e.kind === "document"),
+          evidence.some(
+            (e) => e.id === ref && (e.kind === "document" || e.kind === "web"),
+          ),
         )
       )
         continue;

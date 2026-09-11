@@ -1,3 +1,10 @@
+import {
+  FoundationWeb,
+  locateWeb,
+  type WebCoverage,
+  type WebSnapshot,
+  type ResearchIdentity,
+} from "./foundation-web.ts";
 import { randomUUID, createHash } from "node:crypto";
 import { z } from "zod";
 import type { MemoryStore } from "./memory.ts";
@@ -16,7 +23,7 @@ export const foundationEvidenceInput = z.union([
   z
     .object({
       id: evidenceId,
-      kind: z.literal("document"),
+      kind: z.enum(["document", "web"]),
       readId: identifier,
       quote: z.string().min(1).max(1500),
     })
@@ -25,7 +32,12 @@ export const foundationEvidenceInput = z.union([
 export type EvidenceInput = z.infer<typeof foundationEvidenceInput>;
 export interface FoundationEvidence {
   id: string;
-  kind: "user-statement" | "document";
+  kind: "user-statement" | "document" | "web";
+  url?: string;
+  requestedUrl?: string;
+  coverage?: WebCoverage;
+  webSnapshot?: WebSnapshot;
+  identity?: ResearchIdentity;
   quote: string;
   capturedAt: string;
   validTime: string;
@@ -80,8 +92,14 @@ export class FoundationDocuments {
   private memory: MemoryStore;
   private receipts = new Map<string, ReadReceipt>();
   private characters = 0;
-  constructor(memory: MemoryStore) {
+  readonly web?: FoundationWeb;
+  constructor(
+    memory: MemoryStore,
+    context?: WriteContext,
+    testOrigins: ReadonlySet<string> = new Set(),
+  ) {
     this.memory = memory;
+    if (context) this.web = new FoundationWeb(memory, context, testOrigins);
   }
   read(args: unknown): ReadReceipt {
     const input = readSchema.parse(args);
@@ -129,6 +147,10 @@ export class FoundationDocuments {
   }
   cite(input: EvidenceInput): FoundationEvidence {
     if (!("readId" in input)) throw new Error("需要文档读取引用");
+    if (input.kind === "web") {
+      if (!this.web) throw new Error("必须先实际读取网页");
+      return this.web.cite(input);
+    }
     const receipt = this.receipts.get(input.readId);
     if (!receipt)
       throw new Error("必须先在本轮实际读取文档片段，不能编造读取引用");
@@ -153,6 +175,7 @@ export class FoundationDocuments {
     };
   }
   locate(evidence: FoundationEvidence) {
+    if (evidence.kind === "web") return locateWeb(evidence);
     if (
       evidence.kind !== "document" ||
       !evidence.sourceId ||
@@ -199,7 +222,7 @@ export function verifyFoundationEvidence(
       if (
         existing.quote !== item.quote ||
         ("readId" in item
-          ? existing.kind !== "document" || existing.readId !== item.readId
+          ? existing.kind !== item.kind || existing.readId !== item.readId
           : existing.kind !== "user-statement" ||
             existing.messageId !== item.messageId)
       )

@@ -1,7 +1,7 @@
 # 企业基础本体 Skill 设计规格
 
 日期：2026-09-11。适用：[三页产品计划](THREE_PAGE_PLAN.md)的第一页“企业与数据”。
-T013-01 已实现对话路径、运行 Skill、基础候选保存/检查/采用，并经过真实 KodaX 验证。T013-02 已接入 Markdown/TXT 资料路径；公开研究仍属 T013-03。实际接口见第 10、11 节。
+T013-01 已实现对话路径、运行 Skill、基础候选保存/检查/采用，并经过真实 KodaX 验证。T013-02 已接入 Markdown/TXT 资料路径；T013-03 已接入确认企业后的公开研究。实际接口见第 10—12 节。
 字段和输出示意遵循[语义与操作契约](SEMANTIC_CONTRACTS.md)，由对应实现票收敛；已有能力以[运行记录](experiment/AGENT_CAPABILITIES.md)为准。
 
 ## 1. 身份与职责
@@ -119,7 +119,7 @@ T013-01 已实现对话路径、运行 Skill、基础候选保存/检查/采用�
 
 运行包为 [company-foundation-ontology/SKILL.md](../config/skills/company-foundation-ontology/SKILL.md)，经现有独立 SkillRegistry 发现和 `skill_use` 加载。宿主记录本轮实际加载结果摘要，不接受模型自报已加载。基础领域服务为 [foundation.ts](../src/agent/foundation.ts)，与旧文件概念草稿独立。
 
-已核对对话起步、基础版本、原话、冲突/未知、停止与重启、名称纠正及无映射采用；实际模型和浏览器范围见[基础本体验收](experiment/COMPANY_FOUNDATION.md)。T013-02 的文档扩展见第 11 节及[资料验收](experiment/FOUNDATION_DOCUMENTS.md)；网页证据仍未进入本服务。
+已核对对话起步、基础版本、原话、冲突/未知、停止与重启、名称纠正及无映射采用；实际模型和浏览器范围见[基础本体验收](experiment/COMPANY_FOUNDATION.md)。T013-02 的文档扩展见第 11 节及[资料验收](experiment/FOUNDATION_DOCUMENTS.md)；网页证据扩展见第 12 节及[公开研究验收](experiment/FOUNDATION_WEB.md)。
 
 ## 10. T013-01 实际接口
 
@@ -150,7 +150,7 @@ T013-01 已实现对话路径、运行 Skill、基础候选保存/检查/采用�
 
 ## 11. T013-02 文档证据扩展
 
-支持既有上传边界中的 UTF-8 Markdown/TXT，大小限制 5 MB；CSV 继续用于记录，不作为企业文档证据。空白、控制字符或损坏文本保存为失败来源并给出原因；浏览器在上传前拒绝无效 UTF-8。未实现 PDF/DOCX 解析、远程知识库接入及公开网页证据。
+支持既有上传边界中的 UTF-8 Markdown/TXT，大小限制 5 MB；CSV 继续用于记录，不作为企业文档证据。空白、控制字符或损坏文本保存为失败来源并给出原因；浏览器在上传前拒绝无效 UTF-8。未实现 PDF/DOCX 解析及远程知识库接入；公开网页由第 12 节独立路径处理。
 
 `foundation_document_read {sourceId, version?, offset?, limit?}` 读取已上传且有效的文本。默认 4000、单次最多 6000、每运行累计最多 40000 个 UTF-16 code units；返回 `readId`、实际文本、来源 ID/版本/哈希、起止位置、读取时间与 `coverage`。有 `nextOffset` 时继续按需读取，不能将局部读取称为完整审阅。历史版本可读，采用要求已核对最新资料。
 
@@ -161,3 +161,22 @@ T013-01 已实现对话路径、运行 Skill、基础候选保存/检查/采用�
 候选 `documentVersions` 记录实际引用过的最高来源版本，保留旧引文自身版本；采用时逐一检查来源是否更新。重存候选或空增量不会推进这一版本，必须真实读取并保存新版本证据。检查证明版本与引文一致，不证明模型理解正确或完整阅读所有内容。
 
 管理员 `GET /api/foundation/evidence?foundationId=…&version=…&evidenceId=…` 由同一服务定位保存的原版本，校验哈希和位置，返回引文前后各最多 250 字符及当前资料版本。两页的“查看依据 → 定位资料片段”显示该结果，支持键盘和换行。重启后无需重跑模型即可读取历史证据；此接口未开放给外部消费者。
+
+
+## 12. T013-03 公开网页证据
+
+保留 KodaX 原生 `web_search/web_fetch` 用于发现与浏览，基础候选必须通过 `foundation_web_read` 取得宿主实际读取回执。宿主使用 HTTP(S) 读取正文并调用固定 SDK 的 `stripHtmlToText/extractHtmlTitle`，不从原生工具展示字符串反向解析或接受模型传入的正文。
+
+`foundation_web_read {url, identity, offset?, limit?}`：首次 `identity` 为 `{name,messageId,quote}`，必须来自本企业工作区真实用户名称及消歧原话；已有基础身份优先使用 `{foundationId,version}`，由服务解析已采用身份或已有人工名称依据。纯资料且未采用的身份不能自动充当公开研究确认。跨页可以复用企业身份，不要求用户重复提供公司名；当前版本变更需重读基础定义。
+
+名称引文验证证明谁提供了名称，不证明目标网站一定属于该公司。Skill 负责核对官网、地区、全称、集团/分支范围；有歧义时只询问必要信息，未解决前不合并不同企业。公开资料不写成人工 profile 陈述，也不能更正既有人工名称。
+
+读取返回 `readId/requestedUrl/url/title/readAt/text/sourceHash/identity/coverage`。默认 4000、单次最多 6000 UTF-16 字符，每轮最多 8 页及 40000 字符。并行调用按 URL 预留在途 Promise；同 URL 的续读固定为该轮同一文本快照。抓取最多 512 KiB，正文截断时 `sourceTruncated:true`；`nextOffset` 只续读已经获取的内容，不能消除网络截断。`complete` 仅指该次返回覆盖所获取完整正文，不能证明网站全量覆盖或模型理解正确。
+
+初始地址、跳转及 DNS 解析目标限制为公网；连接固定到已检查地址，拒绝本机、私网、链路本地和保留地址，不携带凭据/Cookie。最多 4 次跳转，HTTP 请求使用 12 秒中止信号。HTML/纯文本按 HTTP charset 解码，无有效正文、HTTP 错误、识别到的验证页和损坏编码均拒绝生成读取回执。部分反爬或脚本渲染页面仍需人工判断，当前不运行浏览器脚本。单企业本地宿主原有通用原生工具边界没有在本票整体改造；这些检查专用于基础网页证据入口。
+
+`foundation_propose.evidence` 新增 `{id,kind:"web",readId,quote}`。回执须属于当前有效运行，引文须在该次正文中唯一连续匹配，研究主体须与候选企业一致。保存 URL、标题、读取时点、实际片段位置、正文哈希、覆盖及最多 6000 字符的该次文本快照。旧网页证据不可改写，未知适用时间保持 unknown。网页建议与文档一样参与既有含义的冲突检查，新用户决定才能解决冲突；不把宣传声明升级为经验证的经营事实。
+
+Agent 的 `foundation_read/foundation_propose/memory_read` 和画布基础投影仅返回引文及元数据，不反复返回所有快照。原文通过既有管理员证据定位接口按需读取，仅返回引文及前后各最多 250 字符。网页按钮分别为“打开原网页”和“查看当时网页片段”，明确区分读取时快照与网站当前内容；重启与网站变化不会覆盖旧引文。本票不提供完整网站历史归档、自动再校验网页最新版本或对外消费 API。
+
+集成测试通过显式测试 driver 与精确本地 origin 豁免访问独立 HTTP 夹具；该配置仅在显式注入 driver 的测试/集成入口可用，无 UI/HTTP 配置；默认 KodaX 入口不启用，生产默认仍限制公网。

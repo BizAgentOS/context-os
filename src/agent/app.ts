@@ -149,7 +149,15 @@ export class AgentApplication {
   private settings: ModelSettings;
   private injected: boolean;
 
-  constructor(directory: string, driver?: AgentDriver) {
+  private researchTestOrigins: ReadonlySet<string>;
+  constructor(
+    directory: string,
+    driver?: AgentDriver,
+    researchTestOrigins: ReadonlySet<string> = new Set(),
+  ) {
+    if (researchTestOrigins.size && !driver)
+      throw new Error("测试网页来源仅允许显式测试 driver");
+    this.researchTestOrigins = researchTestOrigins;
     this.memory = new MemoryStore(directory);
     this.foundation = new FoundationService(this.memory);
     this.live = new LiveMemory(directory, this.memory);
@@ -685,7 +693,7 @@ export class AgentApplication {
       profile,
       sources,
       ontologies,
-      foundation: this.foundation.read(),
+      foundation: this.foundation.view(),
       outlines: this.memory.listArtifacts("ontology_outline"),
       verifications: this.memory.listArtifacts("verification"),
       live: this.live.overview(),
@@ -1033,7 +1041,7 @@ export class AgentApplication {
     const version = Number(body.version);
     await this.stopActive("正在保存你的基础定义决定。");
     return this.memory.atomic(() => {
-      const before = this.foundation.read().current;
+      const before = this.foundation.view().current;
       const artifact = this.foundation.adopt(id, version);
       if (artifact.version !== before?.version) {
         const task = this.canvasTask(page);
@@ -1384,7 +1392,11 @@ export class AgentApplication {
     const executionWorkContext = workContext
       ? structuredClone(workContext.context)
       : undefined;
-    const foundationDocuments = new FoundationDocuments(this.memory);
+    const foundationDocuments = new FoundationDocuments(
+      this.memory,
+      context,
+      this.researchTestOrigins,
+    );
     let foundationSkill = "";
     let pageCompleted = false;
     const inspectedSources = new Map<string, number>();
@@ -1429,11 +1441,11 @@ export class AgentApplication {
               }
             : {}),
           enterprise: workspace.overview(),
-          foundation: this.foundation.read().current
+          foundation: this.foundation.view().current
             ? {
-                id: this.foundation.read().current!.id,
-                version: this.foundation.read().current!.version,
-                status: this.foundation.read().current!.status,
+                id: this.foundation.view().current!.id,
+                version: this.foundation.view().current!.version,
+                status: this.foundation.view().current!.status,
               }
             : null,
           ...(page
@@ -1534,8 +1546,8 @@ export class AgentApplication {
           }
           if (page && name === "page_complete") {
             let artifacts: Artifact[];
-            if (page === "setup" && this.foundation.read().current) {
-              const foundation = this.foundation.read();
+            if (page === "setup" && this.foundation.view().current) {
+              const foundation = this.foundation.view();
               if (foundation.current!.status !== "adopted")
                 throw new Error("请先查看并采用基础本体候选");
               artifacts = [foundation.adopted!];
@@ -1694,19 +1706,26 @@ export class AgentApplication {
               ? lastWrite.operationId
               : `write-${++writeSequence}`
             : undefined;
+          if (name === "foundation_web_read") {
+            const result = await foundationDocuments.web!.read(args);
+            this.memory.assertWritable(context);
+            return serializable(result);
+          }
           const result =
             name === "foundation_document_read"
               ? serializable(foundationDocuments.read(args))
               : name === "foundation_read"
-                ? serializable(this.foundation.read())
+                ? serializable(this.foundation.view())
                 : name === "foundation_propose"
                   ? serializable(
-                      this.foundation.propose(
-                        args,
-                        context,
-                        operationId!,
-                        foundationSkill,
-                        foundationDocuments,
+                      this.foundation.project(
+                        this.foundation.propose(
+                          args,
+                          context,
+                          operationId!,
+                          foundationSkill,
+                          foundationDocuments,
+                        ),
                       ),
                     )
                   : name === "consumer_propose" && page === "consumption"
@@ -1749,6 +1768,10 @@ export class AgentApplication {
             )
               ref.version = saved.version;
           }
+          if (name === "memory_read" && (result as Data).kind === "foundation")
+            return serializable(
+              this.foundation.project(result as unknown as Artifact),
+            );
           return result;
         },
       });

@@ -50,13 +50,29 @@ export function renderFoundation(
           el(
             "small",
             "muted",
-            evidence.kind === "document"
-              ? `${evidence.title} · v${evidence.sourceVersion} · 已读取 ${new Date(evidence.readAt).toLocaleString("zh-CN")} · 适用时间未说明`
-              : `用户陈述 · ${new Date(evidence.capturedAt).toLocaleString("zh-CN")} · 适用时间未说明`,
+            evidence.kind === "web"
+              ? `${evidence.title} · 公开网页 · 已读取 ${new Date(evidence.readAt).toLocaleString("zh-CN")} · ${evidence.coverage?.complete ? "该次已读完整正文" : "部分正文，覆盖不完整"} · 适用时间未说明`
+              : evidence.kind === "document"
+                ? `${evidence.title} · v${evidence.sourceVersion} · 已读取 ${new Date(evidence.readAt).toLocaleString("zh-CN")} · 适用时间未说明`
+                : `用户陈述 · ${new Date(evidence.capturedAt).toLocaleString("zh-CN")} · 适用时间未说明`,
           ),
         );
-        if (evidence.kind === "document" && locate) {
-          const open = el("button", "quiet-button", "定位资料片段");
+        if (
+          (evidence.kind === "document" || evidence.kind === "web") &&
+          locate
+        ) {
+          if (evidence.kind === "web") {
+            const link = el("a", "", "打开原网页");
+            link.href = evidence.url;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            details.append(document.createTextNode(" "), link);
+          }
+          const open = el(
+            "button",
+            "quiet-button",
+            evidence.kind === "web" ? "查看当时网页片段" : "定位资料片段",
+          );
           open.type = "button";
           const result = el("div", "foundation-excerpt");
           open.onclick = async () => {
@@ -81,7 +97,9 @@ export function renderFoundation(
                 el(
                   "p",
                   "muted",
-                  `${found.title} · 依据版本 v${found.sourceVersion} · 当前资料 v${found.currentSourceVersion}`,
+                  found.kind === "web"
+                    ? `${found.url} · 读取时快照，不代表网页当前内容`
+                    : `${found.title} · 依据版本 v${found.sourceVersion} · 当前资料 v${found.currentSourceVersion}`,
                 ),
                 paragraph,
               );
@@ -141,7 +159,12 @@ export function renderFoundation(
     }
     for (const [key, title] of [
       ["unknowns", "待补充"],
-      ["conflicts", "待解决冲突"],
+      [
+        "conflicts",
+        body.conflicts.some((item) => !item.resolvedBy)
+          ? "待解决冲突"
+          : "已核对冲突",
+      ],
     ]) {
       if (!body[key].length) continue;
       const issues = el("details", "foundation-issues");
@@ -152,7 +175,7 @@ export function renderFoundation(
         const entry = el(
           "li",
           "",
-          `${item.resolvedBy ? "已补充 · " : ""}${item.description}`,
+          `${item.resolvedBy ? (key === "conflicts" ? "已解决 · " : "已补充 · ") : ""}${item.description}`,
         );
         if (item.retained && item.proposed)
           entry.append(

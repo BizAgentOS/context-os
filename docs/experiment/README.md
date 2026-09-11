@@ -6,6 +6,7 @@
 
 | 需要查看 | 记录 |
 |---|---|
+| 公开研究、身份复用、网页快照与同名消歧 | [公开研究验收](FOUNDATION_WEB.md) |
 | 企业资料取证、补充、冲突与原文定位 | [资料验收](FOUNDATION_DOCUMENTS.md) |
 | 对话起步、基础本体 Skill 与人工采用 | [基础本体验收](COMPANY_FOUNDATION.md) |
 | 当前按需来源、真实 KodaX 和独立消费入口 | [在线链路](LIVE_MEMORY.md) |

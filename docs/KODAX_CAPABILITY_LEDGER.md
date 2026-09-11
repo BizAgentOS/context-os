@@ -36,7 +36,7 @@
 | `SkillRegistry`、`parseSkillMarkdown` | 独立发现、列表、loadFull、invoke、reload 与安装校验 | [skills.ts](../src/capabilities/skills.ts) | 只扫描产品目录；动态命令、hooks、fork 被宿主拒绝 |
 | `SkillRegistry.invoke` | 参数化方法文本，`disableDynamicContext: true` | [skills.ts](../src/capabilities/skills.ts) `use` | 不自动执行包内脚本，不授予工具权限 |
 | `createMcpManager`、能力 ID 解析 | 管理外部 MCP 目录、调用及连接生命周期 | [mcp.ts](../src/capabilities/mcp.ts) | UI 接受 HTTP/SSE；未接入 stdio 配置或 OAuth 授权流程 |
-| 原生 `web_search/web_fetch` 工具 | 加入画布本轮原生工具 allowlist | [service.ts](../src/capabilities/service.ts)、[app.ts](../src/agent/app.ts) | 搜索事实需查证；网页证据转为基础本体仍待对应任务 |
+| 原生 `web_search/web_fetch` 工具 | 加入画布本轮原生工具 allowlist | [service.ts](../src/capabilities/service.ts)、[app.ts](../src/agent/app.ts) | 搜索用于发现；基础网页证据经宿主 foundation_web_read 重新读取，不解析 SDK 展示字符串作为结构化事实 |
 | 原生 MCP search/describe/call/resource/prompt 工具 | 接宿主的发现与获准能力 | [service.ts](../src/capabilities/service.ts)、[runtime.ts](../src/agent/runtime.ts) | 通用工具调用不等于登记企业来源或允许对外消费 |
 | `capability_search/skill_use/skill_read/sdk_call` | DataEngine 定义的领域工具，借 SDK 分发 | [service.ts](../src/capabilities/service.ts) | 名称不是 KodaX 通用 API；其行为由产品实现 |
 
@@ -89,3 +89,8 @@ Skill 的包目录、已安装方法与变更流程只在[内置 Skill](BUILTIN_
 ## 企业资料接入（T013-02）
 
 在相同 KodaX 运行内增加 `foundation_document_read`，由宿主按运行保存读取回执；Skill 指导文档取证，FoundationService 校验引用并与对话成果合并。画布定位通过共同领域服务，无浏览器内容转述为用户原话。版本和冲突检查由宿主执行；未升级 SDK、增加模型循环或开放文件系统能力。真实 KodaX/DeepSeek 的资料生成与补充见[资料验收](experiment/FOUNDATION_DOCUMENTS.md)。
+
+
+## 公开研究接入（T013-03）
+
+仍使用固定版本的同一 KodaX 循环和原生 `web_search`。新宿主工具 `foundation_web_read` 从实际 HTTP 响应保存结构化证据，复用 SDK 公共导出的 `stripHtmlToText/extractHtmlTitle`；没有解析原生工具面向模型的展示文本，也没有增加模型循环。网络、读取回执、企业身份、快照与采用检查由 DataEngine 实施。字段与界限见[方法契约第 12 节](COMPANY_FOUNDATION_SKILL.md#12-t013-03-公开网页证据)，真实调用见[验收](experiment/FOUNDATION_WEB.md)。

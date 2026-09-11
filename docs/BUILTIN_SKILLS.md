@@ -10,10 +10,10 @@ Skill 是内部 Agent 按需使用的方法说明，KodaX 保持唯一模型循�
 |---|---|---|
 | `enterprise-research` | 已有运行包：查证企业公开信息并提出有出处的建议 | [SKILL.md](../config/skills/enterprise-research/SKILL.md)；明确名称/地区、核对官方网页，使用 `profile_update` 保存 suggestion，不伪造 user 陈述 |
 | `ontology-modeling` | 已有运行包：围绕业务问题检查实际源契约与样本，提出在线本体候选 | [SKILL.md](../config/skills/ontology-modeling/SKILL.md)；使用 `live_overview/read/propose`，用户采用前保持候选，工具结果不等于正式来源 |
-| `company-foundation-ontology` | 已实现对话与 Markdown/TXT 路径：实际依据、基础候选、未知与冲突，人工采用 | [SKILL.md](../config/skills/company-foundation-ontology/SKILL.md)、[接口规格](COMPANY_FOUNDATION_SKILL.md)；资料验收见[记录](experiment/FOUNDATION_DOCUMENTS.md)，公开研究由 T013-03 承接 |
+| `company-foundation-ontology` | 已实现对话、Markdown/TXT 与公开研究路径：实际依据、基础候选、未知与冲突，人工采用 | [SKILL.md](../config/skills/company-foundation-ontology/SKILL.md)、[接口规格](COMPANY_FOUNDATION_SKILL.md)；资料验收见[记录](experiment/FOUNDATION_DOCUMENTS.md)，公开研究验收见[记录](experiment/FOUNDATION_WEB.md) |
 
 “已有运行包”只说明文件和加载链路存在，不代表在当前这轮对话中已调用。
-基础方法复用前两项的取证与建模原则，先在同一循环内加载方法，再调用基础领域服务；已接入 Markdown/TXT 文档证据，公开网页证据留给 T013-03。
+基础方法复用前两项的取证与建模原则，先在同一循环内加载方法，再调用基础领域服务；已接入 Markdown/TXT 与公开网页证据；网页正文经运行内读取回执核验，同名企业先消歧。
 基础定义获采用不表示业务数据已映射、API 已有对象或消费者已获授权。
 
 ## 2. 目录与职责

@@ -68,11 +68,16 @@ export async function createServer(
   options: {
     directory?: string;
     driver?: AgentDriver;
+    researchTestOrigins?: ReadonlySet<string>;
     demo?: { name: string };
   } = {},
 ) {
   const directory = options.directory ?? resolve("local-state/agent");
-  const app = new AgentApplication(directory, options.driver);
+  const app = new AgentApplication(
+    directory,
+    options.driver,
+    options.researchTestOrigins,
+  );
   const tokenFile = join(directory, "admin-token");
   try {
     writeFileSync(
