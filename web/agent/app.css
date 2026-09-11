@@ -2517,3 +2517,79 @@ tr.highlight td {
 .capability-check input {
   accent-color: #111;
 }
+
+/* One semantic setup page with two visible, keyboard-addressable regions. */
+.setup-canvas {
+  width: min(1100px, 100%);
+  margin: 0 auto;
+}
+.setup-sections {
+  display: flex;
+  gap: 20px;
+  padding: 10px 0;
+  border-bottom: 1px solid #e8e8e8;
+}
+.setup-canvas > .company-canvas {
+  width: 100%;
+  padding: 30px 0 38px;
+}
+.setup-intro h1 {
+  font-size: clamp(25px, 3vw, 36px);
+  font-weight: 450;
+  margin: 0 0 16px;
+}
+.setup-intro p {
+  line-height: 1.8;
+}
+.setup-sources {
+  border-top: 1px solid #e8e8e8;
+  padding-top: 24px;
+  scroll-margin-top: 12px;
+}
+.setup-sources > section {
+  width: 100%;
+}
+.setup-history {
+  margin-top: 28px;
+  padding: 20px 0;
+  border-top: 1px solid #e8e8e8;
+}
+.setup-history p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}
+.legacy-draft {
+  margin: 16px 0;
+}
+.import-drafts {
+  margin-top: 22px;
+  font-size: 12px;
+}
+@media (max-width: 600px) {
+  .canvas-app {
+    --topbar-height: 104px;
+  }
+  .topbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    padding: 10px 18px;
+  }
+  .topbar > .wordmark {
+    margin-right: auto;
+  }
+  .page-nav {
+    order: 5;
+    width: 100%;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .page-nav button {
+    font-size: 12px;
+    padding: 10px 0;
+  }
+  .setup-canvas > .company-canvas {
+    padding: 24px 0;
+  }
+}

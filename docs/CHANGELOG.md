@@ -4,6 +4,8 @@
 
 ### Added
 
+- 完成 T012-01：保留原画布样式，合并企业与来源为“企业与数据”，提供三页导航；迁移保留旧任务/成果/消费凭据，旧对话按需读取；新增浏览器草稿恢复与旧草稿导出/导入，演示及新旧离线快照适配。85 项 Agent 测试、22 项 Python 回归、类型检查与浏览器检查通过，见[迁移验收](experiment/THREE_PAGE_MIGRATION.md)。基础本体 Skill 和统一对象工作上下文继续按后续票实施。
+
 - 完成 FEATURE_011：四页 Agent 开放 KodaX 原生网页搜索/读取、SkillRegistry 渐进加载、McpManager 通用工具/资源/提示词与具体权限、Octokit 业务 SDK 适配器注册。新增“能力”设置浮窗、Skill 安装、MCP 连接/刷新/撤销/断开。修复目录分页、刷新授权竞态和同名重连旧版本问题。82 项测试、类型检查、独立双轴评审、真实 KodaX/DeepSeek 与桌面/390px 浏览器验收通过；搜索相关性与长页面截断限制如实记录，详见[能力说明](experiment/AGENT_CAPABILITIES.md)（`6469eb3`）。
 
 - 完成 FEATURE_010：声明式 HTTP GET / MCP Streamable HTTP 来源连接、按需本体对象与关系查询、画布 Agent 工具、人工采用及独立第三方 /v2 与 MCP 访问。新增 `npm run live:demo`（8796）连接两个独立热力模拟源，源事实变化在下次读取体现；原文件/HTML 演示保留。来源凭据隔离，字段关系范围与在途撤销检查，数字身份与分页边界修复。75 项测试、类型检查、真实 KodaX/DeepSeek、第三方 MCP 与桌面/390px 浏览器验收通过。尚未公网部署或发布，详见[连接验收](experiment/LIVE_MEMORY.md)（`d7b55ca`）。

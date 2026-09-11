@@ -1,3 +1,4 @@
+import { normalizeCanvasPage, setupSection } from "./canvas-pages.ts";
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -383,7 +384,7 @@ export class MemoryStore implements Repository {
 
   hasMessageReceipt(
     id: string,
-    taskId: string,
+    taskId: string | string[],
     role: Message["role"],
     content: string,
   ): boolean {
@@ -394,7 +395,10 @@ export class MemoryStore implements Repository {
     const fingerprint = createHash("sha256")
       .update(role + ":" + content)
       .digest("hex");
-    if (receipt.task_id !== taskId || receipt.fingerprint !== fingerprint)
+    if (
+      !(Array.isArray(taskId) ? taskId : [taskId]).includes(receipt.task_id) ||
+      receipt.fingerprint !== fingerprint
+    )
       throw new Error("消息标识已使用");
     return true;
   }
@@ -434,7 +438,58 @@ export class MemoryStore implements Repository {
     const row = this.db
       .prepare("SELECT body FROM settings WHERE id='canvas'")
       .get();
-    return row ? parse<CanvasProgress>(row) : null;
+    if (!row) return null;
+    const saved = parse<CanvasProgress>(row);
+    if (saved.layoutVersion === 2) return saved;
+    // Metadata only: old tasks, receipts, pending decisions and artifacts retain
+    // their identities. New dialogue gets its own task, so trimming cannot erase
+    // either of the old conversations. The snapshot and migration commit together.
+    return this.transaction(() => {
+      this.db
+        .prepare("INSERT OR IGNORE INTO settings VALUES ('canvas-v1',?)")
+        .run(JSON.stringify(saved));
+      const migrated: CanvasProgress = {
+        layoutVersion: 2,
+        currentPage: normalizeCanvasPage(saved.currentPage),
+        setupSection: setupSection(saved.currentPage) ?? "company",
+        reached: [...new Set(saved.reached.map(normalizeCanvasPage))],
+        completed: saved.completed.filter(
+          (page) => page !== "company" && page !== "sources",
+        ),
+        taskIds: {
+          ...(saved.taskIds.setup ? { setup: saved.taskIds.setup } : {}),
+          ...(saved.taskIds.ontology
+            ? { ontology: saved.taskIds.ontology }
+            : {}),
+          ...(saved.taskIds.consumption
+            ? { consumption: saved.taskIds.consumption }
+            : {}),
+        },
+        legacyTaskIds: {
+          ...(saved.taskIds.company ? { company: saved.taskIds.company } : {}),
+          ...(saved.taskIds.sources ? { sources: saved.taskIds.sources } : {}),
+        },
+      };
+      if (
+        saved.completed.includes("company") &&
+        saved.completed.includes("sources")
+      )
+        migrated.completed.unshift("setup");
+      this.saveCanvas(migrated);
+      return migrated;
+    });
+  }
+
+  workspaceId(): string {
+    const row = this.db
+      .prepare("SELECT body FROM settings WHERE id='workspace-id'")
+      .get();
+    if (row) return parse<string>(row);
+    const id = randomUUID();
+    this.db
+      .prepare("INSERT INTO settings VALUES ('workspace-id',?)")
+      .run(JSON.stringify(id));
+    return id;
   }
 
   saveCanvas(progress: CanvasProgress) {

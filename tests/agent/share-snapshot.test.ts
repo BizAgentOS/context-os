@@ -9,14 +9,13 @@ import {
 test("offline heating snapshot preserves relations, evidence and permitted scopes without credentials", async () => {
   const snapshot = await createHeatingShareSnapshot();
   assert.deepEqual(Object.keys(snapshot.pages), [
-    "company",
-    "sources",
+    "setup",
     "ontology",
     "consumption",
   ]);
-  assert(snapshot.pages.company.profile);
+  assert(snapshot.pages.setup.profile);
   assert.equal(
-    (snapshot.pages.sources.sources as unknown as Artifact[]).length,
+    (snapshot.pages.setup.sources as unknown as Artifact[]).length,
     8,
   );
   const model = (

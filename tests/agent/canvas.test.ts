@@ -91,7 +91,7 @@ test("a failed message save can be retried with the same id and then really exec
   }
 });
 
-test("the canvas creates a company from real user facts and advances only after the run settles", async () => {
+test("the canvas saves real company facts and remains on setup after the run settles", async () => {
   const directory = mkdtempSync(join(tmpdir(), "dataengine-canvas-"));
   let finish!: () => void;
   let saved!: () => void;
@@ -136,7 +136,7 @@ test("the canvas creates a company from real user facts and advances only after 
           },
         ],
       });
-      await request.onTool("page_complete", {});
+      await assert.rejects(request.onTool("page_complete", {}), /来源|资料/);
       saved();
       await finishPromise;
       return {
@@ -164,7 +164,7 @@ test("the canvas creates a company from real user facts and advances only after 
     });
     assert.equal(initialResponse.status, 200);
     const initial = await initialResponse.json();
-    assert.equal(initial.currentPage, "company");
+    assert.equal(initial.currentPage, "setup");
     assert.equal(initial.profile, null);
     assert.equal(requests.length, 0);
     assert(!("tasks" in initial) && !("events" in initial));
@@ -199,8 +199,17 @@ test("the canvas creates a company from real user facts and advances only after 
         headers: { "x-dataengine-token": service.adminToken },
       })
     ).json();
-    assert.equal(during.currentPage, "company");
+    assert.equal(during.currentPage, "setup");
     assert.match(JSON.stringify(during.profile), /澄川热力/);
+    const section = await service.app.canvasNavigate({
+      page: "setup",
+      section: "sources",
+    });
+    assert.equal(
+      section.busy,
+      true,
+      "same-page navigation must not stop the active run",
+    );
     finish();
     await service.app.idle();
     const after = await (
@@ -208,13 +217,13 @@ test("the canvas creates a company from real user facts and advances only after 
         headers: { "x-dataengine-token": service.adminToken },
       })
     ).json();
-    assert.equal(after.currentPage, "sources");
-    assert.equal(after.page, "sources");
-    assert.equal(after.messages.length, 0);
-    assert.match(after.prompt, /连接/);
+    assert.equal(after.currentPage, "setup");
+    assert.equal(after.page, "setup");
+    assert.equal(after.messages.length, 2);
+    assert.match(after.prompt, /接入/);
     assert.equal(
-      after.pages.find((page: { id: string }) => page.id === "company").ready,
-      true,
+      after.pages.find((page: { id: string }) => page.id === "setup").ready,
+      false,
     );
     assert.equal(service.app.memory.listTasks().length, 1);
     await service.close();
@@ -225,7 +234,7 @@ test("the canvas creates a company from real user facts and advances only after 
         headers: { "x-dataengine-token": service.adminToken },
       })
     ).json();
-    assert.equal(reopened.currentPage, "sources");
+    assert.equal(reopened.currentPage, "setup");
     assert.match(JSON.stringify(reopened.profile), /居民供热/);
     assert.equal(requests.length, 1);
   } finally {
@@ -338,7 +347,7 @@ test("sources require inspected records, and ontology adoption remains bound to 
           ["report_save", "task_complete"].includes(tool.name),
         ),
       );
-      if (input.page === "company") {
+      if (input.page === "setup" && !input.focus) {
         const user = input.recentMessages.at(-1);
         await request.onTool("profile_update", {
           statements: [
@@ -358,16 +367,16 @@ test("sources require inspected records, and ontology adoption remains bound to 
             },
           ],
         });
-        await request.onTool("page_complete", {});
-      } else if (input.page === "sources") {
+        await assert.rejects(request.onTool("page_complete", {}), /来源|资料/);
+      } else if (input.page === "setup") {
         assert(
-          !input.recentMessages.some((message: { content: string }) =>
+          input.recentMessages.some((message: { content: string }) =>
             message.content.includes("公司叫"),
           ),
         );
         await assert.rejects(
           request.onTool("page_complete", {}),
-          /读取.*有记录/,
+          /读取.*来源|资料/,
         );
         const source = (await request.onTool("memory_read", {
           id: input.focus.id,
@@ -437,21 +446,22 @@ test("sources require inspected records, and ontology adoption remains bound to 
       content: "这是居民供热企业的投诉记录。",
     });
     await app.idle();
-    assert.equal(app.canvasState().currentPage, "sources");
+    assert.equal(app.canvasState().currentPage, "setup");
     await app.canvasUpload({
       page: "sources",
       name: "empty.csv",
       content: "id,status\n",
     });
     await app.idle();
-    assert.equal(app.canvasState().currentPage, "sources");
+    assert.equal(app.canvasState().currentPage, "setup");
     await app.canvasUpload({
       page: "sources",
       name: "tickets.csv",
       content: "id,status\nT1,closed\n",
     });
     await app.idle();
-    assert.equal(app.canvasState().currentPage, "ontology");
+    assert.equal(app.canvasState().currentPage, "setup");
+    await app.canvasNavigate({ page: "ontology" });
     assert.equal(app.canvasState().messages.length, 0);
     await app.canvasMessage({ page: "ontology", text: "建立投诉对象。" });
     await app.idle();
@@ -474,8 +484,8 @@ test("sources require inspected records, and ontology adoption remains bound to 
     });
     assert.equal(app.canvasState().ontologies[0].status, "adopted");
     assert.equal(app.canvasState().pending, null);
-    assert.equal(app.canvasState().pages[2].ready, true);
-    assert.equal(app.memory.listTasks().length, 3);
+    assert.equal(app.canvasState().pages[1].ready, true);
+    assert.equal(app.memory.listTasks().length, 2);
     await app.canvasNavigate({ page: "company" });
     assert.match(JSON.stringify(app.canvasState().profile), /居民供热/);
   } finally {
@@ -516,7 +526,7 @@ test("leaving a page invalidates its pending write, and cancelled or failed comp
             },
           ],
         });
-        await request.onTool("page_complete", {});
+        await assert.rejects(request.onTool("page_complete", {}), /来源|资料/);
       } else if (mode === "late") {
         entered();
         await new Promise<void>((resolve) => {
@@ -546,7 +556,7 @@ test("leaving a page invalidates its pending write, and cancelled or failed comp
           runId: "failed",
         };
       }
-      return { text: "已完成", sessionId: "stop", runId: "stop" };
+      return { text: "已保存", sessionId: "stop", runId: "stop" };
     },
     async stop() {
       release?.();
@@ -562,7 +572,7 @@ test("leaving a page invalidates its pending write, and cancelled or failed comp
     await enteredPromise;
     await app.canvasNavigate({ page: "company" });
     assert.equal(lateRejected, true);
-    assert.equal(app.canvasState().currentPage, "company");
+    assert.equal(app.canvasState().currentPage, "setup");
     assert.doesNotMatch(JSON.stringify(app.canvasState().profile), /迟到内容/);
     await app.canvasNavigate({ page: "sources" });
     assert.equal(
@@ -581,7 +591,7 @@ test("leaving a page invalidates its pending write, and cancelled or failed comp
       content: "id,status\nT1,closed\n",
     });
     await app.idle();
-    assert.equal(app.canvasState().currentPage, "sources");
+    assert.equal(app.canvasState().currentPage, "setup");
     assert.equal(app.canvasState().pages[2].available, true);
     assert.equal(app.canvasState().pages[1].ready, false);
     assert.equal(app.canvasState().sources.length, 1);

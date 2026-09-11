@@ -1,6 +1,6 @@
 # MVP：三页本体驱动数据融合
 
-2026-09-11。当前开发目标沿用未发布的 v0.1.0，新增 FEATURE_012—016。本文定义下一轮完成条件，当前四页实现及其历史验收不等于三页已经交付。
+2026-09-11。当前开发目标沿用未发布的 v0.1.0，新增 FEATURE_012—016。本文定义本轮完成条件；T012-01 三页布局与迁移已交付，不等于后续融合闭环完成。
 
 ## 最小完整体验
 
@@ -45,6 +45,6 @@
 
 ## 开发与历史依据
 
-按[三页计划](THREE_PAGE_PLAN.md)和[十八张任务](features/v0.1.0.md#feature-012)推进，第一张为 T012-01。状态只在[功能台账](FEATURE_LIST.md)维护。
+按[三页计划](THREE_PAGE_PLAN.md)和[十八张任务](features/v0.1.0.md#feature-012)推进，T012-01 已完成，下一项为 T012-02。状态只在[功能台账](FEATURE_LIST.md)维护。
 
 旧四页已交付范围保留在[画布验收](experiment/CANVAS.md)、[维护验收](experiment/MAINTENANCE.md)、[消费验收](experiment/CONSUMPTION.md)、[在线来源说明](experiment/LIVE_MEMORY.md)和[Agent 能力](experiment/AGENT_CAPABILITIES.md)。历史 Feature 与票不因页面调整撤销完成，也不自动满足新融合范围。

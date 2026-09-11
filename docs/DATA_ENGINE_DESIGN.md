@@ -52,7 +52,7 @@ flowchart TB
 | Skill/MCP/业务 SDK | [capabilities](../src/capabilities/) | 产品选择性接入的通用能力 |
 | 文件对象工作区 | [workspace.ts](../src/agent/workspace.ts)、[domain-objects.ts](../src/agent/domain-objects.ts) | 已有有界方法与句柄，不能直接等同在线融合 |
 | 在线来源与对象 | [live](../src/live/) | 只读源连接、映射和按需查询 |
-| 人类与外部入口 | [Web](../web/agent/)、[MCP 桥接](../scripts/dataengine-mcp.ts) | 当前四页 UI、独立消费协议 |
+| 人类与外部入口 | [Web](../web/agent/)、[MCP 桥接](../scripts/dataengine-mcp.ts) | 当前三页 UI、独立消费协议 |
 
 详细 SDK 版本、调用证据与限制只维护在[能力接入记录](KODAX_CAPABILITY_LEDGER.md)。当前没有采用 Space 的 Electron、共享 daemon 或 Coder/Partner；inline 也不等于进程隔离或沙箱保证。
 

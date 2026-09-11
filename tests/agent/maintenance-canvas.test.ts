@@ -9,7 +9,7 @@ import { reviewVerification } from "../../src/agent/maintenance.ts";
 import type { Artifact } from "../../src/agent/contracts.ts";
 import type { AgentDriver } from "../../src/agent/runtime.ts";
 
-test("all four empty maintenance pages can be visited without inventing memory or completing creation", async () => {
+test("three pages and legacy aliases can be visited without inventing memory or completing creation", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-maintenance-navigation-"));
   let calls = 0;
   const driver: AgentDriver = {
@@ -29,7 +29,10 @@ test("all four empty maintenance pages can be visited without inventing memory o
       "company",
     ] as const) {
       const state = await app.canvasNavigate({ page });
-      assert.equal(state.currentPage, page);
+      assert.equal(
+        state.currentPage,
+        ["company", "sources"].includes(page) ? "setup" : page,
+      );
       assert(state.pages.every((item) => item.available && !item.ready));
       assert.equal(state.messages.length, 0);
       assert.equal(state.profile, null);
@@ -165,7 +168,7 @@ test("inspected nonempty documents can start conceptual modeling, but empty or u
   const driver: AgentDriver = {
     async run(request) {
       const input = JSON.parse(request.input);
-      assert.equal(input.page, "sources");
+      assert.equal(input.page, "setup");
       try {
         await request.onTool("page_complete", {});
       } catch (error) {
@@ -190,6 +193,9 @@ test("inspected nonempty documents can start conceptual modeling, but empty or u
   };
   const app = new AgentApplication(directory, driver);
   try {
+    const workspace = new Workspace(app.memory);
+    workspace.editProfile("company.name", "澄川热力");
+    workspace.editProfile("company.business", "居民供热");
     await app.canvasNavigate({ page: "sources" });
     await app.canvasUpload({
       page: "sources",
@@ -197,9 +203,9 @@ test("inspected nonempty documents can start conceptual modeling, but empty or u
       content: "  \n",
     });
     await app.idle();
-    assert.equal(app.canvasState().currentPage, "sources");
+    assert.equal(app.canvasState().currentPage, "setup");
     assert.equal(
-      app.canvasState().pages.find((page) => page.id === "sources")?.ready,
+      app.canvasState().pages.find((page) => page.id === "setup")?.ready,
       false,
     );
     await app.canvasUpload({
@@ -209,11 +215,8 @@ test("inspected nonempty documents can start conceptual modeling, but empty or u
     });
     await app.idle();
     const state = app.canvasState();
-    assert.equal(state.currentPage, "ontology");
-    assert.equal(
-      state.pages.find((page) => page.id === "sources")?.ready,
-      true,
-    );
+    assert.equal(state.currentPage, "setup");
+    assert.equal(state.pages.find((page) => page.id === "setup")?.ready, true);
     assert.equal(
       state.pages.find((page) => page.id === "ontology")?.ready,
       false,
@@ -230,7 +233,7 @@ test("inspected nonempty documents can start conceptual modeling, but empty or u
     await app.idle();
     assert.equal(
       app.canvasState().currentPage,
-      "sources",
+      "setup",
       "maintenance does not automatically leave an already completed page",
     );
   } finally {

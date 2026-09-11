@@ -17,6 +17,7 @@ const staticFiles: Record<string, { file: string; type: string }> = {
     file: "capabilities.js",
     type: "text/javascript; charset=utf-8",
   },
+  "/drafts.js": { file: "drafts.js", type: "text/javascript; charset=utf-8" },
   "/app.js": { file: "app.js", type: "text/javascript; charset=utf-8" },
   "/live-workspace.js": {
     file: "live-workspace.js",
@@ -187,6 +188,10 @@ export async function createServer(
       if (request.method === "GET") {
         if (url.pathname === "/api/canvas/bootstrap") {
           send(200, { token, ...app.canvasState() });
+          return;
+        }
+        if (url.pathname === "/api/canvas/history") {
+          send(200, app.canvasHistory(url.searchParams.get("section")));
           return;
         }
         if (url.pathname === "/api/canvas") {

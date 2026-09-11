@@ -23,11 +23,11 @@ export function heatingDemoDriver(): AgentDriver {
         ? question.slice(verificationPrefix.length).split("。请保存实际查询结果和依据；")[0]
         : question;
       let text = "这是本地演示问答。可以点击输入框里的示例问题，或直接打开背景中的企业信息、资料和对象；企业信息与资料用途也可以直接编辑。";
-      if (context.page === "company" && question === "这家企业是什么样的？") {
+      if (context.page === "setup" && question === "这家企业是什么样的？") {
         const facts = enterprise.profile?.content.statements ?? [];
         const value = (key: string) => facts.find((item: {key: string}) => item.key === key)?.text;
         text = [value("company.name"), value("company.business"), value("company.scope"), value("company.goal")].filter(Boolean).join("\n");
-      } else if (context.page === "sources" && question === "这些资料如何连起来？") {
+      } else if (context.page === "setup" && question === "这些资料如何连起来？") {
         text = `这里已保存 ${enterprise.sources.length} 份资料。设施台账通过编号连接站、小区和楼栋；投诉关联楼栋，工单和回访再关联投诉。业务文档说明各类记录的含义。可以打开任一资料查看原文、负责人及敏感字段。`;
       } else if (context.page === "ontology" && (isVerification || question === "哪些投诉还缺恢复依据？")) {
         const ref = enterprise.models.find((item: Artifact) => item.status === "adopted");

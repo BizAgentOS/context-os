@@ -9,7 +9,7 @@ import { seedHeatingDemo } from "../../src/demo/heating-seed.ts";
 import { Workspace } from "../../src/agent/workspace.ts";
 import type { Data } from "../../src/agent/contracts.ts";
 
-test("heating demo opens four populated pages, runs evidence checks locally and preserves edits on restart", async () => {
+test("heating demo opens three populated pages, runs evidence checks locally and preserves edits on restart", async () => {
   const directory = mkdtempSync(join(tmpdir(), "dataengine-heating-demo-"));
   let service = await createHeatingDemo(directory);
   try {
@@ -21,7 +21,7 @@ test("heating demo opens four populated pages, runs evidence checks locally and 
     }).then((response) => response.json());
     assert.equal(bootstrap.demo.name, "澄川热力");
     assert.equal(bootstrap.model.configured, true);
-    assert.equal(bootstrap.currentPage, "company");
+    assert.equal(bootstrap.currentPage, "setup");
     assert.equal(bootstrap.sources.length, 8);
     assert(bootstrap.pages.every((page: {available: boolean}) => page.available));
 

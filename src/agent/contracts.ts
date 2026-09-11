@@ -1,17 +1,17 @@
 export type Json =
-  | null
-  | boolean
-  | number
-  | string
-  | Json[]
-  | { [key: string]: Json };
+  null | boolean | number | string | Json[] | { [key: string]: Json };
 export type Data = { [key: string]: Json };
-export type CanvasPage = "company" | "sources" | "ontology" | "consumption";
+export type CanvasPage = "setup" | "ontology" | "consumption";
+export type CanvasPageInput = CanvasPage | "company" | "sources";
+export type SetupSection = "company" | "sources";
 export interface CanvasProgress {
-  currentPage: CanvasPage;
-  reached: CanvasPage[];
-  completed: CanvasPage[];
-  taskIds: Partial<Record<CanvasPage, string>>;
+  layoutVersion?: 2;
+  legacyTaskIds?: Partial<Record<SetupSection, string>>;
+  setupSection?: SetupSection;
+  currentPage: CanvasPageInput;
+  reached: CanvasPageInput[];
+  completed: CanvasPageInput[];
+  taskIds: Partial<Record<CanvasPageInput, string>>;
 }
 export interface Artifact {
   id: string;

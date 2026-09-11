@@ -5,13 +5,13 @@ import type { Artifact, CanvasPage, Data, Json } from "../agent/contracts.ts";
 import { createHeatingDemo } from "./server.ts";
 
 export interface HeatingShareSnapshot {
-  formatVersion: 1;
+  formatVersion: 2;
   pages: Record<CanvasPage, Data>;
   routes: Record<string, Json>;
   answers: Record<CanvasPage, { question: string; answer: string }>;
 }
 
-const pages: CanvasPage[] = ["company", "sources", "ontology", "consumption"];
+const pages: CanvasPage[] = ["setup", "ontology", "consumption"];
 const json = (value: unknown): Data => JSON.parse(JSON.stringify(value));
 
 /** Object collections are stored in full; the offline reader applies pagination. */
@@ -73,8 +73,8 @@ export async function createHeatingShareSnapshot(): Promise<HeatingShareSnapshot
       });
       save(`/api/canvas?page=${page}`, snapshotPages[page]);
     }
-    save("/api/canvas/bootstrap", snapshotPages.company);
-    save("/api/canvas", snapshotPages.company);
+    save("/api/canvas/bootstrap", snapshotPages.setup);
+    save("/api/canvas", snapshotPages.setup);
 
     const artifacts: Artifact[] = [];
     for (const latest of app.memory.listArtifacts()) {
@@ -132,7 +132,7 @@ export async function createHeatingShareSnapshot(): Promise<HeatingShareSnapshot
         audit: app.consumption.logs(consumer.id),
       });
 
-    const facts = snapshotPages.company.profile as Data;
+    const facts = snapshotPages.setup.profile as Data;
     const statements = facts.content as Data;
     const statement = (key: string) =>
       (statements.statements as Data[]).find((item) => item.key === key)?.text;
@@ -145,11 +145,11 @@ export async function createHeatingShareSnapshot(): Promise<HeatingShareSnapshot
       recovery.filter((item) => item.status === status).length;
     const active = consumers.filter((item) => item.status === "active");
     const snapshot: HeatingShareSnapshot = {
-      formatVersion: 1,
+      formatVersion: 2,
       pages: snapshotPages,
       routes,
       answers: {
-        company: {
+        setup: {
           question: "这家企业是什么样的？",
           answer: [
             "company.name",
@@ -159,11 +159,6 @@ export async function createHeatingShareSnapshot(): Promise<HeatingShareSnapshot
           ]
             .map(statement)
             .join("\n"),
-        },
-        sources: {
-          question: "这些资料如何连起来？",
-          answer:
-            "8 份虚构资料通过编号相连：换热站连接小区与楼栋，投诉关联楼栋，工单和回访关联投诉。业务文档定义处理状态与恢复依据的区别。点开资料可以查看原文、负责人及限制字段。",
         },
         ontology: {
           question: "哪些投诉还缺恢复依据？",

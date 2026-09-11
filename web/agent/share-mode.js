@@ -4,16 +4,42 @@ export function createShareMode(document) {
   const embedded = document.getElementById("dataengine-share-data");
   if (!embedded) return null;
   const data = JSON.parse(embedded.textContent);
-  if (data.formatVersion !== 1 || !data.pages || !data.routes)
+  if (![1, 2].includes(data.formatVersion) || !data.pages || !data.routes)
     throw new Error("离线演示文件不完整，请重新导出。");
   document.documentElement.dataset.shareMode = "true";
-  let currentPage = "company";
+  if (data.formatVersion === 1) {
+    const previous = data.pages;
+    data.pages = {
+      setup: { ...previous.sources, ...previous.company },
+      ontology: previous.ontology,
+      consumption: previous.consumption,
+    };
+    for (const value of Object.values(data.pages)) {
+      const ready = (page) =>
+        value.pages?.find((item) => item.id === page)?.ready === true;
+      value.pages = [
+        {
+          id: "setup",
+          ready: ready("company") && ready("sources"),
+          available: true,
+        },
+        { id: "ontology", ready: ready("ontology"), available: true },
+        { id: "consumption", ready: ready("consumption"), available: true },
+      ];
+      value.layoutVersion = 2;
+    }
+    data.answers = { ...data.answers, setup: data.answers?.company };
+  }
+  const pageKey = (page) =>
+    ["company", "sources"].includes(page) ? "setup" : page;
+  let currentPage = "setup";
   let sequence = 0;
   const conversations = new Map();
   const clone = (value) => JSON.parse(JSON.stringify(value));
   const normalize = (value) => String(value).replace(/[\s？?。！!，,]/g, "");
 
   function snapshot(page = currentPage) {
+    page = pageKey(page);
     if (!Object.hasOwn(data.pages, page))
       throw new Error("这份演示没有包含该页面。");
     currentPage = page;
@@ -43,7 +69,7 @@ export function createShareMode(document) {
     if (body !== undefined) {
       if (pathname === "/api/canvas/navigate") return snapshot(body.page);
       if (pathname === "/api/canvas/message") {
-        const page = body.page || currentPage;
+        const page = pageKey(body.page || currentPage);
         if (!Object.hasOwn(data.pages, page))
           throw new Error("这份演示没有包含该页面。");
         const example = data.answers?.[page];
@@ -51,7 +77,7 @@ export function createShareMode(document) {
           example && normalize(body.text) === normalize(example.question);
         const answer = matched
           ? `示例回答：${example.answer}`
-          : `这是离线演示，当前不会调用 AI 或修改企业记忆。你可以浏览四个页面，或试问「${question(page)}」查看预置的示例回答。`;
+          : `这是离线演示，当前不会调用 AI 或修改企业记忆。你可以浏览三个页面，或试问「${question(page)}」查看预置的示例回答。`;
         const messages = conversations.get(page) || [];
         messages.push(
           { id: `share-${++sequence}`, role: "user", content: body.text },

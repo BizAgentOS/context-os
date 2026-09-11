@@ -196,8 +196,7 @@ export function seedHeatingDemo(app: AgentApplication) {
 
   const taskIds: Partial<Record<CanvasPage, string>> = {};
   const prompts: Record<CanvasPage, string> = {
-    company: "澄川热力的企业记忆已建立。可以点开信息修改，也可以告诉我需要补充什么。",
-    sources: "8 份演示资料已接入。点开可查看原始记录、使用范围和敏感字段。",
+    setup: "澄川热力的企业信息和 8 份演示资料已接入。点开可查看或补充信息、原始记录与使用范围。",
     ontology: "6 类对象已经连接起来。可以从投诉查看处理工单和回访，或用一个业务问题验证定义。",
     consumption: "2 个应用正在按授权读取企业记忆，1 个旧接入已撤销。点开调用方可查看范围和记录。",
   };
@@ -206,6 +205,6 @@ export function seedHeatingDemo(app: AgentApplication) {
     taskIds[page] = task.id;
     app.memory.addMessage(task.id, "assistant", prompts[page]);
   }
-  app.memory.saveCanvas({ currentPage: "company", completed: ["company", "sources", "ontology"], reached: ["company", "sources", "ontology", "consumption"], taskIds });
+  app.memory.saveCanvas({ layoutVersion: 2, setupSection: "company", currentPage: "setup", completed: ["setup", "ontology"], reached: ["setup", "ontology", "consumption"], taskIds });
   return { seeded: true, model: { id: model.id, version: model.version }, outline: { id: outline.id, version: outline.version }, sourceCount: 8, objectCount: 35 };
 }

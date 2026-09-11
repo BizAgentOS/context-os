@@ -4,7 +4,7 @@ Last Updated: 2026-09-11
 
 **2026-09-10 文档整理：**新增[产品与架构](DATA_ENGINE_DESIGN.md)、[语义契约](SEMANTIC_CONTRACTS.md)、[Agent 与前端协作](AGENT_UI_DESIGN.md)，并更新 `AGENTS.md` 阅读入口。只沉淀设计与纠正历史描述，未新增实现票、改变功能状态或运行产品验收。
 
-**2026-09-11 当前计划：**产品核心明确为本体驱动多源数据融合，目标调整为企业与数据、本体工作区、消费与治理三页。新增 FEATURE_012—016，十八张实现任务均待开发；计划见[三页设计](THREE_PAGE_PLAN.md)。本轮仅完成设计与拆票，当前运行仍为四页，历史完成记录不代表新方案已交付。
+**2026-09-11 当前计划：**产品核心明确为本体驱动多源数据融合，目标调整为企业与数据、本体工作区、消费与治理三页。新增 FEATURE_012—016，十八张任务中 T012-01 已完成；计划见[三页设计](THREE_PAGE_PLAN.md)。当前三页已可运行，其余融合和 Agent 方法仍按票实施。
 
 **2026-09-11 Agent 产品文档整理：**参考 KodaX-Space 的职责分层，建立[文档中心](README.md)、当前 Agent 契约、KodaX 接入记录、内置 Skill 和 ADR；旧 Agent 设计归档。三页需求和十八张票、依赖与状态不变。
 
@@ -21,7 +21,7 @@ Last Updated: 2026-09-11
 
 | Version | Status | Planned | InProgress | Completed | Progress |
 |---|---|---:|---:|---:|---:|
-| v0.1.0 | InProgress | 7 | 2 | 7 | 7/16 |
+| v0.1.0 | InProgress | 6 | 3 | 7 | 7/16 |
 
 ## Feature Index
 
@@ -38,7 +38,7 @@ Last Updated: 2026-09-11
 | 009 | 第三方 Agent 接入与数据发布 | Enhancement | High | Completed | v0.1.0 | 007、008 | [设计](features/v0.1.0.md#feature-009) |
 | 010 | 源系统连接与按需企业记忆 | New | High | Completed | v0.1.0 | 复用 003/009 | [设计](features/v0.1.0.md#feature-010) |
 | 011 | 通用 Agent 搜索、Skill、MCP 与业务 SDK | Enhancement | High | Completed | v0.1.0 | 003、010 | [设计](features/v0.1.0.md#feature-011) |
-| 012 | 三页结构、存量迁移与统一工作上下文 | Refactor | High | Planned | v0.1.0 | 复用 003/005/010/011 | [设计](features/v0.1.0.md#feature-012) |
+| 012 | 三页结构、存量迁移与统一工作上下文 | Refactor | High | InProgress | v0.1.0 | 复用 003/005/010/011 | [设计](features/v0.1.0.md#feature-012) |
 | 013 | 企业基础本体 Skill 与三条起步路径 | New | High | Planned | v0.1.0 | 012（按票） | [设计](features/v0.1.0.md#feature-013) |
 | 014 | 分类来源接入与多源语义融合 | Enhancement | High | Planned | v0.1.0 | 012/013（按票） | [设计](features/v0.1.0.md#feature-014) |
 | 015 | 本体可视化、证据与内容治理 | Enhancement | High | Planned | v0.1.0 | 012/013/014（按票） | [设计](features/v0.1.0.md#feature-015) |
@@ -162,13 +162,15 @@ Last Updated: 2026-09-11
 
 ### 012: 三页结构、存量迁移与统一工作上下文
 
-- **Status:** Planned
+- **Status:** InProgress
 - **Category / Priority:** Refactor / High
 - **Planned / Released:** v0.1.0 / —
-- **Created / Started / Completed:** 2026-09-11 / — / —
+- **Created / Started / Completed:** 2026-09-11 / 2026-09-11 / —
 - **Description:** 合并企业与来源页，迁移页面状态、历史引用与草稿，统一人和 Agent 的对象上下文。
 - **Blocked by:** 复用 003/005/010/011；具体任务依赖见设计块。
 - **Design:** [FEATURE_012](features/v0.1.0.md#feature-012)。
+
+- **T012-01 已完成：**三页合并、版本化元数据迁移、旧历史按需读取、浏览器草稿恢复及旧 HTML 快照兼容。FEATURE_012 保持 InProgress，T012-02 待开发；见[迁移验收](experiment/THREE_PAGE_MIGRATION.md)。
 
 ### 013: 企业基础本体 Skill 与三条起步路径
 
@@ -213,12 +215,12 @@ Last Updated: 2026-09-11
 ## Summary
 
 - Total: 16
-- Planned: 7
-- InProgress: 2
+- Planned: 6
+- InProgress: 3
 - Completed: 7
 - New: 8；Internal: 1；Enhancement: 6；Refactor: 1；High: 16。
 - **已实现基础：FEATURE_011 已完成搜索、Skill、MCP 和业务 SDK 入口（[验收](experiment/AGENT_CAPABILITIES.md)）；FEATURE_010 已完成本地来源连接链路。HTTP/MCP 按需读取、Agent 本体候选、人工采用、第三方授权与源变化重读已验收；正式发布、多租户、专用 OAuth 连接器与自动演变仍未完成。**
 
-**下一项：T012-01。** 三页尚未实施；T012-01 完成后，T012-02 与 T013-01 可并行。新票如覆盖旧 FEATURE_002/004/005 的未完验收，应复用同一实现和证据，再按真实结果更新旧票，不重复建设或提前勾选。
+**下一项：T012-02。** T012-01 已完成，T013-01 也已解除前置依赖。新票如覆盖旧 FEATURE_002/004/005 的未完验收，应复用同一实现和证据，再按真实结果更新旧票，不重复建设或提前勾选。
 
 项目初始化和开发文档已完成，记录在 [CHANGELOG](CHANGELOG.md)；它们不计入产品功能完成数。功能状态在本文维护，具体票的完成状态在对应设计块维护。

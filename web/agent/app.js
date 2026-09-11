@@ -4,6 +4,7 @@ import {
   renderObjectGraph,
 } from "./ontology-workspace.js";
 import { renderLiveWorkspace } from "./live-workspace.js";
+import { createDraftStore, parseLegacyDrafts } from "./drafts.js";
 import { createShareMode } from "./share-mode.js";
 
 const shareMode = createShareMode(document);
@@ -11,20 +12,17 @@ const shareMode = createShareMode(document);
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const pageLabels = {
-  company: "企业",
-  sources: "数据",
-  ontology: "本体",
-  consumption: "连接",
+  setup: "企业与数据",
+  ontology: "本体工作区",
+  consumption: "消费与治理",
 };
 const placeholders = {
-  company: "从你的企业开始…",
-  sources: "告诉我需要连接哪个企业系统…",
+  setup: "介绍你的企业，或告诉我需要接入哪些数据…",
   ontology: "我们需要理解哪些业务对象？",
   consumption: "哪些应用需要使用这些企业记忆？",
 };
 const demoQuestions = {
-  company: "这家企业是什么样的？",
-  sources: "这些资料如何连起来？",
+  setup: "这家企业是什么样的？",
   ontology: "哪些投诉还缺恢复依据？",
   consumption: "谁可以调用这些记忆？",
 };
@@ -73,8 +71,11 @@ if (accessFragment.has("access")) {
 }
 const state = {
   token: initialAccess,
-  currentPage: "company",
-  page: "company",
+  workspaceId: null,
+  setupSection: "company",
+  legacyHistory: [],
+  currentPage: "setup",
+  page: "setup",
   pages: [],
   model: {},
   busy: false,
@@ -97,7 +98,7 @@ const state = {
 };
 initialAccess = "";
 const ui = {
-  page: "company",
+  page: "setup",
   initialized: false,
   polling: false,
   requesting: false,
@@ -107,6 +108,8 @@ const ui = {
   detail: null,
   focus: null,
   drafts: new Map(),
+  draftStore: null,
+  importedDrafts: [],
   ontologyView: "definitions",
   definitionId: null,
   graphSelections: new Map(),
@@ -173,17 +176,19 @@ async function api(path, body) {
   return data;
 }
 function rememberDraft() {
-  ui.drafts.set(ui.page, {
+  const draft = {
     text: $("#message-input").value,
     focus: ui.focus,
     pendingMessage: ui.pendingMessage,
-  });
+  };
+  ui.drafts.set(ui.page, draft);
+  ui.draftStore?.save(ui.page, draft);
 }
 function changePage(page) {
   if (ui.page === page) return;
   rememberDraft();
   ui.page = page;
-  const draft = ui.drafts.get(page);
+  const draft = ui.drafts.get(page) ?? ui.draftStore?.read(page);
   $("#message-input").value = draft?.text || "";
   ui.focus = draft?.focus || null;
   ui.pendingMessage = draft?.pendingMessage || null;
@@ -195,6 +200,27 @@ function changePage(page) {
   resizeInput();
 }
 function applySnapshot(snapshot) {
+  if (
+    !shareMode &&
+    snapshot.workspaceId &&
+    snapshot.workspaceId !== state.workspaceId
+  ) {
+    ui.drafts.clear();
+    try {
+      ui.draftStore = createDraftStore(localStorage, snapshot.workspaceId, () =>
+        errorMessage("浏览器无法保存草稿，请复制内容后再关闭页面。"),
+      );
+      ui.importedDrafts = ui.draftStore.read("legacy") || [];
+      const draft = ui.draftStore.read(snapshot.currentPage);
+      ui.page = snapshot.currentPage;
+      $("#message-input").value = draft?.text || "";
+      ui.focus = draft?.focus || null;
+      ui.pendingMessage = draft?.pendingMessage || null;
+      resizeInput();
+    } catch {
+      errorMessage("浏览器无法保存草稿，请复制内容后再关闭页面。");
+    }
+  }
   const target = pageLabels[snapshot.currentPage]
     ? snapshot.currentPage
     : ui.page;
@@ -210,8 +236,13 @@ function applySnapshot(snapshot) {
     state.prompt = "";
     if (previousPage !== ui.page) setTimeout(() => refresh(), 0);
   }
+  const firstLoad = !ui.initialized;
   ui.initialized = true;
   render();
+  if (firstLoad && ui.page === "setup" && state.setupSection === "sources")
+    document
+      .getElementById("setup-sources")
+      ?.scrollIntoView({ block: "start" });
 }
 async function refresh(bootstrap = false) {
   if (ui.polling || ui.requesting) return;
@@ -259,7 +290,11 @@ async function mutate(path, body, after) {
 }
 async function navigate(page) {
   if (page === ui.page || ui.requesting) return;
-  await mutate("/api/canvas/navigate", { page });
+  const ok = await mutate("/api/canvas/navigate", { page });
+  if (ok && ["company", "sources"].includes(page))
+    document
+      .getElementById(`setup-${page}`)
+      ?.scrollIntoView({ block: "start" });
 }
 const capabilityPanel = createCapabilitiesPanel(api);
 
@@ -276,7 +311,7 @@ function render() {
     const entry = state.pages.find((item) => item.id === page);
     control.disabled =
       ui.requesting ||
-      (page !== "company" && !entry?.available && page !== ui.page);
+      (page !== "setup" && !entry?.available && page !== ui.page);
     if (page === ui.page) control.setAttribute("aria-current", "page");
     else control.removeAttribute("aria-current");
   }
@@ -346,36 +381,188 @@ function renderCanvas(force = false) {
     return;
   }
   const canvas = $("#canvas");
-  if (!shareMode && !state.demo && ui.page !== "company") {
+  if (ui.page === "setup") canvas.replaceChildren(renderSetup());
+  else if (!shareMode && !state.demo) {
     const live = renderLiveWorkspace(ui.page, state.live, {
       api,
       mutate,
       showCredential,
     });
     const legacy =
-      ui.page === "sources"
-        ? state.sources.length
-        : ui.page === "ontology"
-          ? state.ontologies.length || state.outlines.length
-          : state.consumers.length;
+      ui.page === "ontology"
+        ? state.ontologies.length || state.outlines.length
+        : state.consumers.length;
     if (legacy) {
       const details = node("details", "live-legacy");
       details.append(
         node("summary", "", "查看已有文件实验"),
-        ui.page === "sources"
-          ? renderSources()
-          : ui.page === "ontology"
-            ? renderOntology()
-            : renderConsumption(),
+        ui.page === "ontology" ? renderOntology() : renderConsumption(),
       );
       live.append(details);
     }
     canvas.replaceChildren(live);
-  } else if (ui.page === "company") canvas.replaceChildren(renderCompany());
-  else if (ui.page === "sources") canvas.replaceChildren(renderSources());
-  else if (ui.page === "ontology") canvas.replaceChildren(renderOntology());
+  } else if (ui.page === "ontology") canvas.replaceChildren(renderOntology());
   else canvas.replaceChildren(renderConsumption());
   renderAttention(canvas);
+}
+function renderSetup() {
+  const section = node("section", "setup-canvas");
+  const nav = node("nav", "setup-sections");
+  nav.setAttribute("aria-label", "企业与数据分区");
+  for (const [id, title] of [
+    ["company", "企业信息"],
+    ["sources", "数据接入"],
+  ]) {
+    const link = button(title, "quiet-button", async () => {
+      if (!shareMode)
+        await mutate("/api/canvas/navigate", { page: "setup", section: id });
+      const target = document.getElementById(`setup-${id}`);
+      target?.scrollIntoView({ block: "start" });
+      target?.focus({ preventScroll: true });
+    });
+    link.setAttribute("aria-controls", `setup-${id}`);
+    nav.append(link);
+  }
+  section.append(nav);
+  const company = renderCompany();
+  company.id = "setup-company";
+  company.tabIndex = -1;
+  company.setAttribute("aria-label", "企业信息");
+  const sources = node("section", "setup-sources");
+  sources.id = "setup-sources";
+  sources.tabIndex = -1;
+  sources.setAttribute("aria-label", "数据接入");
+  if (!shareMode && !state.demo) {
+    sources.append(
+      renderLiveWorkspace("sources", state.live, {
+        api,
+        mutate,
+        showCredential,
+      }),
+    );
+    const files = node("details", "live-legacy");
+    files.append(
+      node(
+        "summary",
+        "",
+        `文件资料${state.sources.length ? ` · ${state.sources.length} 份` : ""}`,
+      ),
+    );
+    files.append(
+      state.sources.length
+        ? renderSources()
+        : node("p", "muted", "可通过底部附件接入 CSV、Markdown 或 TXT。"),
+    );
+    sources.append(files);
+  } else sources.append(renderSources());
+  section.append(company, sources);
+  if (!shareMode && (state.legacyHistory.length || ui.importedDrafts.length)) {
+    const history = node("details", "setup-history");
+    history.append(node("summary", "", "升级前保留的内容"));
+    for (const entry of state.legacyHistory) {
+      const title = entry.section === "company" ? "企业信息" : "数据接入";
+      const content = node("div", "legacy-history-content");
+      const open = button(`查看${title}旧记录`, "quiet-button", async () => {
+        try {
+          const result = await api(
+            `/api/canvas/history?section=${entry.section}`,
+          );
+          content.replaceChildren();
+          if (result.task.pending)
+            content.append(
+              node("p", "", `待确认：${result.task.pending.question}`),
+            );
+          for (const message of result.messages)
+            content.append(
+              node(
+                "p",
+                "",
+                `${message.role === "user" ? "你" : "助手"}：${message.content}`,
+              ),
+            );
+          if (!result.messages.length)
+            content.append(
+              node("p", "", "没有保留的聊天消息；已保存内容继续可用。"),
+            );
+        } catch (error) {
+          errorMessage(error.message);
+        }
+      });
+      history.append(
+        open,
+        node("p", "muted", entry.pending?.question || entry.nextStep),
+        content,
+      );
+    }
+    for (const draft of ui.importedDrafts.filter((item) => item.text)) {
+      const title = { company: "企业信息", sources: "数据接入", ...pageLabels }[
+        draft.page
+      ];
+      const item = node("details", "legacy-draft");
+      item.append(
+        node("summary", "", `${title}旧草稿`),
+        node("p", "", draft.text),
+        button("放入输入框", "quiet-button", async () => {
+          const target = ["company", "sources"].includes(draft.page)
+            ? "setup"
+            : draft.page;
+          const existing =
+            target === ui.page
+              ? { text: $("#message-input").value }
+              : (ui.drafts.get(target) ?? ui.draftStore?.read(target));
+          if (existing?.text?.trim())
+            return errorMessage(
+              `${pageLabels[target]}已有草稿，请先保存或清空，再恢复旧草稿。`,
+            );
+          if (
+            target !== ui.page &&
+            !(await mutate("/api/canvas/navigate", { page: target }))
+          )
+            return;
+          $("#message-input").value = draft.text;
+          ui.focus = null;
+          ui.pendingMessage = null;
+          rememberDraft();
+          resizeInput();
+          updateComposer();
+          $("#message-input").focus();
+        }),
+      );
+      history.append(item);
+    }
+    section.append(history);
+  }
+  if (!shareMode) {
+    const file = node("input");
+    file.type = "file";
+    file.accept = "application/json,.json";
+    file.hidden = true;
+    file.addEventListener("change", async () => {
+      try {
+        const selected = file.files[0];
+        if (!selected) return;
+        if (selected.size > 100000) throw new Error("草稿文件过大。");
+        const drafts = parseLegacyDrafts(await selected.text());
+        // Retain previously imported text; importing again never replaces it.
+        for (const draft of drafts)
+          if (
+            !ui.importedDrafts.some(
+              (item) => item.page === draft.page && item.text === draft.text,
+            )
+          )
+            ui.importedDrafts.push(draft);
+        ui.draftStore?.save("legacy", ui.importedDrafts);
+        renderCanvas(true);
+      } catch (error) {
+        errorMessage(error.message);
+      }
+    });
+    section.append(
+      button("导入旧版草稿", "quiet-button import-drafts", () => file.click()),
+      file,
+    );
+  }
+  return section;
 }
 function emptyCanvas(fallback) {
   const section = node("section", "empty-canvas");
@@ -400,7 +587,18 @@ function companyName() {
 }
 function renderCompany() {
   const rows = statements();
-  if (!rows.length) return emptyCanvas("你的企业叫什么？");
+  if (!rows.length) {
+    const intro = node("section", "company-canvas setup-intro");
+    intro.append(
+      node("h1", "", "从你的企业开始"),
+      node(
+        "p",
+        "muted",
+        "在下方介绍企业名称与业务，也可以先接入资料或连接业务系统。",
+      ),
+    );
+    return intro;
+  }
   const section = node("section", "company-canvas");
   const nameRow = findStatement([
     "company.name",
@@ -2557,13 +2755,13 @@ function renderDialogue() {
   });
 }
 function hasCanvasContent() {
-  return ui.page === "company"
-    ? statements().length > 0
-    : ui.page === "sources"
-      ? state.sources.length > 0
-      : ui.page === "ontology"
-        ? Boolean(currentDefinition() || state.verifications.length)
-        : state.consumers.length > 0;
+  return ui.page === "setup"
+    ? statements().length > 0 ||
+        state.sources.length > 0 ||
+        state.live.connections.length > 0
+    : ui.page === "ontology"
+      ? Boolean(currentDefinition() || state.verifications.length)
+      : state.consumers.length > 0;
 }
 function updateComposer() {
   const input = $("#message-input");
@@ -2599,7 +2797,7 @@ function updateComposer() {
     const entry = state.pages.find((page) => page.id === control.dataset.page);
     control.disabled =
       ui.requesting ||
-      (control.dataset.page !== "company" &&
+      (control.dataset.page !== "setup" &&
         !entry?.available &&
         control.dataset.page !== ui.page);
   }
@@ -2627,6 +2825,7 @@ async function sendMessage() {
     ui.pendingMessage.contextKey !== contextKey
   )
     ui.pendingMessage = { text, contextKey, id: crypto.randomUUID() };
+  rememberDraft();
   await mutate(
     "/api/canvas/message",
     {
@@ -2652,7 +2851,7 @@ async function uploadFile(file) {
     return errorMessage("离线演示只提供已保存的样本资料，不能上传或修改数据。");
   if (!file || ui.requesting || ui.uploading || state.busy) return;
   if (ui.page === "consumption") {
-    errorMessage("请返回数据页接入资料。");
+    errorMessage("请返回企业与数据页接入资料。");
     return;
   }
   if (!/\.(csv|md|txt)$/i.test(file.name)) {
@@ -2866,7 +3065,10 @@ $("#canvas").addEventListener("wheel", readCanvas, { passive: true });
 $("#message-input").addEventListener("focus", () => {
   $(".canvas-app").dataset.reading = "false";
 });
-if (!shareMode) window.addEventListener("focus", () => refresh());
+if (!shareMode) {
+  window.addEventListener("focus", () => refresh());
+  window.addEventListener("pagehide", rememberDraft);
+}
 refresh(true);
 if (!shareMode)
   setInterval(() => {
