@@ -10,10 +10,10 @@ description: 从用户对话、已上传企业文档和确认企业后的公开�
 3. 从实际对话提取 2–5 个有依据的业务概念和必要关系。概念是模型对原话的语义解释，仍待人核对；不要虚构业务事实。证据只能用当前任务 recentMessages 中真实用户 messageId 和连续 quote；模型回复、网页摘录与推测不能伪装用户原话。旧证据从 foundation_read 原样复用，不改写 id。文档使用下方资料路径，不能假装成 user 原话。公开网页使用下方研究路径，不能引用搜索摘要冒充正文。
 4. 调用 foundation_propose 保存。同一基础版本的多项修改合并为一次调用，不并行保存；下一次修改先使用实际回执版本。参数为 baseVersion、enterprise{name,evidenceRefs}、concepts[{id,name,description,evidenceRefs}]、relations[{id,name,description,from,to,evidenceRefs}]、evidence[{id,messageId,quote}]、unknowns[{id,description}]、conflicts[{id,description}]。id 使用稳定英文短标识，name/description 用中文业务语言。概念与关系按 id 增量合并，未传入的已保存项仍保留。企业名称须来自实际用户原话或已读取文档；纯文档起步不要伪造 profile_update 的用户陈述，可直接形成基础候选。同一企业简称/错字/正式名称纠正时先保存新的 profile 名称，再在 foundation_propose 顶层传 identityCorrection:{previousName:旧名称,evidenceRefs:[本轮新证据id]}，证据必须是当前用户对同一主体名称纠正的原话且包含新名称；不能用该字段合并不同企业。不同主体不得合并。没有依据的必要概念放到 unknowns，不伪造引用。
 5. 未知和冲突也按 id 持续保留。用户补充明确依据后，用相同 id、原 description、resolvedBy:[新的证据 id] 标明已解决；未知项也可由本轮新读取的文档/网页依据补齐，但冲突必须有本轮用户原话作决定；不得为方便采用而清空冲突。冲突未解决可保存候选，但不能采用。已有定义更正仍形成候选，已采用版本保持有效。
-6. 保存成功后核对实际回执，再用 task_ask，附 foundationId 和 version，请用户查看并采用具体基础定义；允许未知，无需先上传或接入数据。说明尚未绑定来源，不说可查询对象或 API 已可用。程序检查通过只表示结构与原话可定位，不保证语义正确。用户通过画布或明确确认采用，Agent 没有直接采用工具。
+6. 保存成功后核对实际回执，再用 task_ask，附 foundationId 和 version，请用户查看并采用具体基础定义；允许未知，无需先上传或接入数据。新初稿说明尚未绑定来源；已有版本按实际 bindings 说明可用子集，不说未授权 API 已可用。程序检查通过只表示结构与原话可定位，不保证语义正确。用户通过画布或明确确认采用，Agent 没有直接采用工具。
 7. 基础已经采用且本轮只是读取/确认时，可 page_complete；候选未采用时不能宣称已完成采用。想补充或修正时继续基础版本，冲突/过期则重读后修改，停止后的写入由宿主拒绝。
 
-来源接入是下一步：按业务问题建议最少的知识库、BI 或业务系统及用途。调用 live_overview/live_read 检查获准来源。基础定义本身 mappingStatus 为 unbound，没有可查询实例；后续正式映射沿已有概念身份补充。Skill 只提供方法，工具、权限和来源真实性由宿主与领域服务执行。
+来源接入是下一步：按业务问题建议最少的知识库、BI 或业务系统及用途。调用 live_overview/live_read 检查获准来源。基础定义保存时不携带执行映射；foundation_read 动态返回各概念 bindings 与 mappingStatus，已采用有效绑定可按 conceptId 查询。Skill 只提供方法，工具、权限和来源真实性由宿主与领域服务执行。
 
 ## 上传企业资料路径
 
@@ -56,3 +56,12 @@ description: 从用户对话、已上传企业文档和确认企业后的公开�
 - 数值与单位、定义、维度和期间共同解释，保留缺失原因、读取时间与 coverage；null 不是0，没有观测不证明值为0。complete 仅指本次查询结果，dataComplete 是源对数据覆盖的声明；二者不能混用。按 nextOffset 有界续读，每次最多50项，每轮40次来源操作；查询会先重读定义，再读取结果。定义或口径变化须重新 describe 后复核。
 - 遵循 aggregation 的可加总维度与 timeAdditive；比率/平均/去重不能直接求和，存量不能跨时点相加。办结率不等于供暖恢复率，指标名相似不代表口径一致。当前工具不计算跨行合计，也不自动生成公式。
 - 结果是读取时点的指标观测，不是企业定义或永久事实。当前仅查询和展示，不支持将 metric readId 填入 foundation 的 knowledge/document 证据，不能伪装成用户陈述；跨源共同取证在后续任务接入。
+
+## 基础概念绑定业务来源
+
+- 用户要求绑定或查看业务实例时，先 foundation_read 与 live_overview，再 live_read 读取获准 records 能力的少量实际记录。基础未采用则先让用户核对具体候选；不能把资料或指标当作业务明细。
+- live_propose 在原有 purpose/types/relations/rationale 之外提供 foundationRef:{id,version}，引用 foundation_read.adopted；baseModelRef:{id,version} 必须引用 live_overview 当前最新已采用执行子集，没有时显式传 null。保存前后若执行基线变化，重读并合并当前映射，不复用旧完整列表。每个 type 带 conceptId，name/description 原样复用该概念；fields 将业务属性名对应实际来源字段，$id 自动使用来源声明身份字段。相似字段名不等于相同业务含义，rationale 说明映射依据和未决事项。
+- 每条执行关系带 relationId，沿基础关系的 from/to 概念与名称，填写已有 fromField/toField；需要的端点都必须在本次执行子集中。未映射的概念、关系、未知项仍保留在基础层，不能为了查数另建同义概念或删除它们。
+- 本轮一个类型仅一个主来源；多源属性融合后续接入。修改执行子集时，先读取当前已采用映射，把仍需保留的类型与关系一起提交；live_propose 保存完整候选，非增量修改。新基础采用后旧绑定失效，需按新版本重新映射检查。
+- 检查保存会实际读取每种类型最多3条记录，验证身份与映射结构；这不是全量数据质量或业务真实保证。先 live_query {modelId,modelVersion,conceptId,offset?,limit?} 预览，读取结果保留 conceptRef、$id、覆盖和时间；不要将候选查询称为正式消费。
+- 用 task_ask 附 candidateId/version 让用户核对并采用具体执行子集。采用时重验来源与基础版本。Agent 无直接采用工具，前端同一候选可查看、预览、采用；采用映射不自动授权外部调用方。

@@ -10,20 +10,33 @@ import type {
 } from "../agent/contracts.ts";
 
 const name = z.string().trim().min(1).max(200);
+const foundationRefSchema = z
+  .object({ id: name, version: z.number().int().positive() })
+  .strict();
 const typeSchema = z
   .object({
     name,
-    description: name,
+    description: z.string().trim().min(1).max(1500),
+    conceptId: name.optional(),
     sourceId: name,
     capability: name,
     fields: z.record(name, name),
   })
   .strict();
 const relationSchema = z
-  .object({ name, from: name, to: name, fromField: name, toField: name })
+  .object({
+    name,
+    from: name,
+    to: name,
+    fromField: name,
+    toField: name,
+    relationId: name.optional(),
+  })
   .strict();
 export const modelSchema = z
   .object({
+    foundationRef: foundationRefSchema.optional(),
+    baseModelRef: foundationRefSchema.nullable().optional(),
     purpose: z.string().trim().min(1).max(2000),
     types: z.array(typeSchema).min(1).max(20),
     relations: z.array(relationSchema).max(40),
@@ -53,7 +66,8 @@ const querySchema = z
   .object({
     modelId: name,
     modelVersion: z.number().int().positive().optional(),
-    type: name,
+    type: name.optional(),
+    conceptId: name.optional(),
     id: name.optional(),
     relation: name.optional(),
     fields: z.array(name).min(1).optional(),
@@ -100,7 +114,125 @@ export class LiveMemory {
       .listArtifacts("live_ontology")
       .find((a) => a.status === "adopted");
   }
+  private adoptedFoundation() {
+    const current = this.repo.listArtifacts("foundation")[0];
+    return current?.status === "adopted"
+      ? current
+      : current?.content.adoptedVersion
+        ? this.repo.getArtifact(
+            current.id,
+            Number(current.content.adoptedVersion),
+          )
+        : null;
+  }
+  private checkFoundation(d: z.infer<typeof modelSchema>) {
+    if (!d.foundationRef) {
+      if (
+        d.types.some((t) => t.conceptId) ||
+        d.relations.some((r) => r.relationId)
+      )
+        throw new Error("概念绑定需要明确基础本体引用");
+      return;
+    }
+    const foundation = this.adoptedFoundation();
+    if (
+      !foundation ||
+      foundation.id !== d.foundationRef.id ||
+      foundation.version !== d.foundationRef.version
+    )
+      throw new Error("已采用基础本体版本已变化，请重新绑定并检查");
+    const concepts = foundation.content.concepts as Data[];
+    const relations = foundation.content.relations as Data[];
+    if (new Set(d.types.map((t) => t.conceptId)).size !== d.types.length)
+      throw new Error("同一概念首轮只允许一个主来源绑定");
+    for (const t of d.types) {
+      const concept = concepts.find((c) => c.id === t.conceptId);
+      if (
+        !concept ||
+        t.name !== concept.name ||
+        t.description !== concept.description
+      )
+        throw new Error(
+          "映射必须引用已采用概念，并保持名称和含义；修改定义请先治理基础本体",
+        );
+    }
+    for (const r of d.relations) {
+      const relation = relations.find((item) => item.id === r.relationId);
+      const from = d.types.find((t) => t.name === r.from),
+        to = d.types.find((t) => t.name === r.to);
+      if (
+        !relation ||
+        relation.name !== r.name ||
+        relation.from !== from?.conceptId ||
+        relation.to !== to?.conceptId
+      )
+        throw new Error("关系映射必须对应基础关系及其概念端点");
+    }
+  }
+  bindings(ref: { id: string; version: number }) {
+    const active = this.active();
+    const sources = new Map(
+      this.sources.list().map((source) => [source.id, source]),
+    );
+    return this.repo
+      .listArtifacts("live_ontology")
+      .filter((a) => {
+        const f = this.definition(a).foundationRef;
+        return (
+          f?.id === ref.id &&
+          f.version === ref.version &&
+          (a.status === "candidate" || a.id === active?.id)
+        );
+      })
+      .flatMap((a) => {
+        const d = this.definition(a);
+        let reason: string | null = null;
+        try {
+          this.checkConnections(d);
+          if (a.status === "candidate") this.checkExecutionBase(a.content.base);
+        } catch (error) {
+          reason = (error as Error).message;
+        }
+        return d.types.map((t) => ({
+          conceptId: t.conceptId!,
+          modelId: a.id,
+          modelVersion: a.version,
+          type: t.name,
+          status: reason ? "unavailable" : a.status,
+          reason,
+          sourceId: t.sourceId,
+          capability: t.capability,
+          fields: t.fields,
+          relations: d.relations.filter((r) => r.from === t.name),
+          identity:
+            (
+              sources.get(t.sourceId)?.content.capabilities as
+                Data[] | undefined
+            )?.find((c) => c.name === t.capability)?.idField ?? null,
+          checks: (a.content.checks as Data[]).filter((c) => c.type === t.name),
+        }));
+      });
+  }
+  private checkExecutionBase(expected: unknown) {
+    const current = this.active();
+    if (
+      JSON.stringify(expected) !==
+      JSON.stringify(
+        current ? { id: current.id, version: current.version } : null,
+      )
+    )
+      throw new Error("执行子集版本已变化，请重新读取当前映射后保存");
+  }
+  candidate(id: string, version: number) {
+    const candidate = this.model(id);
+    if (candidate.status !== "candidate" || candidate.version !== version)
+      throw new Error("候选已变化");
+    this.checkConnections(this.definition(candidate));
+    this.checkExecutionBase(candidate.content.base);
+    return candidate;
+  }
   private checkConnections(d: Definition) {
+    this.checkFoundation(d);
     for (const t of d.types)
       this.sources.capability(
         t.sourceId,
@@ -111,6 +243,12 @@ export class LiveMemory {
   async propose(input: unknown, context?: WriteContext, operationId?: string) {
     const d = modelSchema.parse(input);
     const base = this.active();
+    if (this.repo.listArtifacts("foundation").length && !d.foundationRef)
+      throw new Error(
+        "已有基础本体，请采用后以 foundationRef 和 conceptId 绑定执行子集",
+      );
+    this.checkFoundation(d);
+    if (d.foundationRef) this.checkExecutionBase(d.baseModelRef);
     const connections: Record<string, number> = {};
     if (new Set(d.types.map((t) => t.name)).size !== d.types.length)
       throw new Error("业务类型重名");
@@ -173,6 +311,7 @@ export class LiveMemory {
       });
     }
     this.checkConnections({ ...d, connections });
+    if (d.foundationRef) this.checkExecutionBase(d.baseModelRef);
     return this.repo.putArtifact(
       {
         kind: "live_ontology",
@@ -189,7 +328,11 @@ export class LiveMemory {
       operationId,
     );
   }
-  async adopt(id: string, version: number) {
+  async adopt(
+    id: string,
+    version: number,
+    commit: (save: () => Artifact) => Artifact = (save) => save(),
+  ) {
     const a = this.model(id);
     if (a.status !== "candidate" || a.version !== version)
       throw new Error("候选已变化");
@@ -201,8 +344,8 @@ export class LiveMemory {
       JSON.stringify(base ? { id: base.id, version: base.version } : null)
     )
       throw new Error("基础本体已变化，请重新提出候选");
-    for (const t of d.types)
-      await this.sources.readRecords(
+    for (const t of d.types) {
+      const sample = await this.sources.readRecords(
         t.sourceId,
         t.capability,
         {},
@@ -210,17 +353,22 @@ export class LiveMemory {
         3,
         d.connections[t.sourceId],
       );
+      if (d.foundationRef && !sample.items.length)
+        throw new Error("需要实际记录重新验证概念映射");
+    }
     this.checkConnections(d);
     if (
       (this.active()?.id ?? null) !== (base?.id ?? null) ||
       (this.active()?.version ?? null) !== (base?.version ?? null)
     )
       throw new Error("基础本体已变化");
-    return this.repo.putArtifact({
-      ...a,
-      expectedVersion: version,
-      status: "adopted",
-    });
+    return commit(() =>
+      this.repo.putArtifact({
+        ...a,
+        expectedVersion: version,
+        status: "adopted",
+      }),
+    );
   }
   async query(input: unknown): Promise<{
     model: { id: string; version: number };
@@ -239,6 +387,11 @@ export class LiveMemory {
       readAt: string;
       historicalReplay: boolean;
     }[];
+    conceptRef?: {
+      foundationId: string;
+      foundationVersion: number;
+      conceptId: string;
+    };
     consistency: string;
   }> {
     const args = querySchema.parse(input);
@@ -247,8 +400,14 @@ export class LiveMemory {
       throw new Error("本体版本已变化，请重新读取目标");
     const d = this.definition(model);
     this.checkConnections(d);
-    const type = d.types.find((t) => t.name === args.type);
-    if (!type) throw new Error("业务类型不存在");
+    if (!args.type && !args.conceptId)
+      throw new Error("查询需要类型或基础概念引用");
+    const type = d.types.find((t) =>
+      args.conceptId ? t.conceptId === args.conceptId : t.name === args.type,
+    );
+    if (type && args.type && type.name !== args.type)
+      throw new Error("类型与概念引用不一致");
+    if (!type) throw new Error("业务类型不存在或概念未绑定");
     const { cap } = this.sources.capability(
       type.sourceId,
       type.capability,
@@ -266,7 +425,7 @@ export class LiveMemory {
     if (args.relation) {
       if (!args.id) throw new Error("关系查询需要对象编号");
       const rel = d.relations.find(
-        (r) => r.from === args.type && r.name === args.relation,
+        (r) => r.from === type.name && r.name === args.relation,
       );
       if (!rel) throw new Error("关系不存在");
       const origin = await this.sources.readRecords(
@@ -311,6 +470,15 @@ export class LiveMemory {
     return {
       model: { id: model.id, version: model.version },
       type: type.name,
+      ...(d.foundationRef
+        ? {
+            conceptRef: {
+              foundationId: d.foundationRef.id,
+              foundationVersion: d.foundationRef.version,
+              conceptId: type.conceptId!,
+            },
+          }
+        : {}),
       items: result.items.map((row) =>
         Object.fromEntries(fields.map((f) => [f, row[sourceField(f)]])),
       ),
@@ -560,13 +728,13 @@ export const liveTools: DomainTool[] = [
   ),
   tool(
     "live_propose",
-    "基于实际源样本和用户业务定义，提出有来源能力绑定的本体候选。rationale 写明业务依据与尚未确认的含义。程序仅做结构检查，用户在页面采用。",
+    "基于实际源样本和用户业务定义，提出有来源能力绑定的本体候选。已有基础本体时先 foundation_read，必须引用已采用的 foundationRef:{id,version}，baseModelRef 必须为 live_overview 当前最新已采用执行子集的 {id,version}（不存在时为 null），每个类型带 conceptId 并逐字保持概念 name/description，关系带 relationId 且对应端点；未映射概念不删除。rationale 写明业务依据与尚未确认的含义。程序仅做结构检查，用户在页面采用。",
     modelSchema,
     true,
   ),
   tool(
     "live_query",
-    "按本体查询当前源对象及关系，返回读取时间、覆盖范围；不能声称历史快照或完整跨源一致性。",
+    "按 modelId/modelVersion 与 conceptId（基础概念稳定 id）或 type 查询当前源对象及关系，返回同一 conceptRef、读取时间、覆盖范围；候选查询仅为预览；不能声称历史快照或完整跨源一致性。",
     querySchema,
   ),
   tool(

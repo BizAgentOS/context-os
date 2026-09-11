@@ -1,3 +1,4 @@
+import type { LiveMemory } from "../live/memory.ts";
 import { knowledgeTools } from "./knowledge.ts";
 import { foundationWebTool } from "./foundation-web.ts";
 import {
@@ -87,7 +88,7 @@ export const foundationTools: DomainTool[] = [
   {
     name: "foundation_read",
     description:
-      "读取企业基础本体的当前版本和已采用版本。概念未绑定来源，不能查询实例。",
+      "读取企业基础本体的当前版本和已采用版本。概念绑定状态由执行映射实时投影；仅获准绑定可通过 live_query 按 conceptId 查询实例。",
     mutates: false,
     inputSchema: {
       type: "object",
@@ -107,8 +108,10 @@ export const foundationTools: DomainTool[] = [
 /** Shared semantic service; the UI and agent consume the same versioned artifact. */
 export class FoundationService {
   private memory: MemoryStore;
-  constructor(memory: MemoryStore) {
+  private live?: LiveMemory;
+  constructor(memory: MemoryStore, live?: LiveMemory) {
     this.memory = memory;
+    this.live = live;
   }
 
   read() {
@@ -131,6 +134,36 @@ export class FoundationService {
       delete entry.webSnapshot;
       delete entry.knowledgeSnapshot;
     }
+    const bindings =
+      this.live?.bindings({ id: artifact.id, version: artifact.version }) ?? [];
+    const projected = result.content.concepts as Data[];
+    for (const concept of projected) {
+      const matches = bindings.filter((b) => b.conceptId === concept.id);
+      concept.bindings = asData(matches) as unknown as Data[];
+      concept.mappingStatus = matches.some((b) => b.status === "adopted")
+        ? "bound"
+        : "unbound";
+    }
+    for (const relation of result.content.relations as Data[]) {
+      const matches = bindings.filter((b) =>
+        b.relations.some((r) => r.relationId === relation.id),
+      );
+      relation.mappingStatus = matches.some((b) => b.status === "adopted")
+        ? "bound"
+        : "unbound";
+      relation.bindings = matches.map((b) => ({
+        modelId: b.modelId,
+        modelVersion: b.modelVersion,
+        status: b.status,
+        reason: b.reason,
+        relationId: String(relation.id),
+      }));
+    }
+    result.content.consumerReadiness = {
+      objectsQueryable: bindings.some((b) => b.status === "adopted"),
+      reason:
+        "仅已采用且依赖有效的执行子集可供消费；候选只供预览，未映射概念仍可治理",
+    };
     return result;
   }
 

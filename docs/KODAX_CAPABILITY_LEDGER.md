@@ -102,3 +102,7 @@ Skill 的包目录、已安装方法与变更流程只在[内置 Skill](BUILTIN_
 ## BI 指标接入（T014-02）
 
 同一 KodaX 循环新增宿主 `metric_describe/metric_query`，企业与数据、本体工作区可用；来源目录显示 metrics 类型及获准 metricId。工具结果是指标定义与观测，保留维度、期间、单位、粒度、可加总规则和覆盖，不映射为记录实例。运行 Skill 增加指标检查方法；每次来源请求沿 SourceConnections 的同一 HTTP/MCP 传输、授权与契约复检。未升级 SDK 或增加模型循环。具体输入和真实限制见[语义契约](SEMANTIC_CONTRACTS.md#t014-02-bi-指标定义与观测)。
+
+## 基础概念绑定（T014-03）
+
+复用同一 KodaX 的 live_overview/live_read/live_propose/live_query，新增 foundationRef、baseModelRef、conceptId/relationId 合同；FoundationService 从执行模型投影概念/关系绑定，不向基础定义写入来源记录。task_ask 可以绑定实际 live_ontology 候选，宿主承接具体版本的人工采用。Skill 增加保留现有执行子集、实际读源、预览和采用方法；权限、版本与依赖检查仍由确定性服务执行，SDK 未升级。详见[绑定契约](SEMANTIC_CONTRACTS.md#t014-03-基础概念与业务执行子集)。

@@ -1,5 +1,7 @@
 # Changelog
 
+- 2026-09-11：完成 T014-03 基础概念/关系绑定业务来源，沿现有映射保存、样本检查、预览与采用；增加基础/执行基线校验和当前绑定投影，未映射内容保留。107项Node、22项Python测试通过，详见[验收](experiment/FOUNDATION_BINDINGS.md)。下一项 T014-04。
+
 ## [Unreleased]
 
 ### Added

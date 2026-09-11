@@ -19,6 +19,10 @@ const staticFiles: Record<string, { file: string; type: string }> = {
     file: "capabilities.js",
     type: "text/javascript; charset=utf-8",
   },
+  "/foundation-bindings.js": {
+    file: "foundation-bindings.js",
+    type: "text/javascript; charset=utf-8",
+  },
   "/metrics.js": { file: "metrics.js", type: "text/javascript; charset=utf-8" },
   "/foundation.js": {
     file: "foundation.js",
@@ -372,23 +376,10 @@ export async function createServer(
                 saved = await app.live.propose(body);
                 break;
               case "/api/live/adopt":
-                saved = await app.live.adopt(
+                saved = await app.adoptLive(
                   String(body.id),
                   Number(body.version),
                 );
-                {
-                  const progress = app.memory.getCanvas();
-                  if (progress) {
-                    progress.completed = [
-                      ...new Set([
-                        ...progress.completed,
-                        "sources" as const,
-                        "ontology" as const,
-                      ]),
-                    ];
-                    app.memory.saveCanvas(progress);
-                  }
-                }
                 break;
               case "/api/live/prepare":
                 saved = app.live.prepare(body);

@@ -161,8 +161,8 @@ export class AgentApplication {
       throw new Error("测试网页来源仅允许显式测试 driver");
     this.researchTestOrigins = researchTestOrigins;
     this.memory = new MemoryStore(directory);
-    this.foundation = new FoundationService(this.memory);
     this.live = new LiveMemory(directory, this.memory);
+    this.foundation = new FoundationService(this.memory, this.live);
     this.contexts = new WorkContexts(this.memory, this.live);
     this.capabilities = new AgentCapabilities(directory);
     this.consumption = new ConsumptionService(directory, this.memory);
@@ -904,6 +904,19 @@ export class AgentApplication {
           "当前引用与待决定的候选版本不同，请打开具体候选后再决定",
         );
       await this.stopActive("正在保存你的决定。");
+      if (
+        this.memory.getArtifact(String(task.pending.candidateId)).kind ===
+        "live_ontology"
+      )
+        return this.canvasDecision(
+          {
+            page,
+            candidateId: task.pending.candidateId,
+            version: task.pending.version,
+            decision: "adopt",
+          },
+          { id: messageId, text, binding, workContext },
+        );
       this.memory.addMessage(
         task.id,
         "user",
@@ -979,13 +992,24 @@ export class AgentApplication {
 
   async canvasDecision(
     body: Record<string, unknown>,
+    message?: {
+      id: string;
+      text: string;
+      binding?: Data;
+      workContext?: ResolvedWorkContext;
+    },
   ): Promise<ReturnType<AgentApplication["canvasState"]>> {
     if (this.modelTest) throw new Error("正在测试连接，请稍后处理");
     const page = this.canvasPage(body.page);
-    if (page !== "ontology" || this.canvasProgress().currentPage !== page)
-      throw new Error("请在本体页面处理候选");
-    const task = this.canvasTask(page);
     const candidateId = string(body.candidateId, "候选");
+    const isLive =
+      this.memory.getArtifact(candidateId).kind === "live_ontology";
+    if (
+      (page !== "ontology" && !(isLive && page === "setup")) ||
+      this.canvasProgress().currentPage !== page
+    )
+      throw new Error("请在当前企业与数据或本体页面处理候选");
+    const task = this.canvasTask(page);
     const version = Number(body.version);
     if (
       task.pending?.candidateId !== candidateId ||
@@ -1001,26 +1025,67 @@ export class AgentApplication {
         text: "暂不采用这版，请问我最需要调整的地方。",
       });
     try {
-      const artifact = new Workspace(this.memory).adopt(candidateId, version);
-      this.memory.attachArtifact(task.id, artifact);
-      this.memory.clearInvestigation(task.id, "已采用本体。");
-      const progress = this.canvasProgress();
-      if (!progress.completed.includes("ontology"))
-        progress.completed.push("ontology");
-      this.memory.saveCanvas(progress);
-      this.memory.addMessage(task.id, "user", "采用这版本体。");
-      this.memory.addMessage(
-        task.id,
-        "assistant",
-        "已采用。现在可以查看企业的对象和关系。",
-      );
-      this.memory.dismissPending(task.id);
-      this.memory.trimMessages(task.id);
+      const finish = (artifact: Artifact) => {
+        this.memory.attachArtifact(task.id, artifact);
+        this.memory.clearInvestigation(task.id, "已采用本体。");
+        const progress = this.canvasProgress();
+        if (!progress.completed.includes("ontology"))
+          progress.completed.push("ontology");
+        this.memory.saveCanvas(progress);
+        this.memory.addMessage(
+          task.id,
+          "user",
+          message?.text ?? "采用这版本体。",
+          message?.id,
+          message?.binding,
+          message?.workContext,
+        );
+        this.memory.addMessage(
+          task.id,
+          "assistant",
+          "已采用。现在可以查看企业的对象和关系。",
+        );
+        this.memory.dismissPending(task.id);
+        this.memory.trimMessages(task.id);
+      };
+      if (isLive) await this.adoptLive(candidateId, version, finish);
+      else finish(new Workspace(this.memory).adopt(candidateId, version));
       return this.canvasState(page);
     } catch (error) {
       this.memory.restoreWaiting(task.id, task.pending!, this.safeError(error));
       throw error;
     }
+  }
+
+  async adoptLive(
+    id: string,
+    version: number,
+    onAdopt?: (artifact: Artifact) => void,
+  ) {
+    return this.live.adopt(id, version, (save) =>
+      this.memory.atomic(() => {
+        const artifact = save();
+        onAdopt?.(artifact);
+        for (const taskId of Object.values(this.canvasProgress().taskIds)) {
+          if (!taskId) continue;
+          const pending = this.memory.getTask(taskId).pending;
+          if (pending?.candidateId === id && pending.version === version) {
+            this.memory.attachArtifact(taskId, artifact);
+            this.memory.dismissPending(taskId);
+          }
+        }
+        const progress = this.canvasProgress();
+        progress.completed = [
+          ...new Set([
+            ...progress.completed,
+            "sources" as const,
+            "ontology" as const,
+          ]),
+        ];
+        this.memory.saveCanvas(progress);
+        return artifact;
+      }),
+    );
   }
 
   async canvasFoundationAdopt(
@@ -1376,8 +1441,7 @@ export class AgentApplication {
           ...liveTools.filter(
             (tool) =>
               tool.name === "live_overview" ||
-              (page === "setup" && tool.name === "live_read") ||
-              (page === "ontology" &&
+              ((page === "setup" || page === "ontology") &&
                 ["live_read", "live_propose", "live_query"].includes(
                   tool.name,
                 )) ||
@@ -1641,25 +1705,31 @@ export class AgentApplication {
               pending.version = foundation.version;
             }
             if (args.candidateId) {
-              if (page && page !== "ontology")
-                throw new Error("请在本体页面处理候选");
               const candidate = this.memory.getArtifact(
                 string(args.candidateId, "候选"),
                 Number(args.version),
               );
-              if (
-                candidate.kind !== "ontology" ||
-                candidate.status !== "candidate"
-              )
-                throw new Error("需要有效本体候选");
-              if (
-                page &&
-                (this.memory.getArtifact(candidate.id).version !==
-                  candidate.version ||
-                  !(candidate.content.validation as Data)?.valid ||
-                  !candidate.content.preview)
-              )
-                throw new Error("请先检查并展示最新候选版本");
+              if (candidate.kind === "live_ontology") {
+                if (page !== "setup" && page !== "ontology")
+                  throw new Error("当前页面不能处理执行候选");
+                this.live.candidate(candidate.id, candidate.version);
+              } else {
+                if (page && page !== "ontology")
+                  throw new Error("请在本体页面处理候选");
+                if (
+                  candidate.kind !== "ontology" ||
+                  candidate.status !== "candidate"
+                )
+                  throw new Error("需要有效本体候选");
+                if (
+                  page &&
+                  (this.memory.getArtifact(candidate.id).version !==
+                    candidate.version ||
+                    !(candidate.content.validation as Data)?.valid ||
+                    !candidate.content.preview)
+                )
+                  throw new Error("请先检查并展示最新候选版本");
+              }
               pending.candidateId = candidate.id;
               pending.version = candidate.version;
             }

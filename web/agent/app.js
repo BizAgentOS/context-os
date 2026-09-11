@@ -432,6 +432,9 @@ function renderCanvas(force = false) {
 function foundationPanel() {
   return renderFoundation(state.foundation, {
     page: ui.page,
+    live: state.live,
+    api,
+    mutate,
     busy: state.busy || ui.requesting,
     adopt: (body) => mutate("/api/canvas/foundation/adopt", body),
     discuss: (artifact) => askAbout(artifact, "基础定义"),

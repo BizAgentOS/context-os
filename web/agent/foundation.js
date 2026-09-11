@@ -1,3 +1,4 @@
+import { bindConcept, previewBinding } from "./foundation-bindings.js";
 const el = (tag, className, text) => {
   const element = document.createElement(tag);
   element.className = className;
@@ -7,7 +8,7 @@ const el = (tag, className, text) => {
 
 export function renderFoundation(
   value,
-  { page, busy, adopt, discuss, locate },
+  { page, busy, adopt, discuss, locate, live, api, mutate },
 ) {
   const section = el("section", "foundation-panel");
   section.setAttribute("aria-label", "企业基础本体");
@@ -35,7 +36,15 @@ export function renderFoundation(
         `${body.enterprise.name} · ${artifact.status === "adopted" ? "已采用" : "候选待核对"} · v${artifact.version}`,
       ),
     );
-    card.append(el("p", "muted", "未绑定来源 · 暂无可查询的业务对象"));
+    card.append(
+      el(
+        "p",
+        "muted",
+        body.consumerReadiness?.objectsQueryable
+          ? "部分概念已绑定业务来源 · 按需查询实例"
+          : "尚无已采用且有效的执行映射 · 基础概念继续保留",
+      ),
+    );
     const evidenceFor = (item) => {
       const details = el("details", "foundation-evidence");
       details.append(el("summary", "", "查看依据"));
@@ -139,6 +148,60 @@ export function renderFoundation(
         el("p", "", item.description),
         evidenceFor(item),
       );
+      const bindings = item.bindings || [];
+      entry.append(
+        el(
+          "p",
+          "source-meta",
+          item.mappingStatus === "bound"
+            ? "已绑定业务来源"
+            : "尚无已采用且有效的绑定",
+        ),
+      );
+      for (const binding of bindings) {
+        const row = el("div", "foundation-actions");
+        row.append(
+          el(
+            "p",
+            "source-meta",
+            `${binding.status === "adopted" ? "已采用" : binding.status === "candidate" ? "候选" : "不可用"} · ${binding.capability} · 映射 v${binding.modelVersion} · 身份 ${binding.identity || "未提供"}${binding.reason ? " · " + binding.reason : ""}`,
+          ),
+        );
+        const details = el("details", "");
+        details.append(el("summary", "", "查看字段映射"));
+        for (const [property, field] of Object.entries(binding.fields))
+          details.append(el("p", "source-meta", `${property} ← ${field}`));
+        row.append(details);
+        if (binding.status !== "unavailable" && api) {
+          const preview = el(
+            "button",
+            "quiet-button",
+            binding.status === "adopted" ? "查看业务实例" : "预览候选实例",
+          );
+          preview.type = "button";
+          preview.onclick = () => previewBinding(item, binding, api);
+          row.append(preview);
+          if (binding.status === "candidate" && mutate) {
+            const accept = el("button", "quiet-button", "采用此执行子集");
+            accept.type = "button";
+            accept.disabled = busy;
+            accept.onclick = () =>
+              mutate("/api/live/adopt", {
+                id: binding.modelId,
+                version: binding.modelVersion,
+              });
+            row.append(accept);
+          }
+        }
+        entry.append(row);
+      }
+      if (artifact.status === "adopted" && live && mutate) {
+        const bind = el("button", "quiet-button", "绑定业务来源");
+        bind.type = "button";
+        bind.disabled = busy;
+        bind.onclick = () => bindConcept(artifact, item, live, api, mutate);
+        entry.append(bind);
+      }
       concepts.append(entry);
     }
     card.append(concepts);
@@ -155,6 +218,13 @@ export function renderFoundation(
             `${name(item.from)} → ${item.name} → ${name(item.to)}`,
           ),
           el("p", "", item.description),
+          el(
+            "p",
+            "source-meta",
+            item.mappingStatus === "bound"
+              ? "关系已绑定执行映射"
+              : "关系尚未绑定有效执行映射",
+          ),
           evidenceFor(item),
         );
         relations.append(entry);
