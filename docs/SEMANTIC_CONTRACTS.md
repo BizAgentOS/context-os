@@ -198,3 +198,7 @@ Harness 的调用前后和结束检查复用共同领域服务。受限组合或
 
 后续 Feature 明确选用的字段、操作、持久化与开放范围，再在在线来源链路验证；本文不登记功能状态或替代设计块。
 参考：[NOOA 对象发现](https://github.com/NVIDIA-NeMo/labs-OO-Agents/blob/ee61c9012f2e4135eabba1e5db80c8e991a88184/docs/concepts/tools-and-visibility.md)、[W3C SHACL](https://www.w3.org/TR/shacl/)、[W3C PROV](https://www.w3.org/TR/prov-overview/)。这些资料提供设计依据，不意味着已实现完整标准或框架。
+
+## T013-01 基础本体的当前实现
+
+`foundation` 是企业空间内独立的版本化成果，包含企业身份、稳定概念/关系 ID、原话证据与未决项；与旧 `ontology_outline`、`ontology`、`live_ontology` 分开。当前候选和仍有效的已采用版本并存，采用只确认语义含义，所有定义仍为 `unbound`。UI 与 Agent 调用同一基础领域服务；完整字段、增量合并、名称纠正、采用与边界见[实际接口](COMPANY_FOUNDATION_SKILL.md#10-t013-01-实际接口)。基础成果整体可绑定消息，成员级选择和正式映射后续按 T014/T015 实施。

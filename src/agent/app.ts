@@ -19,6 +19,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join, basename } from "node:path";
+import { FoundationService, foundationTools } from "./foundation.ts";
 import { MemoryStore } from "./memory.ts";
 import { Workspace, domainTools } from "./workspace.ts";
 import { LiveMemory, liveTools } from "../live/memory.ts";
@@ -55,7 +56,7 @@ const canvasPrompts: Record<CanvasPage, string> = {
 const pageCompleteTool: DomainTool = {
   name: "page_complete",
   description:
-    "结束当前工作。企业与数据页需先保存有依据的企业名称与业务，并实际检查有内容的来源；完成后仍留在同页。本体页必须用户已采用。成功后简短收尾。",
+    "结束当前工作。企业与数据页基础定义已采用即可完成，无需先接来源；存量来源流程仍需有依据的企业信息与实际读取。完成后仍留在同页。本体页必须用户已采用。成功后简短收尾。",
   mutates: true,
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
 };
@@ -111,6 +112,7 @@ const controlTools: DomainTool[] = [
         reason: { type: "string" },
         candidateId: { type: "string" },
         consumerId: { type: "string" },
+        foundationId: { type: "string" },
         version: { type: "integer" },
       },
       ["question", "reason"],
@@ -135,6 +137,7 @@ export class AgentApplication {
   readonly memory: MemoryStore;
   readonly live: LiveMemory;
   readonly contexts: WorkContexts;
+  readonly foundation: FoundationService;
   readonly capabilities: AgentCapabilities;
   readonly consumption: ConsumptionService;
   readonly driver: AgentDriver;
@@ -147,6 +150,7 @@ export class AgentApplication {
 
   constructor(directory: string, driver?: AgentDriver) {
     this.memory = new MemoryStore(directory);
+    this.foundation = new FoundationService(this.memory);
     this.live = new LiveMemory(directory, this.memory);
     this.contexts = new WorkContexts(this.memory, this.live);
     this.capabilities = new AgentCapabilities(directory);
@@ -680,6 +684,7 @@ export class AgentApplication {
       profile,
       sources,
       ontologies,
+      foundation: this.foundation.read(),
       outlines: this.memory.listArtifacts("ontology_outline"),
       verifications: this.memory.listArtifacts("verification"),
       live: this.live.overview(),
@@ -696,6 +701,9 @@ export class AgentApplication {
       pending: pending
         ? {
             question: pending.question,
+            ...(pending.foundationId
+              ? { foundationId: pending.foundationId, version: pending.version }
+              : {}),
             ...(pending.consumerId
               ? { consumerId: pending.consumerId, version: pending.version }
               : {}),
@@ -829,6 +837,7 @@ export class AgentApplication {
         "source",
         "ontology",
         "ontology_outline",
+        "foundation",
         "verification",
         "source_policy",
         ...(page === "consumption" ? ["consumer"] : []),
@@ -845,6 +854,28 @@ export class AgentApplication {
       )
         throw new Error("消息标识已使用");
       return this.canvasState();
+    }
+    if (
+      task.pending?.foundationId &&
+      /^(?:采用这版|采用这版基础定义|确认采用|采用当前候选|采用这个候选|我确认采用这版)[。！!]?$/u.test(
+        text,
+      )
+    ) {
+      const selected = workContext?.target?.ref ?? focus;
+      if (
+        selected &&
+        (selected.id !== task.pending.foundationId ||
+          selected.version !== task.pending.version)
+      )
+        throw new Error("当前引用与待决定的基础版本不同，请重新查看");
+      return this.canvasFoundationAdopt(
+        {
+          page,
+          id: task.pending.foundationId,
+          version: task.pending.version,
+        },
+        { id: messageId, text, binding, workContext },
+      );
     }
     if (
       task.pending?.candidateId &&
@@ -981,6 +1012,60 @@ export class AgentApplication {
     }
   }
 
+  async canvasFoundationAdopt(
+    body: Record<string, unknown>,
+    message?: {
+      id: string;
+      text: string;
+      binding?: Data;
+      workContext?: ResolvedWorkContext;
+    },
+  ) {
+    const page = this.canvasPage(body.page);
+    if (
+      !["setup", "ontology"].includes(page) ||
+      this.canvasProgress().currentPage !== page
+    )
+      throw new Error("请在企业与数据或本体工作区查看该候选");
+    if (this.modelTest) throw new Error("正在测试连接，请稍后处理");
+    const id = string(body.id, "基础候选");
+    const version = Number(body.version);
+    await this.stopActive("正在保存你的基础定义决定。");
+    return this.memory.atomic(() => {
+      const before = this.foundation.read().current;
+      const artifact = this.foundation.adopt(id, version);
+      if (artifact.version !== before?.version) {
+        const task = this.canvasTask(page);
+        this.memory.attachArtifact(task.id, artifact);
+        this.memory.addMessage(
+          task.id,
+          "user",
+          message?.text ?? "采用这版基础定义。",
+          message?.id,
+          message?.binding,
+          message?.workContext,
+        );
+        this.memory.addMessage(
+          task.id,
+          "assistant",
+          "基础定义已采用，尚未绑定业务来源。可以继续接入数据。",
+        );
+        const progress = this.canvasProgress();
+        if (!progress.completed.includes("setup"))
+          progress.completed.push("setup");
+        this.memory.saveCanvas(progress);
+        for (const taskId of Object.values(progress.taskIds)) {
+          if (
+            taskId &&
+            this.memory.getTask(taskId).pending?.foundationId === id
+          )
+            this.memory.dismissPending(taskId);
+        }
+      }
+      return this.canvasState(page);
+    });
+  }
+
   prepareConsumer(body: Record<string, unknown>) {
     if (this.canvasProgress().currentPage !== "consumption")
       throw new Error("请在连接页创建接入");
@@ -1090,6 +1175,7 @@ export class AgentApplication {
       "profile",
       "ontology",
       "ontology_outline",
+      "foundation",
       "source_policy",
       ...(page === "consumption" ? ["consumer"] : ["source", "verification"]),
     ];
@@ -1288,6 +1374,7 @@ export class AgentApplication {
           ),
           ...(page === "setup" ? [historyReadTool] : []),
           ...(workContext?.target ? [contextReadTool] : []),
+          ...(page !== "consumption" ? foundationTools : []),
           ...capabilityTools,
           ...controlTools.filter((tool) => tool.name === "task_ask"),
           ...(page === "consumption" ? consumptionTools : [pageCompleteTool]),
@@ -1296,6 +1383,7 @@ export class AgentApplication {
     const executionWorkContext = workContext
       ? structuredClone(workContext.context)
       : undefined;
+    let foundationSkill = "";
     let pageCompleted = false;
     const inspectedSources = new Map<string, number>();
     let closingTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1339,6 +1427,13 @@ export class AgentApplication {
               }
             : {}),
           enterprise: workspace.overview(),
+          foundation: this.foundation.read().current
+            ? {
+                id: this.foundation.read().current!.id,
+                version: this.foundation.read().current!.version,
+                status: this.foundation.read().current!.status,
+              }
+            : null,
           ...(page
             ? {
                 maintenance: {
@@ -1426,11 +1521,23 @@ export class AgentApplication {
               args,
             );
             this.memory.assertWritable(context);
+            if (
+              name === "skill_use" &&
+              args.name === "company-foundation-ontology"
+            )
+              foundationSkill = createHash("sha256")
+                .update(JSON.stringify(result))
+                .digest("hex");
             return result;
           }
           if (page && name === "page_complete") {
             let artifacts: Artifact[];
-            if (page === "setup") {
+            if (page === "setup" && this.foundation.read().current) {
+              const foundation = this.foundation.read();
+              if (foundation.current!.status !== "adopted")
+                throw new Error("请先查看并采用基础本体候选");
+              artifacts = [foundation.adopted!];
+            } else if (page === "setup") {
               if (!this.companyReady())
                 throw new Error("请先保存有依据的企业名称与业务");
               artifacts = this.memory
@@ -1495,6 +1602,22 @@ export class AgentApplication {
               question: string(args.question, "问题", 3000),
               reason: string(args.reason, "原因", 3000),
             };
+            if (
+              [args.foundationId, args.candidateId, args.consumerId].filter(
+                Boolean,
+              ).length > 1
+            )
+              throw new Error("一次只能绑定一个待决定目标");
+            if (args.foundationId) {
+              if (page !== "setup" && page !== "ontology")
+                throw new Error("当前页面不能处理基础本体");
+              const foundation = this.foundation.candidate(
+                string(args.foundationId, "基础候选"),
+                Number(args.version),
+              );
+              pending.foundationId = foundation.id;
+              pending.version = foundation.version;
+            }
             if (args.candidateId) {
               if (page && page !== "ontology")
                 throw new Error("请在本体页面处理候选");
@@ -1558,6 +1681,7 @@ export class AgentApplication {
             .digest("hex");
           const mutates = [
             ...domainTools,
+            ...foundationTools,
             ...consumptionTools,
             ...liveTools,
           ].find((tool) => tool.name === name)?.mutates;
@@ -1569,13 +1693,24 @@ export class AgentApplication {
               : `write-${++writeSequence}`
             : undefined;
           const result =
-            name === "consumer_propose" && page === "consumption"
-              ? serializable(
-                  this.consumption.propose(args, context, operationId),
-                )
-              : name.startsWith("live_")
-                ? await this.live.execute(name, args, context, operationId)
-                : await workspace.execute(name, args, operationId);
+            name === "foundation_read"
+              ? serializable(this.foundation.read())
+              : name === "foundation_propose"
+                ? serializable(
+                    this.foundation.propose(
+                      args,
+                      context,
+                      operationId!,
+                      foundationSkill,
+                    ),
+                  )
+                : name === "consumer_propose" && page === "consumption"
+                  ? serializable(
+                      this.consumption.propose(args, context, operationId),
+                    )
+                  : name.startsWith("live_")
+                    ? await this.live.execute(name, args, context, operationId)
+                    : await workspace.execute(name, args, operationId);
           if (
             name === "live_read" &&
             (result as Data).items &&

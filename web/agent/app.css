@@ -2640,3 +2640,78 @@ tr.highlight td {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* The same semantic foundation is visible on setup and ontology. */
+.foundation-panel {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line, #ddd);
+}
+.foundation-panel h2 {
+  font-size: 20px;
+}
+.foundation-panel h3 {
+  font-size: 16px;
+  margin: 18px 0 8px;
+}
+.foundation-panel h4 {
+  margin: 0;
+  font-size: 15px;
+}
+.foundation-panel p {
+  line-height: 1.7;
+}
+.foundation-concepts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  list-style: none;
+  padding: 0;
+  margin: 20px 0;
+}
+.foundation-concept {
+  padding: 16px;
+  border: 1px solid var(--line, #ddd);
+  border-radius: 12px;
+}
+.foundation-relations {
+  padding-left: 20px;
+}
+.foundation-relations > li {
+  margin: 16px 0;
+}
+.foundation-evidence {
+  margin: 10px 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.foundation-evidence summary,
+.foundation-issues summary,
+.foundation-previous > summary {
+  cursor: pointer;
+}
+.foundation-evidence blockquote {
+  margin: 10px 0;
+  padding-left: 12px;
+  border-left: 2px solid #aaa;
+  line-height: 1.7;
+}
+.foundation-issues {
+  margin: 18px 0;
+  line-height: 1.7;
+}
+.foundation-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 18px 0;
+}
+.foundation-panel {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .foundation-concepts {
+    grid-template-columns: 1fr;
+  }
+}

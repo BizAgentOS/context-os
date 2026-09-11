@@ -6,6 +6,7 @@
 
 | 需要查看 | 记录 |
 |---|---|
+| 对话起步、基础本体 Skill 与人工采用 | [基础本体验收](COMPANY_FOUNDATION.md) |
 | 当前按需来源、真实 KodaX 和独立消费入口 | [在线链路](LIVE_MEMORY.md) |
 | 当前搜索、Skill、MCP 与业务 SDK | [通用能力](AGENT_CAPABILITIES.md) |
 | 文件演示与离线分享 | [热力演示](HEATING_DEMO.md)、[HTML 分享](SHARE_HTML.md) |

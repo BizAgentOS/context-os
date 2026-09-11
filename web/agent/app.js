@@ -1,3 +1,4 @@
+import { renderFoundation } from "./foundation.js";
 import { createCapabilitiesPanel } from "./capabilities.js";
 import {
   renderDefinitionGraph,
@@ -85,6 +86,7 @@ const state = {
   profile: null,
   sources: [],
   ontologies: [],
+  foundation: null,
   outlines: [],
   verifications: [],
   sourcePolicies: [],
@@ -346,6 +348,7 @@ function canvasFingerprint() {
     sources: refs(state.sources),
     live: state.live,
     ontologies: refs(state.ontologies),
+    foundation: state.foundation,
     outlines: refs(state.outlines),
     verifications: refs(state.verifications),
     sourcePolicies: refs(state.sourcePolicies),
@@ -359,7 +362,7 @@ function canvasFingerprint() {
     prompt: state.prompt,
     detail: ui.detail?.key,
     deciding:
-      ["ontology", "consumption"].includes(ui.page) &&
+      ["setup", "ontology", "consumption"].includes(ui.page) &&
       (state.busy || ui.requesting),
   });
 }
@@ -419,10 +422,20 @@ function renderCanvas(force = false) {
       );
       live.append(details);
     }
+    if (ui.page === "ontology" && state.foundation?.current)
+      live.prepend(foundationPanel());
     canvas.replaceChildren(live);
   } else if (ui.page === "ontology") canvas.replaceChildren(renderOntology());
   else canvas.replaceChildren(renderConsumption());
   renderAttention(canvas);
+}
+function foundationPanel() {
+  return renderFoundation(state.foundation, {
+    page: ui.page,
+    busy: state.busy || ui.requesting,
+    adopt: (body) => mutate("/api/canvas/foundation/adopt", body),
+    discuss: (artifact) => askAbout(artifact, "基础定义"),
+  });
 }
 function renderSetup() {
   const section = node("section", "setup-canvas");
@@ -447,6 +460,7 @@ function renderSetup() {
   company.id = "setup-company";
   company.tabIndex = -1;
   company.setAttribute("aria-label", "企业信息");
+  if (!shareMode && !state.demo) company.append(foundationPanel());
   const sources = node("section", "setup-sources");
   sources.id = "setup-sources";
   sources.tabIndex = -1;

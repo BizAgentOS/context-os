@@ -98,6 +98,7 @@ export class WorkContexts {
       "source_policy",
       "ontology",
       "ontology_outline",
+      "foundation",
       "verification",
       "source_connection",
       "live_ontology",

@@ -82,6 +82,7 @@ export class MemoryStore implements Repository {
   }
 
   private transaction<T>(fn: () => T): T {
+    if (this.db.isTransaction) return fn();
     this.db.exec("BEGIN IMMEDIATE");
     try {
       const result = fn();
@@ -91,6 +92,11 @@ export class MemoryStore implements Repository {
       this.db.exec("ROLLBACK");
       throw error;
     }
+  }
+
+  /** Synchronous host decisions commit artifact, messages and progress together. */
+  atomic<T>(fn: () => T): T {
+    return this.transaction(fn);
   }
 
   listArtifacts(kind?: string): Artifact[] {
@@ -119,6 +125,17 @@ export class MemoryStore implements Repository {
             .get(id, version);
     if (!row) throw new Error("成果不存在或该版本不可用");
     return parse<Artifact>(row);
+  }
+
+  artifactOperation(
+    context: WriteContext,
+    operationId: string,
+  ): Artifact | null {
+    this.assertWritable(context);
+    const row = this.db
+      .prepare("SELECT body FROM operations WHERE id=?")
+      .get(`${context.executionId}:${operationId}`);
+    return row ? parse<Artifact>(row) : null;
   }
 
   putArtifact(

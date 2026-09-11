@@ -21,7 +21,7 @@ Last Updated: 2026-09-11
 
 | Version | Status | Planned | InProgress | Completed | Progress |
 |---|---|---:|---:|---:|---:|
-| v0.1.0 | InProgress | 6 | 2 | 8 | 8/16 |
+| v0.1.0 | InProgress | 5 | 3 | 8 | 8/16 |
 
 ## Feature Index
 
@@ -39,7 +39,7 @@ Last Updated: 2026-09-11
 | 010 | 源系统连接与按需企业记忆 | New | High | Completed | v0.1.0 | 复用 003/009 | [设计](features/v0.1.0.md#feature-010) |
 | 011 | 通用 Agent 搜索、Skill、MCP 与业务 SDK | Enhancement | High | Completed | v0.1.0 | 003、010 | [设计](features/v0.1.0.md#feature-011) |
 | 012 | 三页结构、存量迁移与统一工作上下文 | Refactor | High | Completed | v0.1.0 | 复用 003/005/010/011 | [设计](features/v0.1.0.md#feature-012) |
-| 013 | 企业基础本体 Skill 与三条起步路径 | New | High | Planned | v0.1.0 | 012（按票） | [设计](features/v0.1.0.md#feature-013) |
+| 013 | 企业基础本体 Skill 与三条起步路径 | New | High | InProgress | v0.1.0 | 012（按票） | [设计](features/v0.1.0.md#feature-013) |
 | 014 | 分类来源接入与多源语义融合 | Enhancement | High | Planned | v0.1.0 | 012/013（按票） | [设计](features/v0.1.0.md#feature-014) |
 | 015 | 本体可视化、证据与内容治理 | Enhancement | High | Planned | v0.1.0 | 012/013/014（按票） | [设计](features/v0.1.0.md#feature-015) |
 | 016 | 消费接口、契约生成与治理闭环 | Enhancement | High | Planned | v0.1.0 | 012/014/015（按票） | [设计](features/v0.1.0.md#feature-016) |
@@ -176,13 +176,15 @@ Last Updated: 2026-09-11
 
 ### 013: 企业基础本体 Skill 与三条起步路径
 
-- **Status:** Planned
+- **Status:** InProgress
 - **Category / Priority:** New / High
 - **Planned / Released:** v0.1.0 / —
-- **Created / Started / Completed:** 2026-09-11 / — / —
+- **Created / Started / Completed:** 2026-09-11 / 2026-09-11 / —
 - **Description:** 以运行 Skill 从对话、资料、确认企业后的公开研究建立有依据的基础本体；基础采用与来源映射分开。
 - **Blocked by:** 012（按票）；具体任务依赖见设计块。
 - **Design:** [FEATURE_013](features/v0.1.0.md#feature-013)。
+
+- **T013-01 已完成：**真实 Skill 加载、对话基础候选、逐项原话、未知与冲突、同主体名称纠正、查看和采用。文档与公开研究路径继续待实施，见[验收](experiment/COMPANY_FOUNDATION.md)。
 
 ### 014: 分类来源接入与多源语义融合
 
@@ -217,12 +219,12 @@ Last Updated: 2026-09-11
 ## Summary
 
 - Total: 16
-- Planned: 6
-- InProgress: 2
+- Planned: 5
+- InProgress: 3
 - Completed: 8
 - New: 8；Internal: 1；Enhancement: 6；Refactor: 1；High: 16。
 - **已实现基础：FEATURE_011 已完成搜索、Skill、MCP 和业务 SDK 入口（[验收](experiment/AGENT_CAPABILITIES.md)）；FEATURE_010 已完成本地来源连接链路。HTTP/MCP 按需读取、Agent 本体候选、人工采用、第三方授权与源变化重读已验收；正式发布、多租户、专用 OAuth 连接器与自动演变仍未完成。**
 
-**下一项：T013-01。** FEATURE_012 已完成，开始基础本体 Skill 的对话路径。新票如覆盖旧 FEATURE_002/004/005 的未完验收，应复用同一实现和证据，再按真实结果更新旧票，不重复建设或提前勾选。
+**下一项：T013-02。** FEATURE_012 与 T013-01 已完成，为同一基础本体补充企业资料。新票如覆盖旧 FEATURE_002/004/005 的未完验收，应复用同一实现和证据，再按真实结果更新旧票，不重复建设或提前勾选。
 
 项目初始化和开发文档已完成，记录在 [CHANGELOG](CHANGELOG.md)；它们不计入产品功能完成数。功能状态在本文维护，具体票的完成状态在对应设计块维护。

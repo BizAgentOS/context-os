@@ -1,7 +1,7 @@
 # 企业基础本体 Skill 设计规格
 
 日期：2026-09-11。适用：[三页产品计划](THREE_PAGE_PLAN.md)的第一页“企业与数据”。
-本文为待实现规格；运行 Skill 在 T013-01 实现。本次没有创建运行包、加载 Skill 或验证模型执行。
+T013-01 已实现对话路径、运行 Skill、基础候选保存/检查/采用，并经过真实 KodaX 验证。文档与公开研究路径仍属 T013-02/03；实际接口见第 10 节。
 字段和输出示意遵循[语义与操作契约](SEMANTIC_CONTRACTS.md)，由对应实现票收敛；已有能力以[运行记录](experiment/AGENT_CAPABILITIES.md)为准。
 
 ## 1. 身份与职责
@@ -117,12 +117,32 @@
 
 ## 9. 实现接点与验收
 
-T013-01 将创建 `config/skills/company-foundation-ontology/SKILL.md` 及包内参考，复用企业研究与本体建模两项现有方法。
-运行目录为 `config/skills/` 与 `<运行目录>/capabilities/skills`，由 `src/capabilities/skills.ts` 的独立 SkillRegistry 发现。
-复用 `capability_search`、`skill_use`、`skill_read`、`web_search`、`web_fetch`；加载只提供方法，不自动执行包内脚本。
-需配合三页改造调整 `src/agent/app.ts` 工具范围、`config/agent/canvas.md` 和第一页完成条件，开放基础定义与来源检查能力。
-复用 `profile_update` 的原话核对及冲突保护；补足基础定义候选/检查/采用服务，不能直接把旧 `ontology_outline` 草稿状态当成新采用能力。
-现有证据校验只接受文件 source；需补消息、网页和远端文档引用，由宿主核对实际读取结果后再供本方法保存。
-沿真实在线来源补知识库/BI契约；现有标量记录 HTTP/MCP 连接不宣称已支持任意文档、BI、OAuth 或 SQL。
-验收包含：直接给名称不重复确认、同名消歧、三路径生成同源成果、资料冲突/unknown、无映射基础采用、重复请求、过期候选与停止恢复。
-必须记录一次真实 Skill 加载和领域保存结果；本规格编写完成不能使 T013-01 或任何运行能力变为 Completed。
+运行包为 [company-foundation-ontology/SKILL.md](../config/skills/company-foundation-ontology/SKILL.md)，经现有独立 SkillRegistry 发现和 `skill_use` 加载。宿主记录本轮实际加载结果摘要，不接受模型自报已加载。基础领域服务为 [foundation.ts](../src/agent/foundation.ts)，与旧文件概念草稿独立。
+
+已核对对话起步、基础版本、原话、冲突/未知、停止与重启、名称纠正及无映射采用；实际模型和浏览器范围见[基础本体验收](experiment/COMPANY_FOUNDATION.md)。文档/网页证据尚未进入本服务，不能把通用搜索、文档上传或旧 outline 能力当作 T013-02/03 已完成。
+
+## 10. T013-01 实际接口
+
+基础本体是当前单企业空间的一份 `Artifact(kind="foundation")`。创建时宿主分配成果 ID，后续保存和采用沿用同一 ID 并追加版本。`foundation_read {}` 返回 `{current, adopted}`；候选修改不会覆盖仍有效的已采用版本。
+
+`foundation_propose` 仅在企业与数据、本体工作区可用，必须在当前运行中先加载基础 Skill。参数：
+
+| 字段 | 契约 |
+|---|---|
+| `baseVersion` | 读取所得当前版本；首次为 0；过期拒绝 |
+| `enterprise` | `{name, evidenceRefs}`；名称须出现在实际用户引文中；已有人工企业名须一致 |
+| `identityCorrection?` | `{previousName, evidenceRefs}`；同一企业的名称纠正须匹配旧名，并引用本轮新增、包含新名的用户原话；不同主体不得借此合并。候选展示改名前后，采用仍绑定具体版本 |
+| `concepts` | `[{id,name,description,evidenceRefs}]`；按稳定 ID 合并，未传入的既有项保留 |
+| `relations` | 同概念字段，另含 `from/to` 概念 ID；端点必须存在，概念与关系的 ID 在基础版本内全局唯一 |
+| `evidence` | `[{id,messageId,quote}]`；新增证据须来自当前任务的真实 user 消息且 quote 为连续原话；不能引用 assistant 消息。已保存证据原样复用，不可用同一 ID 改写 |
+| `unknowns/conflicts` | `[{id,description,resolvedBy?}]`；按 ID 合并，原问题保留；`resolvedBy` 为证据 ID 数组，解决问题须提供本轮新的原话，不能用旧依据直接清除 |
+
+名称与概念/关系是基于原话的语义解释，不是经程序证明的事实。每项概念/关系保存 `origin:"interpretation"`、`mappingStatus:"unbound"`；未知的适用时间保持 unknown。证据副本保存原消息 ID、引文和陈述时点，聊天裁剪后仍可查看这段已保存的依据，不保证能恢复完整历史聊天。
+
+保存返回候选及版本，附结构/证据检查、相对已采用版本的概念与关系差异、企业名称纠正、未决项、加载方法摘要和 `consumerReadiness.objectsQueryable:false`。运行与操作标识由宿主绑定；同一保存重试返回原回执，同一操作标识的不同内容拒绝。当前最多 60 个概念、120 条关系、200 段证据和合计 100 个未决项；初稿按需保持很小。
+
+管理接口 `POST /api/canvas/foundation/adopt` 接受 `{page:"setup"|"ontology", id, version}`，使用原有管理员凭据，要求当前页面一致；停止旧运行后核对候选、企业资料版本与未解决冲突。采用追加一个 adopted 版本，相同候选的重复决定不再增加版本。`task_ask` 可带 `foundationId/version`；对应待决定版本上的明确“采用这版”也走相同宿主操作，Agent 没有直接采用工具。
+
+界面在两页读取同一 `foundation` 投影：概念卡片、关系列表、逐项原话、未决项、变化、旧采用版和采用按钮。整体成果可绑定到对话；成员级选择、完整图交互、删除/合并概念、正式来源映射和独立消费由后续票完成。当前没有把基础定义自动变成来源模型或对外 API。
+
+已有基础本体时，第一页完成要求当前基础版本已采用，无需接入任何来源；采用不把第二页的对象模型或消费标为完成。无基础本体的存量资料路径仍保留“企业名称+业务依据+本轮实际来源读取”的原有判据。基础定义的追加候选与当前 adopted 版本始终分别显示。

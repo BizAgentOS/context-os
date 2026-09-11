@@ -2,7 +2,7 @@
 
 更新：2026-09-11。用途：说明本产品实际使用哪些 KodaX 契约、由谁补齐产品职责，以及哪些能力尚未验证。
 本地核对基线为 `0b264fa6eb34668b9741af2208098d07334f61c0`；[package.json](../package.json)固定 `@kodax-ai/kodax@0.7.96-beta.2`。
-本次范围是本地 adapter、能力服务与已有运行记录，**不是完整 SDK 源码审计，也未重新运行模型验收**。
+本表核对本地 adapter 与能力服务，不是完整 SDK 源码审计。T013-01 新增的基础本体方法已做真实 KodaX/DeepSeek 验证，见[基础本体验收](experiment/COMPANY_FOUNDATION.md)。
 旧官方源码核对版本与链接保存在[历史 Agent 设计](archive/AGENT_DESIGN_2026-09-07.md)；不能拿旧源码版本替代当前安装版本。
 
 ## 1. 如何读这份台账
@@ -79,4 +79,8 @@ Skill 的包目录、已安装方法与变更流程只在[内置 Skill](BUILTIN_
 5. 更新本台账、[Agent 契约](AGENT_DESIGN.md)或对应唯一文档；功能状态只在[台账](FEATURE_LIST.md)维护。
 
 已有可读证据为[能力验收记录](experiment/AGENT_CAPABILITIES.md)、[在线运行记录](experiment/LIVE_MEMORY.md)和 [tests/agent](../tests/agent)。
-历史通过次数是当时结果；本次文档整理没有重新运行这些验收，也未声明新增运行能力完成。
+历史通过次数按当时记录理解；T013-01 的新增能力与本轮验证另见[基础本体验收](experiment/COMPANY_FOUNDATION.md)。
+
+## 基础本体方法接入（T013-01）
+
+沿现有 SkillRegistry 和同一 KodaX 循环，按需加载 `company-foundation-ontology`；宿主记录本轮加载摘要后才允许 `foundation_propose`。`foundation_read` 与画布读取同一 `FoundationService`。真实原话、基础版本、名称纠正、冲突与采用在服务端检查；SDK 不负责判断企业语义真伪。字段及限制见[Skill 接口契约](COMPANY_FOUNDATION_SKILL.md#10-t013-01-实际接口)。未新增模型循环、执行环境或 SDK 版本。

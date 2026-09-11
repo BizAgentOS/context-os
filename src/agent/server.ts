@@ -17,6 +17,10 @@ const staticFiles: Record<string, { file: string; type: string }> = {
     file: "capabilities.js",
     type: "text/javascript; charset=utf-8",
   },
+  "/foundation.js": {
+    file: "foundation.js",
+    type: "text/javascript; charset=utf-8",
+  },
   "/drafts.js": { file: "drafts.js", type: "text/javascript; charset=utf-8" },
   "/app.js": { file: "app.js", type: "text/javascript; charset=utf-8" },
   "/live-workspace.js": {
@@ -465,6 +469,9 @@ export async function createServer(
           break;
         case "/api/canvas/stop":
           result = await app.canvasStop(body);
+          break;
+        case "/api/canvas/foundation/adopt":
+          result = await queue(() => app.canvasFoundationAdopt(body));
           break;
         case "/api/canvas/decision":
           result = await queue(() => app.canvasDecision(body));
