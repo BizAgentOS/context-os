@@ -1,12 +1,14 @@
 # DataEngine
 
-一个基于本体、由 Agent 协助创建企业记忆的本地 MVP 项目。
+一个通过本体统一多源数据的概念、身份和关系，由 Agent 协助构建与治理的本地 MVP 项目。
 
-**产品目标：**创建企业级记忆系统。用户通过输入框说明和修改，页面逐步形成企业信息、数据来源、本体与对象。第三页通过定义关系图、具体对象的局部关联和业务验证检查记忆，后续补资料继续维护。企业记忆持续保留，对话只是创建手段。
+**设计起点：**先建立 AI 可理解、可操作的企业本体与对象契约，再提供人类查看、查询和治理的前端。人类前端、内部治理 Agent 与外部消费 Agent 使用同源语义和操作服务，各自按身份取得能力。当前系统分工见[总体架构](docs/DATA_ENGINE_DESIGN.md)；这是后续设计基线，不代表所有契约已实现。
 
-**数据接入原则：**第二页通过 API 或 MCP 连接企业原系统，数据留在原系统、按授权按需读取；DataEngine 保存企业理解、本体、接口映射与来源引用。第四页向第三方提供基于本体的记忆查询，两者方向不同。已实现声明式 HTTP GET / MCP Streamable HTTP 来源连接与按需对象查询；旧文件样本链路保留。专用 OAuth 连接器、自动巡检及公网部署不在本次交付中。
+**2026-09-11 开发目标：**本体驱动的数据融合与语义打通，页面调整为“企业与数据 · 本体工作区 · 消费与治理”。第一页面向基础本体 Skill 和来源接入，第二页可视化理解融合并修订，第三页提供受控 API/MCP 与消费治理。沿用原样式，计划与十八张任务见[三页产品计划](docs/THREE_PAGE_PLAN.md)；当前运行尚未完成该改造。
 
-**本次 MVP：**四个页面：企业是什么、接入什么资料、如何构建本体与对象、谁通过 API 消费记忆。第四页已实现调用方、明确授权、只读接口、真实访问记录与停用，并完成整条体验验收。采用纯黑白记忆画布，底部对话与输入框作为前景浮层叠放，不提供任务或历史会话管理；报告和更新专页暂不做。用虚构热力企业小样验证链路，全面方法对照与规模验证留到后续。
+**数据接入原则：**来源侧通过 API 或 MCP 连接企业原系统，数据按授权按需读取；DataEngine 保存企业理解、本体、映射与引用。消费侧向第三方提供本体数据接口，两者方向和权限分别管理。已实现 HTTP GET / MCP Streamable HTTP 记录源和按需对象查询；文档/BI 语义、同实体多源融合与细粒度证据列入新计划，旧文件链保留。
+
+**当前可运行基线：**四个页面，已有企业、来源、本体和消费能力的历史验收。采用纯黑白画布、前景对话与输入浮层，不提供任务或历史会话管理。下方运行命令仍启动现有四页；新三页范围以[当前 MVP](docs/MVP.md)与功能台账为准。
 
 ## 连接源系统的实际版本
 
@@ -14,30 +16,21 @@
 
 ## 从这里开始
 
-- [产品目标](docs/PRODUCT.md)：产品是什么、解决什么问题、边界在哪里。
-- [一页 A4 产品说明](docs/PRODUCT_ONEPAGE.html)：用于对外介绍 KodaX 与 NOOA 思路的结合、四步建立企业记忆和持续更新；浏览器可按 A4 打印。
-- [MVP 目标](docs/MVP.md)：首轮体验、最小范围、验收方式。
-- [记忆画布设计](docs/CANVAS_DESIGN.md)：四页目标、对话渐隐、上下文与持久化边界。
-- [连接与访问治理](docs/DATA_CONSUMPTION_DESIGN.md)：第四页的调用方、字段/关系权限与实际访问记录。
-- [画布运行与验收](docs/experiment/CANVAS.md)：启动、创建企业、接入来源与构建本体。
-- [四页维护与业务验证](docs/experiment/MAINTENANCE.md)：文档概念草稿、实际对象验证、资料更新和来源使用限制。
-- [第三方 Agent 接入与数据发布](docs/experiment/AGENT_CONNECTION.md)：本地 MCP、HTTP、独立密钥、同连接的数据更新与实际验收。
-- [消费链运行与验收](docs/experiment/CONSUMPTION.md)：调用方启用、独立客户端访问、拒绝与停用。
-- [历史 Agent 验收](docs/experiment/AGENT.md)：此前模型、对象、报告与维护能力的运行记录。
-- [Agent 设计方案](docs/AGENT_BLUEPRINT.md)：组成、身份说明、五种工作方法、上下文、对象工作区及应用接口。
-- [Agent 行为与技术依据](docs/AGENT_DESIGN.md)：下一步选择、任务与记忆、用户协作、热力对话及完成条件；附 KodaX / NOOA 技术参考。
-- [澄川热力公司设定](data/samples/chengchuan-heating/sources/company/company-brief.md)：第一家虚构企业的经营、片区和部门职责。
-- [企业数据样本](data/samples/chengchuan-heating/README.md)与 [实验说明](docs/experiment/README.md)：业务资料、公开开发问题和输入边界。
-- [执行清单](docs/PLAN.md)：每次完成一个部分，记录真实进度。
-- [功能与版本台账](docs/FEATURE_LIST.md)：当前计划版本、功能状态和依赖。
-- [v0.1.0 设计与开发步骤](docs/features/v0.1.0.md)：九项功能的设计、开发任务及验收。
-- [开发流程](docs/DEVELOPMENT.md)与 [变更日志](docs/CHANGELOG.md)：CodingSkills 使用方式和已发生的变更。
+- [文档中心](docs/README.md)：按 Agent 产品职责组织的完整入口，区分当前设计、接入事实与历史。
+- [产品需求](docs/PRODUCT.md)与[总体架构](docs/DATA_ENGINE_DESIGN.md)：本体融合价值、用户与系统分工。
+- [内部 Agent](docs/AGENT_DESIGN.md)、[KodaX 接入记录](docs/KODAX_CAPABILITY_LEDGER.md)和[运行 Skill](docs/BUILTIN_SKILLS.md)：方法、能力与运行边界。
+- [语义契约](docs/SEMANTIC_CONTRACTS.md)、[人机协作](docs/AGENT_UI_DESIGN.md)、[画布](docs/CANVAS_DESIGN.md)、[消费](docs/DATA_CONSUMPTION_DESIGN.md)：同一对象与操作如何服务人和其他 Agent。
+- [三页实施计划](docs/THREE_PAGE_PLAN.md)、[MVP](docs/MVP.md)与[开发任务](docs/features/v0.1.0.md#feature-012)：范围、迁移、18 张票和验收。
+- [功能台账](docs/FEATURE_LIST.md)、[开发流程](docs/DEVELOPMENT.md)、[Agent 工作约定](AGENTS.md)：实际状态与开发规则。
+- [当前在线运行](docs/experiment/LIVE_MEMORY.md)、[通用能力](docs/experiment/AGENT_CAPABILITIES.md)、[历史设计](docs/archive/README.md)：现有命令、验证与参考。
 
 ## 当前状态
 
+**下一轮入口：T012-01。** FEATURE_012—016 的三页数据融合计划已登记，18 张任务待开发。以下保留旧四页与样本能力的实际档案，不作为新任务优先级。
+
 **目标版本 v0.1.0，开发中，尚未发布。** 已构建澄川热力的企业设定和第一批固定来源样本：1 个热源接入点、2 座换热站、4 个小区、12 栋楼、两周记录。17 份来源文件包含 738 条 CSV 记录及 8 份业务文档。
 
-FEATURE_001 已完成企业样本、可重复生成与历史回放，以及10题原始资料基线。操作见 [生成说明](docs/experiment/GENERATOR.md)和 [基线说明](docs/experiment/BASELINE.md)，实际表现与限制见 [首跑结果](docs/experiment/BASELINE_RESULT.md)。T002-01 正在设计本体建模能力，见 [流程设计草案](docs/experiment/ONTOLOGY_MODELING.md)。此前9类对象及738个实例保留为技术试样，其导入与追溯可运行，业务模型尚未定稿；见 [试样说明](docs/experiment/ONTOLOGY_REVIEW.md)。本地实验室前端与建模同步建设，见[工作台使用说明](docs/experiment/LAB.md)。维护 Agent 和方法对照继续按 [功能台账](docs/FEATURE_LIST.md)推进。
+FEATURE_001 已完成企业样本、可重复生成与历史回放，以及10题原始资料基线。操作见 [生成说明](docs/experiment/GENERATOR.md)和 [基线说明](docs/experiment/BASELINE.md)，实际表现与限制见 [首跑结果](docs/experiment/BASELINE_RESULT.md)。T002-01 的早期建模方案见 [流程设计草案](docs/experiment/ONTOLOGY_MODELING.md)，当前任务顺序以三页实施计划为准。此前9类对象及738个实例保留为技术试样，其导入与追溯可运行，业务模型尚未定稿；见 [试样说明](docs/experiment/ONTOLOGY_REVIEW.md)。本地实验室前端与建模同步建设，见[工作台使用说明](docs/experiment/LAB.md)。维护 Agent 和方法对照继续按 [功能台账](docs/FEATURE_LIST.md)推进。
 
 ## 工作方式
 

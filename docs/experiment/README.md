@@ -1,6 +1,18 @@
 # 虚构企业实验：澄川热力
 
-用户确认采用热力公司作为第一版企业案例，贴近现有 B 端客户。产品目标保持为企业数据组织与本体维护的验证实验。本页是开发者说明，不属于被测 Agent 的业务输入。
+用户确认采用热力公司作为第一版企业案例，贴近现有 B 端客户。当前产品目标为本体驱动多源数据融合；本目录保留各阶段实验与验证。本页是开发者说明，不属于被测 Agent 的业务输入。
+
+## 运行与历史索引
+
+| 需要查看 | 记录 |
+|---|---|
+| 当前按需来源、真实 KodaX 和独立消费入口 | [在线链路](LIVE_MEMORY.md) |
+| 当前搜索、Skill、MCP 与业务 SDK | [通用能力](AGENT_CAPABILITIES.md) |
+| 文件演示与离线分享 | [热力演示](HEATING_DEMO.md)、[HTML 分享](SHARE_HTML.md) |
+| 旧四页及可视化、消费的验证过程 | [画布](CANVAS.md)、[本体图](ONTOLOGY_GRAPH.md)、[消费](CONSUMPTION.md)、[接入发布](AGENT_CONNECTION.md) |
+| 基线、生成与方法评测 | [生成](GENERATOR.md)、[基线](BASELINE.md)、[方法计划](METHOD_VALIDATION_PLAN.md) |
+
+运行记录按其日期和代码版本解读，不重写为新三页验收。当前设计从[文档中心](../README.md)进入，本目录不另设下一项开发任务。
 
 ## 已构建的企业
 
@@ -8,7 +20,7 @@
 
 主流程为接诉、派单、调查、处理、测温/回访、周复盘。第一批资料在 [样本目录](../../data/samples/chengchuan-heating/README.md)，包含结构化记录与业务文档。
 
-固定小样、来源说明和校验入口已交付；T001-02 的生成与回放入口见 [使用说明](GENERATOR.md)。原始 Agent 基线的工具、冻结题与运行入口见 [基线说明](BASELINE.md)；已生成 [对象技术试样](ONTOLOGY_REVIEW.md)，目前先补齐 [本体建模流程设计](ONTOLOGY_MODELING.md)，尚未定稿业务本体，也没有验证方法优于对照组。
+固定小样、来源说明和校验入口已交付；T001-02 的生成与回放入口见 [使用说明](GENERATOR.md)。原始 Agent 基线的工具、冻结题与运行入口见 [基线说明](BASELINE.md)；已生成 [对象技术试样](ONTOLOGY_REVIEW.md)，其早期建模过程见 [本体建模流程设计](ONTOLOGY_MODELING.md)。这些记录不证明方法优于对照组；当前工作顺序以[三页实施计划](../THREE_PAGE_PLAN.md)为准。
 
 ## 第一批公开开发问题
 
