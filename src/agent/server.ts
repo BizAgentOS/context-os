@@ -30,6 +30,10 @@ const staticFiles: Record<string, { file: string; type: string }> = {
     type: "text/javascript; charset=utf-8",
   },
   "/metrics.js": { file: "metrics.js", type: "text/javascript; charset=utf-8" },
+  "/live-objects.js": {
+    file: "live-objects.js",
+    type: "text/javascript; charset=utf-8",
+  },
   "/foundation-workspace.js": {
     file: "foundation-workspace.js",
     type: "text/javascript; charset=utf-8",

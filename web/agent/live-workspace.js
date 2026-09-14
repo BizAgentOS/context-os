@@ -1,3 +1,4 @@
+import { renderLiveObjects } from "./live-objects.js";
 import { renderFusionEvidence } from "./fusion.js";
 import { renderMetricInspector } from "./metrics.js";
 import { renderDefinitionGraph } from "./ontology-workspace.js";
@@ -669,6 +670,26 @@ export function renderLiveWorkspace(
           ),
         );
       block.append(actions);
+      const objects = el("details", "live-object-entry");
+      objects.append(el("summary", "", "探索在线对象与关系"));
+      const openKey = `objects-open:${model.id}:${model.version}`;
+      objects.open = Boolean(selections.get(openKey));
+      let loaded = false;
+      objects.addEventListener("toggle", () => {
+        selections.set(openKey, objects.open);
+        if (objects.open && !loaded) {
+          loaded = true;
+          objects.append(
+            renderLiveObjects(model, {
+              api,
+              selections,
+              select: (m, t, s, guard) =>
+                onSelectContext?.(m, t, s, false, guard),
+            }),
+          );
+        }
+      });
+      block.append(objects);
       section.append(block);
     }
   } else if (page === "consumption") {

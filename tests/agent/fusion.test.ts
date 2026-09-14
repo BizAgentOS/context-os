@@ -187,6 +187,23 @@ test("one object resolves complementary values and preserves conflict, absent, a
     });
     assert.equal(selected.target.definition.mappings[0].sourceId, extra.id);
     assert.equal(selected.target.definition.mappings[0].sourceField, "outcome");
+    const propertyContext = structuredClone(context);
+    propertyContext.view = "ontology.objects";
+    Object.assign(propertyContext.selection[0], { objectId: "TS002" });
+    propertyContext.scope.limit = 1;
+    const cell = await api("/api/canvas/context/read", {
+      page: "ontology",
+      context: propertyContext,
+    });
+    assert.deepEqual(cell.result.items, [{ $id: "TS002", 实际反馈: "已改善" }]);
+    assert.equal(
+      cell.result.evidence[0].properties.实际反馈.evidence[0].recordId,
+      "WO02",
+    );
+    assert.deepEqual(Object.keys(cell.result.evidence[0].properties), [
+      "$id",
+      "实际反馈",
+    ]);
     await assert.rejects(api("/api/live/query", { ...query, limit: 21 }), /20/);
     const calls = upstream.state.calls;
     await api("/api/live/query", { ...query, fields: ["$id", "业务编号"] });

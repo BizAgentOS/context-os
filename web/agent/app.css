@@ -2759,3 +2759,14 @@ tr.highlight td {
  .definition-diagram { overflow-x:auto; }
  .definition-diagram svg { min-width:580px; }
 }
+
+.live-object-entry > summary { cursor:pointer; padding:16px 0; }
+.live-object-workspace { margin:16px 0; }
+.live-object-body { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(260px,1fr); gap:20px; }
+.live-object-view,.live-object-detail { min-width:0; }
+.live-object-detail { padding:0 12px; border-left:1px solid #ddd; overflow-wrap:anywhere; }
+.live-object-detail pre { white-space:pre-wrap; overflow-wrap:anywhere; }
+.live-object-detail summary { cursor:pointer; padding:8px 0; }
+.live-object-workspace input,.live-object-workspace select { max-width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; background:white; color:#222; }
+.live-object-workspace button[aria-pressed="true"] { border-color:#222; font-weight:600; }
+@media(max-width:760px){.live-object-body{grid-template-columns:minmax(0,1fr)}.live-object-detail{padding:12px 0;border-left:0;border-top:1px solid #ddd}}

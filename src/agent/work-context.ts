@@ -41,7 +41,9 @@ const refSchema = z
               : !ref.member) &&
             (ref.kind === "object"
               ? !!ref.objectId
-              : ref.kind === "relation" || !ref.objectId);
+              : ref.kind === "relation" ||
+                ref.kind === "property" ||
+                !ref.objectId);
     if (!valid)
       ctx.addIssue({ code: "custom", message: "引用的种类与目标字段不匹配" });
   });
@@ -301,7 +303,10 @@ export class WorkContexts {
     const resolved = this.resolve(context);
     const ref = resolved.target?.ref;
     if (!ref) return resolved;
-    if (ref.kind === "object" || (ref.kind === "relation" && ref.objectId)) {
+    if (
+      ref.kind === "object" ||
+      ((ref.kind === "relation" || ref.kind === "property") && ref.objectId)
+    ) {
       const result = await this.live.query(
         {
           modelId: ref.id,
@@ -310,6 +315,9 @@ export class WorkContexts {
           id: ref.objectId,
           ...(ref.kind === "relation" ? { relation: ref.member } : {}),
           ...context.scope,
+          ...(ref.kind === "property"
+            ? { fields: [...new Set(["$id", ref.member!])] }
+            : {}),
         },
         assertActive,
       );
