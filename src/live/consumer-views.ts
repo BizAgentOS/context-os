@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { LiveMemory } from "./memory.ts";
 import type { MemoryStore } from "../agent/memory.ts";
@@ -8,6 +8,14 @@ import type {
   DomainTool,
   WriteContext,
 } from "../agent/contracts.ts";
+import { fileURLToPath } from "node:url";
+import {
+  contextScope,
+  contextReading,
+  contextOptions,
+  type ContextScope,
+} from "./consumer-context.ts";
+import { consumerConnection } from "./consumer-contract.ts";
 import { jsonData } from "./sources.ts";
 const name = z.string().trim().min(1).max(200),
   version = z.number().int().positive();
@@ -17,6 +25,13 @@ const grant = z
     type: name,
     fields: z.array(name).min(1).max(100),
     relations: z.array(name).max(40),
+    evidence: z
+      .object({
+        fields: z.array(name).max(20),
+        relations: z.array(name).max(40),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 const proposal = z
@@ -26,6 +41,7 @@ const proposal = z
     purpose: z.string().trim().min(1).max(2000),
     modelRef: ref,
     grants: z.array(grant).min(1).max(20),
+    contextEvidence: z.array(contextScope).max(6).optional(),
   })
   .strict();
 const query = z
@@ -94,7 +110,7 @@ export class ConsumerViews {
         name: a.name,
         purpose: a.purpose,
         modelId: a.modelRef.id,
-        grants: a.grants,
+        grants: a.grants.map(({ evidence, ...g }) => g),
       });
       if (
         a.grants.some(
@@ -104,6 +120,43 @@ export class ConsumerViews {
         )
       )
         throw new Error("许可字段或关系重复");
+      for (const g of a.grants) {
+        if (
+          g.evidence &&
+          (g.evidence.fields.some(
+            (f) => f === "$id" || !g.fields.includes(f),
+          ) ||
+            g.evidence.relations.some((r) => !g.relations.includes(r)) ||
+            new Set(g.evidence.fields).size !== g.evidence.fields.length ||
+            new Set(g.evidence.relations).size !== g.evidence.relations.length)
+        )
+          throw new Error("证据范围必须属于已许可字段或关系且不得重复");
+      }
+      const contextEvidence = (a.contextEvidence ?? []).map((scope) => {
+        const preview = contextReading(
+          this.memory,
+          this.live,
+          a.modelRef,
+          scope,
+          "validation",
+        );
+        return {
+          ...scope,
+          evidenceRef: randomUUID(),
+          label:
+            scope.kind === "document"
+              ? String(preview.title)
+              : String((preview.definition as Data).name),
+        };
+      });
+      if (
+        new Set(
+          contextEvidence.map((c) =>
+            canonical({ bundleRef: c.bundleRef, kind: c.kind, index: c.index }),
+          ),
+        ).size !== contextEvidence.length
+      )
+        throw new Error("背景证据重复");
       const view = this.memory.putArtifact(
         {
           kind: "consumer_view",
@@ -115,6 +168,7 @@ export class ConsumerViews {
             semanticRef: model.content.foundationRef ?? null,
             purpose: a.purpose,
             grants: a.grants,
+            contextEvidence,
             relationPolicy: "source_mapping_only",
             responsible: actor,
           }),
@@ -135,6 +189,35 @@ export class ConsumerViews {
       });
       return publicView(view);
     });
+  }
+  evidenceOptions(input: unknown) {
+    return jsonData(contextOptions(this.memory, this.live, ref.parse(input)));
+  }
+  connection(input: unknown, origin: string) {
+    const r = ref.parse(input),
+      v = this.view(r.id);
+    if (v.version !== r.version || v.status === "revoked")
+      throw new Error("视图已变化或停用");
+    this.model(v);
+    return jsonData(
+      consumerConnection(
+        v.content.grants as Data[],
+        origin,
+        fileURLToPath(
+          new URL("../../scripts/dataengine-mcp.ts", import.meta.url),
+        ),
+        process.execPath,
+        this.contextCatalog(v),
+      ),
+    );
+  }
+  private contextCatalog(v: Artifact) {
+    for(const scope of (v.content.contextEvidence as Data[])??[]) contextReading(this.memory,this.live,v.content.modelRef as {id:string;version:number},scope as unknown as ContextScope,v.id);
+    return ((v.content.contextEvidence as Data[]) ?? []).map((c) => ({
+      ref: c.evidenceRef,
+      kind: c.kind,
+      label: c.label,
+    }));
   }
   private view(id: string) {
     const a = this.memory.getArtifact(id);
@@ -160,6 +243,14 @@ export class ConsumerViews {
       if (a.status !== "draft" || a.version !== r.version)
         throw new Error("消费视图草稿已变化");
       this.model(a);
+      for (const scope of (a.content.contextEvidence as Data[]) ?? [])
+        contextReading(
+          this.memory,
+          this.live,
+          a.content.modelRef as { id: string; version: number },
+          scope as unknown as ContextScope,
+          a.id,
+        );
       const key = "de_view_" + randomBytes(32).toString("base64url");
       const v = this.memory.putArtifact({
         ...a,
@@ -180,6 +271,7 @@ export class ConsumerViews {
     if (a.status === "revoked" && a.version === r.version + 1)
       return publicView(a);
     if (a.version !== r.version) throw new Error("消费视图版本已变化");
+    this.memory.deleteConsumerEvidence(a.id);
     return publicView(
       this.memory.putArtifact({
         ...a,
@@ -193,6 +285,7 @@ export class ConsumerViews {
     path: string,
     params: URLSearchParams,
     authorization?: string,
+    origin = "http://localhost",
   ): Promise<{ status: number; body: Data }> {
     const key = authorization?.startsWith("Bearer ")
       ? authorization.slice(7)
@@ -228,7 +321,13 @@ export class ConsumerViews {
         semanticRef: view.content.semanticRef,
         methodVersion: "fusion-objects-v3.1",
         relationPolicy: "source_mapping_only",
-        evidenceAvailability: "not_exposed",
+        evidenceAvailability:
+          (view.content.contextEvidence as Data[])?.length ||
+          grants.some(
+            (g) => g.evidence?.fields.length || g.evidence?.relations.length,
+          )
+            ? "scoped_reading"
+            : "not_exposed",
       };
       const keys = [...params.keys()];
       if (new Set(keys).size !== keys.length) throw new z.ZodError([]);
@@ -236,6 +335,7 @@ export class ConsumerViews {
         if (keys.length) throw new z.ZodError([]);
         body = jsonData({
           ...common,
+          contextEvidence: this.contextCatalog(view),
           types: grants.map((g) => ({ name: g.type })),
           coverage: { shown: grants.length, complete: true },
         });
@@ -247,6 +347,7 @@ export class ConsumerViews {
           ...common,
           type: g.type,
           fields: g.fields,
+          evidence: g.evidence ?? { fields: [], relations: [] },
           relations: (model.content.relations as Data[])
             .filter(
               (r) => r.from === g.type && g.relations.includes(String(r.name)),
@@ -255,6 +356,67 @@ export class ConsumerViews {
           limits: { maxObjects: 20 },
           consistency: "on_demand_not_atomic",
         });
+      } else if (path === "/v3/connection") {
+        if (keys.length) throw new z.ZodError([]);
+        body = jsonData({
+          ...common,
+          ...consumerConnection(
+            grants,
+            origin,
+            fileURLToPath(
+              new URL("../../scripts/dataengine-mcp.ts", import.meta.url),
+            ),
+            process.execPath,
+            this.contextCatalog(view),
+          ),
+        });
+      } else if (path === "/v3/evidence") {
+        if (keys.length !== 1 || keys[0] !== "ref") throw new z.ZodError([]);
+        const evidenceRef = name.parse(params.get("ref"));
+        const context = ((view.content.contextEvidence as Data[]) ?? []).find(
+          (c) => c.evidenceRef === evidenceRef,
+        );
+        if (context) {
+          const evidence = contextReading(
+            this.memory,
+            this.live,
+            view.content.modelRef as { id: string; version: number },
+            context as unknown as ContextScope,
+            view.id,
+          );
+          valid();
+          body = jsonData({
+            ...common,
+            evidenceRef,
+            reading: "saved_reading_not_current",
+            retention: "explicit_saved_bundle",
+            evidence,
+          });
+        } else {
+          const c = this.memory.readConsumerEvidence(evidenceRef);
+          if (
+            !c ||
+            c.viewId !== view.id ||
+            c.viewVersion !== view.version ||
+            Date.parse(String(c.expiresAt)) <= Date.now()
+          )
+            throw new Forbidden("证据不可用");
+          const g = grants.find((g) => g.type === c.type);
+          if (
+            !g ||
+            !(c.kind === "property"
+              ? g.evidence?.fields.includes(String(c.field))
+              : g.evidence?.relations.includes(String(c.relation)))
+          )
+            throw new Forbidden("证据未许可");
+          body = jsonData({
+            ...common,
+            evidenceRef,
+            reading: "saved_reading_not_current",
+            expiresAt: c.expiresAt,
+            evidence: c.evidence,
+          });
+        }
       } else if (path === "/v3/objects") {
         if (
           keys.some(
@@ -306,8 +468,82 @@ export class ConsumerViews {
           false,
         );
         valid();
+        const pendingEvidence: Array<{
+          id: string;
+          viewId: string;
+          expiresAt: number;
+          body: Data;
+        }> = [];
+        const persist = (scope: Data, evidence: Data) => {
+          const id = randomUUID(),
+            expiresAt = Date.now() + 86400000;
+          pendingEvidence.push({
+            id,
+            viewId: view.id,
+            expiresAt,
+            body: jsonData({
+              viewId: view.id,
+              viewVersion: view.version,
+              ...scope,
+              expiresAt: new Date(expiresAt).toISOString(),
+              evidence,
+            }),
+          });
+          return id;
+        };
+        const targetDefinition = (model.content.types as Data[]).find(
+          (t) => t.name === target.type,
+        )!;
+        const matches = (i: number, f: string) =>
+          (result.evidence?.[i]?.matches ?? [])
+            .filter((m) =>
+              ((targetDefinition.supplements as Data[]) ?? []).some(
+                (s) =>
+                  s.name === m.binding && Object.hasOwn(s.fields as Data, f),
+              ),
+            )
+            .map((m) => ({
+              originRef: digest(
+                view.id + ":" + m.sourceId + ":" + m.capability,
+              ).slice(0, 24),
+              status: m.status,
+              reason: m.reason,
+              attemptedAt: m.attemptedAt,
+              readAt: m.readAt ?? null,
+              coverage: m.coverage ?? null,
+            }));
+        const reads = result.reads.map((r) => ({
+          readAt: r.readAt,
+          historicalReplay: r.historicalReplay,
+        }));
+        let relationEvidenceRef: string | undefined;
+        if (args.relation && g.evidence?.relations.includes(args.relation)) {
+          const r = (model.content.relations as Data[]).find(
+            (r) => r.from === g.type && r.name === args.relation,
+          )!;
+          relationEvidenceRef = persist(
+            { type: g.type, kind: "relation", relation: args.relation },
+            {
+              kind: "relation",
+              from: result.relationOrigin!,
+              relation: args.relation,
+              toType: target.type,
+              targetIds: result.items.map((row) => String(row.$id)),
+              rule: {
+                kind: "exact_match",
+                fromField: r.fromField,
+                toField: r.toField,
+              },
+              coverage: result.coverage,
+              reads,
+              explanation:
+                "按固定源映射的关联字段精确匹配；仅证明本次有界读取的关系，不含内部局部纠正。",
+            },
+          );
+        }
         body = jsonData({
           ...common,
+          ...(relationEvidenceRef ? { relationEvidenceRef } : {}),
           type: target.type,
           items: result.items.map((row, i) => ({
             objectRef: { type: target.type, id: String(row.$id) },
@@ -317,6 +553,51 @@ export class ConsumerViews {
                 .map((f) => [
                   f,
                   {
+                    ...(target.evidence?.fields.includes(f)
+                      ? {
+                          evidenceRef: persist(
+                            { type: target.type, kind: "property", field: f },
+                            {
+                              kind: "property",
+                              objectRef: {
+                                type: target.type,
+                                id: String(row.$id),
+                              },
+                              field: f,
+                              value: row[f],
+                              status:
+                                result.evidence?.[i]?.properties[f]?.status ??
+                                (row[f] === null ? "missing" : "resolved"),
+                              observations: result.evidence?.[i]?.properties[
+                                f
+                              ]?.evidence.map((e) => ({
+                                originRef: digest(
+                                  view.id +
+                                    ":" +
+                                    e.sourceId +
+                                    ":" +
+                                    e.capability,
+                                ).slice(0, 24),
+                                value: e.value,
+                                eligible: e.eligible,
+                                readAt: e.readAt,
+                                historicalReplay: e.historicalReplay,
+                              })) ?? [
+                                {
+                                  value: row[f],
+                                  eligible: true,
+                                  ...reads[reads.length - 1],
+                                },
+                              ],
+                              objectCoverage: result.coverage,
+                              matches: matches(i, f),
+                              reads,
+                              explanation:
+                                "只保留获准属性的读取值与可用性；冲突不择一，不确定或缺失不等于零。",
+                            },
+                          ),
+                        }
+                      : {}),
                     value: row[f],
                     status:
                       result.evidence?.[i]?.properties[f]?.status ??
@@ -332,6 +613,8 @@ export class ConsumerViews {
           })),
           consistency: "on_demand_not_atomic",
         });
+        valid();
+        this.memory.saveConsumerEvidence(pendingEvidence);
       } else {
         status = 404;
         body = { error: "接口不存在" };
@@ -373,7 +656,7 @@ export const consumerViewTools: DomainTool[] = [
   {
     name: "consumer_view_propose",
     description:
-      "为指定已采用modelRef保存v3许可消费视图草稿，明确用途、类型、主/附来源融合字段与关系。字段须含$id，关系两端及关联属性须授权。operationId稳定重试；真实启用及密钥仅管理员界面处理。v3只读取源映射关系，不自动发布内部局部纠正。",
+      "为指定已采用modelRef保存v3许可消费视图草稿，明确用途、类型、主/附来源融合字段与关系。字段须含$id，关系两端及关联属性须授权。用户要求某字段依据时，必须在对应grant显式填写evidence:{fields:[该字段名],relations:[]}；只写fields不开放依据。背景证据另用contextEvidence逐份引用bundle。operationId稳定重试；真实启用及密钥仅管理员界面处理。v3只读取源映射关系，不自动发布内部局部纠正。",
     mutates: true,
     inputSchema: z.toJSONSchema(proposal),
   },

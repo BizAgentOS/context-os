@@ -110,3 +110,7 @@ Skill 的包目录、已安装方法与变更流程只在[内置 Skill](BUILTIN_
 ## T014-05 共同取证接入
 
 共同取证继续使用现有 KodaX 工具循环，增加 evidence_collect、evidence_list、evidence_read。宿主验证来源授权、模型版本、运行有效性及读取边界；未升级 SDK，也未增加第二个推理循环。实际模型完成跨源取证及跨页面历史解读，见[共同取证验收](experiment/EVIDENCE.md)。
+
+### 2026-09-14：T016-02 消费取证
+
+消费页接入已有 evidence_list/read 两个只读领域工具，以真实共同取证引用生成consumer_view_propose的显式背景许可；不开放消费页重新采集或自动启用。外部stdio MCP是确定性HTTP桥接，不启动KodaX模型。当前SDK版本未变，真实模型遗漏字段证据范围的情况见[验收](experiment/CONSUMER_EVIDENCE.md)。

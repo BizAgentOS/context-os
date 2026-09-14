@@ -6,6 +6,7 @@
 
 | 需要查看 | 记录 |
 |---|---|
+| 显式证据、文档/指标背景许可和HTTP/MCP说明 | [消费证据验收](CONSUMER_EVIDENCE.md) |
 | 许可融合消费、v3 HTTP 与独立凭据 | [消费视图验收](CONSUMER_VIEWS.md) |
 | 全局规则修订、实例差异与共同治理影响 | [全局修订验收](MAPPING_CHANGES.md) |
 | 局部关系候选、检查、人工采用与源基线保护 | [局部纠正验收](RELATION_CORRECTIONS.md) |

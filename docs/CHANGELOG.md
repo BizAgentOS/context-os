@@ -6,6 +6,8 @@
 
 ### Added
 
+- 完成 T016-02（2026-09-14）：属性/关系依据、逐份文档/BI历史读取授权、许可OpenAPI/HTTP说明与本地stdio MCP，缓存条数/字节/期限限制和来源撤销。118项Node、22项Python及真实KodaX/浏览器记录见[验收](experiment/CONSUMER_EVIDENCE.md)。下一项T016-03；未发布。
+
 - 完成 T016-01（2026-09-14）：v3 许可目录、类型、融合对象与关系查询；Agent 草稿、人工启用、独立凭据、在途撤销及旧接口隔离。117项Node、22项Python、真实KodaX与浏览器验证见[验收](experiment/CONSUMER_VIEWS.md)。FEATURE_016继续开发，下一项T016-02；未发布。
 
 - 完成 T015-04（2026-09-14）：单个属性/关系规则修订、代表性实例差异、附来源匹配联动、共同changeRef与治理问题汇总；检查后管理员采用，保留原模型和原消费合同。115项Node、22项Python、浏览器与真实KodaX记录见[验收](experiment/MAPPING_CHANGES.md)。FEATURE_015 完成，下一项T016-01；未发布。

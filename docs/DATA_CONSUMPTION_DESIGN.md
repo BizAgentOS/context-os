@@ -1,6 +1,6 @@
 # 第三页：消费接口与治理
 
-2026-09-11。本文为新三页产品的目标设计，归属 FEATURE_016；现有四页和 v1/v2 已交付范围单独保留。内容修订与采用由第二页负责，本页围绕同一变更处理消费、发布、权限和影响。
+2026-09-14。本文为三页产品的消费设计，归属 FEATURE_016；历史四页和 v1/v2 已交付范围单独保留。内容修订与采用由第二页负责，本页围绕同一变更处理消费、发布、权限和影响。
 
 ## 消费视图
 
@@ -10,7 +10,7 @@
 
 ## 实际接口与生成内容
 
-共同服务提供有界许可目录、类型描述、对象查询、关系展开与获准证据/解释。新融合接口单独版本化，保留原 /v1、/v2 行为；T016-01 已实现下述 v3 HTTP 子集，MCP、证据与说明生成由 T016-02 接入。
+共同服务提供有界许可目录、类型描述、对象查询、关系展开与获准证据/解释。新融合接口单独版本化，保留原 /v1、/v2 行为；T016-01/02 已实现下述 v3 HTTP、按需证据、本地 stdio MCP 与说明生成。
 
 页面从实际已开放的许可契约生成 API 文档、OpenAPI 描述和 HTTP/MCP 调用样例。接口必须真实可调用，样例中的类型和字段必须获准；不把生成文件或复制按钮当作服务已实现。密钥用占位符，内部来源地址和受限字段不出现在说明中。
 
@@ -42,7 +42,7 @@
 
 原文件 /v1 发布与固定 dataVersion 见[接入与发布验收](experiment/AGENT_CONNECTION.md)；在线 /v2 按需 readAt 见[在线来源说明](experiment/LIVE_MEMORY.md)。原[消费验收](experiment/CONSUMPTION.md)与[维护验收](experiment/MAINTENANCE.md)只证明当时四页范围，不证明新增证据/融合/迁移能力完成。
 
-## T016-01 当前可执行契约（2026-09-14）
+## T016-01 交付基线（2026-09-14）
 
 `consumer_view` 固定 `modelRef {id,version}`、可选 `semanticRef`、用途和 `grants[{type,fields,relations}]`。每个获准类型须含 `$id`；关系须同时许可两端类型、身份及关联字段。主来源和附来源字段共用许可检查，不自动开放新增字段。内部 Agent 使用 `consumer_view_propose`、`consumer_view_list`；启用不开放为模型工具。
 
@@ -58,6 +58,24 @@
 
 关系查询须提供起点 id；结果按目标类型许可裁剪。对象返回 objectRef 和 properties[field]={value,status}，保留冲突、缺失与不确定性；不返回原始冲突值、源记录标识、源配置或内部映射。读取覆盖与 readAt/historicalReplay 随结果返回，按需读取非跨源原子快照。
 
-共同元数据包括 contractVersion=v3、viewRef、modelRef、semanticRef、methodVersion=fusion-objects-v3.1、relationPolicy=source_mapping_only、evidenceAvailability=not_exposed。当前未提供证据引用/正文、OpenAPI生成及新MCP接口，属于 T016-02；局部关系纠正尚未对外发布，消费者迁移属于 T016-03。
+共同元数据包括 contractVersion=v3、viewRef、modelRef、semanticRef、methodVersion=fusion-objects-v3.1、relationPolicy=source_mapping_only、evidenceAvailability=not_exposed。T016-01 当时未提供证据引用/正文、OpenAPI生成及新MCP接口；现由下节 T016-02 接入。局部关系纠正尚未对外发布，消费者迁移属于 T016-03。
 
 每次读取及返回前复核视图撤销、固定模型和来源可用性；无权/撤销403，非法参数400，固定映射/来源失效502。无内部错误细节。访问记录只记视图、路径、状态和时点。重启保留许可，源数据变化仍读取当前值；固定语义版本不构成历史数据快照。当前是本地单企业管理身份，不含员工级、记录级或多租户授权。
+
+## T016-02 当前证据与接入契约（2026-09-14）
+
+旧视图不自动增加权限。`grants[].evidence={fields:[],relations:[]}` 显式授权字段或关系依据，必须是同一 grant 已许可的子集；每类型最多20个证据属性。状态依据可包含该属性冲突双方的观测值，不能只把“读字段”当成已同意开放这些值。
+
+`GET /v3/objects` 只对获准属性生成 `properties[field].evidenceRef`，关系展开可带 `relationEvidenceRef`；`GET /v3/evidence?ref=…` 按需读取。同一引用绑定视图版本及一次真实读取，返回 `reading=saved_reading_not_current`、到期时点、对象/属性/关系与安全裁剪的依据。属性保留观测值、eligible、读取时间和不透明 originRef，`objectCoverage` 与该属性相关的 `matches` 分开；匹配状态/覆盖区分缺失、多匹配、未知及来源失败，不返回内部源标识、原始列名或记录身份。关系使用本次源读取的规范起点 ID、目标 ID、精确匹配规则和实际覆盖，不包含内部局部纠正。
+
+动态证据是可淘汰缓存，不是永久知识：最多可访问24小时，每批最多401份及512KiB、单视图500份、全局2000份及8MiB。超过批预算整批拒绝；容量满时先淘汰旧引用，已淘汰/过期/无权引用统一403。缓存与本体 artifacts 分表，启动和读写时清理过期项，撤销立即删除该视图动态证据；没有后台定时删除承诺。
+
+文档/BI 使用独立 `contextEvidence:[{bundleRef:{id,version},kind:"document"|"metric",index}]`，最多6份。它明确选取同一固定映射下已保存共同取证中成功读取的一份文档片段或一组指标观测，不开放整个 bundle。界面从最近20份记录列出当前可用候选，完整展示将开放的内容后逐份勾选；默认不选择。提交、草稿恢复与幂等签名包含这些选择。
+
+目录 `contextEvidence[{ref,kind,label}]` 返回本视图不透明引用，再由同一 `/v3/evidence` 读取。文档保留已授权文本、片段引用、版本、字符位置及覆盖；BI 保留单位、粒度、时区、聚合限制、期间、where筛选、offset/limit、观测及覆盖。不返回 bundle 内其他对象、关联对象身份、来源配置或内部关联理由。它们只是显式授权的历史背景，不能直接证明个体状态。此类引用依赖已保存 bundle，不受动态缓存24小时期限限制，但读取仍检查固定模型、当前来源许可及视图撤销。
+
+`GET /v3/connection` 返回该视图 OpenAPI 3.1、HTTP 示例、本地 MCP 配置及许可范围。管理端用 `/api/live/views/connection?id=…&version=…` 获取同份说明；`/api/live/views/evidence-options` 使用相同模型引用列出可授权历史读取。密钥始终是占位符；源服务地址、未授权字段和内部 bundle 引用不进入对外说明。本地桥接脚本的实际文件路径用于本机配置，不是远程托管地址。
+
+`node scripts/dataengine-mcp.ts` 接受 `DATAENGINE_URL` 与本视图 `DATAENGINE_CONSUMER_KEY`，通过实际 HTTP 服务读取，不依赖浏览器或内部模型。v3 工具为 `describe_catalog`、`describe_type`、`query_objects`、`read_evidence`、`describe_connection`；目录/查询/证据流程与 HTTP 相同。原 v1/v2 桥接不变。仍未提供远程托管 MCP、消费者迁移或记录级企业 IAM；迁移为 T016-03。
+
+内部 Agent 在消费页已能只读 `evidence_list/read` 以确认真实引用，再通过 `consumer_view_propose` 保存显式许可；模型可能漏填证据范围，界面与实际草稿回执是核查依据，宿主不推断或补授用户未提交的权限。

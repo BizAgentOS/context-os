@@ -257,8 +257,8 @@ test("relation permits require both endpoints, survive restart, and expose no da
       purpose: "follow complaint callbacks",
       modelRef: { id: m.id, version: m.version },
       grants: [
-        { type: "投诉", fields: ["$id"], relations: ["回访记录"] },
-        { type: "回访", fields: ["$id", "投诉编号", "结果"], relations: [] },
+        { type: "投诉", fields: ["$id"], relations: ["回访记录"], evidence:{fields:[],relations:["回访记录"]} },
+        { type: "回访", fields: ["$id", "投诉编号", "结果"], relations: [], evidence:{fields:["结果"],relations:[]} },
       ],
     };
     await assert.rejects(
@@ -302,6 +302,13 @@ test("relation permits require both endpoints, survive restart, and expose no da
     assert.equal(related.status, 200);
     assert.equal(related.body.items[0].objectRef.id, "HF002");
     assert.equal(related.body.items[0].properties.结果.value, "未改善");
+    const evidencePath='/v3/evidence?ref='+related.body.relationEvidenceRef;
+    const relationEvidence=await read(evidencePath,active.key);
+    assert.deepEqual(relationEvidence.body.evidence.from,{type:'投诉',id:'TS002'});
+    assert.deepEqual(relationEvidence.body.evidence.targetIds,['HF002']);
+    const propertyEvidencePath='/v3/evidence?ref='+related.body.items[0].properties.结果.evidenceRef;
+    assert.equal((await read(propertyEvidencePath,active.key)).body.evidence.value,'未改善');
+    assert.equal((await read(evidencePath,narrowKey)).status,403);
     assert.equal((await read(path, narrowKey)).status, 403);
     assert.equal(
       (await read("/v3/types?type=" + encodeURIComponent("回访"), narrowKey))
@@ -315,6 +322,8 @@ test("relation permits require both endpoints, survive restart, and expose no da
     const fresh = await read(path, active.key);
     assert.equal(fresh.status, 200);
     assert.equal(fresh.body.items[0].properties.结果.value, "已改善");
+    assert.equal((await read(propertyEvidencePath,active.key)).body.evidence.value,'未改善');
+    assert.equal((await read(evidencePath,active.key)).status,200);
     await admin("/api/live/disable", {
       id: connections.mcp.id,
       version: connections.mcp.version,

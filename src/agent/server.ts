@@ -170,7 +170,7 @@ export async function createServer(
       const url = new URL(request.url ?? "/", `http://${host}`);
       if (url.pathname.startsWith("/v3/")) {
         if(request.method!=="GET"){send(405,{error:"仅支持只读请求"});return;}
-        const r=await new ConsumerViews(app.memory,app.live).handle(url.pathname,url.searchParams,request.headers.authorization);send(r.status,r.body);return;
+        const r=await new ConsumerViews(app.memory,app.live).handle(url.pathname,url.searchParams,request.headers.authorization,url.origin);send(r.status,r.body);return;
       }
       if (url.pathname.startsWith("/v2/")) {
         if (request.method !== "GET") {
@@ -272,6 +272,12 @@ export async function createServer(
             ),
           });
           return;
+        }
+        if(url.pathname==='/api/live/views/evidence-options') {
+          send(200,new ConsumerViews(app.memory,app.live).evidenceOptions({id:url.searchParams.get('id'),version:Number(url.searchParams.get('version'))}));return;
+        }
+        if(url.pathname==='/api/live/views/connection') {
+          send(200,new ConsumerViews(app.memory,app.live).connection({id:url.searchParams.get('id'),version:Number(url.searchParams.get('version'))},url.origin));return;
         }
         if (url.pathname === "/api/consumers/connection") {
           const origin = `http://${host}`;

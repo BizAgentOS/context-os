@@ -65,7 +65,9 @@ export class MemoryStore implements Repository {
       CREATE TABLE IF NOT EXISTS message_receipts (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, fingerprint TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS events (task_id TEXT, seq INTEGER, body TEXT NOT NULL, PRIMARY KEY(task_id,seq));
       CREATE TABLE IF NOT EXISTS operations (id TEXT PRIMARY KEY, body TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS consumer_evidence_cache (id TEXT PRIMARY KEY, view_id TEXT NOT NULL, expires_at INTEGER NOT NULL, body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY, body TEXT NOT NULL);`);
+    this.db.prepare("DELETE FROM consumer_evidence_cache WHERE expires_at <= ?").run(Date.now());
     for (const task of this.listTasks()) {
       if (task.executionId) {
         task.executionId = null;
@@ -76,6 +78,28 @@ export class MemoryStore implements Repository {
       }
     }
   }
+
+  /** Bounded, disposable consumer readings; never part of durable ontology artifacts. */
+  saveConsumerEvidence(entries: Array<{id:string;viewId:string;expiresAt:number;body:Data}>) {
+    const rows=entries.map(e=>({...e,encoded:JSON.stringify(e.body)}));
+    if(rows.length>401 || rows.reduce((n,r)=>n+Buffer.byteLength(r.encoded),0)>512*1024) throw new Error('证据读取超过512KB预算，请缩小字段或分页');
+    this.atomic(()=>{
+      this.db.prepare('DELETE FROM consumer_evidence_cache WHERE expires_at <= ?').run(Date.now());
+      const insert=this.db.prepare('INSERT INTO consumer_evidence_cache(id,view_id,expires_at,body) VALUES(?,?,?,?)');
+      for(const r of rows) insert.run(r.id,r.viewId,r.expiresAt,r.encoded);
+      for(const viewId of new Set(rows.map(r=>r.viewId))) this.db.prepare('DELETE FROM consumer_evidence_cache WHERE id IN (SELECT id FROM consumer_evidence_cache WHERE view_id=? ORDER BY rowid DESC LIMIT -1 OFFSET 500)').run(viewId);
+      this.db.exec('DELETE FROM consumer_evidence_cache WHERE id IN (SELECT id FROM consumer_evidence_cache ORDER BY rowid DESC LIMIT -1 OFFSET 2000)');
+      // A batch is <=512KB; prune oldest batches/rows to the global 8MiB ceiling.
+      const old=this.db.prepare('SELECT id,length(CAST(body AS BLOB)) AS bytes FROM consumer_evidence_cache ORDER BY rowid DESC').all() as Array<{id:string;bytes:number}>;
+      let bytes=0;for(const r of old){bytes+=r.bytes;if(bytes>8*1024*1024)this.db.prepare('DELETE FROM consumer_evidence_cache WHERE id=?').run(r.id);}
+    });
+  }
+  readConsumerEvidence(id:string):Data|undefined {
+    this.db.prepare('DELETE FROM consumer_evidence_cache WHERE expires_at <= ?').run(Date.now());
+    const row=this.db.prepare('SELECT body FROM consumer_evidence_cache WHERE id=?').get(id);
+    return row?parse<Data>(row):undefined;
+  }
+  deleteConsumerEvidence(viewId:string) { this.db.prepare('DELETE FROM consumer_evidence_cache WHERE view_id=?').run(viewId); }
 
   close() {
     this.db.close();

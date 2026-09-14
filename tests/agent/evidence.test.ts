@@ -1,3 +1,6 @@
+import { Client } from "@modelcontextprotocol/client";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -161,6 +164,120 @@ test("one business investigation keeps document excerpts, metric scope and confl
     };
     const collected = (await api("/api/live/evidence/collect", request)).saved;
     assert.equal(collected.kind, "evidence_bundle");
+    const view = (
+      await api("/api/live/views/propose", {
+        operationId: "context-scope",
+        name: "背景消费者",
+        purpose: "读取指定文档和期间指标",
+        modelRef: { id: model.id, version: model.version },
+        grants: [{ type: "投诉", fields: ["$id"], relations: [] }],
+        contextEvidence: [
+          {
+            bundleRef: { id: collected.id, version: collected.version },
+            kind: "document",
+            index: 0,
+          },
+          {
+            bundleRef: { id: collected.id, version: collected.version },
+            kind: "metric",
+            index: 0,
+          },
+        ],
+      })
+    ).saved;
+    const active = (
+      await api("/api/live/views/activate", {
+        id: view.id,
+        version: view.version,
+      })
+    ).saved;
+    const consume = async (path: string, key = active.key) => {
+      const r = await fetch(origin + path, {
+        headers: { authorization: "Bearer " + key },
+      });
+      return { status: r.status, body: (await r.json()) as any };
+    };
+    const catalog = await consume("/v3/catalog");
+    assert.equal(catalog.body.contextEvidence.length, 2);
+    const doc = await consume(
+      "/v3/evidence?ref=" +
+        catalog.body.contextEvidence.find((e: any) => e.kind === "document")
+          .ref,
+    );
+    assert.equal(doc.status, 200);
+    assert.match(doc.body.evidence.text, /处理完成后安排回访/);
+    assert.equal(doc.body.evidence.location.revision, "r1");
+    const metric = await consume(
+      "/v3/evidence?ref=" +
+        catalog.body.contextEvidence.find((e: any) => e.kind === "metric").ref,
+    );
+    assert.equal(metric.status, 200);
+    assert.equal(metric.body.evidence.definition.grain, "month");
+    assert.equal(metric.body.evidence.definition.unit, "%");
+    assert.equal(metric.body.evidence.query.start, "2026-01-01");
+    assert.deepEqual(metric.body.evidence.query.where, {});
+    assert.equal(metric.body.evidence.query.limit, 1);
+    assert.doesNotMatch(
+      JSON.stringify([doc.body, metric.body]),
+      /sourceId|sourceTitle|sourceHash|WO02|上门次数|"objects":|dependencies/,
+    );
+    const client = new Client({
+      name: "context-evidence-client",
+      version: "1.0",
+    });
+    try {
+      await client.connect(
+        new StdioClientTransport({
+          command: process.execPath,
+          args: [
+            fileURLToPath(
+              new URL("../../scripts/dataengine-mcp.ts", import.meta.url),
+            ),
+          ],
+          env: {
+            PATH: process.env.PATH!,
+            DATAENGINE_URL: origin,
+            DATAENGINE_CONSUMER_KEY: active.key,
+          },
+        }),
+      );
+      const detail = await client.callTool({
+        name: "read_evidence",
+        arguments: { ref: catalog.body.contextEvidence[1].ref },
+      });
+      assert.equal(detail.isError, undefined);
+      assert.equal(
+        (detail.structuredContent as any).evidence.definition.unit,
+        "%",
+      );
+    } finally {
+      await client.close();
+    }
+    const another = (
+      await api("/api/live/views/propose", {
+        operationId: "no-context",
+        name: "无背景消费者",
+        purpose: "只读对象",
+        modelRef: { id: model.id, version: model.version },
+        grants: [{ type: "投诉", fields: ["$id"], relations: [] }],
+      })
+    ).saved;
+    const anotherKey = (
+      await api("/api/live/views/activate", {
+        id: another.id,
+        version: another.version,
+      })
+    ).saved.key;
+    assert.equal(
+      (
+        await consume(
+          "/v3/evidence?ref=" + catalog.body.contextEvidence[0].ref,
+          anotherKey,
+        )
+      ).status,
+      403,
+    );
+
     await assert.rejects(
       api("/api/live/evidence/collect", {
         ...request,
@@ -219,6 +336,36 @@ test("one business investigation keeps document excerpts, metric scope and confl
     const refreshed = (await api("/api/live/evidence/collect", request)).saved;
     assert.equal(refreshed.content.objects.result.items[0].实际反馈, "已改善");
     assert.notEqual(refreshed.id, collected.id);
+    const filteredRequest = structuredClone(request);
+    filteredRequest.metrics[0].where = { station: "清河站" };
+    const filtered = (await api("/api/live/evidence/collect", filteredRequest))
+      .saved;
+    const fv = (
+      await api("/api/live/views/propose", {
+        operationId: "filtered",
+        name: "筛选指标",
+        purpose: "清河站期间",
+        modelRef: { id: model.id, version: model.version },
+        grants: [{ type: "投诉", fields: ["$id"], relations: [] }],
+        contextEvidence: [
+          {
+            bundleRef: { id: filtered.id, version: filtered.version },
+            kind: "metric",
+            index: 0,
+          },
+        ],
+      })
+    ).saved;
+    const fk = (
+      await api("/api/live/views/activate", { id: fv.id, version: fv.version })
+    ).saved.key;
+    const fc = await consume("/v3/catalog", fk);
+    const fe = await consume(
+      "/v3/evidence?ref=" + fc.body.contextEvidence[0].ref,
+      fk,
+    );
+    assert.deepEqual(fe.body.evidence.query.where, { station: "清河站" });
+    assert.equal(fe.body.evidence.query.limit, 1);
     const linkedRequest = structuredClone(request);
     linkedRequest.metrics[0].dimensionBindings = [
       { dimension: "station", property: "所属站" },
@@ -292,6 +439,14 @@ test("one business investigation keeps document excerpts, metric scope and confl
     await api("/api/live/disable", { id: k.id, version: k.version });
     release();
     await rejected;
+    const blockedDoc = await consume(
+      "/v3/evidence?ref=" + catalog.body.contextEvidence[0].ref,
+    );
+    assert.equal(blockedDoc.status, 502);
+    for(const path of ['/v3/catalog','/v3/connection']) {
+      const unavailable=await consume(path);assert.equal(unavailable.status,502);assert.doesNotMatch(JSON.stringify(unavailable.body),/投诉服务说明/);
+    }
+    assert.doesNotMatch(JSON.stringify(blockedDoc.body), /处理完成|sourceId/);
     assert.equal(service.app.canvasState().evidence.length, count);
     await assert.rejects(
       api("/api/live/evidence/collect", request),

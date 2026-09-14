@@ -1446,7 +1446,7 @@ export class AgentApplication {
                 : []),
             ].includes(tool.name),
           ),
-          ...(page === "consumption" ? consumerViewTools : []),
+          ...(page === "consumption" ? [...consumerViewTools,...evidenceTools.filter(t=>t.name!=="evidence_collect")] : []),
           ...liveTools.filter(
             (tool) =>
               tool.name === "live_overview" ||

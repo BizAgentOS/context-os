@@ -478,6 +478,7 @@ export class LiveMemory {
       conceptId: string;
     };
     correction?: Data;
+    relationOrigin?: {type:string;id:string};
     consistency: string;
   }> {
     const args = querySchema.parse(input);
@@ -630,7 +631,7 @@ export class LiveMemory {
       this.checkConnections(d);
       if (this.repo.getArtifact(model.id).version !== model.version)
         throw new Error("本体版本已变化，请重新读取目标");
-      return { ...result, reads: [origin.provenance, ...result.reads] };
+      return { ...result, relationOrigin:{type:type.name,id:String(origin.items[0][cap.idField])}, reads: [origin.provenance, ...result.reads] };
     }
     const fields = args.fields ?? ["$id", ...propertyNames(type)];
     for (const f of fields)
