@@ -2770,3 +2770,7 @@ tr.highlight td {
 .live-object-workspace input,.live-object-workspace select { max-width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; background:white; color:#222; }
 .live-object-workspace button[aria-pressed="true"] { border-color:#222; font-weight:600; }
 @media(max-width:760px){.live-object-body{grid-template-columns:minmax(0,1fr)}.live-object-detail{padding:12px 0;border-left:0;border-top:1px solid #ddd}}
+
+.correction-panel { margin:24px 0; border-top:1px solid #ddd; padding-top:16px; }
+.correction-panel button { margin:4px 8px 4px 0; }
+.live-dialog pre { white-space:pre-wrap; overflow-wrap:anywhere; }

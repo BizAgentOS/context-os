@@ -1,3 +1,4 @@
+import { activeCorrection, captureRelation } from "./relation-corrections.ts";
 import {
   supplementSchema,
   propertyNames,
@@ -455,6 +456,7 @@ export class LiveMemory {
   async query(
     input: unknown,
     assertActive: () => void = () => {},
+    applyCorrections = true,
   ): Promise<{
     model: { id: string; version: number };
     type: string;
@@ -478,6 +480,7 @@ export class LiveMemory {
       foundationVersion: number;
       conceptId: string;
     };
+    correction?: Data;
     consistency: string;
   }> {
     const args = querySchema.parse(input);
@@ -535,6 +538,80 @@ export class LiveMemory {
         d.connections[type.sourceId],
       );
       if (origin.items.length !== 1) throw new Error("关联起点不存在或不唯一");
+      const correctionTarget = {
+        modelId: model.id,
+        modelVersion: model.version,
+        type: type.name,
+        objectId: String(origin.items[0][cap.idField]),
+        relation: args.relation,
+      };
+      const correction = applyCorrections
+        ? activeCorrection(this.repo, correctionTarget)
+        : null;
+      if (correction) {
+        const snapshot = await captureRelation(
+          this,
+          correctionTarget,
+          correction.content.targetIds as string[],
+          assertValid,
+        );
+        if (snapshot.fingerprint !== correction.content.fingerprint)
+          throw new Error("局部纠正依赖的源事实已变化，请重新检查关系纠正");
+        if (
+          activeCorrection(this.repo, correctionTarget)?.id !== correction.id ||
+          this.repo.getArtifact(correction.id).version !== correction.version
+        )
+          throw new Error("局部纠正版本已变化，请重读");
+        const targetType = d.types.find((t) => t.name === rel.to)!;
+        const fields = args.fields ?? ["$id", ...propertyNames(targetType)];
+        if (
+          fields.some(
+            (f) => f !== "$id" && !propertyNames(targetType).includes(f),
+          )
+        )
+          throw new Error("业务字段不存在");
+        const page = snapshot.targets.slice(
+          args.offset,
+          args.offset + args.limit,
+        );
+        return {
+          model: { id: model.id, version: model.version },
+          type: rel.to,
+          ...(d.foundationRef?{conceptRef:{foundationId:d.foundationRef.id,foundationVersion:d.foundationRef.version,conceptId:targetType.conceptId!}}:{}),
+          items: page.map((r) =>
+            Object.fromEntries(fields.map((f) => [f, r.items[0][f]])),
+          ),
+          evidence: page.flatMap((r) =>
+            (r.evidence || []).map((e) => ({
+              ...e,
+              properties: Object.fromEntries(
+                Object.entries(e.properties).filter(([f]) =>
+                  fields.includes(f),
+                ),
+              ),
+            })),
+          ),
+          reads: [
+            ...snapshot.origin.reads,
+            ...snapshot.before.reads,
+            ...snapshot.targets.flatMap((r) => r.reads),
+          ],
+          coverage: {
+            offset: args.offset,
+            shown: page.length,
+            total: snapshot.targets.length,
+            complete: args.offset === 0 && page.length === snapshot.targets.length,
+          },
+          correction: {
+            id: correction.id,
+            version: correction.version,
+            applied: true,
+            originalIds: snapshot.before.items.map((r) => r.$id),
+            condition: "model_and_source_snapshot_unchanged",
+          },
+          consistency: "on_demand_not_atomic",
+        };
+      }
       const value = origin.items[0][sourceField(rel.fromField)];
       if (value === null || value === "")
         throw new Error("关联字段为空，无法解析关系");
@@ -737,15 +814,19 @@ export class LiveMemory {
           : target.fields;
         if (fields.some((f) => !target.fields.includes(f)))
           throw new Denied("字段未授权");
-        const result = await this.query({
-          modelId: model.id,
-          type,
-          ...(params.has("id") ? { id: params.get("id") } : {}),
-          ...(relation ? { relation } : {}),
-          fields,
-          offset: Number(params.get("offset") ?? 0),
-          limit: Number(params.get("limit") ?? 20),
-        });
+        const result = await this.query(
+          {
+            modelId: model.id,
+            type,
+            ...(params.has("id") ? { id: params.get("id") } : {}),
+            ...(relation ? { relation } : {}),
+            fields,
+            offset: Number(params.get("offset") ?? 0),
+            limit: Number(params.get("limit") ?? 20),
+          },
+          () => {},
+          false,
+        );
         // External callers see business values and freshness, never upstream connection mappings.
         const { evidence, ...publicResult } = result;
         body = jsonData({

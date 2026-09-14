@@ -1,3 +1,4 @@
+import { RelationCorrections } from "../live/relation-corrections.ts";
 import { EvidenceService } from "./evidence.ts";
 import { MetricReader } from "./metrics.ts";
 import { KnowledgeReader, sourceCatalog } from "./knowledge.ts";
@@ -30,6 +31,10 @@ const staticFiles: Record<string, { file: string; type: string }> = {
     type: "text/javascript; charset=utf-8",
   },
   "/metrics.js": { file: "metrics.js", type: "text/javascript; charset=utf-8" },
+  "/relation-corrections.js": {
+    file: "relation-corrections.js",
+    type: "text/javascript; charset=utf-8",
+  },
   "/live-objects.js": {
     file: "live-objects.js",
     type: "text/javascript; charset=utf-8",
@@ -457,6 +462,30 @@ export async function createServer(
         case "/api/live/evidence/read":
           result = new EvidenceService(app.memory, app.live).read(body);
           break;
+        case "/api/live/corrections/read":
+          result = new RelationCorrections(app.memory, app.live).read(
+            String(body.id),
+            Number(body.version),
+          );
+          break;
+        case "/api/live/corrections/list":
+          result = {
+            items: new RelationCorrections(app.memory, app.live).list(),
+          };
+          break;
+        case "/api/live/corrections/propose":
+        case "/api/live/corrections/check":
+        case "/api/live/corrections/adopt":
+        case "/api/live/corrections/cancel": {
+          const method = url.pathname.split("/").at(-1) as
+            "propose" | "check" | "adopt" | "cancel";
+          const saved = await new RelationCorrections(
+            app.memory,
+            app.live,
+          ).execute(method, body);
+          result = { ...app.canvasState(), saved };
+          break;
+        }
         case "/api/live/query":
           result = await app.live.query(body);
           break;

@@ -51,3 +51,5 @@ maintenance.attention 是根据已保存的来源、企业冲突、模型和待�
 基础定义视角的选中目标可能是 foundation_concept 或 foundation_relation。使用 context_read 读取本条消息固定的含义、来源绑定与冲突依据；未映射不等于无业务含义，也不代表有可查询实例。关系定义与实际对象关系分别对待；有冲突时说明双方名称、方向和含义，不只重述保留值。
 
 对象探索中 property 引用若携带 objectId，表示具体对象的某项属性。context_read 会读取当前源值及该属性证据；说明已读值、来源记录/字段、冲突或覆盖限制，不把页面旧结果当作当前事实。对象关系引用固定起点与分页范围，不能把分页或失败说成没有关系。
+
+局部关系纠正：先读取已采用映射与具体对象关系，用 relation_correction_propose 保存指定起点的完整新目标集合（空集合表示无关联），提供理由与提交者依据；operationId 为本次操作稳定唯一 ID，重试相同内容沿用。用 relation_correction_check 检查指定候选版本，依据回执报告 change ID、版本和限制。检查不能证明业务真实，用户在页面确认采用，你没有采用工具。relation_correction_list 仅返回最近40条元数据，relation_correction_read 按 ID/版本读取正文和源基线；cancel 只取消未采用候选。纠正仅作用于内部对象关系，不修改源系统或自动改变外部消费合同。来源漂移、分页不完整、身份歧义须先处理，不能猜测目标集合。

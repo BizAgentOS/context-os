@@ -1,3 +1,4 @@
+import { openCorrection } from "./relation-corrections.js";
 import { createMemoryGraph } from "./memory-graph.js";
 import { renderFusionEvidence } from "./fusion.js";
 const el = (tag, cls = "", text = "") => {
@@ -408,9 +409,34 @@ export function renderLiveObjects(model, { api, select, selections }) {
         "",
         `${link.from}.${link.fromField} → ${link.to}.${link.toField}`,
       ),
-      el("p", "muted", "按本次起点关联字段匹配；不是跨源原子快照。"),
+      el(
+        "p",
+        "muted",
+        r.correction
+          ? "本次目标来自已采用的局部纠正；原字段映射与源目标仅作依据。不是跨源原子快照。"
+          : "按本次起点关联字段匹配；不是跨源原子快照。",
+      ),
     );
     provenance(detail, r);
+    if (model.status === "adopted" && r.coverage.complete)
+      detail.append(
+        button("纠正此对象关系", () =>
+          openCorrection(model, api, {
+            type: from.type,
+            objectId: String(from.row.$id),
+            relation: link.name,
+            targetIds: r.items.map((i) => String(i.$id)),
+          }),
+        ),
+      );
+    if (r.correction)
+      detail.append(
+        el(
+          "p",
+          "source-meta",
+          `已应用局部纠正 ${r.correction.id} · v${r.correction.version}；原目标 ${(r.correction.originalIds || []).join("、") || "无"}`,
+        ),
+      );
     detail.append(
       button("引用这条对象关系", () =>
         attach(

@@ -28,7 +28,7 @@
 
 升级前仍打开旧页面的用户，先导出未发送草稿，再重启并导入；方法与边界见[三页迁移说明](docs/experiment/THREE_PAGE_MIGRATION.md)。
 
-**下一项：T015-03（局部关系纠正的完整闭环）。** T015-02 已接入页内在线对象/关系探索与属性取证，见[验收](docs/experiment/LIVE_OBJECTS.md)。 T015-01 已支持基础定义图/列表、同引用说明与映射展开，见[可视化验收](docs/experiment/FOUNDATION_VISUALIZATION.md)。 T014-05 已支持三类证据共同取证、历史查看与范围解释，见[共同取证验收](docs/experiment/EVIDENCE.md)。 T014-04 已接入主/附来源融合、逐属性依据及冲突状态，见[融合验收](docs/experiment/FUSION.md)。 已接通基础概念与真实业务映射，支持检查、预览和采用执行子集，见[绑定验收](docs/experiment/FOUNDATION_BINDINGS.md)。 T014-01/02 已接入统一来源目录、知识片段取证及 HTTP/MCP 指标定义与观测；指标保留单位、维度、期间、粒度和覆盖，见[指标验收](docs/experiment/METRICS.md)。以下保留旧四页与样本能力的实际档案，不作为新任务优先级。
+**下一项：T015-04（全局映射修订与治理影响）。** T015-03 已完成局部关系候选、检查与人工采用，见[验收](docs/experiment/RELATION_CORRECTIONS.md)。 T015-02 已接入页内在线对象/关系探索与属性取证，见[验收](docs/experiment/LIVE_OBJECTS.md)。 T015-01 已支持基础定义图/列表、同引用说明与映射展开，见[可视化验收](docs/experiment/FOUNDATION_VISUALIZATION.md)。 T014-05 已支持三类证据共同取证、历史查看与范围解释，见[共同取证验收](docs/experiment/EVIDENCE.md)。 T014-04 已接入主/附来源融合、逐属性依据及冲突状态，见[融合验收](docs/experiment/FUSION.md)。 已接通基础概念与真实业务映射，支持检查、预览和采用执行子集，见[绑定验收](docs/experiment/FOUNDATION_BINDINGS.md)。 T014-01/02 已接入统一来源目录、知识片段取证及 HTTP/MCP 指标定义与观测；指标保留单位、维度、期间、粒度和覆盖，见[指标验收](docs/experiment/METRICS.md)。以下保留旧四页与样本能力的实际档案，不作为新任务优先级。
 
 **目标版本 v0.1.0，开发中，尚未发布。** 已构建澄川热力的企业设定和第一批固定来源样本：1 个热源接入点、2 座换热站、4 个小区、12 栋楼、两周记录。17 份来源文件包含 738 条 CSV 记录及 8 份业务文档。
 

@@ -1,3 +1,4 @@
+import { renderCorrections } from "./relation-corrections.js";
 import { renderLiveObjects } from "./live-objects.js";
 import { renderFusionEvidence } from "./fusion.js";
 import { renderMetricInspector } from "./metrics.js";
@@ -690,6 +691,8 @@ export function renderLiveWorkspace(
         }
       });
       block.append(objects);
+      if (model.status === "adopted")
+        block.append(renderCorrections(model, { api }));
       section.append(block);
     }
   } else if (page === "consumption") {

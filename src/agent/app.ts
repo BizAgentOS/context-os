@@ -1,3 +1,7 @@
+import {
+  RelationCorrections,
+  correctionTools,
+} from "../live/relation-corrections.ts";
 import { EvidenceService, evidenceTools } from "./evidence.ts";
 import { MetricReader, metricTools } from "./metrics.ts";
 import { sourceCatalog } from "./knowledge.ts";
@@ -1454,6 +1458,7 @@ export class AgentApplication {
           ...(page !== "consumption"
             ? [...foundationTools, ...metricTools, ...evidenceTools]
             : []),
+          ...(page === "ontology" ? correctionTools : []),
           ...capabilityTools,
           ...controlTools.filter((tool) => tool.name === "task_ask"),
           ...(page === "consumption" ? consumptionTools : [pageCompleteTool]),
@@ -1780,6 +1785,7 @@ export class AgentApplication {
             ...domainTools,
             ...foundationTools,
             ...evidenceTools,
+            ...correctionTools,
             ...consumptionTools,
             ...liveTools,
           ].find((tool) => tool.name === name)?.mutates;
@@ -1811,6 +1817,22 @@ export class AgentApplication {
             const result = await foundationDocuments.web!.read(args);
             this.memory.assertWritable(context);
             return serializable(result);
+          }
+          if (name.startsWith("relation_correction_")) {
+            const service = new RelationCorrections(this.memory, this.live);
+            return serializable(
+              name === "relation_correction_list"
+                ? { items: service.list() }
+                : name === "relation_correction_read"
+                  ? service.read(string(args.id, "纠正记录"), Number(args.version))
+                : await service.execute(
+                    name.slice("relation_correction_".length) as
+                      "propose" | "check" | "cancel",
+                    args,
+                    context,
+                    () => this.memory.assertWritable(context),
+                  ),
+            );
           }
           const result =
             name === "evidence_list"
