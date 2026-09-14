@@ -106,3 +106,7 @@ Skill 的包目录、已安装方法与变更流程只在[内置 Skill](BUILTIN_
 ## 基础概念绑定（T014-03）
 
 复用同一 KodaX 的 live_overview/live_read/live_propose/live_query，新增 foundationRef、baseModelRef、conceptId/relationId 合同；FoundationService 从执行模型投影概念/关系绑定，不向基础定义写入来源记录。task_ask 可以绑定实际 live_ontology 候选，宿主承接具体版本的人工采用。Skill 增加保留现有执行子集、实际读源、预览和采用方法；权限、版本与依赖检查仍由确定性服务执行，SDK 未升级。详见[绑定契约](SEMANTIC_CONTRACTS.md#t014-03-基础概念与业务执行子集)。
+
+## T014-05 共同取证接入
+
+共同取证继续使用现有 KodaX 工具循环，增加 evidence_collect、evidence_list、evidence_read。宿主验证来源授权、模型版本、运行有效性及读取边界；未升级 SDK，也未增加第二个推理循环。实际模型完成跨源取证及跨页面历史解读，见[共同取证验收](experiment/EVIDENCE.md)。

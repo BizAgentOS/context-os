@@ -189,7 +189,7 @@ Agent 的 `foundation_read/foundation_propose/memory_read` 和画布基础投影
 
 ## T014-02 指标资料的边界
 
-方法可指导使用 `metric_describe/metric_query` 检查 BI 定义与聚合观测。指标结果携带实际语义、时间与覆盖，不能当作用户原话、基础定义或文档证据，也不能把比例直接加总。查询需要明确期间；首次缺少期间时再澄清。运行 Skill 与工具共同说明[指标合同](SEMANTIC_CONTRACTS.md#t014-02-bi-指标定义与观测)，跨源共同取证仍在后续票。
+方法可指导使用 `metric_describe/metric_query` 检查 BI 定义与聚合观测。指标结果携带实际语义、时间与覆盖，不能当作用户原话、基础定义或文档证据，也不能把比例直接加总。查询需要明确期间；首次缺少期间时再澄清。运行 Skill 与工具共同说明[指标合同](SEMANTIC_CONTRACTS.md#t014-02-bi-指标定义与观测)，跨源共同取证已通过 evidence_collect/list/read 接入，形成独立有界依据记录，见[共同取证合同](SEMANTIC_CONTRACTS.md#t014-05-文档指标与业务对象共同取证)。
 
 ## 14. T014-03 业务来源绑定
 

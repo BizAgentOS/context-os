@@ -72,3 +72,7 @@ Skill 不能改变页面工具范围、扩大 MCP 授权或把网页/资料中�
 
 代码检查参考 [capabilities.test.ts](../tests/agent/capabilities.test.ts)；真实能力操作见[运行记录](experiment/AGENT_CAPABILITIES.md)。
 T013-01 的测试与真实模型记录见基础本体验收；任务状态以[版本设计块](features/v0.1.0.md#feature-013)为准。
+
+## T014-05 共同取证接入
+
+企业基础本体运行 Skill 已补充共同取证方法：发现和读取三类来源，使用 evidence_collect 保存有界记录，再通过 evidence_list/read 查找与解释历史内容。取证记录不自动变成本体定义或事实，也不代替人工采用。实际能力和限制见[共同取证验收](experiment/EVIDENCE.md)。

@@ -87,6 +87,7 @@ const querySchema = z
     limit: z.number().int().min(1).max(100).default(20),
   })
   .strict();
+export { querySchema as liveQuerySchema };
 const digest = (key: string) => createHash("sha256").update(key).digest("hex");
 class Denied extends Error {}
 export class LiveMemory {
@@ -108,6 +109,13 @@ export class LiveMemory {
       })),
       audit: this.repo.listArtifacts("live_access").slice(0, 40),
     };
+  }
+  assertModel(id: string, version: number) {
+    const model = this.model(id);
+    if (model.version !== version)
+      throw new Error("本体版本已变化，请重新读取");
+    this.checkConnections(this.definition(model));
+    return model;
   }
   private model(id: string, adopted = false) {
     const a = this.repo.getArtifact(id);

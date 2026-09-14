@@ -1,3 +1,4 @@
+import { EvidenceService, evidenceTools } from "./evidence.ts";
 import { MetricReader, metricTools } from "./metrics.ts";
 import { sourceCatalog } from "./knowledge.ts";
 import { FoundationDocuments } from "./foundation-evidence.ts";
@@ -696,6 +697,7 @@ export class AgentApplication {
       sources,
       ontologies,
       foundation: this.foundation.view(),
+      evidence: new EvidenceService(this.memory, this.live).list(),
       outlines: this.memory.listArtifacts("ontology_outline"),
       verifications: this.memory.listArtifacts("verification"),
       live: this.live.overview(),
@@ -1450,7 +1452,7 @@ export class AgentApplication {
           ...(page === "setup" ? [historyReadTool] : []),
           ...(workContext?.target ? [contextReadTool] : []),
           ...(page !== "consumption"
-            ? [...foundationTools, ...metricTools]
+            ? [...foundationTools, ...metricTools, ...evidenceTools]
             : []),
           ...capabilityTools,
           ...controlTools.filter((tool) => tool.name === "task_ask"),
@@ -1469,6 +1471,7 @@ export class AgentApplication {
     const metricReader = new MetricReader(this.live.sources, () =>
       this.memory.assertWritable(context),
     );
+    const evidenceService = new EvidenceService(this.memory, this.live);
     let foundationSkill = "";
     let pageCompleted = false;
     const inspectedSources = new Map<string, number>();
@@ -1776,6 +1779,7 @@ export class AgentApplication {
           const mutates = [
             ...domainTools,
             ...foundationTools,
+            ...evidenceTools,
             ...consumptionTools,
             ...liveTools,
           ].find((tool) => tool.name === name)?.mutates;
@@ -1809,35 +1813,52 @@ export class AgentApplication {
             return serializable(result);
           }
           const result =
-            name === "foundation_document_read"
-              ? serializable(foundationDocuments.read(args))
-              : name === "foundation_read"
-                ? serializable(this.foundation.view())
-                : name === "foundation_propose"
-                  ? serializable(
-                      this.foundation.project(
-                        this.foundation.propose(
-                          args,
-                          context,
-                          operationId!,
-                          foundationSkill,
-                          foundationDocuments,
-                        ),
-                      ),
-                    )
-                  : name === "consumer_propose" && page === "consumption"
-                    ? serializable(
-                        this.consumption.propose(args, context, operationId),
-                      )
-                    : name.startsWith("live_")
-                      ? await this.live.execute(
-                          name,
-                          args,
-                          context,
-                          operationId,
-                          () => this.memory.assertWritable(context),
-                        )
-                      : await workspace.execute(name, args, operationId);
+            name === "evidence_list"
+              ? serializable(evidenceService.catalog(args))
+              : name === "evidence_collect"
+                ? serializable(
+                    await evidenceService.collect(
+                      args,
+                      context,
+                      operationId,
+                      () => this.memory.assertWritable(context),
+                    ),
+                  )
+                : name === "evidence_read"
+                  ? serializable(evidenceService.read(args))
+                  : name === "foundation_document_read"
+                    ? serializable(foundationDocuments.read(args))
+                    : name === "foundation_read"
+                      ? serializable(this.foundation.view())
+                      : name === "foundation_propose"
+                        ? serializable(
+                            this.foundation.project(
+                              this.foundation.propose(
+                                args,
+                                context,
+                                operationId!,
+                                foundationSkill,
+                                foundationDocuments,
+                              ),
+                            ),
+                          )
+                        : name === "consumer_propose" && page === "consumption"
+                          ? serializable(
+                              this.consumption.propose(
+                                args,
+                                context,
+                                operationId,
+                              ),
+                            )
+                          : name.startsWith("live_")
+                            ? await this.live.execute(
+                                name,
+                                args,
+                                context,
+                                operationId,
+                                () => this.memory.assertWritable(context),
+                              )
+                            : await workspace.execute(name, args, operationId);
           if (
             name === "live_read" &&
             (result as Data).items &&

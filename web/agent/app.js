@@ -1,3 +1,4 @@
+import { renderEvidenceWorkspace } from "./evidence.js";
 import { renderFoundation } from "./foundation.js";
 import { createCapabilitiesPanel } from "./capabilities.js";
 import {
@@ -87,6 +88,7 @@ const state = {
   sources: [],
   ontologies: [],
   foundation: null,
+  evidence: [],
   outlines: [],
   verifications: [],
   sourcePolicies: [],
@@ -349,6 +351,7 @@ function canvasFingerprint() {
     live: state.live,
     ontologies: refs(state.ontologies),
     foundation: state.foundation,
+    evidence: refs(state.evidence),
     outlines: refs(state.outlines),
     verifications: refs(state.verifications),
     sourcePolicies: refs(state.sourcePolicies),
@@ -427,6 +430,8 @@ function renderCanvas(force = false) {
     canvas.replaceChildren(live);
   } else if (ui.page === "ontology") canvas.replaceChildren(renderOntology());
   else canvas.replaceChildren(renderConsumption());
+  if (!shareMode && !state.demo && ui.page !== "consumption")
+    canvas.append(renderEvidenceWorkspace(state, { api, mutate }));
   renderAttention(canvas);
 }
 function foundationPanel() {

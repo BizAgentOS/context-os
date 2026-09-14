@@ -1,3 +1,4 @@
+import { EvidenceService } from "./evidence.ts";
 import { MetricReader } from "./metrics.ts";
 import { KnowledgeReader, sourceCatalog } from "./knowledge.ts";
 import { createServer as httpServer, type IncomingMessage } from "node:http";
@@ -17,6 +18,10 @@ const staticFiles: Record<string, { file: string; type: string }> = {
   "/index.html": { file: "index.html", type: "text/html; charset=utf-8" },
   "/capabilities.js": {
     file: "capabilities.js",
+    type: "text/javascript; charset=utf-8",
+  },
+  "/evidence.js": {
+    file: "evidence.js",
     type: "text/javascript; charset=utf-8",
   },
   "/fusion.js": { file: "fusion.js", type: "text/javascript; charset=utf-8" },
@@ -431,6 +436,18 @@ export async function createServer(
           break;
         case "/api/live/knowledge/read":
           result = await new KnowledgeReader(app.live.sources).read(body);
+          break;
+        case "/api/live/evidence/collect":
+          {
+            const saved = await new EvidenceService(
+              app.memory,
+              app.live,
+            ).collect(body);
+            result = { ...app.canvasState(), saved };
+          }
+          break;
+        case "/api/live/evidence/read":
+          result = new EvidenceService(app.memory, app.live).read(body);
           break;
         case "/api/live/query":
           result = await app.live.query(body);

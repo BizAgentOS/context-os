@@ -89,7 +89,7 @@ const scope = z
     limit: z.number().int().min(1).max(50).default(20),
   })
   .strict();
-const querySchema = base
+export const metricQuerySchema = base
   .extend({
     definitionHash: z.string().regex(/^[a-f0-9]{64}$/),
     start: day,
@@ -173,7 +173,7 @@ export const metricTools: DomainTool[] = [
     description:
       "按 metric_describe 返回的 definitionHash 查询当前指标观测；显式 start/end 为指标时区的日历日期，左闭右开，月指标按月首对齐。where 仅精确维度过滤。保留口径、空值原因、读取时间和覆盖；非可加总指标不得相加，不把分页当全量。",
     mutates: false,
-    inputSchema: z.toJSONSchema(querySchema),
+    inputSchema: z.toJSONSchema(metricQuerySchema),
   },
 ];
 export class MetricReader {
@@ -219,7 +219,7 @@ export class MetricReader {
     };
   }
   async query(args: unknown) {
-    const input = querySchema.parse(args),
+    const input = metricQuerySchema.parse(args),
       { cap } = this.capability(input);
     // Generic date bounds apply before source I/O; grain is checked against its definition below.
     validatePeriod(input.start, input.end, "day");

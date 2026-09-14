@@ -55,7 +55,7 @@ description: 从用户对话、已上传企业文档和确认企业后的公开�
 - 用户已说明期间与维度时直接 metric_query {sourceId,capability,connectionVersion,definitionHash,start,end,where?,offset?,limit?}。start/end 是指标时区日历日期，左闭右开；月粒度两端为月首，最长366天。where 仅精确维度过滤，不传任意SQL或自定字段。未明确要查询的期间时澄清范围，不自行选择月份。
 - 数值与单位、定义、维度和期间共同解释，保留缺失原因、读取时间与 coverage；null 不是0，没有观测不证明值为0。complete 仅指本次查询结果，dataComplete 是源对数据覆盖的声明；二者不能混用。按 nextOffset 有界续读，每次最多50项，每轮40次来源操作；查询会先重读定义，再读取结果。定义或口径变化须重新 describe 后复核。
 - 遵循 aggregation 的可加总维度与 timeAdditive；比率/平均/去重不能直接求和，存量不能跨时点相加。办结率不等于供暖恢复率，指标名相似不代表口径一致。当前工具不计算跨行合计，也不自动生成公式。
-- 结果是读取时点的指标观测，不是企业定义或永久事实。当前仅查询和展示，不支持将 metric readId 填入 foundation 的 knowledge/document 证据，不能伪装成用户陈述；跨源共同取证在后续任务接入。
+- 结果是读取时点的指标观测，不是企业定义或永久事实。当前仅查询和展示，不支持将 metric readId 填入 foundation 的 knowledge/document 证据，不能伪装成用户陈述；跨源共同取证使用 evidence_collect，见下节。
 
 ## 基础概念绑定业务来源
 
@@ -73,3 +73,12 @@ description: 从用户对话、已上传企业文档和确认企业后的公开�
 - live_query 默认/最多20个主对象；每次最多40次附源读取，最多4个并发，每个业务键读2条并校验覆盖。缺失键、多匹配、未知覆盖、预算耗尽与失败均保留状态，不能用部分结果宣称唯一匹配。可以缩小分页继续查询。
 - 返回 items 与逐对象 evidence：properties 含 resolved/missing/conflict/uncertain、双方原值、来源/能力/记录/字段及实际读取时间，matches 含唯一/零/多/未知/失败原因。冲突或未确定的值为 null，0不是缺失；不得把主状态已办结当作实际反馈已改善。只完整唯一匹配贡献附源值。
 - 用查询预览向人呈现冲突与依据，再 task_ask 绑定具体候选供采用；采用的是映射规则，不是认可任一冲突值。执行来源变化需重新读取；来源撤销/契约版本变化或运行取消拒绝继续返回结果。原始记录不整体导入本体存储，不宣称跨源原子快照。
+
+## 文档、指标与业务对象共同取证
+
+- 已保存记录先 evidence_list {offset?,limit?} 分页发现，再 evidence_read {id,version} 按需读取；无论来自页面还是上一轮，都不要为了找记录重采来源。读取返回历史内容、当前映射/来源依赖状态，保存的片段不代表最新值。
+- 新取证先明确业务问题和对象范围；foundation_read/live_overview 定位映射，source_catalog、knowledge_query 定位知识片段，metric_describe 实际取得 definitionHash。指标期间由用户明确给出，不能猜测。evidence_collect 保存有界共同取证记录，不采用或修改本体。
+- 输入 question、objects、documents、metrics。objects 为 live_query 参数，必须显式 modelVersion、fields（含 $id），每页最多10对象；documents 为 knowledge_read 参数再加 rationale，每项必须 connectionVersion；metrics 为 metric_query 参数再加 rationale 与 dimensionBindings:[{dimension,property}]。每类1–3项，每轮最多4次采集。片段身份/版本与指标哈希必须来自实际读源，不能编造。
+- rationale 是提出的业务关联理由，不是已证明的适用性。dimensionBindings 仅在用户或已有映射说明对应关系时使用；property 必须列在 objects.fields 中。只对返回对象的已确定、同类型相等维度值建立匹配，未知/冲突保留。指标按维度关联不是把聚合数值写成个体属性；对象期间尚未自动核对，不证明时间或业务语义等价。不关联时填 []，表示背景指标。
+- 返回 evidence_bundle 含真实片段、指标定义/观测/期间/维度/单位/可加总规则、对象/关系/融合依据、每项读取时间与覆盖。partial 表示缺失、冲突、分页或失败，并非没有任何价值；collected 也只表示选取范围已读，不是全企业完整或结论真实。逐项解释缺口，不把空页、未知或未观测当0，不推断办结等于恢复。
+- 页面可以查看和按同一范围重新取证，新读生成新记录，旧值不覆盖。失败的单项不以模型自写数据补齐；来源撤销/契约版本变化、映射或运行失效时整次拒绝保存。无跨源原子快照，无自动计算或因果推理；报告只是依据集合，业务判断需明确说明依据和局限。
