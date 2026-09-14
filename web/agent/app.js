@@ -1,4 +1,5 @@
 import { renderEvidenceWorkspace } from "./evidence.js";
+import { renderFoundationWorkspace } from "./foundation-workspace.js";
 import { renderFoundation } from "./foundation.js";
 import { createCapabilitiesPanel } from "./capabilities.js";
 import {
@@ -425,8 +426,36 @@ function renderCanvas(force = false) {
       );
       live.append(details);
     }
-    if (ui.page === "ontology" && state.foundation?.current)
-      live.prepend(foundationPanel());
+    if (ui.page === "ontology") {
+      const workspace = renderFoundationWorkspace(state.foundation, {
+        selections: ui.graphSelections,
+        select: (model, target, isCurrent) =>
+          selectLiveContext(model, target, undefined, false, isCurrent),
+        read: (model, target) =>
+          api("/api/canvas/context/read", {
+            page: "ontology",
+            context: {
+              ...currentWorkContext(),
+              view: "ontology.definitions",
+              selection: [
+                {
+                  spaceId: state.workspaceId,
+                  id: model.id,
+                  version: model.version,
+                  ...target,
+                },
+              ],
+              scope: { where: {}, offset: 0, limit: 20 },
+            },
+          }),
+      });
+      const full = node("details", "live-legacy");
+      full.append(
+        node("summary", "", "完整基础定义与采用操作"),
+        foundationPanel(),
+      );
+      live.prepend(workspace, full);
+    }
     canvas.replaceChildren(live);
   } else if (ui.page === "ontology") canvas.replaceChildren(renderOntology());
   else canvas.replaceChildren(renderConsumption());
@@ -2216,6 +2245,8 @@ async function selectLiveContext(
   model,
   target,
   scope = { where: {}, offset: 0, limit: 20 },
+  focusComposer = true,
+  isCurrent = () => true,
 ) {
   const request = ++ui.contextRequest;
   const page = ui.page;
@@ -2237,7 +2268,8 @@ async function selectLiveContext(
       scope,
     };
     const resolved = await api("/api/canvas/context", { page, context });
-    if (request !== ui.contextRequest || page !== ui.page) return false;
+    if (request !== ui.contextRequest || page !== ui.page || !isCurrent())
+      return false;
     ui.focus = {
       id: model.id,
       version: model.version,
@@ -2249,8 +2281,8 @@ async function selectLiveContext(
     ui.contextRevision += 1;
     rememberDraft();
     errorMessage();
-    $("#message-input").focus();
-    return true;
+    if (focusComposer) $("#message-input").focus();
+    return resolved;
   } catch (error) {
     if (request === ui.contextRequest) errorMessage(error.message);
     return false;

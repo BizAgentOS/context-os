@@ -277,6 +277,34 @@ test("document changes retain prior meaning as a conflict; fresh user choice res
       JSON.stringify(service.app.canvasState().messages),
     );
     assert.equal(service.app.canvasState().foundation.adopted!.version, 2);
+    const selected = service.app.canvasContext({
+      page: "ontology",
+      context: {
+        view: "ontology.definitions",
+        revision: 0,
+        selection: [
+          {
+            spaceId: service.app.canvasState().workspaceId,
+            kind: "foundation_concept",
+            id: foundation.id,
+            version: 3,
+            member: "customer",
+          },
+        ],
+        scope: { where: {}, offset: 0, limit: 20 },
+        draftRef: { id: "conflict-view", revision: 0 },
+      },
+    }).target!.definition as any;
+    assert.equal(
+      selected.conflicts[0].retained.description,
+      "接受供热服务的居民",
+    );
+    assert.equal(
+      selected.conflicts[0].proposed.description,
+      "接受供热服务的工业企业",
+    );
+    assert(selected.evidence.some((e: any) => e.kind === "document"));
+    assert.equal(selected.unresolvedConflictCount, 1);
     await assert.rejects(
       service.app.canvasFoundationAdopt({
         page: "setup",

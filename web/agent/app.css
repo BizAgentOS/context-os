@@ -2728,3 +2728,34 @@ tr.highlight td {
   background: #eee5bd;
   color: inherit;
 }
+
+/* Foundation definitions share domain references with the Agent context. */
+.definition-workspace { margin: 0 0 32px; }
+.definition-toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.definition-toolbar input, .definition-toolbar select { max-width:100%; padding:8px 10px; border:1px solid #ccc; border-radius:6px; background:white; color:#222; }
+.definition-body { display:grid; grid-template-columns:minmax(0, 1.5fr) minmax(240px, 1fr); gap:24px; align-items:start; }
+.definition-body [hidden] { display:none; }
+.definition-diagram, .foundation-definition-list, .definition-detail { min-width:0; }
+.definition-diagram svg { display:block; width:100%; min-height:220px; }
+.definition-node rect { fill:#fff; stroke:#aaa; }
+.definition-node[aria-pressed="true"] rect { stroke:#111; stroke-width:2; }
+.definition-node, .definition-edge-label { cursor:pointer; }
+.definition-node text, .definition-edge-label { font-size:13px; fill:#222; }
+.definition-edge { stroke:#999; fill:none; }
+.definition-edge-label { paint-order:stroke; stroke:white; stroke-width:5px; }
+.definition-node:focus rect { stroke:#111; stroke-width:3; }
+.definition-edge-label:focus { outline:2px solid #222; }
+.foundation-definition-list button { display:block; text-align:left; margin:8px 0; width:100%; white-space:normal; }
+.foundation-definition-list button[aria-pressed="true"], .definition-toolbar button[aria-pressed="true"] { border-color:#333; font-weight:600; }
+.definition-detail { border-left:1px solid #ddd; padding-left:20px; overflow-wrap:anywhere; }
+.definition-detail h2 { font-size:18px; }
+.definition-detail summary { cursor:pointer; margin-top:16px; }
+.definition-detail blockquote { margin:12px 0; padding-left:12px; border-left:2px solid #ddd; }
+.definition-binding { padding:8px 0; border-bottom:1px solid #eee; }
+@media (max-width:760px) {
+ .definition-body { grid-template-columns:minmax(0,1fr); gap:16px; }
+ .definition-detail { border-left:0; border-top:1px solid #ddd; padding:16px 0 0; }
+ .definition-toolbar input { width:100%; }
+ .definition-diagram { overflow-x:auto; }
+ .definition-diagram svg { min-width:580px; }
+}

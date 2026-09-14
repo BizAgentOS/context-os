@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { FoundationService } from "./foundation.ts";
 import {
   propertyNames,
   isSupplementProperty,
@@ -12,7 +13,15 @@ const name = z.string().min(1).max(200);
 const refSchema = z
   .object({
     spaceId: name,
-    kind: z.enum(["artifact", "type", "property", "relation", "object"]),
+    kind: z.enum([
+      "artifact",
+      "type",
+      "property",
+      "relation",
+      "object",
+      "foundation_concept",
+      "foundation_relation",
+    ]),
     id: name,
     version: z.number().int().positive(),
     type: name.optional(),
@@ -22,15 +31,17 @@ const refSchema = z
   .strict()
   .superRefine((ref, ctx) => {
     const valid =
-      ref.kind === "artifact"
-        ? !ref.type && !ref.member && !ref.objectId
-        : !!ref.type &&
-          (ref.kind === "property" || ref.kind === "relation"
-            ? !!ref.member
-            : !ref.member) &&
-          (ref.kind === "object"
-            ? !!ref.objectId
-            : ref.kind === "relation" || !ref.objectId);
+      ref.kind === "foundation_concept" || ref.kind === "foundation_relation"
+        ? !!ref.member && !ref.type && !ref.objectId
+        : ref.kind === "artifact"
+          ? !ref.type && !ref.member && !ref.objectId
+          : !!ref.type &&
+            (ref.kind === "property" || ref.kind === "relation"
+              ? !!ref.member
+              : !ref.member) &&
+            (ref.kind === "object"
+              ? !!ref.objectId
+              : ref.kind === "relation" || !ref.objectId);
     if (!valid)
       ctx.addIssue({ code: "custom", message: "引用的种类与目标字段不匹配" });
   });
@@ -113,7 +124,64 @@ export class WorkContexts {
       throw new Error("当前页面不能引用该内容");
     let label = artifact.title;
     let definition: Data = { title: artifact.title, kind: artifact.kind };
-    if (ref.kind !== "artifact") {
+    if (
+      ref.kind === "foundation_concept" ||
+      ref.kind === "foundation_relation"
+    ) {
+      if (
+        context.view !== "ontology.definitions" ||
+        artifact.kind !== "foundation"
+      )
+        throw new Error("基础定义引用需要基础本体与定义视角");
+      if (Object.keys(context.scope.where).length)
+        throw new Error("基础定义不能附加实例筛选");
+      const service = new FoundationService(this.memory, this.live);
+      const { current, adopted } = service.read();
+      if (
+        ![current, adopted].some(
+          (a) => a?.id === ref.id && a.version === ref.version,
+        )
+      )
+        throw new Error("基础定义版本已变化，请保留草稿并重新选择");
+      const body = service.project(artifact).content;
+      const items = body[
+        ref.kind === "foundation_concept" ? "concepts" : "relations"
+      ] as Data[];
+      const item = items.find((i) => i.id === ref.member);
+      if (!item) throw new Error("基础定义目标无效");
+      const conflicts = (body.conflicts as Data[]).filter(
+        (c) =>
+          ((c.retained as Data | undefined)?.id === item.id ||
+            (c.proposed as Data | undefined)?.id === item.id) &&
+          Boolean((c.retained as Data | undefined)?.from) ===
+            (ref.kind === "foundation_relation"),
+      );
+      const evidenceIds = new Set([
+        ...(item.evidenceRefs as string[]),
+        ...conflicts.flatMap((c) => [
+          ...((c.evidenceRefs ?? []) as string[]),
+          ...((c.resolvedBy ?? []) as string[]),
+        ]),
+      ]);
+      definition = {
+        ...item,
+        conflicts,
+        unresolvedConflictCount: (body.conflicts as Data[]).filter(
+          (c) => !c.resolvedBy,
+        ).length,
+        unknowns: body.unknowns,
+        evidence: (body.evidence as Data[]).filter((e) =>
+          evidenceIds.has(String(e.id)),
+        ),
+      };
+      label = String(item.name);
+      if (ref.kind === "foundation_relation") {
+        const concepts = body.concepts as Data[];
+        const nameFor = (id: unknown) =>
+          concepts.find((c) => c.id === id)?.name ?? id;
+        label = `${nameFor(item.from)} → ${item.name} → ${nameFor(item.to)}`;
+      }
+    } else if (ref.kind !== "artifact") {
       if (
         !context.view.startsWith("ontology.") ||
         artifact.kind !== "live_ontology"

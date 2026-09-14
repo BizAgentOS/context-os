@@ -27,12 +27,15 @@ test("adopted foundation concepts bind a checked execution subset, retain unboun
   });
   await new Promise<void>((r) => proxy.listen(0, "127.0.0.1", r));
   const sourceUrl = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
+  let inspected: any;
   let phase = "foundation",
     mapping: any,
     proposed: any;
   const driver = {
     async run(request: any) {
-      if (phase === "foundation") {
+      if (phase === "inspect") {
+        inspected = await request.onTool("context_read", {});
+      } else if (phase === "foundation") {
         const message = JSON.parse(request.input).recentMessages.at(-1);
         await request.onTool("skill_use", {
           name: "company-foundation-ontology",
@@ -143,6 +146,60 @@ test("adopted foundation concepts bind a checked execution subset, retain unboun
       version: current.version,
     });
     const adopted = (await api()).foundation.adopted;
+    const context = {
+      view: "ontology.definitions",
+      revision: 1,
+      selection: [
+        {
+          spaceId: (await api()).workspaceId,
+          kind: "foundation_concept",
+          id: adopted.id,
+          version: adopted.version,
+          member: "resident",
+        },
+      ],
+      scope: { where: {}, offset: 0, limit: 20 },
+      draftRef: { id: "definition-draft", revision: 1 },
+    };
+    await api("/api/canvas/navigate", { page: "ontology" });
+    const selected = await api("/api/canvas/context/read", {
+      page: "ontology",
+      context,
+    });
+    assert.equal(selected.target.label, "居民");
+    assert.equal(selected.target.definition.mappingStatus, "unbound");
+    assert.deepEqual(selected.target.definition.bindings, []);
+    phase = "inspect";
+    await api("/api/canvas/message", {
+      page: "ontology",
+      text: "解释选中的定义，不创建实例",
+      messageId: "definition-context",
+      workContext: context,
+    });
+    await service.app.idle();
+    assert.deepEqual(inspected.target, selected.target);
+    const relationContext = structuredClone(context);
+    relationContext.selection[0].kind = "foundation_relation";
+    relationContext.selection[0].member = "has_callback";
+    const relationSelected = await api("/api/canvas/context/read", {
+      page: "ontology",
+      context: relationContext,
+    });
+    assert.equal(relationSelected.target.label, "投诉 → 回访记录 → 回访");
+    assert.equal(relationSelected.target.definition.from, "complaint");
+    await assert.rejects(
+      api("/api/canvas/context", { page: "setup", context }),
+    );
+    const invalid = structuredClone(context);
+    invalid.selection[0].member = "absent";
+    await assert.rejects(
+      api("/api/canvas/context", { page: "ontology", context: invalid }),
+    );
+    invalid.selection[0].member = "resident";
+    Object.assign(invalid.scope.where, { $id: "fictional" });
+    await assert.rejects(
+      api("/api/canvas/context", { page: "ontology", context: invalid }),
+    );
     const source = (await api()).live.connections.find(
       (s: any) => s.content.protocol === "http",
     );
@@ -279,6 +336,19 @@ test("adopted foundation concepts bind a checked execution subset, retain unboun
       ).items[0].结果,
       "已改善",
     );
+    const boundRelation = await api("/api/canvas/context/read", {
+      page: "ontology",
+      context: relationContext,
+    });
+    assert.equal(boundRelation.target.definition.mappingStatus, "bound");
+    assert.equal(
+      boundRelation.target.definition.bindings[0].mappings[0].fromField,
+      "$id",
+    );
+    assert.equal(
+      boundRelation.target.definition.bindings[0].mappings[0].toField,
+      "投诉编号",
+    );
     const view = (await api()).foundation.current;
     assert.equal(view.content.relations[0].mappingStatus, "bound");
     assert.equal(
@@ -350,12 +420,21 @@ test("adopted foundation concepts bind a checked execution subset, retain unboun
     await service.app.idle();
     // A new draft does not invalidate the still adopted semantic version.
     assert.equal((await api("/api/live/query", query)).items[0].$id, "TS002");
+    const retained = await api("/api/canvas/context/read", {
+      page: "ontology",
+      context,
+    });
+    assert.equal(retained.target.ref.version, adopted.version);
     const revised = (await api()).foundation.current;
     await api("/api/canvas/foundation/adopt", {
       page: "setup",
       id: revised.id,
       version: revised.version,
     });
+    await assert.rejects(
+      api("/api/canvas/context/read", { page: "ontology", context }),
+      /版本/,
+    );
     await assert.rejects(
       api("/api/live/adopt", { id: pending.id, version: pending.version }),
       /基础|版本/,

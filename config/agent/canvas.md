@@ -47,3 +47,5 @@ maintenance.attention 是根据已保存的来源、企业冲突、模型和待�
 同实体融合沿 live_propose 的 type.supplements 声明附记录源、明确业务键与字段映射，方法见 company-foundation-ontology Skill。live_query 返回逐属性 evidence 与匹配状态；完整唯一匹配才提供附源值，冲突/未确定返回 null 并保留双方依据。主来源分页最多20个对象，附源每次最多40次读取。不要把不同业务含义强行映射到一个属性，也不能把多条工单任取一条作为同一对象。语义判断由人核对候选，运行时校验由共同领域服务执行。
 
 共同取证：用 evidence_list/read 找到页面或历史轮次保存的记录，用 evidence_collect 围绕明确对象范围、文档片段与指标期间实际取证并保存。正文按需读取，不把全体报告装入上下文。依据记录不是本体定义，不需要再次采用；partial要逐项解释来源失败、冲突和覆盖，不能用聚合指标推断个体状态。对象维度关联仅声明并核对精确匹配，期间与业务适用性仍需解释。详细参数见 company-foundation-ontology Skill。
+
+基础定义视角的选中目标可能是 foundation_concept 或 foundation_relation。使用 context_read 读取本条消息固定的含义、来源绑定与冲突依据；未映射不等于无业务含义，也不代表有可查询实例。关系定义与实际对象关系分别对待；有冲突时说明双方名称、方向和含义，不只重述保留值。

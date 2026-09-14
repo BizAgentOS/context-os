@@ -157,6 +157,7 @@ export class FoundationService {
         status: b.status,
         reason: b.reason,
         relationId: String(relation.id),
+        mappings: b.relations.filter((r) => r.relationId === relation.id),
       }));
     }
     result.content.consumerReadiness = {
