@@ -1,3 +1,4 @@
+import {renderConsumerViews} from "./consumer-views.js";
 import { renderMappingChanges } from "./mapping-changes.js";
 import { renderCorrections } from "./relation-corrections.js";
 import { renderLiveObjects } from "./live-objects.js";
@@ -699,8 +700,9 @@ export function renderLiveWorkspace(
       section.append(block);
     }
   } else if (page === "consumption") {
+    section.append(renderConsumerViews(live,{api,onSaved,showCredential}));
     section.append(
-      el("h1", "", "连接其他应用"),
+      el("h2", "", "旧版 v2 访问范围"),
       el(
         "p",
         "live-lead",
@@ -714,7 +716,7 @@ export function renderLiveWorkspace(
       );
     else
       section.append(
-        button("创建访问范围", () =>
+        button("创建旧版 v2 访问范围", () =>
           modal("为应用创建只读范围", (dialog) => {
             const form = el("form");
             const name = formField(form, "应用名称");

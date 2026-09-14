@@ -2774,3 +2774,5 @@ tr.highlight td {
 .correction-panel { margin:24px 0; border-top:1px solid #ddd; padding-top:16px; }
 .correction-panel button { margin:4px 8px 4px 0; }
 .live-dialog pre { white-space:pre-wrap; overflow-wrap:anywhere; }
+
+.view-permission { display:flex; gap:8px; align-items:baseline; padding:5px 0; overflow-wrap:anywhere; }

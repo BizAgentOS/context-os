@@ -1,3 +1,4 @@
+import {ConsumerViews} from "../live/consumer-views.ts";
 import { MappingChanges } from "../live/mapping-changes.ts";
 import { RelationCorrections } from "../live/relation-corrections.ts";
 import { EvidenceService } from "./evidence.ts";
@@ -32,6 +33,7 @@ const staticFiles: Record<string, { file: string; type: string }> = {
     type: "text/javascript; charset=utf-8",
   },
   "/metrics.js": { file: "metrics.js", type: "text/javascript; charset=utf-8" },
+  "/consumer-views.js": {file:"consumer-views.js",type:"text/javascript; charset=utf-8"},
   "/mapping-changes.js": {file:"mapping-changes.js",type:"text/javascript; charset=utf-8"},
   "/relation-corrections.js": {
     file: "relation-corrections.js",
@@ -166,6 +168,10 @@ export async function createServer(
         return;
       }
       const url = new URL(request.url ?? "/", `http://${host}`);
+      if (url.pathname.startsWith("/v3/")) {
+        if(request.method!=="GET"){send(405,{error:"仅支持只读请求"});return;}
+        const r=await new ConsumerViews(app.memory,app.live).handle(url.pathname,url.searchParams,request.headers.authorization);send(r.status,r.body);return;
+      }
       if (url.pathname.startsWith("/v2/")) {
         if (request.method !== "GET") {
           send(405, { error: "仅支持只读请求" });
@@ -464,6 +470,13 @@ export async function createServer(
         case "/api/live/evidence/read":
           result = new EvidenceService(app.memory, app.live).read(body);
           break;
+        case "/api/live/views/propose":
+        case "/api/live/views/activate":
+        case "/api/live/views/revoke": {
+          const views=new ConsumerViews(app.memory,app.live);
+          const saved=url.pathname.endsWith("propose")?views.propose(body):url.pathname.endsWith("activate")?views.activate(body):views.revoke(body);
+          result={...app.canvasState(),saved};break;
+        }
         case "/api/live/changes/list":
           result = {items:new MappingChanges(app.memory,app.live).list()}; break;
         case "/api/live/changes/read":

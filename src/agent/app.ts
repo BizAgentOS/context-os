@@ -1,3 +1,4 @@
+import {ConsumerViews,consumerViewTools} from "../live/consumer-views.ts";
 import { MappingChanges, mappingChangeTools } from "../live/mapping-changes.ts";
 import {
   RelationCorrections,
@@ -1445,6 +1446,7 @@ export class AgentApplication {
                 : []),
             ].includes(tool.name),
           ),
+          ...(page === "consumption" ? consumerViewTools : []),
           ...liveTools.filter(
             (tool) =>
               tool.name === "live_overview" ||
@@ -1790,6 +1792,7 @@ export class AgentApplication {
             ...mappingChangeTools,
             ...consumptionTools,
             ...liveTools,
+            ...consumerViewTools,
           ].find((tool) => tool.name === name)?.mutates;
           if (mutates && executionWorkContext)
             this.contexts.assertCurrent(executionWorkContext);
@@ -1819,6 +1822,10 @@ export class AgentApplication {
             const result = await foundationDocuments.web!.read(args);
             this.memory.assertWritable(context);
             return serializable(result);
+          }
+          if (name.startsWith("consumer_view_")) {
+            const views=new ConsumerViews(this.memory,this.live);
+            return serializable(name==="consumer_view_list"?{items:views.list()}:views.propose(args,context));
           }
           if (name.startsWith("mapping_change_")) {
             const changes=new MappingChanges(this.memory,this.live);

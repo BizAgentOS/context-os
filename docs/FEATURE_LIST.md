@@ -21,7 +21,7 @@ Last Updated: 2026-09-14
 
 | Version | Status | Planned | InProgress | Completed | Progress |
 |---|---|---:|---:|---:|---:|
-| v0.1.0 | InProgress | 3 | 2 | 11 | 11/16 |
+| v0.1.0 | InProgress | 2 | 3 | 11 | 11/16 |
 
 ## Feature Index
 
@@ -42,7 +42,7 @@ Last Updated: 2026-09-14
 | 013 | 企业基础本体 Skill 与三条起步路径 | New | High | Completed | v0.1.0 | 012（按票） | [设计](features/v0.1.0.md#feature-013) |
 | 014 | 分类来源接入与多源语义融合 | Enhancement | High | Completed | v0.1.0 | 012/013（按票） | [设计](features/v0.1.0.md#feature-014) |
 | 015 | 本体可视化、证据与内容治理 | Enhancement | High | Completed | v0.1.0 | 012/013/014（按票） | [设计](features/v0.1.0.md#feature-015) |
-| 016 | 消费接口、契约生成与治理闭环 | Enhancement | High | Planned | v0.1.0 | 012/014/015（按票） | [设计](features/v0.1.0.md#feature-016) |
+| 016 | 消费接口、契约生成与治理闭环 | Enhancement | High | InProgress | v0.1.0 | 012/014/015（按票） | [设计](features/v0.1.0.md#feature-016) |
 
 此表保留已有能力与票的实际完成记录，计数不代表新 MVP 体验的完成比例。本轮按 [MVP 完成条件](MVP.md)及 FEATURE_012—016 的任务依赖验收。006、远程 MCP 服务和旧票中尚未覆盖的完整回归/恢复保留为后续工作，不因范围调整标为完成。
 
@@ -228,10 +228,10 @@ Last Updated: 2026-09-14
 
 ### 016: 消费接口、契约生成与治理闭环
 
-- **Status:** Planned
+- **Status:** InProgress
 - **Category / Priority:** Enhancement / High
 - **Planned / Released:** v0.1.0 / —
-- **Created / Started / Completed:** 2026-09-11 / — / —
+- **Created / Started / Completed:** 2026-09-11 / 2026-09-14 / —
 - **Description:** 生成许可消费契约与实际 API/MCP 接入说明，开放受控证据，处理变更影响与消费者迁移并验收三页整链。
 - **Blocked by:** 012/014/015（按票）；具体任务依赖见设计块。
 - **Design:** [FEATURE_016](features/v0.1.0.md#feature-016)。
@@ -239,12 +239,12 @@ Last Updated: 2026-09-14
 ## Summary
 
 - Total: 16
-- Planned: 3
-- InProgress: 2
+- Planned: 2
+- InProgress: 3
 - Completed: 11
 - New: 8；Internal: 1；Enhancement: 6；Refactor: 1；High: 16。
 - **已实现基础：FEATURE_011 已完成搜索、Skill、MCP 和业务 SDK 入口（[验收](experiment/AGENT_CAPABILITIES.md)）；FEATURE_010 已完成本地来源连接链路。HTTP/MCP 按需读取、Agent 本体候选、人工采用、第三方授权与源变化重读已验收；正式发布、多租户、专用 OAuth 连接器与自动演变仍未完成。**
 
-**下一项：T016-01。** FEATURE_012/013/014/015 已完成，接下来进行融合对象的许可消费视图。新票如覆盖旧 FEATURE_002/004/005 的未完验收，应复用同一实现和证据，再按真实结果更新旧票，不重复建设或提前勾选。
+**下一项：T016-02。** FEATURE_012/013/014/015 已完成，T016-01 已交付许可消费视图，接下来进行按需证据与生成接入说明。新票如覆盖旧 FEATURE_002/004/005 的未完验收，应复用同一实现和证据，再按真实结果更新旧票，不重复建设或提前勾选。
 
 项目初始化和开发文档已完成，记录在 [CHANGELOG](CHANGELOG.md)；它们不计入产品功能完成数。功能状态在本文维护，具体票的完成状态在对应设计块维护。

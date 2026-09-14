@@ -6,6 +6,8 @@
 
 ### Added
 
+- 完成 T016-01（2026-09-14）：v3 许可目录、类型、融合对象与关系查询；Agent 草稿、人工启用、独立凭据、在途撤销及旧接口隔离。117项Node、22项Python、真实KodaX与浏览器验证见[验收](experiment/CONSUMER_VIEWS.md)。FEATURE_016继续开发，下一项T016-02；未发布。
+
 - 完成 T015-04（2026-09-14）：单个属性/关系规则修订、代表性实例差异、附来源匹配联动、共同changeRef与治理问题汇总；检查后管理员采用，保留原模型和原消费合同。115项Node、22项Python、浏览器与真实KodaX记录见[验收](experiment/MAPPING_CHANGES.md)。FEATURE_015 完成，下一项T016-01；未发布。
 
 - 完成 T015-03（2026-09-14）：局部关系候选、检查、管理员采用与内部查询叠加，保留源依据、版本和主体；幂等、并发、停止保护与按需治理读取。113项Node、22项Python及真实KodaX/浏览器验收见[记录](experiment/RELATION_CORRECTIONS.md)。下一项 T015-04。

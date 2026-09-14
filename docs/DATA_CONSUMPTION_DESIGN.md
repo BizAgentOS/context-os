@@ -10,7 +10,7 @@
 
 ## 实际接口与生成内容
 
-共同服务提供有界许可目录、类型描述、对象查询、关系展开与获准证据/解释。新融合接口单独版本化，保留原 /v1、/v2 行为；具体新端点和响应在 T016-01 定稿，并统一驱动 HTTP、MCP 与说明生成。
+共同服务提供有界许可目录、类型描述、对象查询、关系展开与获准证据/解释。新融合接口单独版本化，保留原 /v1、/v2 行为；T016-01 已实现下述 v3 HTTP 子集，MCP、证据与说明生成由 T016-02 接入。
 
 页面从实际已开放的许可契约生成 API 文档、OpenAPI 描述和 HTTP/MCP 调用样例。接口必须真实可调用，样例中的类型和字段必须获准；不把生成文件或复制按钮当作服务已实现。密钥用占位符，内部来源地址和受限字段不出现在说明中。
 
@@ -41,3 +41,23 @@
 两个独立 HTTP/MCP 客户端读取不同许可范围，浏览器关闭后仍可消费；生成说明与实际接口一致。验证证据绕权、未知/截断、撤销与重启、源变化、新旧语义迁移和旧接口兼容。任务见[FEATURE_016](features/v0.1.0.md#feature-016)。
 
 原文件 /v1 发布与固定 dataVersion 见[接入与发布验收](experiment/AGENT_CONNECTION.md)；在线 /v2 按需 readAt 见[在线来源说明](experiment/LIVE_MEMORY.md)。原[消费验收](experiment/CONSUMPTION.md)与[维护验收](experiment/MAINTENANCE.md)只证明当时四页范围，不证明新增证据/融合/迁移能力完成。
+
+## T016-01 当前可执行契约（2026-09-14）
+
+`consumer_view` 固定 `modelRef {id,version}`、可选 `semanticRef`、用途和 `grants[{type,fields,relations}]`。每个获准类型须含 `$id`；关系须同时许可两端类型、身份及关联字段。主来源和附来源字段共用许可检查，不自动开放新增字段。内部 Agent 使用 `consumer_view_propose`、`consumer_view_list`；启用不开放为模型工具。
+
+管理员使用 `POST /api/live/views/propose`（operationId、name、purpose、modelRef、grants）、`activate` / `revoke`（id、version）。草稿保存按主体与 operationId 幂等，同键不同内容拒绝；启用仅首次返回明文密钥，重试返回 keyAvailable=false，不生成替代密钥。丢失密钥需停用后重建。服务器仅存摘要；前端多份首次密钥排队展示，关闭后清除，不进入浏览器持久存储。视图列表最多40条。
+
+外部使用独立 `de_view_` Bearer 密钥，不具有管理权限，也不与 v1/v2 密钥混用：
+
+| GET 接口 | 参数和结果 |
+|---|---|
+| `/v3/catalog` | 无参数；返回获准类型目录，最多20种 |
+| `/v3/types?type=…` | 指定获准类型；仅返回许可字段和关系端点描述 |
+| `/v3/objects?type=…` | 可选 id、relation、fields（逗号分隔）、offset、limit；最多20条，fields 必须含 $id；省略 fields 则返回该类型全部获准字段 |
+
+关系查询须提供起点 id；结果按目标类型许可裁剪。对象返回 objectRef 和 properties[field]={value,status}，保留冲突、缺失与不确定性；不返回原始冲突值、源记录标识、源配置或内部映射。读取覆盖与 readAt/historicalReplay 随结果返回，按需读取非跨源原子快照。
+
+共同元数据包括 contractVersion=v3、viewRef、modelRef、semanticRef、methodVersion=fusion-objects-v3.1、relationPolicy=source_mapping_only、evidenceAvailability=not_exposed。当前未提供证据引用/正文、OpenAPI生成及新MCP接口，属于 T016-02；局部关系纠正尚未对外发布，消费者迁移属于 T016-03。
+
+每次读取及返回前复核视图撤销、固定模型和来源可用性；无权/撤销403，非法参数400，固定映射/来源失效502。无内部错误细节。访问记录只记视图、路径、状态和时点。重启保留许可，源数据变化仍读取当前值；固定语义版本不构成历史数据快照。当前是本地单企业管理身份，不含员工级、记录级或多租户授权。

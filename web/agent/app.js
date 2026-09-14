@@ -407,13 +407,14 @@ function renderCanvas(force = false) {
   const canvas = $("#canvas");
   if (ui.page === "setup") canvas.replaceChildren(renderSetup());
   else if (!shareMode && !state.demo) {
+    const livePage = ui.page;
     const live = renderLiveWorkspace(ui.page, state.live, {
       api,
       mutate,
       showCredential,
       selections: ui.graphSelections,
       onSelectContext: selectLiveContext,
-      onSaved: result => { if (ui.page === "ontology") applySnapshot(result); },
+      onSaved: () => { if (ui.page === livePage) refresh(); },
     });
     const legacy =
       ui.page === "ontology"
@@ -2186,7 +2187,16 @@ async function revokeConsumer(consumer) {
     version: consumer.version,
   });
 }
+const credentialQueue = [];
+let credentialShowing = false;
 function showCredential(credential, name) {
+  credentialQueue.push({credential,name});
+  showNextCredential();
+}
+function showNextCredential() {
+  if (credentialShowing || !credentialQueue.length) return;
+  credentialShowing = true;
+  const {credential,name} = credentialQueue.shift();
   $("#credential-consumer").textContent =
     `${name}现在可以按已确认的范围读取企业记忆。`;
   $("#consumer-api-key").value = credential.apiKey;
@@ -3344,15 +3354,16 @@ for (const selector of ["#close-credential", "#finish-credential"])
     $("#credential-dialog").close();
   });
 $("#credential-dialog").addEventListener("cancel", clearCredential);
-$("#credential-dialog").addEventListener("close", clearCredential);
+$("#credential-dialog").addEventListener("close", () => { clearCredential(); credentialShowing = false; queueMicrotask(showNextCredential); });
 $("#copy-credential").addEventListener("click", async () => {
   const status = $("#credential-status");
+  const copiedKey = $("#consumer-api-key").value;
   try {
-    await navigator.clipboard.writeText($("#consumer-api-key").value);
-    if (!$("#credential-dialog").open) return;
+    await navigator.clipboard.writeText(copiedKey);
+    if (!$("#credential-dialog").open || $("#consumer-api-key").value !== copiedKey) return;
     status.textContent = "密钥已复制。";
   } catch {
-    if (!$("#credential-dialog").open) return;
+    if (!$("#credential-dialog").open || $("#consumer-api-key").value !== copiedKey) return;
     $("#consumer-api-key").focus();
     $("#consumer-api-key").select();
     status.textContent = "请复制选中的密钥。";

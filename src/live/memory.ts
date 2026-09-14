@@ -108,6 +108,7 @@ export class LiveMemory {
           Object.entries(a.content).filter(([k]) => k !== "keyHash"),
         ),
       })),
+      views: this.repo.listArtifacts("consumer_view").slice(0,40).map(a=>({...a,content:Object.fromEntries(Object.entries(a.content).filter(([k])=>k!=="keyHash"))})),
       audit: this.repo.listArtifacts("live_access").slice(0, 40),
     };
   }
@@ -680,7 +681,7 @@ export class LiveMemory {
       consistency: "on_demand_not_atomic",
     };
   }
-  prepare(input: unknown, context?: WriteContext, operationId?: string) {
+  validateConsumerScope(input: unknown) {
     const args = prepareSchema.parse(input);
     const model = this.model(args.modelId, true);
     const d = this.definition(model);
@@ -706,6 +707,10 @@ export class LiveMemory {
           throw new Error("关系端点及关联字段必须明确授权");
       }
     }
+    return {args, model};
+  }
+  prepare(input: unknown, context?: WriteContext, operationId?: string) {
+    const {args, model} = this.validateConsumerScope(input);
     return this.repo.putArtifact(
       {
         kind: "live_consumer",
