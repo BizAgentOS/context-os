@@ -1592,7 +1592,9 @@ export class AgentApplication {
           if (!tools.some((tool) => tool.name === name))
             throw new Error("当前页面没有这项能力");
           if (name === "context_read" && workContext) {
-            const result = await this.contexts.read(workContext.context);
+            const result = await this.contexts.read(workContext.context, () =>
+              this.memory.assertWritable(context),
+            );
             this.memory.assertWritable(context);
             return serializable(result);
           }
@@ -1833,6 +1835,7 @@ export class AgentApplication {
                           args,
                           context,
                           operationId,
+                          () => this.memory.assertWritable(context),
                         )
                       : await workspace.execute(name, args, operationId);
           if (

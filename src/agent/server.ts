@@ -19,6 +19,7 @@ const staticFiles: Record<string, { file: string; type: string }> = {
     file: "capabilities.js",
     type: "text/javascript; charset=utf-8",
   },
+  "/fusion.js": { file: "fusion.js", type: "text/javascript; charset=utf-8" },
   "/foundation-bindings.js": {
     file: "foundation-bindings.js",
     type: "text/javascript; charset=utf-8",

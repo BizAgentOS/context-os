@@ -1,3 +1,4 @@
+import { renderFusionEvidence } from "./fusion.js";
 import { renderMetricInspector } from "./metrics.js";
 import { renderDefinitionGraph } from "./ontology-workspace.js";
 const el = (tag, cls = "", text) => {
@@ -493,6 +494,8 @@ export function renderLiveWorkspace(
                   `读取时间：${result.reads.map((r) => r.readAt).join(" / ")} · ${result.coverage.complete ? "当前结果完整" : "仅当前页，不代表完整结果"}`,
                 ),
               );
+              if (result.evidence)
+                body.append(renderFusionEvidence(result.evidence));
               const pages = el("div", "live-actions");
               if (offset > 0)
                 pages.append(
@@ -586,6 +589,23 @@ export function renderLiveWorkspace(
             ),
             el("p", "", model.content.rationale),
           );
+          for (const extra of type.supplements || []) {
+            dialog.append(
+              el("h3", "", `附来源 ${extra.name}`),
+              el(
+                "p",
+                "",
+                `${extra.match.primaryField} → ${extra.match.sourceField} · ${extra.capability}`,
+              ),
+              table(
+                Object.entries(extra.fields).map(([property, field]) => ({
+                  业务属性: property,
+                  附来源字段: field,
+                })),
+              ),
+              el("p", "", extra.rationale),
+            );
+          }
         });
       const graphKey = `live:${model.id}:${model.version}`;
       if (!selections.has(graphKey))
@@ -597,6 +617,14 @@ export function renderLiveWorkspace(
         ...model,
         content: {
           ...model.content,
+          types: model.content.types.map((t) => ({
+            ...t,
+            fields: Object.assign(
+              {},
+              t.fields,
+              ...(t.supplements || []).map((s) => s.fields),
+            ),
+          })),
           sourceVersions: model.content.connections,
         },
       };
@@ -622,7 +650,10 @@ export function renderLiveWorkspace(
             return list;
           },
           onOpenObjects: readType,
-          onOpenType: openDefinition,
+          onOpenType: (type) =>
+            openDefinition(
+              model.content.types.find((t) => t.name === type.name),
+            ),
           onAdjust: (_label, target) => cite(target),
         }),
       );

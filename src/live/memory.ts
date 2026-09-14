@@ -1,3 +1,11 @@
+import {
+  supplementSchema,
+  propertyNames,
+  isSupplementProperty,
+  validateSupplements,
+  fuseRows,
+  type ObjectEvidence,
+} from "./fusion.ts";
 import { z } from "zod";
 import { createHash, randomBytes } from "node:crypto";
 import { SourceConnections, jsonData } from "./sources.ts";
@@ -21,6 +29,7 @@ const typeSchema = z
     sourceId: name,
     capability: name,
     fields: z.record(name, name),
+    supplements: z.array(supplementSchema).max(3).optional(),
   })
   .strict();
 const relationSchema = z
@@ -203,6 +212,7 @@ export class LiveMemory {
           sourceId: t.sourceId,
           capability: t.capability,
           fields: t.fields,
+          supplements: t.supplements ?? [],
           relations: d.relations.filter((r) => r.from === t.name),
           identity:
             (
@@ -234,13 +244,19 @@ export class LiveMemory {
   private checkConnections(d: Definition) {
     this.checkFoundation(d);
     for (const t of d.types)
-      this.sources.capability(
-        t.sourceId,
-        t.capability,
-        d.connections[t.sourceId],
-      );
+      for (const binding of [t, ...(t.supplements ?? [])])
+        this.sources.capability(
+          binding.sourceId,
+          binding.capability,
+          d.connections[binding.sourceId],
+        );
   }
-  async propose(input: unknown, context?: WriteContext, operationId?: string) {
+  async propose(
+    input: unknown,
+    context?: WriteContext,
+    operationId?: string,
+    assertActive: () => void = () => {},
+  ) {
     const d = modelSchema.parse(input);
     const base = this.active();
     if (this.repo.listArtifacts("foundation").length && !d.foundationRef)
@@ -268,10 +284,15 @@ export class LiveMemory {
       )
         throw new Error("字段映射无效");
       connections[t.sourceId] = artifact.version;
+      validateSupplements(t, this.sources, connections);
     }
     const find = (type: string, field: string) => {
       const t = d.types.find((t) => t.name === type);
-      if (!t || (field !== "$id" && !Object.hasOwn(t.fields, field)))
+      if (
+        !t ||
+        isSupplementProperty(t, field) ||
+        (field !== "$id" && !Object.hasOwn(t.fields, field))
+      )
         throw new Error("关系映射字段不存在");
       return t;
     };
@@ -293,6 +314,11 @@ export class LiveMemory {
         throw new Error("关系目标来源必须支持关联字段过滤");
     }
     const checks = [];
+    const assertValid = () => {
+      assertActive();
+      this.checkConnections({ ...d, connections });
+      if (d.foundationRef) this.checkExecutionBase(d.baseModelRef);
+    };
     for (const t of d.types) {
       const sample = await this.sources.readRecords(
         t.sourceId,
@@ -303,7 +329,36 @@ export class LiveMemory {
         connections[t.sourceId],
       );
       if (!sample.items.length) throw new Error("需要至少一条实际记录验证映射");
+      const fusion = t.supplements?.length
+        ? await fuseRows(
+            t,
+            sample,
+            ["$id", ...propertyNames(t)],
+            this.sources,
+            connections,
+            assertValid,
+          )
+        : null;
+      if (
+        fusion?.evidence.some((o) =>
+          o.matches.some((m) => m.status === "unavailable"),
+        )
+      )
+        throw new Error("附来源样本检查失败，请恢复连接或修订映射");
       checks.push({
+        ...(fusion
+          ? {
+              fusion: fusion.evidence
+                .flatMap((o) => o.matches)
+                .map(({ binding, status, reason, readAt, coverage }) => ({
+                  binding,
+                  status,
+                  reason,
+                  readAt,
+                  coverage,
+                })),
+            }
+          : {}),
         type: t.name,
         checkedRecords: sample.items.length,
         readAt: sample.provenance.readAt,
@@ -355,6 +410,25 @@ export class LiveMemory {
       );
       if (d.foundationRef && !sample.items.length)
         throw new Error("需要实际记录重新验证概念映射");
+      if (t.supplements?.length) {
+        const fusion = await fuseRows(
+          t,
+          sample,
+          ["$id", ...propertyNames(t)],
+          this.sources,
+          d.connections,
+          () => {
+            this.checkConnections(d);
+            this.checkExecutionBase(a.content.base);
+          },
+        );
+        if (
+          fusion.evidence.some((o) =>
+            o.matches.some((m) => m.status === "unavailable"),
+          )
+        )
+          throw new Error("附来源检查失败，未采用");
+      }
     }
     this.checkConnections(d);
     if (
@@ -370,10 +444,14 @@ export class LiveMemory {
       }),
     );
   }
-  async query(input: unknown): Promise<{
+  async query(
+    input: unknown,
+    assertActive: () => void = () => {},
+  ): Promise<{
     model: { id: string; version: number };
     type: string;
     items: Data[];
+    evidence?: ObjectEvidence[];
     coverage: {
       offset: number;
       shown: number;
@@ -399,7 +477,13 @@ export class LiveMemory {
     if (args.modelVersion !== undefined && args.modelVersion !== model.version)
       throw new Error("本体版本已变化，请重新读取目标");
     const d = this.definition(model);
-    this.checkConnections(d);
+    const assertValid = () => {
+      assertActive();
+      this.checkConnections(d);
+      if (this.repo.getArtifact(model.id).version !== model.version)
+        throw new Error("本体版本已变化，请重新读取目标");
+    };
+    assertValid();
     if (!args.type && !args.conceptId)
       throw new Error("查询需要类型或基础概念引用");
     const type = d.types.find((t) =>
@@ -419,7 +503,13 @@ export class LiveMemory {
       return type.fields[field];
     };
     const where: Data = Object.fromEntries(
-      Object.entries(args.where ?? {}).map(([f, v]) => [sourceField(f), v]),
+      Object.entries(args.where ?? {}).map(([f, v]) => {
+        if (isSupplementProperty(type, f))
+          throw new Error(
+            "融合属性不能作为主来源过滤；请先缩小主来源范围再检查融合结果",
+          );
+        return [sourceField(f), v];
+      }),
     );
     if (args.id !== undefined) where[cap.idField] = args.id;
     if (args.relation) {
@@ -440,22 +530,30 @@ export class LiveMemory {
       const value = origin.items[0][sourceField(rel.fromField)];
       if (value === null || value === "")
         throw new Error("关联字段为空，无法解析关系");
-      const result = await this.query({
-        modelId: model.id,
-        modelVersion: model.version,
-        type: rel.to,
-        where: { [rel.toField]: value },
-        fields: args.fields,
-        offset: args.offset,
-        limit: args.limit,
-      });
+      const result = await this.query(
+        {
+          modelId: model.id,
+          modelVersion: model.version,
+          type: rel.to,
+          where: { [rel.toField]: value },
+          fields: args.fields,
+          offset: args.offset,
+          limit: args.limit,
+        },
+        assertActive,
+      );
       this.checkConnections(d);
       if (this.repo.getArtifact(model.id).version !== model.version)
         throw new Error("本体版本已变化，请重新读取目标");
       return { ...result, reads: [origin.provenance, ...result.reads] };
     }
-    const fields = args.fields ?? ["$id", ...Object.keys(type.fields)];
-    for (const f of fields) sourceField(f);
+    const fields = args.fields ?? ["$id", ...propertyNames(type)];
+    for (const f of fields)
+      if (f !== "$id" && !propertyNames(type).includes(f))
+        throw new Error("业务字段不存在");
+    if (type.supplements?.length && args.limit > 20)
+      throw new Error("融合查询每页最多20个主对象");
+    assertValid();
     const result = await this.sources.readRecords(
       type.sourceId,
       type.capability,
@@ -464,9 +562,17 @@ export class LiveMemory {
       args.limit,
       d.connections[type.sourceId],
     );
-    this.checkConnections(d);
-    if (this.repo.getArtifact(model.id).version !== model.version)
-      throw new Error("本体版本已变化，请重新读取目标");
+    assertValid();
+    const fusion = type.supplements?.length
+      ? await fuseRows(
+          type,
+          result,
+          fields,
+          this.sources,
+          d.connections,
+          assertValid,
+        )
+      : null;
     return {
       model: { id: model.id, version: model.version },
       type: type.name,
@@ -479,11 +585,14 @@ export class LiveMemory {
             },
           }
         : {}),
-      items: result.items.map((row) =>
-        Object.fromEntries(fields.map((f) => [f, row[sourceField(f)]])),
-      ),
+      ...(fusion ? { evidence: fusion.evidence } : {}),
+      items:
+        fusion?.items ??
+        result.items.map((row) =>
+          Object.fromEntries(fields.map((f) => [f, row[sourceField(f)]])),
+        ),
       coverage: result.coverage,
-      reads: [result.provenance],
+      reads: fusion?.reads ?? [result.provenance],
       consistency: "on_demand_not_atomic",
     };
   }
@@ -499,7 +608,7 @@ export class LiveMemory {
       if (
         !t ||
         !g.fields.includes("$id") ||
-        g.fields.some((f) => f !== "$id" && !Object.hasOwn(t.fields, f))
+        g.fields.some((f) => f !== "$id" && !propertyNames(t).includes(f))
       )
         throw new Error("授权需要有效字段和明确的 $id");
       for (const name of g.relations) {
@@ -630,8 +739,21 @@ export class LiveMemory {
           limit: Number(params.get("limit") ?? 20),
         });
         // External callers see business values and freshness, never upstream connection mappings.
+        const { evidence, ...publicResult } = result;
         body = jsonData({
-          ...result,
+          ...publicResult,
+          ...(evidence
+            ? {
+                fieldStatus: evidence.map((o) =>
+                  Object.fromEntries(
+                    Object.entries(o.properties).map(([field, value]) => [
+                      field,
+                      value.status,
+                    ]),
+                  ),
+                ),
+              }
+            : {}),
           reads: result.reads.map((r) => ({
             readAt: r.readAt,
             historicalReplay: false,
@@ -674,6 +796,7 @@ export class LiveMemory {
     args: Record<string, unknown>,
     context?: WriteContext,
     operationId?: string,
+    assertActive: () => void = () => {},
   ) {
     if (name === "live_overview") return jsonData(this.overview());
     if (name === "live_read")
@@ -687,8 +810,11 @@ export class LiveMemory {
         ),
       );
     if (name === "live_propose")
-      return jsonData(await this.propose(args, context, operationId));
-    if (name === "live_query") return jsonData(await this.query(args));
+      return jsonData(
+        await this.propose(args, context, operationId, assertActive),
+      );
+    if (name === "live_query")
+      return jsonData(await this.query(args, assertActive));
     if (name === "live_consumer_propose")
       return jsonData(this.prepare(args, context, operationId));
     throw new Error("未知连接领域工具");
@@ -728,13 +854,13 @@ export const liveTools: DomainTool[] = [
   ),
   tool(
     "live_propose",
-    "基于实际源样本和用户业务定义，提出有来源能力绑定的本体候选。已有基础本体时先 foundation_read，必须引用已采用的 foundationRef:{id,version}，baseModelRef 必须为 live_overview 当前最新已采用执行子集的 {id,version}（不存在时为 null），每个类型带 conceptId 并逐字保持概念 name/description，关系带 relationId 且对应端点；未映射概念不删除。rationale 写明业务依据与尚未确认的含义。程序仅做结构检查，用户在页面采用。",
+    "基于实际源样本和用户业务定义，提出有来源能力绑定的本体候选。已有基础本体时先 foundation_read，必须引用已采用的 foundationRef:{id,version}，baseModelRef 必须为 live_overview 当前最新已采用执行子集的 {id,version}（不存在时为 null），每个类型带 conceptId 并逐字保持概念 name/description，关系带 relationId 且对应端点；未映射概念不删除。同一类型可加最多3个 supplements:{name,sourceId,capability,match:{primaryField,sourceField},fields,rationale}，按主来源业务属性或$id与附来源精确键匹配；同名属性保留冲突，不能把一对多记录强行合一。rationale 写明业务依据与尚未确认的含义。程序仅做结构检查，用户在页面采用。",
     modelSchema,
     true,
   ),
   tool(
     "live_query",
-    "按 modelId/modelVersion 与 conceptId（基础概念稳定 id）或 type 查询当前源对象及关系，返回同一 conceptRef、读取时间、覆盖范围；候选查询仅为预览；不能声称历史快照或完整跨源一致性。",
+    "按 modelId/modelVersion 与 conceptId（基础概念稳定 id）或 type 查询当前源对象及关系，返回同一 conceptRef、读取时间、覆盖范围；必须填 conceptId 或 type；查询 relation 时必须填起点 id。融合查询每页最多20对象，返回 evidence 的逐属性状态/出处与匹配覆盖；null可能是缺失/冲突/未确定，不等于零。只允许主来源且无重叠的属性过滤。候选查询仅为预览；不能声称历史快照或完整跨源一致性。",
     querySchema,
   ),
   tool(

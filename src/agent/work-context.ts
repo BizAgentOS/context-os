@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  propertyNames,
+  isSupplementProperty,
+  type FusionType,
+} from "../live/fusion.ts";
 import type { CanvasPage, Data, DomainTool } from "./contracts.ts";
 import type { MemoryStore } from "./memory.ts";
 import type { LiveMemory } from "../live/memory.ts";
@@ -119,9 +124,13 @@ export class WorkContexts {
       const types = artifact.content.types as Data[];
       const type = types.find((t) => t.name === ref.type);
       if (!type) throw new Error("目标类型无效");
+      const fusionType = type as unknown as FusionType;
       const fields = type.fields as Data;
       for (const key of Object.keys(context.scope.where))
-        if (key !== "$id" && !Object.hasOwn(fields, key))
+        if (
+          key !== "$id" &&
+          (!Object.hasOwn(fields, key) || isSupplementProperty(fusionType, key))
+        )
           throw new Error("目标范围包含无效字段");
       if (
         ref.objectId &&
@@ -137,10 +146,14 @@ export class WorkContexts {
         fields,
         sourceId: type.sourceId,
         capability: type.capability,
+        supplements: type.supplements ?? [],
       };
       label = String(type.name);
       if (ref.kind === "property") {
-        if (ref.member !== "$id" && !Object.hasOwn(fields, ref.member!))
+        if (
+          ref.member !== "$id" &&
+          !propertyNames(fusionType).includes(ref.member!)
+        )
           throw new Error("目标属性无效");
         definition = {
           type: type.name,
@@ -156,7 +169,30 @@ export class WorkContexts {
                     ],
                   ),
                 ).cap.idField
-              : fields[ref.member!],
+              : Object.hasOwn(fields, ref.member!)
+                ? fields[ref.member!]
+                : null,
+          mappings: [
+            ...(ref.member === "$id" || Object.hasOwn(fields, ref.member!)
+              ? [
+                  {
+                    sourceId: type.sourceId,
+                    capability: type.capability,
+                    sourceField:
+                      ref.member === "$id" ? "$id" : fields[ref.member!],
+                  },
+                ]
+              : []),
+            ...(fusionType.supplements ?? [])
+              .filter((s) => Object.hasOwn(s.fields, ref.member!))
+              .map((s) => ({
+                sourceId: s.sourceId,
+                capability: s.capability,
+                sourceField: s.fields[ref.member!],
+                match: s.match,
+                rationale: s.rationale,
+              })),
+          ],
         };
         label += ` · ${ref.member}`;
       }
@@ -170,7 +206,10 @@ export class WorkContexts {
         involved.push(types.find((t) => t.name === relation.to)!);
       }
       if (ref.objectId) label += ` · ${ref.objectId}`;
-      for (const t of involved)
+      for (const t of involved.flatMap((t) => [
+        t,
+        ...((t.supplements || []) as Data[]),
+      ]))
         this.live.sources.capability(
           String(t.sourceId),
           String(t.capability),
@@ -189,19 +228,23 @@ export class WorkContexts {
       },
     };
   }
-  async read(context: WorkContext) {
+  async read(context: WorkContext, assertActive: () => void = () => {}) {
+    assertActive();
     const resolved = this.resolve(context);
     const ref = resolved.target?.ref;
     if (!ref) return resolved;
     if (ref.kind === "object" || (ref.kind === "relation" && ref.objectId)) {
-      const result = await this.live.query({
-        modelId: ref.id,
-        modelVersion: ref.version,
-        type: ref.type,
-        id: ref.objectId,
-        ...(ref.kind === "relation" ? { relation: ref.member } : {}),
-        ...context.scope,
-      });
+      const result = await this.live.query(
+        {
+          modelId: ref.id,
+          modelVersion: ref.version,
+          type: ref.type,
+          id: ref.objectId,
+          ...(ref.kind === "relation" ? { relation: ref.member } : {}),
+          ...context.scope,
+        },
+        assertActive,
+      );
       this.resolve(context);
       return { ...resolved, result };
     }

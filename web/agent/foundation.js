@@ -171,6 +171,19 @@ export function renderFoundation(
         details.append(el("summary", "", "查看字段映射"));
         for (const [property, field] of Object.entries(binding.fields))
           details.append(el("p", "source-meta", `${property} ← ${field}`));
+        for (const extra of binding.supplements || []) {
+          details.append(
+            el("h5", "", `附来源 ${extra.name}`),
+            el(
+              "p",
+              "source-meta",
+              `${extra.match.primaryField} → ${extra.match.sourceField} · ${extra.capability}`,
+            ),
+          );
+          for (const [property, field] of Object.entries(extra.fields))
+            details.append(el("p", "source-meta", `${property} ← ${field}`));
+          details.append(el("p", "source-meta", extra.rationale));
+        }
         row.append(details);
         if (binding.status !== "unavailable" && api) {
           const preview = el(

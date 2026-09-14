@@ -1,3 +1,4 @@
+import { renderFusionEvidence, createSupplementEditor } from "./fusion.js";
 const el = (tag, text, cls = "") => {
   const node = document.createElement(tag);
   node.className = cls;
@@ -72,6 +73,7 @@ export function previewBinding(concept, binding, api) {
           "source-meta",
         ),
       );
+      if (result.evidence) output.append(renderFusionEvidence(result.evidence));
       if (!result.items.length)
         output.append(el("p", "当前范围没有实例，不表示该业务概念不存在。"));
       offset = position + result.items.length;
@@ -91,6 +93,14 @@ export function previewBinding(concept, binding, api) {
 }
 export function bindConcept(artifact, concept, live, api, mutate) {
   const dialog = dialogFor(`${concept.name} · 绑定业务来源`);
+  const active = live.models.find((m) => m.status === "adopted");
+  const baseline = live.models.find(
+    (m) =>
+      m.status === "adopted" &&
+      m.content.foundationRef?.id === artifact.id &&
+      m.content.foundationRef.version === artifact.version,
+  );
+  const prior = baseline?.content.types.find((t) => t.conceptId === concept.id);
   const choices = live.connections
     .filter((s) => s.status === "ready")
     .flatMap((source) =>
@@ -98,6 +108,22 @@ export function bindConcept(artifact, concept, live, api, mutate) {
         .filter((cap) => !cap.contentKind || cap.contentKind === "records")
         .map((cap) => ({ source, cap })),
     );
+  if (
+    prior &&
+    !choices.some(
+      (c) => c.source.id === prior.sourceId && c.cap.name === prior.capability,
+    )
+  )
+    choices.push({
+      unavailable: true,
+      source: { id: prior.sourceId, title: "原主来源不可用（请重新选择）" },
+      cap: {
+        name: prior.capability,
+        fields: [...new Set(Object.values(prior.fields))],
+        idField: "未知",
+        filters: {},
+      },
+    });
   if (!choices.length) {
     dialog.append(
       el(
@@ -119,11 +145,16 @@ export function bindConcept(artifact, concept, live, api, mutate) {
     option.value = String(index);
     select.append(option);
   });
+  const priorIndex = choices.findIndex(
+    ({ source, cap }) =>
+      source.id === prior?.sourceId && cap.name === prior?.capability,
+  );
+  if (priorIndex >= 0) select.value = String(priorIndex);
   const mapping = el("div"),
     output = el("div");
   output.setAttribute("aria-live", "polite");
   let inputs = [];
-  const rebuild = () => {
+  const rebuild = (existing) => {
     const { cap } = choices[Number(select.value)];
     mapping.replaceChildren(
       el(
@@ -132,36 +163,37 @@ export function bindConcept(artifact, concept, live, api, mutate) {
         "source-meta",
       ),
     );
-    inputs = cap.fields.map((field) => {
-      const row = el("div", undefined, "live-actions");
-      const label = el("label"),
-        check = el("input");
-      check.type = "checkbox";
-      check.checked = true;
-      label.append(check, document.createTextNode(field));
-      const property = el("input");
-      property.value = field;
-      property.setAttribute("aria-label", `${field} 的业务属性名`);
-      row.append(label, property);
-      mapping.append(row);
-      return { field, check, property };
+    inputs = cap.fields.flatMap((field) => {
+      const aliases = Object.entries(existing || {})
+        .filter(([, value]) => value === field)
+        .map(([key]) => key);
+      return (aliases.length ? aliases : [field]).map((alias) => {
+        const row = el("div", undefined, "live-actions");
+        const label = el("label"),
+          check = el("input");
+        check.type = "checkbox";
+        check.checked = !existing || Object.hasOwn(existing, alias);
+        label.append(check, document.createTextNode(field));
+        const property = el("input");
+        property.value = alias;
+        property.setAttribute("aria-label", `${field} 的业务属性名`);
+        row.append(label, property);
+        mapping.append(row);
+        return { field, check, property };
+      });
     });
   };
-  select.onchange = rebuild;
-  rebuild();
+  select.onchange = () => rebuild();
+  rebuild(priorIndex >= 0 ? prior.fields : undefined);
   fields.append(mapping);
   const rationaleLabel = el("label", undefined, "live-field"),
     rationale = el("textarea");
   rationale.required = true;
+  rationale.value = baseline?.content.rationale || "";
   rationaleLabel.append(el("span", "映射依据与待确认事项"), rationale);
   fields.append(rationaleLabel);
-  const active = live.models.find((m) => m.status === "adopted");
-  const baseline = live.models.find(
-    (m) =>
-      m.status === "adopted" &&
-      m.content.foundationRef?.id === artifact.id &&
-      m.content.foundationRef.version === artifact.version,
-  );
+  const supplements = createSupplementEditor(choices, prior?.supplements || []);
+  fields.append(supplements.element);
   fields.append(
     el(
       "p",
@@ -175,6 +207,10 @@ export function bindConcept(artifact, concept, live, api, mutate) {
   dialog.append(form, output);
   form.onsubmit = async (event) => {
     event.preventDefault();
+    if (choices[Number(select.value)]?.unavailable) {
+      output.textContent = "原主来源不可用，请明确选择新的业务来源。";
+      return;
+    }
     const entries = inputs
       .filter((x) => x.check.checked)
       .map((x) => [x.property.value.trim(), x.field]);
@@ -184,6 +220,13 @@ export function bindConcept(artifact, concept, live, api, mutate) {
       new Set(entries.map(([key]) => key)).size !== entries.length
     ) {
       output.textContent = "请选择字段并填写唯一的业务属性名，保留名不可使用。";
+      return;
+    }
+    let supplemental;
+    try {
+      supplemental = supplements.read();
+    } catch (error) {
+      output.textContent = error.message;
       return;
     }
     fields.disabled = true;
@@ -197,6 +240,7 @@ export function bindConcept(artifact, concept, live, api, mutate) {
       sourceId: source.id,
       capability: cap.name,
       fields: Object.fromEntries(entries),
+      supplements: supplemental,
     };
     const ok = await mutate(
       "/api/live/propose",

@@ -41,8 +41,15 @@ function workspace() {
   return { host, stage, inspector };
 }
 function sourceRef(artifact, type) {
-  const version = artifact.content.sourceVersions?.[type.sourceId];
-  return version ? [{ sourceId: type.sourceId, version }] : [];
+  return [
+    ...new Set([
+      type.sourceId,
+      ...(type.supplements || []).map((s) => s.sourceId),
+    ]),
+  ].flatMap((sourceId) => {
+    const version = artifact.content.sourceVersions?.[sourceId];
+    return version ? [{ sourceId, version }] : [];
+  });
 }
 function title(inspector, category, name, description) {
   inspector.replaceChildren(

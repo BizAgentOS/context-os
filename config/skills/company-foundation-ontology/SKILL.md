@@ -62,6 +62,14 @@ description: 从用户对话、已上传企业文档和确认企业后的公开�
 - 用户要求绑定或查看业务实例时，先 foundation_read 与 live_overview，再 live_read 读取获准 records 能力的少量实际记录。基础未采用则先让用户核对具体候选；不能把资料或指标当作业务明细。
 - live_propose 在原有 purpose/types/relations/rationale 之外提供 foundationRef:{id,version}，引用 foundation_read.adopted；baseModelRef:{id,version} 必须引用 live_overview 当前最新已采用执行子集，没有时显式传 null。保存前后若执行基线变化，重读并合并当前映射，不复用旧完整列表。每个 type 带 conceptId，name/description 原样复用该概念；fields 将业务属性名对应实际来源字段，$id 自动使用来源声明身份字段。相似字段名不等于相同业务含义，rationale 说明映射依据和未决事项。
 - 每条执行关系带 relationId，沿基础关系的 from/to 概念与名称，填写已有 fromField/toField；需要的端点都必须在本次执行子集中。未映射的概念、关系、未知项仍保留在基础层，不能为了查数另建同义概念或删除它们。
-- 本轮一个类型仅一个主来源；多源属性融合后续接入。修改执行子集时，先读取当前已采用映射，把仍需保留的类型与关系一起提交；live_propose 保存完整候选，非增量修改。新基础采用后旧绑定失效，需按新版本重新映射检查。
+- 一个类型用一个主记录源枚举对象，可加最多3个附记录源按业务键补属性。修改执行子集时，先读取当前已采用映射，把仍需保留的类型与关系一起提交；live_propose 保存完整候选，非增量修改。新基础采用后旧绑定失效，需按新版本重新映射检查。
 - 检查保存会实际读取每种类型最多3条记录，验证身份与映射结构；这不是全量数据质量或业务真实保证。先 live_query {modelId,modelVersion,conceptId,offset?,limit?} 预览，读取结果保留 conceptRef、$id、覆盖和时间；不要将候选查询称为正式消费。
 - 用 task_ask 附 candidateId/version 让用户核对并采用具体执行子集。采用时重验来源与基础版本。Agent 无直接采用工具，前端同一候选可查看、预览、采用；采用映射不自动授权外部调用方。
+
+## 同实体多源属性融合
+
+- 在 type.supplements 中声明 {name,sourceId,capability,match:{primaryField,sourceField},fields,rationale}。primaryField 是主来源业务属性名或 $id；sourceField 是附来源获准精确过滤字段。fields 为业务属性名→源字段。先读实际字段和用户业务依据，不能仅凭同名就判为同一实体。对象 $id 始终来自主来源，附源记录 ID 是证据身份。
+- 字段语义、单位与期间不同要保留不同业务属性；没有单位转换实现，不自动转单位或强制字符串/数字转换。已知一对多属于关系时用关系映射，不挑第一条冒充同实体融合。关系端点和查询 where 目前只支持不受附来源影响的主属性。
+- live_query 默认/最多20个主对象；每次最多40次附源读取，最多4个并发，每个业务键读2条并校验覆盖。缺失键、多匹配、未知覆盖、预算耗尽与失败均保留状态，不能用部分结果宣称唯一匹配。可以缩小分页继续查询。
+- 返回 items 与逐对象 evidence：properties 含 resolved/missing/conflict/uncertain、双方原值、来源/能力/记录/字段及实际读取时间，matches 含唯一/零/多/未知/失败原因。冲突或未确定的值为 null，0不是缺失；不得把主状态已办结当作实际反馈已改善。只完整唯一匹配贡献附源值。
+- 用查询预览向人呈现冲突与依据，再 task_ask 绑定具体候选供采用；采用的是映射规则，不是认可任一冲突值。执行来源变化需重新读取；来源撤销/契约版本变化或运行取消拒绝继续返回结果。原始记录不整体导入本体存储，不宣称跨源原子快照。
