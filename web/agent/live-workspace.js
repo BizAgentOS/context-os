@@ -1,3 +1,4 @@
+import { renderMappingChanges } from "./mapping-changes.js";
 import { renderCorrections } from "./relation-corrections.js";
 import { renderLiveObjects } from "./live-objects.js";
 import { renderFusionEvidence } from "./fusion.js";
@@ -198,7 +199,7 @@ function knowledgeDialog(source, cap, api) {
 export function renderLiveWorkspace(
   page,
   live,
-  { api, mutate, showCredential, selections = new Map(), onSelectContext },
+  { api, mutate, showCredential, selections = new Map(), onSelectContext, onSaved },
 ) {
   const section = el("section", "live-canvas");
   const action = async (fn) => {
@@ -435,6 +436,8 @@ export function renderLiveWorkspace(
     }
     section.append(grid);
   } else if (page === "ontology") {
+    const currentMapping = live.models.find(m => m.status === "adopted");
+    if (currentMapping) section.append(renderMappingChanges(currentMapping, {api, live, onSaved}));
     section.append(
       el("h1", "", "企业本体"),
       el(

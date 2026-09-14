@@ -330,3 +330,19 @@ coverage 区分**查询结果分页完整性** complete 与 **来源数据覆盖
 提交前重新检查来源指纹、模型版本、记录版本和前一有效纠正；本地原子提交新版本、替代旧纠正与操作回执。源基线包括已读取值、属性冲突依据和匹配状态，不包括易变读取时间；远端读取不是跨源事务，无法锁住外部变化。内部关系查询重新确认适用性后叠加纠正，并返回原目标/纠正引用；源变化会明确失败，不能继续静默使用旧纠正。返回完整性相对本次分页范围计算。
 
 `relation_correction_list` 最多返回40条元数据，正文/快照用 `relation_correction_read(id, version)` 按需读取。HTTP 对应 `/api/live/corrections/list|read|propose|check|adopt|cancel`。现有外部 v2 消费仍使用原始映射关系，不自动发布内部纠正，消费迁移在 FEATURE_016 完成；当前也没有多用户审批或外部源回写能力。
+
+## T015-04 当前实现：全局映射修订
+
+`MappingChanges` 供管理 HTTP 与内部 Agent 共用。每次以最新已采用映射的 `baseRef:{id,version}` 修订一个已有绑定：`patch.kind=property` 指定 type/property/sourceField，省略 supplement 表示主来源，指定名称表示附来源；`kind=relation` 指定 type/relation/fromField/toField。首轮不重命名概念、删除类型、改变来源身份定义或任意重写 Schema。候选理由与依据是提交者陈述，必须与读取证据区分。
+
+复用 `LiveMemory.prepareDefinition` 校验现有映射规则和实际样本。候选保存在 mapping_change，不生成可直接采用的 live_ontology 候选；预览定义仅作为服务内部参数，HTTP/Agent 查询不能传任意定义。管理员采用时原子生成新 live_ontology 记录、变更决定与幂等回执。新记录有新 ID、从 v1 开始，并保留 base 与 changeRef；原映射不覆盖。候选 v1、检查 v2、采用回执 v3 与新执行映射的版本分别显示。
+
+共同引用为 `changeRef:{kind:"mapping_change",id,version}`。`read` 返回同一份内容差异和带此引用的 `impact`：contractVersion、scope、samples、summary、dependencies、dependentSupplements、localCorrections、consumption。规则差异使用结构化路径和 before/after。最多读取受影响类型首批5个起点（非统计抽样），逐个检查唯一身份；关系每起点最多20目标，结果分别保留分页覆盖。修改附来源匹配键时，样本同时比较受影响补充属性及匹配依据。依赖此属性的关系定义明确列出，但不自动逐个比较其全部实例。
+
+证据按需保留，实际序列化差异及影响上限256KiB（界面记为256KB）。业务字段包括 readAt/attemptedAt 等名称均参与比较；只在明确读取回执位置忽略动态时间。相同样本集合仅改变来源顺序不导致失效；样本集合、属性值、冲突依据或已登记治理引用改变则拒绝沿用旧候选。来源失败不生成虚构影响。多源读取不是原子事务，不能据此保证所有企业记录或业务含义正确。
+
+提议/检查/采用/取消都使用绑定主体、方法及请求内容的 operationId；重复请求返回原版本，同键异参拒绝。采用前重读来源与治理依据、复核当前映射及候选版本；检查不能代替人工语义判断。停止运行在源读取前后失去执行资格，不继续后续读取或保存。已采用修订不能取消为“回滚”。取消未采用记录不要求上游仍可用。
+
+`mapping_change_issues` 按当前模型汇总已保存局部纠正：最多40组、每组20引用，给出实际组数和每组记录数。这是登记记录汇总，不是全企业异常扫描。列表最多40个修订元数据，`mapping_change_read(id,version)` 才读正文。HTTP 为 `/api/live/changes/list|read|issues|propose|check|adopt|cancel`；Agent 有相同名称的 list/read/issues/propose/check/cancel 工具，没有 adopt 工具。
+
+原模型的局部纠正不会自动复制到新模型。`impact.consumption.status=not_evaluated` 明确第三页消费者影响尚未集成；已有授权仍固定原模型。T016-03 使用该共同 changeRef 集成真实消费者影响与迁移，本票不声称发布或迁移已完成。

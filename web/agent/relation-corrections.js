@@ -1,10 +1,10 @@
-const el = (tag, text = "", cls = "") => {
+export const el = (tag, text = "", cls = "") => {
   const n = document.createElement(tag);
   n.className = cls;
   n.textContent = text;
   return n;
 };
-const btn = (text, fn) => {
+export const btn = (text, fn) => {
   const b = el("button", text, "quiet-button");
   b.type = "button";
   b.onclick = fn;
@@ -17,7 +17,7 @@ const states = {
   cancelled: "已取消",
   superseded: "已被新决定替代",
 };
-function modal(title) {
+export function modal(title) {
   const d = el("dialog", "", "live-dialog");
   d.append(
     el("h2", title),
@@ -28,7 +28,7 @@ function modal(title) {
   d.showModal();
   return d;
 }
-function field(form, label, value = "", multiline = false) {
+export function field(form, label, value = "", multiline = false) {
   const l = el("label", "", "live-field"),
     n = el(multiline ? "textarea" : "input");
   n.value = value;

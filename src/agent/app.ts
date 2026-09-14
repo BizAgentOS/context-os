@@ -1,3 +1,4 @@
+import { MappingChanges, mappingChangeTools } from "../live/mapping-changes.ts";
 import {
   RelationCorrections,
   correctionTools,
@@ -1458,7 +1459,7 @@ export class AgentApplication {
           ...(page !== "consumption"
             ? [...foundationTools, ...metricTools, ...evidenceTools]
             : []),
-          ...(page === "ontology" ? correctionTools : []),
+          ...(page === "ontology" ? [...correctionTools, ...mappingChangeTools] : []),
           ...capabilityTools,
           ...controlTools.filter((tool) => tool.name === "task_ask"),
           ...(page === "consumption" ? consumptionTools : [pageCompleteTool]),
@@ -1786,6 +1787,7 @@ export class AgentApplication {
             ...foundationTools,
             ...evidenceTools,
             ...correctionTools,
+            ...mappingChangeTools,
             ...consumptionTools,
             ...liveTools,
           ].find((tool) => tool.name === name)?.mutates;
@@ -1817,6 +1819,10 @@ export class AgentApplication {
             const result = await foundationDocuments.web!.read(args);
             this.memory.assertWritable(context);
             return serializable(result);
+          }
+          if (name.startsWith("mapping_change_")) {
+            const changes=new MappingChanges(this.memory,this.live);
+            return serializable(name==="mapping_change_list" ? {items:changes.list()} : name==="mapping_change_read" ? changes.read(string(args.id,"修订记录"),Number(args.version)) : name==="mapping_change_issues" ? changes.issues(args.baseRef as {id:string,version:number}) : await changes.execute(name.slice("mapping_change_".length) as "propose"|"check"|"cancel",args,context,()=>this.memory.assertWritable(context)));
           }
           if (name.startsWith("relation_correction_")) {
             const service = new RelationCorrections(this.memory, this.live);

@@ -266,6 +266,11 @@ export class LiveMemory {
     operationId?: string,
     assertActive: () => void = () => {},
   ) {
+    const content = await this.prepareDefinition(input, assertActive);
+    return this.repo.putArtifact({kind:"live_ontology",title:String(content.purpose),status:"candidate",content},context,operationId);
+  }
+  /** Validate and read bounded samples without persisting a candidate. */
+  async prepareDefinition(input: unknown, assertActive: () => void = () => {}) {
     const d = modelSchema.parse(input);
     const base = this.active();
     if (this.repo.listArtifacts("foundation").length && !d.foundationRef)
@@ -329,6 +334,7 @@ export class LiveMemory {
       if (d.foundationRef) this.checkExecutionBase(d.baseModelRef);
     };
     for (const t of d.types) {
+      assertValid();
       const sample = await this.sources.readRecords(
         t.sourceId,
         t.capability,
@@ -337,6 +343,7 @@ export class LiveMemory {
         3,
         connections[t.sourceId],
       );
+      assertValid();
       if (!sample.items.length) throw new Error("需要至少一条实际记录验证映射");
       const fusion = t.supplements?.length
         ? await fuseRows(
@@ -376,22 +383,10 @@ export class LiveMemory {
     }
     this.checkConnections({ ...d, connections });
     if (d.foundationRef) this.checkExecutionBase(d.baseModelRef);
-    return this.repo.putArtifact(
-      {
-        kind: "live_ontology",
-        title: d.purpose,
-        status: "candidate",
-        content: jsonData({
-          ...d,
-          connections,
-          checks,
-          base: base ? { id: base.id, version: base.version } : null,
-        }),
-      },
-      context,
-      operationId,
-    );
+    assertActive();
+    return jsonData({...d,connections,checks,base:base ? {id:base.id,version:base.version} : null});
   }
+
   async adopt(
     id: string,
     version: number,
@@ -457,6 +452,7 @@ export class LiveMemory {
     input: unknown,
     assertActive: () => void = () => {},
     applyCorrections = true,
+    previewDefinition?: Data,
   ): Promise<{
     model: { id: string; version: number };
     type: string;
@@ -484,7 +480,8 @@ export class LiveMemory {
     consistency: string;
   }> {
     const args = querySchema.parse(input);
-    const model = this.model(args.modelId);
+    const stored = this.model(args.modelId);
+    const model = previewDefinition ? {...stored, content: previewDefinition} : stored;
     if (args.modelVersion !== undefined && args.modelVersion !== model.version)
       throw new Error("本体版本已变化，请重新读取目标");
     const d = this.definition(model);
@@ -626,6 +623,8 @@ export class LiveMemory {
           limit: args.limit,
         },
         assertActive,
+        applyCorrections,
+        previewDefinition,
       );
       this.checkConnections(d);
       if (this.repo.getArtifact(model.id).version !== model.version)

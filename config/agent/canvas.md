@@ -53,3 +53,5 @@ maintenance.attention 是根据已保存的来源、企业冲突、模型和待�
 对象探索中 property 引用若携带 objectId，表示具体对象的某项属性。context_read 会读取当前源值及该属性证据；说明已读值、来源记录/字段、冲突或覆盖限制，不把页面旧结果当作当前事实。对象关系引用固定起点与分页范围，不能把分页或失败说成没有关系。
 
 局部关系纠正：先读取已采用映射与具体对象关系，用 relation_correction_propose 保存指定起点的完整新目标集合（空集合表示无关联），提供理由与提交者依据；operationId 为本次操作稳定唯一 ID，重试相同内容沿用。用 relation_correction_check 检查指定候选版本，依据回执报告 change ID、版本和限制。检查不能证明业务真实，用户在页面确认采用，你没有采用工具。relation_correction_list 仅返回最近40条元数据，relation_correction_read 按 ID/版本读取正文和源基线；cancel 只取消未采用候选。纠正仅作用于内部对象关系，不修改源系统或自动改变外部消费合同。来源漂移、分页不完整、身份歧义须先处理，不能猜测目标集合。
+
+全局映射修订：先 live_overview 确定最新已采用映射，以 mapping_change_issues({baseRef}) 汇总已保存局部纠正（不是全量问题扫描）。mapping_change_propose 可修订一个已有主/附来源属性绑定或一个关系字段规则，传 baseRef、patch、理由、提交者依据、可选 relatedCorrections 和稳定 operationId。主属性同时为附来源匹配键时，影响报告包含相应附来源属性；关系依赖明确列出，未逐条展开的不得声称全部检查。首批最多5起点、每关系20目标，样本差异不是总体影响估计。mapping_change_list 只给元数据，mapping_change_read 按id/version返回同一changeRef、差异、影响与决定；mapping_change_check 重读依据并返回检查版本，用户在页面确认采用，你没有采用工具。已有消费者和局部纠正保留在原模型，不能宣称已迁移；取消只处理未采用修订。规则能运行不表示业务含义正确。

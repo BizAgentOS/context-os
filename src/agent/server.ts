@@ -1,3 +1,4 @@
+import { MappingChanges } from "../live/mapping-changes.ts";
 import { RelationCorrections } from "../live/relation-corrections.ts";
 import { EvidenceService } from "./evidence.ts";
 import { MetricReader } from "./metrics.ts";
@@ -31,6 +32,7 @@ const staticFiles: Record<string, { file: string; type: string }> = {
     type: "text/javascript; charset=utf-8",
   },
   "/metrics.js": { file: "metrics.js", type: "text/javascript; charset=utf-8" },
+  "/mapping-changes.js": {file:"mapping-changes.js",type:"text/javascript; charset=utf-8"},
   "/relation-corrections.js": {
     file: "relation-corrections.js",
     type: "text/javascript; charset=utf-8",
@@ -462,6 +464,19 @@ export async function createServer(
         case "/api/live/evidence/read":
           result = new EvidenceService(app.memory, app.live).read(body);
           break;
+        case "/api/live/changes/list":
+          result = {items:new MappingChanges(app.memory,app.live).list()}; break;
+        case "/api/live/changes/read":
+          result = new MappingChanges(app.memory,app.live).read(String(body.id),Number(body.version)); break;
+        case "/api/live/changes/issues":
+          result = new MappingChanges(app.memory,app.live).issues(body.baseRef as {id:string,version:number}); break;
+        case "/api/live/changes/propose":
+        case "/api/live/changes/check":
+        case "/api/live/changes/adopt":
+        case "/api/live/changes/cancel": {
+          const saved=await new MappingChanges(app.memory,app.live).execute(url.pathname.split("/").at(-1) as "propose"|"check"|"adopt"|"cancel",body);
+          result={...app.canvasState(),saved}; break;
+        }
         case "/api/live/corrections/read":
           result = new RelationCorrections(app.memory, app.live).read(
             String(body.id),

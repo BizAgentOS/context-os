@@ -413,6 +413,7 @@ function renderCanvas(force = false) {
       showCredential,
       selections: ui.graphSelections,
       onSelectContext: selectLiveContext,
+      onSaved: result => { if (ui.page === "ontology") applySnapshot(result); },
     });
     const legacy =
       ui.page === "ontology"
