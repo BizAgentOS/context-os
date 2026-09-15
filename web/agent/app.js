@@ -1,3 +1,4 @@
+import { renderEnterpriseProfile } from "./enterprise-profile.js";
 import { renderEvidenceWorkspace } from "./evidence.js";
 import { renderFoundationWorkspace } from "./foundation-workspace.js";
 import { renderFoundation } from "./foundation.js";
@@ -30,6 +31,11 @@ const demoQuestions = {
   consumption: "谁可以调用这些记忆？",
 };
 const fieldLabels = {
+  "company.legalName": "企业主体",
+  "company.foundingDate": "成立时间",
+  "company.history": "发展沿革",
+  "company.products": "产品",
+  "company.services": "服务",
   "company.name": "企业名称",
   "company.business": "业务",
   "company.goal": "当前目标",
@@ -105,6 +111,7 @@ initialAccess = "";
 const ui = {
   page: "setup",
   initialized: false,
+  enterpriseTab: "overview",
   polling: false,
   requesting: false,
   uploading: false,
@@ -261,6 +268,7 @@ function applySnapshot(snapshot) {
   }
   const firstLoad = !ui.initialized;
   ui.initialized = true;
+  if (firstLoad && state.setupSection === "sources") ui.enterpriseTab = "sources";
   render();
   if (firstLoad && ui.page === "setup" && state.setupSection === "sources")
     document
@@ -463,7 +471,7 @@ function renderCanvas(force = false) {
     canvas.replaceChildren(live);
   } else if (ui.page === "ontology") canvas.replaceChildren(renderOntology());
   else canvas.replaceChildren(renderConsumption());
-  if (!shareMode && !state.demo && ui.page !== "consumption")
+  if (!shareMode && !state.demo && ui.page === "ontology")
     canvas.append(renderEvidenceWorkspace(state, { api, mutate }));
   renderAttention(canvas);
 }
@@ -481,33 +489,29 @@ function foundationPanel() {
   });
 }
 function renderSetup() {
-  const section = node("section", "setup-canvas");
-  const nav = node("nav", "setup-sections");
-  nav.setAttribute("aria-label", "企业与数据分区");
-  for (const [id, title] of [
-    ["company", "企业信息"],
-    ["sources", "数据接入"],
-  ]) {
-    const link = button(title, "quiet-button", async () => {
-      if (!shareMode)
-        await mutate("/api/canvas/navigate", { page: "setup", section: id });
-      const target = document.getElementById(`setup-${id}`);
-      target?.scrollIntoView({ block: "start" });
-      target?.focus({ preventScroll: true });
+  const changeTab = async (tab) => {
+    ui.enterpriseTab = tab;
+    renderCanvas(true);
+    document.querySelector(".ep-tab.active")?.focus({ preventScroll: true });
+    if (!shareMode) await mutate("/api/canvas/navigate", {
+      page: "setup", section: tab === "sources" ? "sources" : "company",
     });
-    link.setAttribute("aria-controls", `setup-${id}`);
-    nav.append(link);
-  }
-  section.append(nav);
-  const company = renderCompany();
-  company.id = "setup-company";
-  company.tabIndex = -1;
-  company.setAttribute("aria-label", "企业信息");
-  if (!shareMode && !state.demo) company.append(foundationPanel());
-  const sources = node("section", "setup-sources");
-  sources.id = "setup-sources";
-  sources.tabIndex = -1;
-  sources.setAttribute("aria-label", "数据接入");
+    if (ui.page === "setup" && ui.enterpriseTab === tab && !ui.detail)
+      document.querySelector(".ep-tab.active")?.focus({ preventScroll: true });
+  };
+  const { root: section, sources } = renderEnterpriseProfile(state, {
+    tab: ui.enterpriseTab, readonly: shareMode, label, edit: openStatement,
+    changeTab,
+    ask: (text) => {
+      const input = $("#message-input");
+      input.value = input.value.trim() ? `${input.value}\n${text}` : text;
+      rememberDraft();
+      resizeInput();
+      openComposer();
+    },
+    ontology: () => mutate("/api/canvas/navigate", { page: "ontology" }),
+    foundation: !shareMode && !state.demo ? foundationPanel : null,
+  });
   if (!shareMode && !state.demo) {
     sources.append(
       renderLiveWorkspace("sources", state.live, {
@@ -531,7 +535,7 @@ function renderSetup() {
     );
     sources.append(files);
   } else sources.append(renderSources());
-  section.append(company, sources);
+  if (!shareMode && !state.demo) sources.append(renderEvidenceWorkspace(state, { api, mutate }));
   if (!shareMode && (state.legacyHistory.length || ui.importedDrafts.length)) {
     const history = node("details", "setup-history");
     history.append(node("summary", "", "升级前保留的内容"));
@@ -606,7 +610,7 @@ function renderSetup() {
       );
       history.append(item);
     }
-    section.append(history);
+    sources.append(history);
   }
   if (!shareMode) {
     const file = node("input");
@@ -633,10 +637,14 @@ function renderSetup() {
         errorMessage(error.message);
       }
     });
-    section.append(
+    sources.append(
       button("导入旧版草稿", "quiet-button import-drafts", () => file.click()),
       file,
     );
+  }
+  for (const heading of sources.querySelectorAll("h1")) {
+    const replacement = node("h2", heading.className, heading.textContent);
+    heading.replaceWith(replacement);
   }
   return section;
 }
@@ -662,92 +670,6 @@ function companyName() {
     state.foundation?.current?.content.enterprise.name ||
     "企业"
   );
-}
-function renderCompany() {
-  const rows = statements();
-  if (!rows.length) {
-    const intro = node("section", "company-canvas setup-intro");
-    intro.append(
-      node(
-        "h1",
-        "",
-        state.foundation?.current ? companyName() : "从你的企业开始",
-      ),
-      node(
-        "p",
-        "muted",
-        state.foundation?.current
-          ? "企业基础定义来自已引用的资料，可继续核对与补充。"
-          : "在下方介绍企业名称与业务，也可以先接入资料或连接业务系统。",
-      ),
-    );
-    return intro;
-  }
-  const section = node("section", "company-canvas");
-  const nameRow = findStatement([
-    "company.name",
-    "company_name",
-    "companyName",
-    "name",
-  ]);
-  const business = findStatement([
-    "company.business",
-    "business",
-    "business_description",
-    "description",
-  ]);
-  const identity = node("div", "company-identity");
-  if (nameRow)
-    identity.append(
-      node("div", "company-monogram", [...nameRow.text.trim()][0]),
-    );
-  const intro = node("div", "company-introduction");
-  intro.append(node("h1", "company-name", nameRow?.text || "关于这家企业"));
-  if (business)
-    intro.append(
-      button(business.text, "company-business editable-text", () =>
-        openStatement(business),
-      ),
-    );
-  intro
-    .querySelector("h1")
-    .addEventListener("click", () => nameRow && openStatement(nameRow));
-  if (nameRow) {
-    const edit = button(
-      shareMode ? "查看企业信息" : "编辑企业信息",
-      "quiet-button",
-      () => openStatement(nameRow),
-    );
-    intro.append(edit);
-  }
-  identity.append(intro);
-  section.append(identity);
-  const rest = rows.filter((item) => item !== nameRow && item !== business);
-  if (rest.length) {
-    const facts = node("div", "company-facts");
-    for (const statement of rest) {
-      const fact = button("", "company-fact", () => openStatement(statement));
-      fact.append(
-        node(
-          "span",
-          "fact-label",
-          `${label(statement.key)}${statement.origin === "suggestion" ? " · 待确认" : ""}`,
-        ),
-        node("span", "fact-value", statement.text),
-      );
-      facts.append(fact);
-    }
-    section.append(facts);
-  }
-  if (!shareMode && !findStatement(["company.goal", "goal", "goals"])) {
-    const prompt = button("先选一个想解决的业务问题", "inline-prompt", () => {
-      $("#message-input").value = "我们这次最想解决的问题是：";
-      resizeInput();
-      openComposer();
-    });
-    section.append(prompt);
-  }
-  return section;
 }
 function renderSources() {
   if (!state.sources.length) return emptyCanvas("接入第一份企业资料");

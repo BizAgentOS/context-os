@@ -18,6 +18,7 @@ import type { AgentDriver } from "./runtime.ts";
 
 const webRoot = fileURLToPath(new URL("../../web/agent/", import.meta.url));
 const staticFiles: Record<string, { file: string; type: string }> = {
+  "/enterprise-profile.js": { file: "enterprise-profile.js", type: "text/javascript; charset=utf-8" },
   "/": { file: "index.html", type: "text/html; charset=utf-8" },
   "/index.html": { file: "index.html", type: "text/html; charset=utf-8" },
   "/capabilities.js": {

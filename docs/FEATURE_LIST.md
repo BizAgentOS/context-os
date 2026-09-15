@@ -21,7 +21,7 @@ Last Updated: 2026-09-15
 
 | Version | Status | Planned | InProgress | Completed | Progress |
 |---|---|---:|---:|---:|---:|
-| v0.1.0 | InProgress | 2 | 2 | 13 | 13/17 |
+| v0.1.0 | InProgress | 2 | 2 | 14 | 14/18 |
 
 ## Feature Index
 
@@ -44,6 +44,8 @@ Last Updated: 2026-09-15
 | 015 | 本体可视化、证据与内容治理 | Enhancement | High | Completed | v0.1.0 | 012/013/014（按票） | [设计](features/v0.1.0.md#feature-015) |
 | 016 | 消费接口、契约生成与治理闭环 | Enhancement | High | Completed | v0.1.0 | 012/014/015（按票） | [设计](features/v0.1.0.md#feature-016) |
 | 017 | 自定义模型 API 配置 | Enhancement | High | Completed | v0.1.0 | 016 | [设计](features/v0.1.0.md#feature-017) |
+
+| 018 | 企业档案内容区重排 | Enhancement | High | Completed | v0.1.0 | 012、013、014 | [设计](features/v0.1.0.md#feature-018) |
 
 此表保留已有能力与票的实际完成记录，计数不代表新 MVP 体验的完成比例。本轮按 [MVP 完成条件](MVP.md)及 FEATURE_012—016 的任务依赖验收。006、远程 MCP 服务和旧票中尚未覆盖的完整回归/恢复保留为后续工作，不因范围调整标为完成。
 
@@ -258,3 +260,13 @@ Last Updated: 2026-09-15
 **本轮 FEATURE_012—016 已完成。** T016-04 通过真实模型、独立 HTTP/MCP、浏览器治理和离线兼容验收，见[记录](experiment/FUSION_CHAIN.md)。旧 FEATURE_002/004/005 的未完验收保持原状态，不提前勾选；后续范围需另行明确。
 
 项目初始化和开发文档已完成，记录在 [CHANGELOG](CHANGELOG.md)；它们不计入产品功能完成数。功能状态在本文维护，具体票的完成状态在对应设计块维护。
+
+### 018: 企业档案内容区重排
+
+- **Status:** Completed
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.1.0 / —
+- **Created / Started / Completed:** 2026-09-15 / 2026-09-15 / 2026-09-15
+- **Description:** 按确认的宽屏网页方案组织企业概览、业务全景、发展与组织、资料与数据；限定中间内容区，保留公共导航、Logo 和助手。
+- **Blocked by:** 012、013、014。
+- **Design:** [FEATURE_018](features/v0.1.0.md#feature-018)。

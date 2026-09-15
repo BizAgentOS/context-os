@@ -2784,6 +2784,61 @@ tr.highlight td {
   width: min(1100px, 100%);
   margin: 0 auto;
 }
+/* Enterprise content only; global navigation and assistant retain their styles. */
+.canvas:has(> .enterprise-profile) { padding-inline: 34px; }
+.enterprise-profile { width: 100%; max-width: 1440px; font-size: 13px; line-height: 1.65; }
+.enterprise-profile .ep-header { display: flex; align-items: center; gap: 22px; padding: 26px; border: 1px solid var(--line); border-radius: 12px; }
+.enterprise-profile .ep-monogram { flex: 0 0 58px; height: 58px; display: grid; place-items: center; background: #f2f2f2; border-radius: 9px; font-size: 29px; font-weight: 550; }
+.enterprise-profile .ep-intro { flex: 1; min-width: 0; }
+.enterprise-profile h1 { font-size: 28px; line-height: 1.3; font-weight: 600; margin: 0 0 8px; letter-spacing: -.6px; }
+.enterprise-profile h2 { font-size: 17px; font-weight: 550; margin: 0; }
+.enterprise-profile .ep-metadata { display: flex; gap: 22px; max-width: 38%; }
+.enterprise-profile .ep-metadata .ep-fact { border-left: 1px solid var(--line); padding: 0 0 0 18px; }
+.enterprise-profile .ep-meta, .enterprise-profile .ep-caption { color: #777; font-size: 12px; }
+.enterprise-profile .ep-caption { margin-top: 4px; }
+.enterprise-profile .ep-fact { display: flex; flex-direction: column; text-align: left; gap: 6px; padding: 13px 0; width: 100%; border-radius: 0; overflow-wrap: anywhere; }
+.enterprise-profile .ep-fact:hover .ep-value { text-decoration: underline; text-underline-offset: 4px; }
+.enterprise-profile .ep-intro .ep-fact { padding: 0; gap: 3px; }
+.enterprise-profile .ep-intro .ep-meta { order: 2; font-size: 11px; }
+.enterprise-profile .ep-intro .ep-value { font-size: 14px; }
+.enterprise-profile .ep-tabs { display: flex; align-items: center; gap: 26px; border-bottom: 1px solid var(--line); margin: 6px 0 18px; }
+.enterprise-profile .ep-tab { font-size: 13px; padding: 17px 2px 13px; border-bottom: 2px solid transparent; color: #777; white-space: nowrap; }
+.enterprise-profile .ep-tab.active { color: #111; border-bottom-color: #111; font-weight: 550; }
+.enterprise-profile .ep-ontology-link { margin-left: auto; }
+.enterprise-profile .ep-link { font-size: 12px; color: #555; padding: 6px 0; text-align: left; }
+.enterprise-profile .ep-link:hover { color: #111; text-decoration: underline; }
+.enterprise-profile .ep-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr); gap: 16px; }
+.enterprise-profile .ep-stack { display: grid; gap: 16px; }
+.enterprise-profile .ep-offerings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 16px; }
+.enterprise-profile .ep-card { padding: 22px; border: 1px solid var(--line); border-radius: 10px; min-width: 0; background: #fff; }
+.enterprise-profile .ep-card > .ep-fact + .ep-fact { border-top: 1px solid var(--line); }
+.enterprise-profile .ep-empty { color: #888; font-size: 13px; margin: 22px 0 10px; max-width: 50em; }
+.enterprise-profile .ep-wide { grid-column: 1 / -1; }
+.enterprise-profile .ep-footer { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.enterprise-profile .ep-footer .ep-empty { margin: 6px 0; }
+.enterprise-profile .ep-footer .ep-card { padding: 16px 22px; }
+.enterprise-profile .ep-relation { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 0; }
+.enterprise-profile .ep-object { border: 1px solid #e3e3e3; background: #fafafa; padding: 8px 16px; border-radius: 6px; overflow-wrap: anywhere; max-width: 100%; }
+.enterprise-profile .ep-edge { font-size: 12px; color: #777; overflow-wrap: anywhere; }
+.enterprise-profile .ep-foundation { font-size: 12px; margin-top: 14px; }
+.enterprise-profile summary { cursor: pointer; }
+.enterprise-profile .setup-sources { border: 0; padding-top: 0; }
+.enterprise-profile .setup-sources .live-workspace { padding: 16px 0; }
+.enterprise-profile .quiet-button { font-size: 12px; white-space: nowrap; }
+@media (max-width: 1000px) {
+  .enterprise-profile .ep-header { flex-wrap: wrap; gap: 16px; }
+  .enterprise-profile .ep-metadata { order: 4; width: 100%; max-width: none; }
+  .enterprise-profile .ep-grid { grid-template-columns: minmax(0, 1.5fr) minmax(220px, 1fr); }
+}
+@media (max-width: 700px) {
+  .canvas:has(> .enterprise-profile) { padding-inline: 18px; }
+  .enterprise-profile .ep-grid, .enterprise-profile .ep-footer { grid-template-columns: minmax(0, 1fr); }
+  .enterprise-profile .ep-header, .enterprise-profile .ep-card { padding: 18px; }
+  .enterprise-profile h1 { font-size: 23px; }
+  .enterprise-profile .ep-tabs { gap: 15px; flex-wrap: wrap; }
+  .enterprise-profile .ep-ontology-link { display: none; }
+  .enterprise-profile .ep-metadata { flex-wrap: wrap; }
+}
 .setup-sections {
   display: flex;
   gap: 20px;
