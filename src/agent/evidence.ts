@@ -76,7 +76,7 @@ export const evidenceTools: DomainTool[] = [
     name: "evidence_collect",
     mutates: true,
     description:
-      "围绕一项业务对象查询，实际重读已选知识片段和指标，保存有界共同取证记录。先从目录取得文档segmentId/revision、从metric_describe取得definitionHash。objects必须显式modelVersion、fields含$id，每页最多10对象。文档rationale只声明关联理由；指标dimensionBindings为空仅作背景，显式维度→对象属性且值相等才连接，不计算指标或推断个体状态。局部失败和覆盖不足保留；采用映射与保存历史取证不同。",
+      "围绕一项业务对象查询，实际重读已选知识片段和指标，保存有界共同取证记录。先从目录取得文档segmentId/revision、从metric_describe取得definitionHash。objects必须显式modelVersion、fields含$id，每页最多10对象。针对具体对象传objects.id=对象$id，业务编号是不同属性，不能混用where；fields须包含用户要求的主/附来源融合属性。objects.status不是read或缺少所需字段时，对象取证尚未完成，不能用文档/指标成功代替。文档rationale只声明关联理由；指标dimensionBindings为空仅作背景，显式维度→对象属性且值相等才连接，不计算指标或推断个体状态。局部失败和覆盖不足保留；采用映射与保存历史取证不同。",
     inputSchema: z.toJSONSchema(evidenceSchema),
   },
   {

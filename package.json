@@ -15,7 +15,8 @@
     "check": "npm run typecheck && npm test",
     "export:html": "node scripts/export-heating-html.ts",
     "live:demo": "node scripts/live-heating.ts",
-    "sources:demo": "node src/live/heating-sources.ts"
+    "sources:demo": "node src/live/heating-sources.ts",
+    "verify:chain": "node scripts/verification/fusion-chain.ts"
   },
   "dependencies": {
     "@kodax-ai/kodax": "0.7.96-beta.2",

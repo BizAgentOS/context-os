@@ -954,7 +954,7 @@ export const liveTools: DomainTool[] = [
   ),
   tool(
     "live_query",
-    "按 modelId/modelVersion 与 conceptId（基础概念稳定 id）或 type 查询当前源对象及关系，返回同一 conceptRef、读取时间、覆盖范围；必须填 conceptId 或 type；查询 relation 时必须填起点 id。融合查询每页最多20对象，返回 evidence 的逐属性状态/出处与匹配覆盖；null可能是缺失/冲突/未确定，不等于零。只允许主来源且无重叠的属性过滤。候选查询仅为预览；不能声称历史快照或完整跨源一致性。",
+    "按 modelId/modelVersion 与 conceptId（基础概念稳定 id）或 type 查询当前源对象及关系，返回同一 conceptRef、读取时间、覆盖范围；必须填 conceptId 或 type；查询 relation 时必须填起点 id。id 对应返回对象的 $id，不是业务编号；不能把对象 ID 填入业务属性 where，where 还必须被主来源 filters 支持。fields 可以选择主来源与 supplements 中的业务属性，选中对象的请求不得省略用户要求的融合属性。融合查询每页最多20对象，返回 evidence 的逐属性状态/出处与匹配覆盖；null可能是缺失/冲突/未确定，不等于零。只允许主来源且无重叠的属性过滤。候选查询仅为预览；不能声称历史快照或完整跨源一致性。",
     querySchema,
   ),
   tool(

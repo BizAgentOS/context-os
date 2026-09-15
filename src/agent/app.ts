@@ -375,11 +375,28 @@ export class AgentApplication {
         );
       }
     }
-    const referenced = new Set(
-      definitions.flatMap((definition) =>
+    // Adopted foundation evidence is also a consumed source version. Candidate
+    // evidence must not clear a reminder before the user adopts the meaning.
+    const adoptedFoundation = this.foundation.read().adopted;
+    const foundationVersions = new Map<string, number>();
+    if (adoptedFoundation) {
+      const definition = adoptedFoundation.content;
+      const used = new Set(
+        [definition.enterprise, ...(definition.concepts as Data[]), ...(definition.relations as Data[])]
+          .flatMap((item) => ((item as Data).evidenceRefs ?? []) as string[]),
+      );
+      for (const evidence of (definition.evidence ?? []) as Data[]) {
+        if (evidence.kind !== "document" || !used.has(String(evidence.id))) continue;
+        const id = String(evidence.sourceId);
+        foundationVersions.set(id, Math.max(foundationVersions.get(id) ?? 0, Number(evidence.sourceVersion)));
+      }
+    }
+    const referenced = new Set([
+      ...definitions.flatMap((definition) =>
         Object.keys((definition.content.sourceVersions ?? {}) as Data),
       ),
-    );
+      ...foundationVersions.keys(),
+    ]);
     for (const source of sources) {
       const base = { page: "setup" as const, artifactId: source.id };
       if (source.status === "failed") {
@@ -420,6 +437,7 @@ export class AgentApplication {
           ? definitionVersion
           : draftVersion,
         reviewedSources.get(source.id) ?? 0,
+        foundationVersions.get(source.id) ?? 0,
       );
       if (version > 0 && source.version > version) {
         add({
@@ -432,7 +450,7 @@ export class AgentApplication {
         });
       } else if (
         !referenced.has(source.id) &&
-        (definitions.length || progress.completed.includes("setup"))
+        (definitions.length || adoptedFoundation || progress.completed.includes("setup"))
       ) {
         add({
           ...base,

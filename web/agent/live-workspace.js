@@ -456,6 +456,7 @@ export function renderLiveWorkspace(
           "在下方告诉我希望理解的业务问题，我会读取已连接来源并提出定义。",
         ),
       );
+    const currentModel = live.models.find((model) => model.status === "adopted");
     for (const model of live.models) {
       const block = el("article", "live-model");
       block.append(
@@ -463,11 +464,11 @@ export function renderLiveWorkspace(
         el(
           "p",
           "source-meta",
-          model.status === "adopted"
-            ? "已采用 · 按需读取源系统"
-            : "待确认 · 结构检查通过，业务含义仍需确认",
+          `${model.status === "adopted"
+            ? (model.id === currentModel?.id ? "当前采用映射" : "历史采用映射") + " · 按需读取源系统"
+            : "待确认 · 结构检查通过，业务含义仍需确认"} · v${model.version} · ${model.id}`,
         ),
-        el("p", "", model.content.rationale),
+        el("p", "", `建模时的依据：${model.content.rationale}`),
       );
       const cite = async (target, scope, dialog) => {
         if (await onSelectContext?.(model, target, scope)) {

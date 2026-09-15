@@ -1,10 +1,10 @@
 # DataEngine Feature List
 
-Last Updated: 2026-09-14
+Last Updated: 2026-09-15
 
 **2026-09-10 文档整理：**新增[产品与架构](DATA_ENGINE_DESIGN.md)、[语义契约](SEMANTIC_CONTRACTS.md)、[Agent 与前端协作](AGENT_UI_DESIGN.md)，并更新 `AGENTS.md` 阅读入口。只沉淀设计与纠正历史描述，未新增实现票、改变功能状态或运行产品验收。
 
-**2026-09-14 当前计划：**产品核心明确为本体驱动多源数据融合，目标调整为企业与数据、本体工作区、消费与治理三页。新增 FEATURE_012—016，十八张任务中 T012-01、T012-02、T013-01、T013-02、T013-03、T014-01、T014-02、T014-03、T014-04、T014-05、T015-01、T015-02、T015-03、T015-04 已完成；计划见[三页设计](THREE_PAGE_PLAN.md)。当前三页已可运行，其余融合和 Agent 方法仍按票实施。
+**2026-09-15 当前计划：**产品核心明确为本体驱动多源数据融合，目标调整为企业与数据、本体工作区、消费与治理三页。FEATURE_012—016 的十八张任务已完成；计划见[三页设计](THREE_PAGE_PLAN.md)，实际证据见[整链验收](experiment/FUSION_CHAIN.md)。保持本地实验，尚未发布。
 
 **2026-09-11 Agent 产品文档整理：**参考 KodaX-Space 的职责分层，建立[文档中心](README.md)、当前 Agent 契约、KodaX 接入记录、内置 Skill 和 ADR；旧 Agent 设计归档。三页需求和十八张票、依赖与状态不变。
 
@@ -21,7 +21,7 @@ Last Updated: 2026-09-14
 
 | Version | Status | Planned | InProgress | Completed | Progress |
 |---|---|---:|---:|---:|---:|
-| v0.1.0 | InProgress | 2 | 3 | 11 | 11/16 |
+| v0.1.0 | InProgress | 2 | 2 | 12 | 12/16 |
 
 ## Feature Index
 
@@ -42,7 +42,7 @@ Last Updated: 2026-09-14
 | 013 | 企业基础本体 Skill 与三条起步路径 | New | High | Completed | v0.1.0 | 012（按票） | [设计](features/v0.1.0.md#feature-013) |
 | 014 | 分类来源接入与多源语义融合 | Enhancement | High | Completed | v0.1.0 | 012/013（按票） | [设计](features/v0.1.0.md#feature-014) |
 | 015 | 本体可视化、证据与内容治理 | Enhancement | High | Completed | v0.1.0 | 012/013/014（按票） | [设计](features/v0.1.0.md#feature-015) |
-| 016 | 消费接口、契约生成与治理闭环 | Enhancement | High | InProgress | v0.1.0 | 012/014/015（按票） | [设计](features/v0.1.0.md#feature-016) |
+| 016 | 消费接口、契约生成与治理闭环 | Enhancement | High | Completed | v0.1.0 | 012/014/015（按票） | [设计](features/v0.1.0.md#feature-016) |
 
 此表保留已有能力与票的实际完成记录，计数不代表新 MVP 体验的完成比例。本轮按 [MVP 完成条件](MVP.md)及 FEATURE_012—016 的任务依赖验收。006、远程 MCP 服务和旧票中尚未覆盖的完整回归/恢复保留为后续工作，不因范围调整标为完成。
 
@@ -228,10 +228,10 @@ Last Updated: 2026-09-14
 
 ### 016: 消费接口、契约生成与治理闭环
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** Enhancement / High
 - **Planned / Released:** v0.1.0 / —
-- **Created / Started / Completed:** 2026-09-11 / 2026-09-14 / —
+- **Created / Started / Completed:** 2026-09-11 / 2026-09-14 / 2026-09-15
 - **Description:** 生成许可消费契约与实际 API/MCP 接入说明，开放受控证据，处理变更影响与消费者迁移并验收三页整链。
 - **Blocked by:** 012/014/015（按票）；具体任务依赖见设计块。
 - **Design:** [FEATURE_016](features/v0.1.0.md#feature-016)。
@@ -240,11 +240,11 @@ Last Updated: 2026-09-14
 
 - Total: 16
 - Planned: 2
-- InProgress: 3
-- Completed: 11
+- InProgress: 2
+- Completed: 12
 - New: 8；Internal: 1；Enhancement: 6；Refactor: 1；High: 16。
 - **已实现基础：FEATURE_011 已完成搜索、Skill、MCP 和业务 SDK 入口（[验收](experiment/AGENT_CAPABILITIES.md)）；FEATURE_010 已完成本地来源连接链路。HTTP/MCP 按需读取、Agent 本体候选、人工采用、第三方授权与源变化重读已验收；正式发布、多租户、专用 OAuth 连接器与自动演变仍未完成。**
 
-**下一项：T016-04。** FEATURE_012/013/014/015 已完成，T016-01/02 已交付许可视图、证据与说明，T016-03 已完成指定消费者迁移；FEATURE_016 继续开发，接下来进行三页数据融合整链验收。新票如覆盖旧 FEATURE_002/004/005 的未完验收，应复用同一实现和证据，再按真实结果更新旧票，不重复建设或提前勾选。
+**本轮 FEATURE_012—016 已完成。** T016-04 通过真实模型、独立 HTTP/MCP、浏览器治理和离线兼容验收，见[记录](experiment/FUSION_CHAIN.md)。旧 FEATURE_002/004/005 的未完验收保持原状态，不提前勾选；后续范围需另行明确。
 
 项目初始化和开发文档已完成，记录在 [CHANGELOG](CHANGELOG.md)；它们不计入产品功能完成数。功能状态在本文维护，具体票的完成状态在对应设计块维护。

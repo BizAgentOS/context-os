@@ -51,11 +51,11 @@ export async function exportHeatingHtml(
     )
     .replace(
       "</head>",
-      `<meta http-equiv="Content-Security-Policy" content="${policy}" />\n<style>${styles.join("\n")}</style>\n</head>`,
+      () => `<meta http-equiv="Content-Security-Policy" content="${policy}" />\n<style>${styles.join("\n")}</style>\n</head>`,
     )
     .replace(
       "</body>",
-      `<script type="application/json" id="dataengine-share-data">${data}</script>\n<script>${script}</script>\n</body>`,
+      () => `<script type="application/json" id="dataengine-share-data">${data}</script>\n<script>${script}</script>\n</body>`,
     );
   await mkdir(dirname(output), { recursive: true });
   await writeFile(output, html, "utf8");

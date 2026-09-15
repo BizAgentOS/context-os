@@ -139,7 +139,10 @@ test("uploaded enterprise text is read before citation and its versioned excerpt
     assert.equal(evidence.currentSourceVersion, 2);
     assert(evidence.text.includes("为居民提供供热服务"));
     assert.equal(evidence.quote, "澄川热力为居民提供供热服务。");
-    assert.equal((await api("/api/canvas")).foundation.adopted.id, current.id);
+    const afterReplacement = await api("/api/canvas");
+    assert.equal(afterReplacement.foundation.adopted.id, current.id);
+    assert(afterReplacement.attention.some((item: any) => item.kind === "source_changed" && item.artifactId === sourceId));
+    assert(!afterReplacement.attention.some((item: any) => item.kind === "source_unreviewed" && item.artifactId === sourceId));
   } finally {
     await service.close();
     rmSync(directory, { recursive: true, force: true });

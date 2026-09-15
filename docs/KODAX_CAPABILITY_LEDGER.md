@@ -119,3 +119,7 @@ Skill 的包目录、已安装方法与变更流程只在[内置 Skill](BUILTIN_
 ## T016-03 消费者迁移接入（2026-09-15）
 
 消费页沿同一 KodaX 循环开放只读 `mapping_change_list/read` 与 `consumer_migration_impact/list/read`、写入候选的 `consumer_migration_preview`；领域服务负责版本、许可、停止和幂等。未注册提交迁移工具，人工通过页面确认具体预览版本。真实 DeepSeek 运行已按明确决定仅生成指定视图预览；最终提交和外部读取独立于模型，见[迁移验收](experiment/CONSUMER_MIGRATIONS.md)。SDK版本未升级，未引入第二Agent循环。
+
+## 2026-09-15 整链验证补充
+
+真实模型按基础本体、执行映射、共同取证、规则修订、迁移预览五阶段完成本地链路。运行身份及工具说明强调对象 ID 与业务编号区别、请求完整融合字段；出现可恢复工具错误并有一次不完整证据失败案例，不宣称模型稳定无错。详见[整链验收](experiment/FUSION_CHAIN.md)，范围仍为本地单企业实验。

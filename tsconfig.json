@@ -19,6 +19,7 @@
     "src/**/*.ts",
     "tests/agent/**/*.ts",
     "scripts/live-heating.ts",
-    "scripts/dataengine-mcp.ts"
+    "scripts/dataengine-mcp.ts",
+    "scripts/verification/**/*.ts"
   ]
 }
