@@ -3106,7 +3106,7 @@ function updateComposer() {
 function resizeInput() {
   const input = $("#message-input");
   input.style.height = "auto";
-  input.style.height = `${Math.min(110, Math.max(48, input.scrollHeight))}px`;
+  input.style.height = `${Math.min(84, Math.max(32, input.scrollHeight))}px`;
 }
 async function sendMessage() {
   const input = $("#message-input");

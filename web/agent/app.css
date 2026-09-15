@@ -286,7 +286,7 @@ p {
   border: 1px solid #d8d8d8;
   background: #fff;
   border-radius: 22px;
-  padding: 18px 14px 10px 19px;
+  padding: 12px 12px 8px 17px;
   box-shadow: 0 3px 20px #00000005;
   transition:
     border-color 0.2s,
@@ -304,8 +304,8 @@ p {
   resize: none;
   background: transparent;
   padding: 0;
-  min-height: 48px;
-  max-height: 110px;
+  min-height: 32px;
+  max-height: 84px;
   font-size: 14px;
   line-height: 1.65;
   scrollbar-width: thin;
@@ -324,7 +324,7 @@ p {
 }
 .composer-actions {
   justify-content: space-between;
-  margin-top: 8px;
+  margin-top: 4px;
 }
 .composer-left .icon-button {
   margin-left: -6px;
@@ -1302,7 +1302,7 @@ tr.highlight td {
   }
   .composer {
     border-radius: 18px;
-    padding-top: 15px;
+    padding-top: 11px;
   }
   .composer textarea {
     font-size: 13px;
