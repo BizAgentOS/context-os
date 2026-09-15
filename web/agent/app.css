@@ -1985,6 +1985,15 @@ tr.highlight td {
   width: min(740px, calc(100% - 40px));
   padding-bottom: 14px;
 }
+.interaction[data-mode="compact"] {
+  width: min(300px, calc(100% - 24px));
+}
+.interaction[data-mode="compact"] .history-panel {
+  display: none;
+}
+.interaction[data-mode="compact"] textarea::placeholder {
+  text-align: center;
+}
 .interaction[data-mode="collapsed"] {
   padding-bottom: 0;
 }
@@ -2095,12 +2104,43 @@ tr.highlight td {
 .chat-surface .composer {
   border-color: #e6e6e6;
   border-radius: 25px;
-  padding: 17px 18px 12px;
+  padding: 9px 14px;
   box-shadow: none;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 28px;
+  align-items: center;
+  column-gap: 10px;
 }
 .chat-surface .composer textarea {
-  min-height: 40px;
+  grid-column: 2;
+  grid-row: 1;
+  min-height: 24px;
+  max-height: 120px;
   font-size: 15px;
+  line-height: 24px;
+}
+.chat-surface .composer-actions, .chat-surface .composer-left {
+  display: contents;
+}
+.chat-surface #upload-button {
+  grid-column: 1;
+  grid-row: 1;
+  margin: 0;
+  width: 28px;
+  height: 28px;
+}
+.chat-surface .send-button {
+  grid-column: 3;
+  grid-row: 1;
+  width: 28px;
+  height: 28px;
+}
+.chat-surface .composer-note, .chat-surface .demo-question {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+}
+.chat-surface .composer-note:empty {
+  display: none;
 }
 .chat-collapse {
   align-self: center;
@@ -2114,7 +2154,15 @@ tr.highlight td {
   border-radius: 12px;
   background: #fff;
   color: #999;
+  opacity: 0;
+  pointer-events: none;
+}
+.interaction:hover .chat-collapse, .interaction:focus-within .chat-collapse {
+  opacity: 1;
   pointer-events: auto;
+}
+@media (hover: none) {
+  .chat-collapse { opacity: 1; pointer-events: auto; }
 }
 .chat-collapse .icon {
   width: 12px;
@@ -2138,7 +2186,7 @@ tr.highlight td {
   padding: 4px 14px 18px;
 }
   .chat-surface .composer {
-  padding: 14px 14px 10px;
+  padding: 9px 14px;
 }
 }
 

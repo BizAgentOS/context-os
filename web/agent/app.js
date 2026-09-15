@@ -125,7 +125,7 @@ const ui = {
   consumerPanels: new Map(),
   canvasKey: "",
   dialogueKey: "",
-  chatMode: "collapsed",
+  chatMode: "compact",
   pendingMessage: null,
   settingsBusy: false,
 };
@@ -3047,11 +3047,12 @@ function setChatMode(mode) {
   $("#chat-surface").hidden = mode === "collapsed";
   $("#dialogue").hidden = mode !== "history";
   $("#toggle-history").setAttribute("aria-expanded", String(mode === "history"));
+  updateComposer();
   if (mode !== "collapsed") resizeInput();
   if (mode === "history") $("#dialogue").scrollTop = $("#dialogue").scrollHeight;
 }
 function openComposer() {
-  if (ui.chatMode === "collapsed") setChatMode("composer");
+  if (ui.chatMode === "collapsed" || ui.chatMode === "compact") setChatMode("composer");
   updateComposer();
   $("#message-input").focus();
 }
@@ -3069,7 +3070,7 @@ function updateComposer() {
   const busy = state.busy;
   const blocked =
     ui.requesting || ui.uploading || ui.contextResolving || !ui.initialized;
-  input.placeholder = shareMode
+  input.placeholder = ui.chatMode === "compact" ? "随心输入" : shareMode
     ? "选择下方示例问题，了解这一页…"
     : placeholders[ui.page];
   $("#demo-question").hidden = !state.demo || busy || !!input.value.trim();
@@ -3129,8 +3130,9 @@ function updateComposer() {
 function resizeInput() {
   const input = $("#message-input");
   input.style.height = "auto";
-  input.style.height = `${Math.min(84, Math.max(40, input.scrollHeight))}px`;
+  input.style.height = `${Math.min(120, Math.max(24, input.scrollHeight))}px`;
 }
+window.addEventListener("resize", resizeInput);
 async function sendMessage() {
   const input = $("#message-input");
   const text = input.value.trim();
@@ -3346,7 +3348,20 @@ $("#composer").addEventListener("submit", (event) => {
   event.preventDefault();
   sendMessage();
 });
-$("#open-composer").addEventListener("click", openComposer);
+$("#open-composer").addEventListener("click", (event) => {
+  if (event.detail === 0) openComposer();
+  else {
+    setChatMode("compact");
+    $("#chat-surface").focus();
+  }
+});
+$("#message-input").addEventListener("focus", () => {
+  if (ui.chatMode === "compact") setChatMode("composer");
+});
+$("#canvas").addEventListener("pointerdown", () => {
+  if (ui.chatMode === "composer" && !$("#message-input").value && !ui.focus && !state.busy && !$("#request-error").textContent)
+    setChatMode("compact");
+});
 $("#toggle-history").addEventListener("click", () => {
   setChatMode(ui.chatMode === "history" ? "composer" : "history");
 });
@@ -3360,7 +3375,7 @@ $(".interaction").addEventListener("keydown", (event) => {
   if (ui.chatMode === "history") {
     setChatMode("composer");
     $("#toggle-history").focus();
-  } else if (ui.chatMode === "composer") {
+  } else if (ui.chatMode === "composer" || ui.chatMode === "compact") {
     setChatMode("collapsed");
     $("#open-composer").focus();
   }
