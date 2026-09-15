@@ -3000,7 +3000,7 @@ function renderDialogue() {
   else if (!lines.length && hasCanvasContent() && state.prompt)
     lines.push({ id: "prompt", role: "assistant", content: state.prompt });
   const visible = lines;
-  $("#history-label").textContent = state.busy ? "正在处理…" : "最近一条";
+  $("#history-label").textContent = state.busy ? "对话记录 · 正在处理…" : "对话记录";
   $("#chat-activity").hidden = !state.busy;
   const fingerprint = JSON.stringify(visible);
   if (ui.dialogueKey === fingerprint) return;
