@@ -2134,7 +2134,7 @@ tr.highlight td {
   max-width: 100%;
   overflow: visible;
   -webkit-line-clamp: unset;
-  font-size: 14px;
+  font-size: 12px;
   line-height: 1.75;
   opacity: 1;
   margin: 0;
