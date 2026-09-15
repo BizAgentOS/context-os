@@ -2039,13 +2039,15 @@ tr.highlight td {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 14px 18px;
+  height: 28.5px;
+  padding: 6px 18px;
   border: 0;
+  border-color: #000;
   background: #fff;
   text-align: left;
   color: #919191;
   font-size: 12px;
-  font-weight: 550;
+  font-weight: 500;
 }
 .history-toggle .icon {
   width: 16px;
