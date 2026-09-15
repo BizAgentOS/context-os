@@ -6,6 +6,8 @@
 
 **T016-04 已完成，本轮十八张票已交付，未发布。** 基础本体、各类来源、融合治理、两个独立消费者及离线兼容的证据见[整链验收](experiment/FUSION_CHAIN.md)。后续开发需明确新的任务范围。
 
+补充需求 FEATURE_017 自定义模型 API 已完成，见[使用与验收](experiment/CUSTOM_MODEL_API.md)。
+
 ## 本轮开发顺序
 
 | Feature | 交付 | 设计与任务 |

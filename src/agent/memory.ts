@@ -612,8 +612,10 @@ export class MemoryStore implements Repository {
   }
 
   saveSettings(settings: Data) {
-    // Callers provide only provider/model; credential values are never persisted.
-    const safe = { provider: settings.provider, model: settings.model };
+    // Persist connection metadata only; credential values are never persisted.
+    const safe = { provider: settings.provider, model: settings.model,
+      ...(settings.provider === "custom" ? {baseUrl: settings.baseUrl, protocol: settings.protocol} : {}),
+    };
     this.db
       .prepare(
         "INSERT INTO settings VALUES (?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",

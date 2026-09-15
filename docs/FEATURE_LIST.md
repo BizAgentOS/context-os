@@ -21,7 +21,7 @@ Last Updated: 2026-09-15
 
 | Version | Status | Planned | InProgress | Completed | Progress |
 |---|---|---:|---:|---:|---:|
-| v0.1.0 | InProgress | 2 | 2 | 12 | 12/16 |
+| v0.1.0 | InProgress | 2 | 2 | 13 | 13/17 |
 
 ## Feature Index
 
@@ -43,6 +43,7 @@ Last Updated: 2026-09-15
 | 014 | 分类来源接入与多源语义融合 | Enhancement | High | Completed | v0.1.0 | 012/013（按票） | [设计](features/v0.1.0.md#feature-014) |
 | 015 | 本体可视化、证据与内容治理 | Enhancement | High | Completed | v0.1.0 | 012/013/014（按票） | [设计](features/v0.1.0.md#feature-015) |
 | 016 | 消费接口、契约生成与治理闭环 | Enhancement | High | Completed | v0.1.0 | 012/014/015（按票） | [设计](features/v0.1.0.md#feature-016) |
+| 017 | 自定义模型 API 配置 | Enhancement | High | Completed | v0.1.0 | 016 | [设计](features/v0.1.0.md#feature-017) |
 
 此表保留已有能力与票的实际完成记录，计数不代表新 MVP 体验的完成比例。本轮按 [MVP 完成条件](MVP.md)及 FEATURE_012—016 的任务依赖验收。006、远程 MCP 服务和旧票中尚未覆盖的完整回归/恢复保留为后续工作，不因范围调整标为完成。
 
@@ -236,13 +237,22 @@ Last Updated: 2026-09-15
 - **Blocked by:** 012/014/015（按票）；具体任务依赖见设计块。
 - **Design:** [FEATURE_016](features/v0.1.0.md#feature-016)。
 
+### 017: 自定义模型 API 配置
+
+- **Status:** Completed
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.1.0 / —
+- **Created / Started / Completed:** 2026-09-15 / 2026-09-15 / 2026-09-15
+- **Description:** 自定义 OpenAI/Anthropic 兼容 Base URL、模型与密钥，复用 KodaX 及连接测试，按地址隔离凭据。
+- **Design:** [FEATURE_017](features/v0.1.0.md#feature-017)。
+
 ## Summary
 
-- Total: 16
+- Total: 17
 - Planned: 2
 - InProgress: 2
-- Completed: 12
-- New: 8；Internal: 1；Enhancement: 6；Refactor: 1；High: 16。
+- Completed: 13
+- New: 8；Internal: 1；Enhancement: 7；Refactor: 1；High: 17。
 - **已实现基础：FEATURE_011 已完成搜索、Skill、MCP 和业务 SDK 入口（[验收](experiment/AGENT_CAPABILITIES.md)）；FEATURE_010 已完成本地来源连接链路。HTTP/MCP 按需读取、Agent 本体候选、人工采用、第三方授权与源变化重读已验收；正式发布、多租户、专用 OAuth 连接器与自动演变仍未完成。**
 
 **本轮 FEATURE_012—016 已完成。** T016-04 通过真实模型、独立 HTTP/MCP、浏览器治理和离线兼容验收，见[记录](experiment/FUSION_CHAIN.md)。旧 FEATURE_002/004/005 的未完验收保持原状态，不提前勾选；后续范围需另行明确。

@@ -3240,10 +3240,28 @@ async function uploadFile(file) {
     updateComposer();
   }
 }
+function updateCustomApiFields() {
+  const provider = $("#provider-input").value;
+  const custom = provider === "custom";
+  $("#glm-key-note").hidden = !["zhipu", "zhipu-coding", "zai-coding"].includes(provider);
+  $("#custom-api-fields").hidden = !custom;
+  $("#base-url-input").required = custom;
+  $("#base-url-input").disabled = !custom;
+  $("#protocol-input").disabled = !custom;
+}
+function clearEndpointKey() {
+  settingsStatus("");
+  $("#api-key-input").value = "";
+  $("#api-key-input").placeholder = "填写该接口的密钥；不会沿用其他地址的密钥";
+}
 function openSettings() {
+  if (ui.settingsBusy) return;
   const model = state.model;
   $("#provider-input").value = model.provider || "deepseek";
   $("#model-input").value = model.model || "deepseek-v4-flash";
+  $("#base-url-input").value = model.baseUrl || "";
+  $("#protocol-input").value = model.protocol || "openai";
+  updateCustomApiFields();
   $("#api-key-input").value = "";
   $("#api-key-input").placeholder = model.configured
     ? "已配置；留空继续使用"
@@ -3256,6 +3274,12 @@ function settingsStatus(message) {
   $("#settings-status").textContent = message;
   $("#settings-status").hidden = !message;
 }
+function setModelSettingsBusy(busy) {
+  ui.settingsBusy = busy;
+  for (const field of $("#settings-dialog").querySelectorAll("input, select, button")) field.disabled = busy;
+  $("#open-settings").disabled = busy;
+  if (!busy) updateCustomApiFields();
+}
 async function saveSettings(test = false) {
   if (ui.settingsBusy) return;
   const model = $("#model-input").value.trim();
@@ -3263,14 +3287,16 @@ async function saveSettings(test = false) {
     settingsStatus("填写要使用的模型名称。");
     return;
   }
-  ui.settingsBusy = true;
-  $("#save-settings").disabled = true;
-  $("#test-connection").disabled = true;
+  setModelSettingsBusy(true);
   try {
     const result = await api("/api/settings", {
       provider: $("#provider-input").value,
       model,
       apiKey: $("#api-key-input").value,
+      ...($("#provider-input").value === "custom" ? {
+        baseUrl: $("#base-url-input").value.trim(),
+        protocol: $("#protocol-input").value,
+      } : {}),
     });
     state.model = result.model;
     $("#api-key-input").value = "";
@@ -3286,9 +3312,7 @@ async function saveSettings(test = false) {
   } catch (error) {
     settingsStatus(error.message);
   } finally {
-    ui.settingsBusy = false;
-    $("#save-settings").disabled = false;
-    $("#test-connection").disabled = false;
+    setModelSettingsBusy(false);
     updateComposer();
   }
 }
@@ -3339,6 +3363,9 @@ $("#open-settings").addEventListener("click", openSettings);
 $("#close-settings").addEventListener("click", () =>
   $("#settings-dialog").close(),
 );
+$("#settings-dialog").addEventListener("cancel", (event) => {
+  if (ui.settingsBusy) event.preventDefault();
+});
 $("#settings-dialog").addEventListener("close", () => {
   $("#api-key-input").value = "";
 });
@@ -3376,6 +3403,7 @@ $("#settings-form").addEventListener("submit", (event) => {
 });
 $("#test-connection").addEventListener("click", () => saveSettings(true));
 $("#provider-input").addEventListener("change", () => {
+  settingsStatus("");
   const provider = $("#provider-input").value;
   $("#model-input").value =
     provider === state.model.provider
@@ -3385,7 +3413,12 @@ $("#provider-input").addEventListener("change", () => {
         : "";
   $("#api-key-input").value = "";
   $("#api-key-input").placeholder = "填写该服务商的密钥";
+  updateCustomApiFields();
 });
+$("#model-input").addEventListener("input", () => settingsStatus(""));
+$("#api-key-input").addEventListener("input", () => settingsStatus(""));
+$("#base-url-input").addEventListener("input", clearEndpointKey);
+$("#protocol-input").addEventListener("change", clearEndpointKey);
 let dragDepth = 0;
 window.addEventListener("dragenter", (event) => {
   if (!event.dataTransfer?.types.includes("Files")) return;

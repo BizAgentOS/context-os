@@ -6,6 +6,8 @@
 
 ### Added
 
+- 2026-09-15：完成 FEATURE_017 / T017-01，自定义 OpenAI/Anthropic 兼容 URL、模型与密钥配置；复用 KodaX，按端点隔离凭据并拒绝重定向，连接测试期间锁定配置。122 项 Node、22 项 Python 与浏览器检查，见[验收](experiment/CUSTOM_MODEL_API.md)。未发布。
+
 - 2026-09-15：补齐模型设置中的智谱 GLM 普通 API、智谱 Coding Plan、Z.ai Coding Plan；复用已安装 KodaX 原生适配及各自密钥变量。模型 ID 手动填写，密钥仅保留当前服务进程；未凭空声称真实 GLM 请求已验证。
 
 - 完成 T016-04 / FEATURE_016（2026-09-15）：真实模型整链与独立消费者验证入口 `verify:chain -- --real`；修复离线导出替换脚本损坏、已采用资料提醒和同名映射版本展示，强化对象取证完整性。120 项 Node、22 项 Python、真实模型与浏览器证据见[整链验收](experiment/FUSION_CHAIN.md)。本轮十八张票完成，未发布。

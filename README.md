@@ -62,7 +62,7 @@ npm ci
 npm start
 ```
 
-首次打开终端输出的本机管理链接（默认端口 8788），页面会移除地址中的管理凭据片段并建立浏览器管理会话；同一浏览器后续可直接打开 <http://127.0.0.1:8788>。在模型设置中配置模型凭据，或沿用宿主环境变量。GLM 可选择“智谱 GLM · 普通 API”“智谱 GLM · Coding Plan”或“Z.ai GLM · Coding Plan”，分别使用 `ZHIPU_API_KEY`、`ZHIPU_CODING_API_KEY`、`ZAI_CODING_API_KEY`。按账户填写模型 ID；切换厂商后重新填写对应密钥，连接测试成功后使用。管理凭据与消费方 API Key 分开：消费方使用第三页启用时单独交付的密钥，只能访问其明确范围。详情见[画布运行与验收](docs/experiment/CANVAS.md)和[消费链运行与验收](docs/experiment/CONSUMPTION.md)。
+首次打开终端输出的本机管理链接（默认端口 8788），页面会移除地址中的管理凭据片段并建立浏览器管理会话；同一浏览器后续可直接打开 <http://127.0.0.1:8788>。在模型设置中配置模型凭据，或沿用宿主环境变量。GLM 可选择“智谱 GLM · 普通 API”“智谱 GLM · Coding Plan”或“Z.ai GLM · Coding Plan”，分别使用 `ZHIPU_API_KEY`、`ZHIPU_CODING_API_KEY`、`ZAI_CODING_API_KEY`。按账户填写模型 ID；切换厂商后重新填写对应密钥，连接测试成功后使用。另可选择“自定义 API”填写 OpenAI/Anthropic 兼容 Base URL、模型 ID 和密钥，见[自定义接口使用说明](docs/experiment/CUSTOM_MODEL_API.md)。管理凭据与消费方 API Key 分开：消费方使用第三页启用时单独交付的密钥，只能访问其明确范围。详情见[画布运行与验收](docs/experiment/CANVAS.md)和[消费链运行与验收](docs/experiment/CONSUMPTION.md)。
 
 `npm run check` 已通过类型检查与 85 项 Agent 测试，包括第三方 MCP 接入与数据版本发布、热力演示、三页与存量迁移、文档概念、业务验证与消费页上下文、真实 HTTP 权限检查、访问记录及重启后的停用结果；此前 22 项 Python 回归测试也通过；浏览器与真实模型及两个客户端的历史验收记录单独保存，本次演示入口使用本地模拟问答。
 

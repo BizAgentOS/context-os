@@ -5,6 +5,8 @@ import {
   type RuntimeKodaXOptions,
   type RuntimePermissionRequest,
 } from "@kodax-ai/kodax/runtime";
+import { registerEndpointProvider } from "./custom-provider.ts";
+import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Data, DomainTool, Json } from "./contracts.ts";
@@ -43,15 +45,61 @@ export const providers = {
   zhipu: "ZHIPU_API_KEY",
   "zhipu-coding": "ZHIPU_CODING_API_KEY",
   "zai-coding": "ZAI_CODING_API_KEY",
+  custom: "DATAENGINE_CUSTOM_API_KEY",
 } as const;
 export type Provider = keyof typeof providers;
 export interface ModelSettings {
   provider: Provider;
   model: string;
+  baseUrl?: string;
+  protocol?: "openai" | "anthropic";
+}
+
+export function modelKeyEnvironment(settings: ModelSettings): string {
+  if (settings.provider !== "custom") return providers[settings.provider];
+  const identity = createHash("sha256")
+    .update(`${settings.protocol}\n${settings.baseUrl}`)
+    .digest("hex")
+    .slice(0, 24)
+    .toUpperCase();
+  return `DATAENGINE_CUSTOM_${identity}_API_KEY`;
+}
+
+export function customEndpoint(body: Record<string, unknown>): {
+  baseUrl: string;
+  protocol: "openai" | "anthropic";
+} {
+  if (body.protocol !== "openai" && body.protocol !== "anthropic")
+    throw new Error("请选择 OpenAI 或 Anthropic 兼容协议");
+  if (typeof body.baseUrl !== "string" || body.baseUrl.length > 2048)
+    throw new Error("请填写 API Base URL");
+  let url: URL;
+  try {
+    url = new URL(body.baseUrl.trim());
+  } catch {
+    throw new Error("API URL 格式不正确");
+  }
+  if (
+    !["http:", "https:"].includes(url.protocol) ||
+    url.username ||
+    url.password ||
+    url.href.includes("?") ||
+    url.href.includes("#")
+  )
+    throw new Error(
+      "API URL 仅支持 HTTP/HTTPS，不能包含账户、密钥、查询参数或片段",
+    );
+  const baseUrl = url.href.replace(/\/+$/, "");
+  if (/\/(chat\/completions|messages|responses)$/.test(baseUrl))
+    throw new Error(
+      "请填写 API 根地址，不要包含 chat/completions、messages 或 responses",
+    );
+  return { baseUrl, protocol: body.protocol };
 }
 
 export class KodaXDriver implements AgentDriver {
   private runtime?: KodaXRuntime;
+  private customRegistrations = new Map<string, () => void>();
   private handle?: RuntimeRunHandle;
   private stopping = false;
   private directory: string;
@@ -73,7 +121,8 @@ export class KodaXDriver implements AgentDriver {
       homeDir: join(this.directory, "sdk-home"),
       sessionsDir: join(this.directory, "sessions"),
       profile: "dataengine",
-      defaultProvider: this.settings.provider,
+      defaultProvider:
+        this.settings.provider === "custom" ? "openai" : this.settings.provider,
       defaultModel: this.settings.model,
       permissionTimeoutMs: 10_000,
       userInputTimeoutMs: 10_000,
@@ -84,6 +133,30 @@ export class KodaXDriver implements AgentDriver {
   async run(request: RunRequest): Promise<RunOutcome> {
     this.stopping = false;
     const runtime = await this.initialize();
+    let provider: string = this.settings.provider;
+    if (this.settings.provider === "custom") {
+      const endpoint = customEndpoint(
+        this.settings as unknown as Record<string, unknown>,
+      );
+      const apiKeyEnv = modelKeyEnvironment(this.settings);
+      provider = `dataengine-endpoint-${createHash("sha256")
+        .update(this.directory + apiKeyEnv)
+        .digest("hex")
+        .slice(0, 20)}`;
+      const customConfig = {
+        name: provider,
+        ...endpoint,
+        apiKeyEnv,
+        model: this.settings.model,
+        reasoning: "none" as const,
+        userAgentMode: "compat" as const,
+      };
+      this.customRegistrations.get(provider)?.();
+      this.customRegistrations.set(
+        provider,
+        registerEndpointProvider(customConfig),
+      );
+    }
     const workspace = join(this.directory, "workspace");
     const session = request.sessionId
       ? await runtime.sessions.load(request.sessionId)
@@ -218,7 +291,7 @@ export class KodaXDriver implements AgentDriver {
         input: { type: "text", text: request.input },
         permissionBroker: "runtime",
         options: {
-          provider: this.settings.provider,
+          provider,
           model: this.settings.model,
           agentMode: "sa",
           maxIter: 24,
@@ -281,6 +354,11 @@ export class KodaXDriver implements AgentDriver {
   }
   async close() {
     await this.stop();
-    await this.runtime?.close();
+    try {
+      await this.runtime?.close();
+    } finally {
+      for (const unregister of this.customRegistrations.values()) unregister();
+      this.customRegistrations.clear();
+    }
   }
 }

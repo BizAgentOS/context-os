@@ -39,6 +39,8 @@ import { ConsumptionService, consumptionTools } from "./consumption.ts";
 import { SourcePolicyService } from "./source-policy.ts";
 import {
   KodaXDriver,
+  customEndpoint,
+  modelKeyEnvironment,
   providers,
   type AgentDriver,
   type ModelSettings,
@@ -176,7 +178,7 @@ export class AgentApplication {
     this.consumption = new ConsumptionService(directory, this.memory);
     const saved = this.memory.getSettings();
     const provider = (
-      typeof saved.provider === "string" && saved.provider in providers
+      typeof saved.provider === "string" && Object.hasOwn(providers, saved.provider)
         ? saved.provider
         : "deepseek"
     ) as Provider;
@@ -185,6 +187,7 @@ export class AgentApplication {
       model:
         typeof saved.model === "string" ? saved.model : "deepseek-v4-flash",
     };
+    if (provider === "custom") Object.assign(this.settings, customEndpoint(saved));
     this.injected = !!driver;
     this.actualDriver = driver
       ? undefined
@@ -196,7 +199,7 @@ export class AgentApplication {
     return {
       ...this.settings,
       configured:
-        this.injected || !!process.env[providers[this.settings.provider]],
+        this.injected || !!process.env[modelKeyEnvironment(this.settings)],
       sdkVersion: "0.7.96-beta.2",
     };
   }
@@ -2033,7 +2036,7 @@ export class AgentApplication {
 
   safeError(error: unknown): string {
     let text = error instanceof Error ? error.message : "操作失败";
-    for (const env of Object.values(providers)) {
+    for (const env of [...Object.values(providers), ...Object.keys(process.env).filter((name) => name.startsWith("DATAENGINE_CUSTOM_"))]) {
       const key = process.env[env];
       if (key) text = text.split(key).join("[凭据已隐藏]");
     }
@@ -2159,15 +2162,18 @@ export class AgentApplication {
   async configure(body: Record<string, unknown>) {
     if (this.active || this.modelTest)
       throw new Error("请先停止当前运行再修改模型设置");
-    if (typeof body.provider !== "string" || !(body.provider in providers))
+    if (typeof body.provider !== "string" || !Object.hasOwn(providers, body.provider))
       throw new Error("不支持的模型服务");
     const provider = body.provider as Provider;
     const model = string(body.model, "模型名称", 120);
     if (body.apiKey !== undefined && typeof body.apiKey !== "string")
       throw new Error("API Key 应为文本");
+    const settings: ModelSettings = { provider, model,
+      ...(provider === "custom" ? customEndpoint(body) : {}),
+    };
     if (typeof body.apiKey === "string" && body.apiKey.trim())
-      process.env[providers[provider]] = body.apiKey.trim();
-    this.settings = { provider, model };
+      process.env[modelKeyEnvironment(settings)] = body.apiKey.trim();
+    this.settings = settings;
     this.memory.saveSettings({ ...this.settings });
     if (this.actualDriver) this.actualDriver.settings = this.settings;
     return { model: this.model() };
