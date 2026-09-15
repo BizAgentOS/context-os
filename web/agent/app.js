@@ -125,6 +125,7 @@ const ui = {
   consumerPanels: new Map(),
   canvasKey: "",
   dialogueKey: "",
+  chatMode: "collapsed",
   pendingMessage: null,
   settingsBusy: false,
 };
@@ -162,6 +163,7 @@ function label(key) {
   return fieldLabels[key] || key.replace(/^company\./, "");
 }
 function errorMessage(message = "") {
+  if (message && ui.chatMode === "collapsed") setChatMode("composer");
   $("#request-error").textContent = message;
   $("#request-error").hidden = !message;
 }
@@ -431,8 +433,8 @@ function renderCanvas(force = false) {
     if (ui.page === "ontology") {
       const workspace = renderFoundationWorkspace(state.foundation, {
         selections: ui.graphSelections,
-        select: (model, target, isCurrent) =>
-          selectLiveContext(model, target, undefined, false, isCurrent),
+        select: (model, target, isCurrent, focusComposer = false) =>
+          selectLiveContext(model, target, undefined, focusComposer, isCurrent),
         read: (model, target) =>
           api("/api/canvas/context/read", {
             page: "ontology",
@@ -599,7 +601,7 @@ function renderSetup() {
           rememberDraft();
           resizeInput();
           updateComposer();
-          $("#message-input").focus();
+          openComposer();
         }),
       );
       history.append(item);
@@ -741,7 +743,7 @@ function renderCompany() {
     const prompt = button("先选一个想解决的业务问题", "inline-prompt", () => {
       $("#message-input").value = "我们这次最想解决的问题是：";
       resizeInput();
-      $("#message-input").focus();
+      openComposer();
     });
     section.append(prompt);
   }
@@ -1344,7 +1346,7 @@ function renderAttention(canvas) {
         if (artifact) setFocus(artifact);
         $("#message-input").value = entry.detail || entry.title;
         resizeInput();
-        $("#message-input").focus();
+        openComposer();
       }
     });
     row.append(node("strong", "", entry.title));
@@ -2292,7 +2294,7 @@ async function selectLiveContext(
     ui.contextRevision += 1;
     rememberDraft();
     errorMessage();
-    if (focusComposer) $("#message-input").focus();
+    if (focusComposer) openComposer();
     return resolved;
   } catch (error) {
     if (request === ui.contextRequest) errorMessage(error.message);
@@ -2415,14 +2417,14 @@ function askAbout(artifact, suffix = "") {
     $("#message-input").value = shareMode.question(ui.page);
     resizeInput();
     updateComposer();
-    $("#message-input").focus();
+    openComposer();
     return;
   }
   setFocus(artifact, suffix);
   const input = $("#message-input");
   if (suffix && !input.value.trim()) input.value = `关于${suffix}，`;
   resizeInput();
-  input.focus();
+  openComposer();
 }
 function adjustArtifact(artifact, suffix) {
   askAbout(artifact, suffix);
@@ -2977,13 +2979,12 @@ function renderDialogue() {
     .filter(
       (message) => message.role === "user" || message.role === "assistant",
     )
-    .slice(-3)
     .map((message) => ({ ...message }));
   if (state.streaming)
     lines.push({
       id: "streaming",
       role: "assistant",
-      content: state.streaming.slice(-700),
+      content: state.streaming,
       streaming: true,
     });
   else if (
@@ -2998,12 +2999,17 @@ function renderDialogue() {
     });
   else if (!lines.length && hasCanvasContent() && state.prompt)
     lines.push({ id: "prompt", role: "assistant", content: state.prompt });
-  const visible = lines.slice(-3);
+  const visible = lines;
+  $("#history-label").textContent = state.busy ? "正在处理…" : "最近一条";
+  $("#chat-activity").hidden = !state.busy;
   const fingerprint = JSON.stringify(visible);
   if (ui.dialogueKey === fingerprint) return;
   ui.dialogueKey = fingerprint;
   const container = $("#dialogue");
+  const followLatest = container.scrollHeight - container.scrollTop - container.clientHeight < 48;
+  const previousScroll = container.scrollTop;
   container.replaceChildren();
+  if (!visible.length) container.append(node("p", "dialogue-empty", "还没有对话，从下面介绍你的企业开始。"));
   visible.forEach((message, index) => {
     const distance = visible.length - 1 - index;
     const age = distance === 0 ? "latest" : distance === 1 ? "older" : "oldest";
@@ -3031,6 +3037,23 @@ function renderDialogue() {
     }
     container.append(line);
   });
+  container.scrollTop = followLatest ? container.scrollHeight : previousScroll;
+}
+function setChatMode(mode) {
+  ui.chatMode = mode;
+  $(".interaction").dataset.mode = mode;
+  $("#open-composer").hidden = mode !== "collapsed";
+  $("#open-composer").setAttribute("aria-expanded", String(mode !== "collapsed"));
+  $("#chat-surface").hidden = mode === "collapsed";
+  $("#dialogue").hidden = mode !== "history";
+  $("#toggle-history").setAttribute("aria-expanded", String(mode === "history"));
+  if (mode !== "collapsed") resizeInput();
+  if (mode === "history") $("#dialogue").scrollTop = $("#dialogue").scrollHeight;
+}
+function openComposer() {
+  if (ui.chatMode === "collapsed") setChatMode("composer");
+  updateComposer();
+  $("#message-input").focus();
 }
 function hasCanvasContent() {
   return ui.page === "setup"
@@ -3106,7 +3129,7 @@ function updateComposer() {
 function resizeInput() {
   const input = $("#message-input");
   input.style.height = "auto";
-  input.style.height = `${Math.min(84, Math.max(32, input.scrollHeight))}px`;
+  input.style.height = `${Math.min(84, Math.max(40, input.scrollHeight))}px`;
 }
 async function sendMessage() {
   const input = $("#message-input");
@@ -3139,7 +3162,7 @@ async function sendMessage() {
     openSettings();
     return;
   }
-  $(".canvas-app").dataset.reading = "false";
+  setChatMode("history");
   rememberDraft();
   if (!ui.pendingMessage?.body) {
     const body = {
@@ -3306,7 +3329,7 @@ async function saveSettings(test = false) {
       settingsStatus(checked.message || "连接成功。");
     } else {
       $("#settings-dialog").close();
-      $("#message-input").focus();
+      openComposer();
     }
     await refresh();
   } catch (error) {
@@ -3322,6 +3345,25 @@ for (const control of $$("[data-page]"))
 $("#composer").addEventListener("submit", (event) => {
   event.preventDefault();
   sendMessage();
+});
+$("#open-composer").addEventListener("click", openComposer);
+$("#toggle-history").addEventListener("click", () => {
+  setChatMode(ui.chatMode === "history" ? "composer" : "history");
+});
+$("#collapse-composer").addEventListener("click", () => {
+  setChatMode("collapsed");
+  $("#open-composer").focus();
+});
+$(".interaction").addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || event.isComposing) return;
+  event.preventDefault();
+  if (ui.chatMode === "history") {
+    setChatMode("composer");
+    $("#toggle-history").focus();
+  } else if (ui.chatMode === "composer") {
+    setChatMode("collapsed");
+    $("#open-composer").focus();
+  }
 });
 $("#demo-question").addEventListener("click", () => {
   $("#message-input").value = shareMode
@@ -3452,15 +3494,6 @@ new ResizeObserver(([entry]) => {
   );
 }).observe($(".interaction"));
 
-const readCanvas = () => {
-  $(".canvas-app").dataset.reading = "true";
-};
-$("#canvas").addEventListener("pointerdown", readCanvas);
-$("#canvas").addEventListener("focusin", readCanvas);
-$("#canvas").addEventListener("wheel", readCanvas, { passive: true });
-$("#message-input").addEventListener("focus", () => {
-  $(".canvas-app").dataset.reading = "false";
-});
 if (!shareMode) {
   window.addEventListener("focus", () => refresh());
   window.addEventListener("pagehide", rememberDraft);

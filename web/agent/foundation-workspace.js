@@ -81,7 +81,7 @@ export function renderFoundationWorkspace(value, { selections, select, read }) {
   section.append(toolbar, scope, body);
   const artifact = () => versions.find((v) => v.version === ui.version);
   const target = () => ({ kind: ui.kind, member: ui.member });
-  const show = async (kind, member, attach = true) => {
+  const show = async (kind, member, attach = true, focusComposer = false) => {
     const request = ++generation;
     const model = artifact();
     ui.kind = kind;
@@ -94,6 +94,7 @@ export function renderFoundationWorkspace(value, { selections, select, read }) {
             model,
             target(),
             () => request === generation && section.isConnected,
+            focusComposer,
           )
         : read(model, target()));
       if (request !== generation || !section.isConnected) return;
@@ -113,7 +114,7 @@ export function renderFoundationWorkspace(value, { selections, select, read }) {
         detail.append(
           el("p", "muted", "正在查看定义；点“引用到对话”固定本次讨论目标。"),
         );
-      detail.append(button("引用到对话", () => show(kind, member)));
+      detail.append(button("引用到对话", () => show(kind, member, true, true)));
       const describeMeaning = (item) => {
         const concepts = model.content.concepts;
         const endpoint = (id) =>

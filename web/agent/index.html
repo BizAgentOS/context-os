@@ -81,13 +81,25 @@
         <section class="empty-canvas"><h1>你的企业叫什么？</h1></section>
       </main>
 
-      <section class="interaction" aria-label="创建企业记忆">
+      <section class="interaction" data-mode="collapsed" aria-label="创建企业记忆">
+        <button id="open-composer" class="chat-launcher" type="button" aria-label="展开企业助手" aria-expanded="false" aria-controls="chat-surface">DataEngine<span id="chat-activity" hidden> · 正在处理</span></button>
+        <div id="chat-surface" class="chat-surface" hidden>
+        <section class="history-panel" aria-label="当前页面对话">
+          <button id="toggle-history" class="history-toggle" type="button" aria-expanded="false" aria-controls="dialogue">
+            <span id="history-label">最近一条</span>
+            <svg class="icon" aria-hidden="true"><use href="#i-right" /></svg>
+          </button>
         <div
           class="dialogue"
           id="dialogue"
+          role="log"
+          tabindex="0"
+          aria-label="当前页面对话历史"
           aria-live="polite"
           aria-relevant="additions text"
+          hidden
         ></div>
+        </section>
         <div class="composer-wrap">
           <p class="request-error" id="request-error" role="alert" hidden></p>
           <div class="focus-context" id="focus-context" hidden>
@@ -158,6 +170,8 @@
               </button>
             </div>
           </form>
+        </div>
+        <button id="collapse-composer" class="chat-collapse" type="button" aria-label="收起企业助手" aria-controls="chat-surface"><svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg></button>
         </div>
       </section>
     </div>
