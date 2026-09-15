@@ -1,3 +1,4 @@
+import { openConnections } from "./connections.js";
 const el = (tag, text, className) => {
   const e = document.createElement(tag);
   if (text) e.textContent = text;
@@ -118,6 +119,7 @@ export function createCapabilitiesPanel(api) {
       "MCP",
       "连接 Agent 可使用的外部工具、资源和提示词。只开放你勾选的能力；这不会自动把它发布给第三方。",
     );
+    mcp.append(action("连接服务（飞书登录）", () => { dialog.close(); openConnections(api, open); }));
     for (const server of state.servers) {
       const box = el("div", null, "capability-row");
       box.append(el("strong", server.name));
@@ -164,7 +166,7 @@ export function createCapabilitiesPanel(api) {
     }
     if (!state.servers.length) mcp.append(el("p", "尚未连接 MCP。", "muted"));
     const detail = el("details"),
-      title = el("summary", "连接 MCP 服务");
+      title = el("summary", "高级：手动连接 MCP 服务");
     detail.append(title);
     const form = el("form"),
       serverName = field("连接名称"),

@@ -14,7 +14,7 @@
 | 系统由谁负责什么 | [总体架构（HLD）](DATA_ENGINE_DESIGN.md) | KodaX、应用宿主、领域服务、来源、前端与消费边界 |
 | 内部 Agent 如何工作和完成任务 | [Agent 设计](AGENT_DESIGN.md) | 身份、工作方式、运行装配、能力使用、状态、停止和恢复 |
 | KodaX 哪些能力真的接入了 | [KodaX 能力接入记录](KODAX_CAPABILITY_LEDGER.md) | 当前 SDK 依据、本产品调用路径、证据和缺口 |
-| 服务登录接入如何迁移 | [连接向导设计](CONNECTOR_ONBOARDING_DESIGN.md) | KodaX Space 源码对照、OAuth/CLI 登录与本地宿主适配（设计，未实现） |
+| 服务登录接入如何迁移 | [连接向导设计](CONNECTOR_ONBOARDING_DESIGN.md) | KodaX Space 源码对照、OAuth/CLI 登录与本地宿主适配；飞书向导已接入，真实授权待验收 |
 | 产品 Skill 如何组织和维护 | [内置 Skill](BUILTIN_SKILLS.md) | 目录、发现、加载、依赖、方法与工具的分工 |
 | 基础本体 Skill 具体怎么做 | [企业基础本体 Skill](COMPANY_FOUNDATION_SKILL.md) | 对话、资料、公开研究三路径的输入、依据和交付 |
 | 对象、证据、方法和权限如何定义 | [语义与操作契约](SEMANTIC_CONTRACTS.md) | 领域身份、断言、版本、操作、查询和提交回执 |

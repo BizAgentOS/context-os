@@ -250,11 +250,11 @@ Last Updated: 2026-09-15
 
 ## Summary
 
-- Total: 17
+- Total: 19
 - Planned: 2
-- InProgress: 2
-- Completed: 13
-- New: 8；Internal: 1；Enhancement: 7；Refactor: 1；High: 17。
+- InProgress: 3
+- Completed: 14
+- New: 8；Internal: 1；Enhancement: 9；Refactor: 1；High: 19。
 - **已实现基础：FEATURE_011 已完成搜索、Skill、MCP 和业务 SDK 入口（[验收](experiment/AGENT_CAPABILITIES.md)）；FEATURE_010 已完成本地来源连接链路。HTTP/MCP 按需读取、Agent 本体候选、人工采用、第三方授权与源变化重读已验收；正式发布、多租户、专用 OAuth 连接器与自动演变仍未完成。**
 
 **本轮 FEATURE_012—016 已完成。** T016-04 通过真实模型、独立 HTTP/MCP、浏览器治理和离线兼容验收，见[记录](experiment/FUSION_CHAIN.md)。旧 FEATURE_002/004/005 的未完验收保持原状态，不提前勾选；后续范围需另行明确。
@@ -270,3 +270,12 @@ Last Updated: 2026-09-15
 - **Description:** 按确认的宽屏网页方案组织企业概览、业务全景、发展与组织、资料与数据；限定中间内容区，保留公共导航、Logo 和助手。
 - **Blocked by:** 012、013、014。
 - **Design:** [FEATURE_018](features/v0.1.0.md#feature-018)。
+
+### 019: 服务连接向导与飞书只读接入
+
+- **Status:** InProgress
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.1.0 / —
+- **Created / Started / Completed:** 2026-09-15 / 2026-09-15 / —
+- **Description:** 借鉴 Space 的官方网页授权流程，首个服务为飞书；实现向导、受控 CLI 与只读 docx。模拟验证通过，真实账号授权和读取待用户完成。
+- **Design:** [FEATURE_019](features/v0.1.0.md#feature-019)。

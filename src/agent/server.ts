@@ -18,6 +18,7 @@ import type { AgentDriver } from "./runtime.ts";
 
 const webRoot = fileURLToPath(new URL("../../web/agent/", import.meta.url));
 const staticFiles: Record<string, { file: string; type: string }> = {
+  "/connections.js": { file: "connections.js", type: "text/javascript; charset=utf-8" },
   "/enterprise-profile.js": { file: "enterprise-profile.js", type: "text/javascript; charset=utf-8" },
   "/": { file: "index.html", type: "text/html; charset=utf-8" },
   "/index.html": { file: "index.html", type: "text/html; charset=utf-8" },
@@ -267,6 +268,10 @@ export async function createServer(
           send(200, await app.capabilities.overview());
           return;
         }
+        if (url.pathname === "/api/connectors/feishu") {
+          send(200, app.capabilities.feishu.status());
+          return;
+        }
         if (url.pathname === "/api/consumers") {
           send(200, {
             consumers: app.consumption.list(),
@@ -358,6 +363,18 @@ export async function createServer(
       const body = await readBody(request);
       let result: unknown;
       switch (url.pathname) {
+        case "/api/connectors/feishu/start":
+          result = app.capabilities.feishu.start();
+          break;
+        case "/api/connectors/feishu/cancel":
+          result = await app.capabilities.feishu.cancel(String(body.id));
+          break;
+        case "/api/connectors/feishu/disconnect":
+          result = await app.capabilities.feishu.disconnect();
+          break;
+        case "/api/connectors/feishu/read":
+          result = await app.capabilities.feishu.readDocument(String(body.url));
+          break;
         case "/api/capabilities/mcp/disconnect":
           await app.capabilities.mcp.disconnect(String(body.name));
           result = await app.capabilities.overview();

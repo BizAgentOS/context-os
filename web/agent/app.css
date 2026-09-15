@@ -3090,3 +3090,12 @@ tr.highlight td {
 .live-dialog pre { white-space:pre-wrap; overflow-wrap:anywhere; }
 
 .view-permission { display:flex; gap:8px; align-items:baseline; padding:5px 0; overflow-wrap:anywhere; }
+
+/* Service onboarding stays inside its own dialog. */
+.service-connections { max-width: 580px; }
+.service-connections .service-card { margin: 20px 0; padding: 22px; border: 1px solid var(--line); border-radius: 12px; }
+.service-connections p, .service-connections li { font-size: 13px; line-height: 1.7; margin: 10px 0; }
+.service-connections .primary-button { display: inline-block; font-size: 13px; margin: 10px 12px 10px 0; text-decoration: none; }
+.service-connections label { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+.service-connections input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; }
+.service-connections .service-document { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow: auto; font-size: 12px; }

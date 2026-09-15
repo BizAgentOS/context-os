@@ -127,3 +127,7 @@ Skill 的包目录、已安装方法与变更流程只在[内置 Skill](BUILTIN_
 ## 自定义模型 API（2026-09-15）
 
 已通过公开 `registerModelProvider` 接入 OpenAI/Anthropic 兼容模型，继承 SDK 原生序列化与工具循环，按客户端覆盖 fetch 禁止自定义接口重定向。URL、协议和模型持久化，密钥仅驻留进程且按端点隔离。验证使用真实 KodaX 与本地协议夹具；没有宣称用户网关或全部模型工具能力已验证。见[验收](experiment/CUSTOM_MODEL_API.md)。
+
+### 飞书连接（2026-09-15）
+
+宿主新增官方 CLI 网页连接任务，内部 Agent 通过现有 BusinessSdkRegistry 发现并调用 `feishu.document.read`。仅支持已连接账号的明确 docx 链接，只读、身份重验、返回版本和读取时间。与页面共用 FeishuConnector，不新增模型循环或远程 MCP transport。128 项模拟/回归测试通过，官方组件 1.0.92 摘要和实际版本验证通过；真实账号授权及文档读取待用户完成，见 FEATURE_019。

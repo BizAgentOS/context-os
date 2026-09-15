@@ -1,15 +1,25 @@
 import { AgentSkills } from "./skills.ts";
 import { AgentMcp } from "./mcp.ts";
 import { BusinessSdkRegistry } from "./sdk.ts";
+import { FeishuConnector } from "../connectors/feishu.ts";
+import { z } from "zod";
 import type { DomainTool, Json } from "../agent/contracts.ts";
 
 export class AgentCapabilities {
   readonly skills: AgentSkills;
   readonly mcp: AgentMcp;
+  readonly feishu: FeishuConnector;
   readonly sdk = new BusinessSdkRegistry();
   constructor(directory: string) {
     this.skills = new AgentSkills(directory);
     this.mcp = new AgentMcp(directory);
+    this.feishu = new FeishuConnector(directory);
+    this.sdk.register({
+      id: "feishu.document.read",
+      description: "通过已登录的飞书账号按指定 docx 文档链接只读获取内容与版本；需先在资料与数据连接飞书。不创建或修改远端文档。",
+      schema: z.object({ url: z.string().url().max(2048) }).strict(),
+      execute: async (args) => this.feishu.readDocument((args as { url: string }).url),
+    });
   }
   async search(query = "") {
     const skills = (await this.skills.list()).map((s) => ({
@@ -36,6 +46,7 @@ export class AgentCapabilities {
     };
   }
   async close() {
+    await this.feishu.close();
     await this.mcp.close();
   }
 }

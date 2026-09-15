@@ -1,3 +1,4 @@
+import { openConnections } from "./connections.js";
 import {renderConsumerMigrations} from "./consumer-migrations.js";
 import {renderConsumerViews} from "./consumer-views.js";
 import { renderMappingChanges } from "./mapping-changes.js";
@@ -222,8 +223,8 @@ export function renderLiveWorkspace(
       ),
     );
     section.append(
-      button("连接 API / MCP", () =>
-        modal("连接企业系统", (dialog) => {
+      button("接入服务", () =>
+        openConnections(api, () => modal("连接企业系统", (dialog) => {
           const form = el("form");
           const name = formField(form, "系统名称");
           const url = formField(form, "接口地址（远端使用 HTTPS）");
@@ -371,7 +372,7 @@ export function renderLiveWorkspace(
               submit.disabled = false;
             }
           };
-        }),
+        })),
       ),
     );
     const grid = el("div", "source-grid");
