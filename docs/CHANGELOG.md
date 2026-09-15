@@ -6,6 +6,8 @@
 
 ### Added
 
+- 2026-09-15：补齐模型设置中的智谱 GLM 普通 API、智谱 Coding Plan、Z.ai Coding Plan；复用已安装 KodaX 原生适配及各自密钥变量。模型 ID 手动填写，密钥仅保留当前服务进程；未凭空声称真实 GLM 请求已验证。
+
 - 完成 T016-04 / FEATURE_016（2026-09-15）：真实模型整链与独立消费者验证入口 `verify:chain -- --real`；修复离线导出替换脚本损坏、已采用资料提醒和同名映射版本展示，强化对象取证完整性。120 项 Node、22 项 Python、真实模型与浏览器证据见[整链验收](experiment/FUSION_CHAIN.md)。本轮十八张票完成，未发布。
 
 - 完成 T016-03（2026-09-15）：共同变更影响、指定消费者迁移、精确许可保留、旧依据失效与HTTP/MCP版本校验。119项Node、22项Python及真实KodaX/浏览器见[验收](experiment/CONSUMER_MIGRATIONS.md)。下一项T016-04；FEATURE_016继续开发，未发布。

@@ -189,9 +189,13 @@
           <option value="deepseek">DeepSeek</option>
           <option value="openai">OpenAI</option>
           <option value="anthropic">Anthropic</option>
+          <option value="zhipu">智谱 GLM · 普通 API</option>
+          <option value="zhipu-coding">智谱 GLM · Coding Plan</option>
+          <option value="zai-coding">Z.ai GLM · Coding Plan</option>
         </select>
         <label for="model-input">模型</label>
-        <input id="model-input" type="text" autocomplete="off" required />
+        <input id="model-input" type="text" autocomplete="off" placeholder="填写账户可用的模型 ID" required />
+        <p class="field-note">GLM 请按密钥所属平台及套餐选择；普通 API 与 Coding Plan 使用不同入口。模型名称以你的账户可用模型为准。</p>
         <label for="api-key-input">API Key</label>
         <input
           id="api-key-input"

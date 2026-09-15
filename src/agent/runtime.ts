@@ -40,6 +40,9 @@ export const providers = {
   deepseek: "DEEPSEEK_API_KEY",
   openai: "OPENAI_API_KEY",
   anthropic: "ANTHROPIC_API_KEY",
+  zhipu: "ZHIPU_API_KEY",
+  "zhipu-coding": "ZHIPU_CODING_API_KEY",
+  "zai-coding": "ZAI_CODING_API_KEY",
 } as const;
 export type Provider = keyof typeof providers;
 export interface ModelSettings {
