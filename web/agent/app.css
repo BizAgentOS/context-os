@@ -101,13 +101,8 @@ p {
   letter-spacing: -0.6px;
   user-select: none;
 }
-.brand-logo {
-  display: block;
-  width: 156px;
-  height: auto;
-}
-@media (max-width: 580px) {
-  .brand-logo { width: 132px; }
+.wordmark-dot {
+  color: #777;
 }
 .page-nav {
   display: flex;
