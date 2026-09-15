@@ -2030,6 +2030,37 @@ tr.highlight td {
   font-size: 11px;
   font-weight: 400;
 }
+.launcher-current {
+  position: absolute;
+  inset: 0;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: #e9e9e9;
+  stroke-width: 0.8;
+  stroke-linecap: round;
+  pointer-events: none;
+  opacity: 0;
+  filter: drop-shadow(0 0 0.5px #777);
+}
+.launcher-current path {
+  stroke-dasharray: 8 92;
+}
+.chat-launcher:hover .launcher-current,
+.chat-launcher:focus-visible .launcher-current {
+  opacity: 1;
+}
+.chat-launcher:hover .launcher-current path,
+.chat-launcher:focus-visible .launcher-current path {
+  animation: launcher-current-flow 1.6s linear infinite;
+}
+@keyframes launcher-current-flow {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -100; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-launcher .launcher-current { display: none; }
+}
 .chat-surface {
   display: flex;
   flex-direction: column;
