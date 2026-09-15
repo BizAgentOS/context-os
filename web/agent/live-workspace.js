@@ -1,3 +1,4 @@
+import {renderConsumerMigrations} from "./consumer-migrations.js";
 import {renderConsumerViews} from "./consumer-views.js";
 import { renderMappingChanges } from "./mapping-changes.js";
 import { renderCorrections } from "./relation-corrections.js";
@@ -700,7 +701,7 @@ export function renderLiveWorkspace(
       section.append(block);
     }
   } else if (page === "consumption") {
-    section.append(renderConsumerViews(live,{api,onSaved,showCredential}));
+    section.append(renderConsumerViews(live,{api,onSaved,showCredential}),renderConsumerMigrations({api,onSaved}));
     section.append(
       el("h2", "", "旧版 v2 访问范围"),
       el(

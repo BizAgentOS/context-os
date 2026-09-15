@@ -99,6 +99,7 @@ async function readMemory(
             ? body.error
             : "DataEngine rejected this request.",
         ...(typeof body.code === "string" ? { code: body.code } : {}),
+        ...(body.code==="view_version_changed"?{hint:"Call describe_catalog and restart with viewRef.version as viewVersion."}:{}),
         ...(response.status === 409 && body.code === "data_version_changed"
           ? {
               hint: "Published data changed. Call describe_memory again and restart this query or batch with its dataVersion.",
@@ -130,10 +131,11 @@ export function createMemoryMcpServer(config: BridgeConfig) {
     const name = z.string().trim().min(1).max(200);
     const schemas = {
       describe_catalog: z.object({}).strict(),
-      describe_type: z.object({ type: name }).strict(),
+      describe_type: z.object({ type: name,viewVersion:z.number().int().positive().optional() }).strict(),
       query_objects: z
         .object({
           type: name,
+          viewVersion:z.number().int().positive().optional(),
           id: name.optional(),
           relation: name.optional(),
           fields: z
@@ -159,7 +161,7 @@ export function createMemoryMcpServer(config: BridgeConfig) {
           (a) => !a.relation || Boolean(a.id),
           "A relation query requires an id",
         ),
-      read_evidence: z.object({ ref: name }).strict(),
+      read_evidence: z.object({ ref: name,viewVersion:z.number().int().positive().optional() }).strict(),
       describe_connection: z.object({}).strict(),
     };
     for (const op of consumerOperations)

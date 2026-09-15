@@ -324,6 +324,21 @@ test("relation permits require both endpoints, survive restart, and expose no da
     assert.equal(fresh.body.items[0].properties.结果.value, "已改善");
     assert.equal((await read(propertyEvidencePath,active.key)).body.evidence.value,'未改善');
     assert.equal((await read(evidencePath,active.key)).status,200);
+    let incompatible = (await admin("/api/live/changes/propose", {
+      operationId: "ungranted-join", baseRef: {id:m.id,version:m.version},
+      patch: {kind:"relation",type:"投诉",relation:"回访记录",fromField:"小区",toField:"投诉编号"},
+      reason:"测试目标关系要求未获许可的连接字段", evidence:"保留原消费者权限",
+    })).saved;
+    for (const action of ["check", "adopt"])
+      incompatible = (await admin("/api/live/changes/"+action, {operationId:action+"-ungranted",id:incompatible.id,version:incompatible.version})).saved;
+    const migration = (await admin("/api/live/migrations/preview", {
+      operationId:"blocked-join-preview",viewRef:{id:active.view.id,version:active.view.version},
+      changeRef:{id:incompatible.id,version:incompatible.version},
+    })).saved;
+    assert.equal(migration.content.report.compatible,false);
+    await assert.rejects(admin("/api/live/migrations/commit", {operationId:"blocked-join-commit",id:migration.id,version:migration.version}));
+    assert.equal((await read(path,active.key)).body.items[0].objectRef.id,"HF002");
+    assert.equal((await read("/v3/catalog",active.key)).body.viewRef.version,active.view.version);
     await admin("/api/live/disable", {
       id: connections.mcp.id,
       version: connections.mcp.version,

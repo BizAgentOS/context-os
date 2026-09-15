@@ -12,21 +12,21 @@ export const consumerOperations = [
     name: "describe_type",
     path: "/v3/types",
     description: "Describe permitted fields, relations and evidence scopes.",
-    parameters: ["type"],
+    parameters: ["type","viewVersion"],
   },
   {
     name: "query_objects",
     path: "/v3/objects",
     description:
-      "Read permitted objects or a named relation. Fields refer to the target type and must include $id. Source readings are not atomic.",
-    parameters: ["type", "id", "relation", "fields", "offset", "limit"],
+      "Read permitted objects or a named relation. Fields refer to the target type and must include $id. Source readings are not atomic. Use viewVersion from catalog to pin this investigation; it is required after migration.",
+    parameters: ["type", "id", "relation", "fields", "offset", "limit", "viewVersion"],
   },
   {
     name: "read_evidence",
     path: "/v3/evidence",
     description:
       "Read an opaque evidenceRef returned by a permitted query or the explicit contextEvidence catalog. This is a saved reading, not current source values.",
-    parameters: ["ref"],
+    parameters: ["ref","viewVersion"],
   },
   {
     name: "describe_connection",
@@ -43,6 +43,8 @@ export function consumerConnection(
   bridgePath: string,
   nodePath: string,
   contextEvidence: Data[] = [],
+  viewVersion?:number,
+  requiresViewVersion = false,
 ) {
   const types = grants.map((g) => String(g.type));
   const jsonValue = {
@@ -200,11 +202,11 @@ export function consumerConnection(
           parameters: op.parameters.map((p) => ({
             name: p,
             in: "query",
-            required: p === "type" || p === "ref",
+            required: p === "type" || p === "ref" || (p === "viewVersion" && requiresViewVersion),
             schema:
               p === "limit"
                 ? { type: "integer", minimum: 1, maximum: 20, default: 20 }
-                : p === "offset"
+                : p === "viewVersion"?{type:"integer",minimum:1,description:"Use viewRef.version from catalog; required after migration."}:p === "offset"
                   ? { type: "integer", minimum: 0, default: 0 }
                   : {
                       type: "string",
@@ -218,7 +220,7 @@ export function consumerConnection(
               : {}),
           })),
           responses: Object.fromEntries(
-            [200, 400, 403, 404, 502].map((status) => [
+            [200, 400, 403, 404, 409, 502].map((status) => [
               status,
               {
                 description:
@@ -228,7 +230,7 @@ export function consumerConnection(
                       ? "Invalid key, unpermitted scope or revoked view"
                       : status === 400
                         ? "Invalid query"
-                        : status === 404
+                        : status === 409 ? "View version changed or required; rediscover catalog." : status === 404
                           ? "Unknown endpoint"
                           : "Source or fixed model unavailable",
                 content: {
@@ -266,10 +268,10 @@ export function consumerConnection(
     },
     http: {
       catalog: `${origin}/v3/catalog`,
-      objects: `${origin}/v3/objects?type=${encodeURIComponent(types[0])}`,
+      objects: `${origin}/v3/objects?type=${encodeURIComponent(types[0])}${viewVersion?"&viewVersion="+viewVersion:""}`,
       authorization: "Bearer <DATAENGINE_CONSUMER_KEY>",
-      evidence: `${origin}/v3/evidence?ref=<evidenceRef>`,
-      example: `const response = await fetch(${JSON.stringify(origin + "/v3/objects?type=" + encodeURIComponent(types[0]))}, {headers: {Authorization: 'Bearer ' + process.env.DATAENGINE_CONSUMER_KEY}});\nif (!response.ok) throw new Error('Data Engine status ' + response.status);\nconsole.log(await response.json());`,
+      evidence: `${origin}/v3/evidence?ref=<evidenceRef>${viewVersion?"&viewVersion="+viewVersion:""}`,
+      example: `const response = await fetch(${JSON.stringify(origin + "/v3/objects?type=" + encodeURIComponent(types[0])+(viewVersion?"&viewVersion="+viewVersion:""))}, {headers: {Authorization: 'Bearer ' + process.env.DATAENGINE_CONSUMER_KEY}});\nif (!response.ok) throw new Error('Data Engine status ' + response.status);\nconsole.log(await response.json());`,
     },
     mcp: {
       mcpServers: {

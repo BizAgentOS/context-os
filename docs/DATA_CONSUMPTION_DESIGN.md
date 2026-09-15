@@ -58,7 +58,7 @@
 
 关系查询须提供起点 id；结果按目标类型许可裁剪。对象返回 objectRef 和 properties[field]={value,status}，保留冲突、缺失与不确定性；不返回原始冲突值、源记录标识、源配置或内部映射。读取覆盖与 readAt/historicalReplay 随结果返回，按需读取非跨源原子快照。
 
-共同元数据包括 contractVersion=v3、viewRef、modelRef、semanticRef、methodVersion=fusion-objects-v3.1、relationPolicy=source_mapping_only、evidenceAvailability=not_exposed。T016-01 当时未提供证据引用/正文、OpenAPI生成及新MCP接口；现由下节 T016-02 接入。局部关系纠正尚未对外发布，消费者迁移属于 T016-03。
+共同元数据包括 contractVersion=v3、viewRef、modelRef、semanticRef、methodVersion=fusion-objects-v3.1、relationPolicy=source_mapping_only、evidenceAvailability=not_exposed。T016-01 当时未提供证据引用/正文、OpenAPI生成及新MCP接口；现由下节 T016-02 接入。局部关系纠正尚未对外发布；消费者迁移现由下节 T016-03 接入。
 
 每次读取及返回前复核视图撤销、固定模型和来源可用性；无权/撤销403，非法参数400，固定映射/来源失效502。无内部错误细节。访问记录只记视图、路径、状态和时点。重启保留许可，源数据变化仍读取当前值；固定语义版本不构成历史数据快照。当前是本地单企业管理身份，不含员工级、记录级或多租户授权。
 
@@ -76,6 +76,21 @@
 
 `GET /v3/connection` 返回该视图 OpenAPI 3.1、HTTP 示例、本地 MCP 配置及许可范围。管理端用 `/api/live/views/connection?id=…&version=…` 获取同份说明；`/api/live/views/evidence-options` 使用相同模型引用列出可授权历史读取。密钥始终是占位符；源服务地址、未授权字段和内部 bundle 引用不进入对外说明。本地桥接脚本的实际文件路径用于本机配置，不是远程托管地址。
 
-`node scripts/dataengine-mcp.ts` 接受 `DATAENGINE_URL` 与本视图 `DATAENGINE_CONSUMER_KEY`，通过实际 HTTP 服务读取，不依赖浏览器或内部模型。v3 工具为 `describe_catalog`、`describe_type`、`query_objects`、`read_evidence`、`describe_connection`；目录/查询/证据流程与 HTTP 相同。原 v1/v2 桥接不变。仍未提供远程托管 MCP、消费者迁移或记录级企业 IAM；迁移为 T016-03。
+`node scripts/dataengine-mcp.ts` 接受 `DATAENGINE_URL` 与本视图 `DATAENGINE_CONSUMER_KEY`，通过实际 HTTP 服务读取，不依赖浏览器或内部模型。v3 工具为 `describe_catalog`、`describe_type`、`query_objects`、`read_evidence`、`describe_connection`；目录/查询/证据流程与 HTTP 相同。原 v1/v2 桥接不变。仍未提供远程托管 MCP 或记录级企业 IAM；迁移契约见 T016-03。
 
 内部 Agent 在消费页已能只读 `evidence_list/read` 以确认真实引用，再通过 `consumer_view_propose` 保存显式许可；模型可能漏填证据范围，界面与实际草稿回执是核查依据，宿主不推断或补授用户未提交的权限。
+
+
+## T016-03 当前迁移契约（2026-09-15）
+
+第三页按第二页同一 `mapping_change {id,version}` 查询当前消费者影响，打开同一规则差异与历史样本。影响按20份分页；最近变更/迁移各40条，旧变更可按引用读取。`affected` 指许可字段、关系或其依赖涉及修订；`compatible` 表示当前版本、来源许可和既有字段/关系范围允许迁移，不证明业务正确、全量数据兼容或上游此刻可达。样本沿用原变更的有界读取，不冒充新一轮全量检查。
+
+`consumer_migration` 保存当前 viewRef、changeRef、目标、原许可、条件指纹和移除旧背景的明确决定。Agent 可以调用 `consumer_migration_impact/preview/list/read`，消费页也可只读映射变更；不注册迁移提交工具。管理员通过 `POST /api/live/migrations/preview`（operationId、viewRef、changeRef、可选 dropContextEvidence）保存预览，`commit`（operationId、预览 id/version）确认指定视图。页面与 Agent 使用同一服务和同一预览记录。
+
+提交在事务中重新检查预览、视图、变更、目标和当前来源许可，成功后保留视图 ID、密钥摘要及原 grants，增加视图版本并切换 modelRef。关联字段不在既有许可内则阻止；绝不自动增加字段、关系或证据权限。竞争提交和过期预览失败，按主体与 operationId 重试返回历史回执，同键不同请求拒绝。回执不代表视图此刻仍启用；当前状态须重新读取。
+
+固定文档/BI 背景绑定旧模型，默认阻止迁移；仅明确 `dropContextEvidence:true` 才移除该视图全部旧背景引用。当前没有自动重绑或新背景补授入口。迁移立即删除该视图旧动态证据，原背景引用也失效。其他视图、旧 v1/v2 合同和原模型局部纠正保持原状，局部纠正不进入外部查询。
+
+外部客户端先读 `/v3/catalog` 获得当前 `viewRef.version`；`/v3/catalog`、`/v3/connection` 可不带版本以重新发现。迁移后 `/v3/types`、`/v3/objects`、`/v3/evidence` 必须携带 `viewVersion`，生成 OpenAPI 同步标为必填，HTTP 示例带实际版本，MCP 三个读取工具接受相同参数。未迁移视图保持参数可选；任何显式旧版本都拒绝。迁移中的在途响应也拒绝，返回409及 `code=view_version_changed`，提示重新发现并开始查询；撤销返回403。一次客户端调查应始终使用同一版本，不能遇到409便拼接旧结果与新结果。
+
+版本固定仅约束消费语义与许可，源值仍按需读取，没有跨源原子数据快照。首轮没有批量迁移、回滚协议、自动扩大授权、企业 IAM 或公网托管承诺。完整验证见[迁移验收](experiment/CONSUMER_MIGRATIONS.md)。

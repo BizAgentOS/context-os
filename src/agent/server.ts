@@ -1,3 +1,4 @@
+import {ConsumerMigrations} from "../live/consumer-migrations.ts";
 import {ConsumerViews} from "../live/consumer-views.ts";
 import { MappingChanges } from "../live/mapping-changes.ts";
 import { RelationCorrections } from "../live/relation-corrections.ts";
@@ -33,6 +34,7 @@ const staticFiles: Record<string, { file: string; type: string }> = {
     type: "text/javascript; charset=utf-8",
   },
   "/metrics.js": { file: "metrics.js", type: "text/javascript; charset=utf-8" },
+  "/consumer-migrations.js": {file:"consumer-migrations.js",type:"text/javascript; charset=utf-8"},
   "/consumer-views.js": {file:"consumer-views.js",type:"text/javascript; charset=utf-8"},
   "/mapping-changes.js": {file:"mapping-changes.js",type:"text/javascript; charset=utf-8"},
   "/relation-corrections.js": {
@@ -481,6 +483,14 @@ export async function createServer(
         case "/api/live/views/revoke": {
           const views=new ConsumerViews(app.memory,app.live);
           const saved=url.pathname.endsWith("propose")?views.propose(body):url.pathname.endsWith("activate")?views.activate(body):views.revoke(body);
+          result={...app.canvasState(),saved};break;
+        }
+        case '/api/live/migrations/impact': result=new ConsumerMigrations(app.memory,app.live).impact(body);break;
+        case '/api/live/migrations/list': result={items:new ConsumerMigrations(app.memory,app.live).list()};break;
+        case '/api/live/migrations/read': result=new ConsumerMigrations(app.memory,app.live).read(body);break;
+        case '/api/live/migrations/preview':
+        case '/api/live/migrations/commit': {
+          const saved=new ConsumerMigrations(app.memory,app.live).execute(url.pathname.endsWith('preview')?'preview':'commit',body);
           result={...app.canvasState(),saved};break;
         }
         case "/api/live/changes/list":

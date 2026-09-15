@@ -297,7 +297,7 @@ export function inspectChange(initial, api, saved) {
       el("h3", "治理影响"),
       el(
         "p",
-        "局部纠正保留在原模型，不自动迁移到新映射；既有消费者继续使用原模型。外部消费者影响尚未评估。",
+        "局部纠正保留在原模型，不自动迁移到新映射；既有消费者继续使用原模型。点击“查看消费影响”按当前许可核对；本报告的原始样本保留不变。",
         "source-meta",
       ),
     );
@@ -333,6 +333,7 @@ export function inspectChange(initial, api, saved) {
           `新执行映射：${c.resultModel.id} · v${c.resultModel.version}；采用者 ${c.decision.actor}，基于检查 v${c.decision.checkedVersion}`,
         ),
       );
+    content.append(btn('查看消费影响',async()=>{const {inspectConsumerImpact}=await import('./consumer-migrations.js');if(d.isConnected)inspectConsumerImpact(record,api,saved);}));
     const status = el("p");
     status.setAttribute("role", "status");
     const act = async (method) => {

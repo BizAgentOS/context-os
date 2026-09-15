@@ -114,3 +114,8 @@ Skill 的包目录、已安装方法与变更流程只在[内置 Skill](BUILTIN_
 ### 2026-09-14：T016-02 消费取证
 
 消费页接入已有 evidence_list/read 两个只读领域工具，以真实共同取证引用生成consumer_view_propose的显式背景许可；不开放消费页重新采集或自动启用。外部stdio MCP是确定性HTTP桥接，不启动KodaX模型。当前SDK版本未变，真实模型遗漏字段证据范围的情况见[验收](experiment/CONSUMER_EVIDENCE.md)。
+
+
+## T016-03 消费者迁移接入（2026-09-15）
+
+消费页沿同一 KodaX 循环开放只读 `mapping_change_list/read` 与 `consumer_migration_impact/list/read`、写入候选的 `consumer_migration_preview`；领域服务负责版本、许可、停止和幂等。未注册提交迁移工具，人工通过页面确认具体预览版本。真实 DeepSeek 运行已按明确决定仅生成指定视图预览；最终提交和外部读取独立于模型，见[迁移验收](experiment/CONSUMER_MIGRATIONS.md)。SDK版本未升级，未引入第二Agent循环。

@@ -69,6 +69,7 @@ export function publicView(a: Artifact) {
   return { ...a, content };
 }
 class Forbidden extends Error {}
+class ViewVersionChanged extends Error {}
 export class ConsumerViews {
   private memory: MemoryStore;
   private live: LiveMemory;
@@ -208,6 +209,8 @@ export class ConsumerViews {
         ),
         process.execPath,
         this.contextCatalog(v),
+        v.version,
+        Boolean(v.content.requiresViewVersion),
       ),
     );
   }
@@ -303,10 +306,15 @@ export class ConsumerViews {
       body: Data;
     const authorized = () => {
       const now = this.view(view.id);
-      if (now.version !== view.version || now.status !== "active")
-        throw new Forbidden("消费许可已变化或停用");
+      if (now.status !== "active") throw new Forbidden("消费许可已变化或停用");
+      if(now.version!==view.version)throw new ViewVersionChanged("视图版本已变化");
     };
     try {
+      params=new URLSearchParams(params);
+      if(params.getAll('viewVersion').length>1)throw new z.ZodError([]);
+      const pinned=params.has('viewVersion')?z.coerce.number().int().positive().safe().parse(params.get('viewVersion')):undefined;
+      params.delete('viewVersion');
+      if((pinned!==undefined&&pinned!==view.version)||(view.content.requiresViewVersion&&pinned===undefined&&['/v3/types','/v3/objects','/v3/evidence'].includes(path)))throw new ViewVersionChanged('需要当前视图版本');
       const model = this.model(view),
         grants = view.content.grants as z.infer<typeof grant>[];
       const valid = () => {
@@ -316,6 +324,7 @@ export class ConsumerViews {
       valid();
       const common = {
         contractVersion: "v3",
+        viewVersionRequired:Boolean(view.content.requiresViewVersion),
         viewRef: { id: view.id, version: view.version },
         modelRef: view.content.modelRef,
         semanticRef: view.content.semanticRef,
@@ -368,6 +377,8 @@ export class ConsumerViews {
             ),
             process.execPath,
             this.contextCatalog(view),
+            view.version,
+            Boolean(view.content.requiresViewVersion),
           ),
         });
       } else if (path === "/v3/evidence") {
@@ -624,13 +635,14 @@ export class ConsumerViews {
       try {
         authorized();
         status =
-          e instanceof Forbidden ? 403 : e instanceof z.ZodError ? 400 : 502;
-      } catch {
-        status = 403;
+          e instanceof ViewVersionChanged ? 409 : e instanceof Forbidden ? 403 : e instanceof z.ZodError ? 400 : 502;
+      } catch (error) {
+        status = error instanceof ViewVersionChanged?409:403;
       }
       body = {
+        ...(status===409?{code:"view_version_changed",hint:"重新读取 /v3/catalog 并携带当前 viewRef.version 作为 viewVersion，再开始查询。"}:{}),
         error:
-          status === 403
+          status === 409?"视图已迁移或缺少版本，请重新发现当前许可":status === 403
             ? "消费许可不足、已变化或停用"
             : status === 400
               ? "查询参数无效"

@@ -6,6 +6,7 @@
 
 | 需要查看 | 记录 |
 |---|---|
+| 同一变更影响、指定消费者迁移与版本隔离 | [消费者迁移验收](CONSUMER_MIGRATIONS.md) |
 | 显式证据、文档/指标背景许可和HTTP/MCP说明 | [消费证据验收](CONSUMER_EVIDENCE.md) |
 | 许可融合消费、v3 HTTP 与独立凭据 | [消费视图验收](CONSUMER_VIEWS.md) |
 | 全局规则修订、实例差异与共同治理影响 | [全局修订验收](MAPPING_CHANGES.md) |

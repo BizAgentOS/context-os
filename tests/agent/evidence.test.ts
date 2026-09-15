@@ -459,6 +459,20 @@ test("one business investigation keeps document excerpts, metric scope and confl
     assert(
       old.dependencies.some((x: any) => x.sourceId === k.id && !x.available),
     );
+    const mappingAction=async(method:string,payload:any)=>(await api('/api/live/changes/'+method,payload)).saved;
+    let change=await mappingAction('propose',{operationId:'context-change',baseRef:{id:model.id,version:model.version},patch:{kind:'property',type:'投诉',property:'实际反馈',supplement:'工单',sourceField:'status'},reason:'切换状态口径',evidence:'明确选择状态映射'});
+    change=await mappingAction('check',{operationId:'context-check',id:change.id,version:change.version});
+    change=await mappingAction('adopt',{operationId:'context-adopt',id:change.id,version:change.version});
+    const migrationInput={operationId:'keep-context',viewRef:{id:active.view.id,version:active.view.version},changeRef:{id:change.id,version:change.version},dropContextEvidence:false};
+    const blocked=(await api('/api/live/migrations/preview',migrationInput)).saved;
+    assert.equal(blocked.content.report.compatible,false);
+    await assert.rejects(api('/api/live/migrations/commit',{operationId:'blocked-commit',id:blocked.id,version:blocked.version}),/迁移条件/);
+    const clear=(await api('/api/live/migrations/preview',{...migrationInput,operationId:'clear-context',dropContextEvidence:true})).saved;
+    assert.equal(clear.content.report.removedContextEvidence.length,2);
+    const migrated=(await api('/api/live/migrations/commit',{operationId:'context-commit',id:clear.id,version:clear.version})).saved;
+    assert.deepEqual((await consume('/v3/catalog')).body.contextEvidence,[]);
+    assert.equal((await consume('/v3/evidence?ref='+catalog.body.contextEvidence[0].ref+'&viewVersion='+migrated.content.resultRef.version)).status,403);
+
   } finally {
     release();
     await service.close();

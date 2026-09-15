@@ -1,3 +1,4 @@
+import {ConsumerMigrations,consumerMigrationTools} from "../live/consumer-migrations.ts";
 import {ConsumerViews,consumerViewTools} from "../live/consumer-views.ts";
 import { MappingChanges, mappingChangeTools } from "../live/mapping-changes.ts";
 import {
@@ -1446,7 +1447,7 @@ export class AgentApplication {
                 : []),
             ].includes(tool.name),
           ),
-          ...(page === "consumption" ? [...consumerViewTools,...evidenceTools.filter(t=>t.name!=="evidence_collect")] : []),
+          ...(page === "consumption" ? [...consumerViewTools,...consumerMigrationTools,...mappingChangeTools.filter(t=>["mapping_change_list","mapping_change_read"].includes(t.name)),...evidenceTools.filter(t=>t.name!=="evidence_collect")] : []),
           ...liveTools.filter(
             (tool) =>
               tool.name === "live_overview" ||
@@ -1793,6 +1794,7 @@ export class AgentApplication {
             ...consumptionTools,
             ...liveTools,
             ...consumerViewTools,
+            ...consumerMigrationTools,
           ].find((tool) => tool.name === name)?.mutates;
           if (mutates && executionWorkContext)
             this.contexts.assertCurrent(executionWorkContext);
@@ -1822,6 +1824,10 @@ export class AgentApplication {
             const result = await foundationDocuments.web!.read(args);
             this.memory.assertWritable(context);
             return serializable(result);
+          }
+          if(name.startsWith('consumer_migration_')) {
+            const migrations=new ConsumerMigrations(this.memory,this.live);
+            return serializable(name==='consumer_migration_impact'?migrations.impact(args):name==='consumer_migration_list'?{items:migrations.list()}:name==='consumer_migration_read'?migrations.read(args):migrations.execute('preview',args,context));
           }
           if (name.startsWith("consumer_view_")) {
             const views=new ConsumerViews(this.memory,this.live);
