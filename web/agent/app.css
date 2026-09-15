@@ -96,11 +96,16 @@ p {
   padding: 0 38px;
 }
 .wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  justify-self: start;
   font-size: 17px;
   font-weight: 570;
   letter-spacing: -0.6px;
   user-select: none;
 }
+.wordmark .launcher-mark { margin: 0; flex-shrink: 0; }
 .wordmark-dot {
   color: #777;
 }
@@ -2047,11 +2052,15 @@ tr.highlight td {
   stroke-dasharray: 8 92;
 }
 .chat-launcher:hover .launcher-current,
-.chat-launcher:focus-visible .launcher-current {
+.chat-launcher:focus-visible .launcher-current,
+.wordmark:hover .launcher-current,
+.wordmark:focus-visible .launcher-current {
   opacity: 1;
 }
 .chat-launcher:hover .launcher-current path,
-.chat-launcher:focus-visible .launcher-current path {
+.chat-launcher:focus-visible .launcher-current path,
+.wordmark:hover .launcher-current path,
+.wordmark:focus-visible .launcher-current path {
   animation: launcher-current-flow 1.6s linear infinite;
 }
 @keyframes launcher-current-flow {
@@ -2059,7 +2068,7 @@ tr.highlight td {
   to { stroke-dashoffset: -100; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .chat-launcher .launcher-current { display: none; }
+  .chat-launcher .launcher-current, .wordmark .launcher-current { display: none; }
 }
 .chat-surface {
   display: flex;
