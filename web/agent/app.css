@@ -3527,7 +3527,7 @@ tr.highlight td {
 .ed-services-column .ed-services { flex: none; }
 @media (min-width: 701px) {
   .ed-board { grid-template-rows: auto 1fr; }
-  .ed-services-column .ed-service { padding-block: 7px; }
+  .ed-services-column .ed-service { padding-block: 6px; }
 }
 /* Compact connection-method summary. */
 .ed-services-column .ed-methods {
@@ -3569,5 +3569,5 @@ tr.highlight td {
   .enterprise-dashboard .ed-uploads, .enterprise-dashboard .ed-api { min-height: 192px; }
   .enterprise-dashboard .ed-services-column { gap: 24px; }
   .ed-services-column .ed-methods { min-height: 120px; }
-  .ed-services-column .ed-knowledge { min-height: 480px; }
+  .ed-services-column .ed-knowledge { min-height: 456px; }
 }
