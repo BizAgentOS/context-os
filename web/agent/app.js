@@ -501,6 +501,8 @@ function renderSetup() {
   };
   const { root: section, sources } = renderEnterpriseProfile(state, {
     tab: ui.enterpriseTab, readonly: shareMode, label, edit: openStatement,
+    api: !shareMode && !state.demo ? api : null,
+    upload: () => $("#file-input").click(),
     changeTab,
     ask: (text) => {
       const input = $("#message-input");

@@ -3120,3 +3120,30 @@ tr.highlight td {
 .enterprise-profile .sources-canvas { padding: 0; }
 .enterprise-profile .data-evidence { border-top: 1px solid var(--line); margin-top: 28px; padding-top: 18px; font-size: 13px; color: #666; }
 @media (max-width: 700px) { .enterprise-profile .ep-header { flex-wrap: wrap; } .enterprise-profile .live-canvas > h1 { font-size: 25px; } }
+
+/* Single-screen overview; details scroll inside dialogs. */
+.enterprise-profile.data-map { max-width: 1100px; padding: 12px 0; }
+.data-map-heading h1 { font-size: 22px; margin: 0; }
+.data-map-heading p { color: #888; font-size: 12px; margin: 6px 0 0; }
+.data-map-diagram { max-width: 850px; margin: 24px auto 0; }
+.data-map-node { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 8px; border: 1px solid #ddd; border-radius: 16px; background: #fff; padding: 20px; width: 100%; min-width: 0; }
+.data-map-node:hover { background: #fafafa; border-color: #888; }
+.data-map-node:focus-visible { outline: 2px solid #555; outline-offset: 4px; }
+.data-map-node strong { font-size: 18px; font-weight: 550; }
+.data-map-company { width: 56%; margin: auto; background: #fafafa; }
+.data-map-symbol { font-size: 28px; line-height: 1; color: #555; }
+.data-map-description { font-size: 12px; color: #777; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.data-map-open { font-size: 11px; color: #999; }
+.data-map-connectors { height: 36px; width: 52%; margin: auto; border-bottom: 1px solid #ccc; position: relative; }
+.data-map-connectors::before { content: ''; position: absolute; left: 50%; top: 0; height: 36px; border-left: 1px solid #ccc; }
+.data-map-modules { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; padding-top: 18px; position: relative; }
+.data-map-modules::before, .data-map-modules::after { content: ''; position: absolute; top: 0; height: 18px; border-left: 1px solid #ccc; left: 24%; }
+.data-map-modules::after { left: 76%; }
+.data-map-note { text-align: center; font-size: 11px; color: #999; margin: 20px 0 0; }
+.data-map-dialog { width: min(850px, 90vw); max-height: 80dvh; overflow: auto; }
+.data-map-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.data-map-fact, .data-map-file { padding: 16px 0; border-bottom: 1px solid #eee; }
+.data-map-file { display: flex; width: 100%; flex-direction: column; gap: 8px; text-align: left; }
+.data-map-content { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 13px; line-height: 1.7; }
+@media (max-height: 760px) { .data-map-diagram { margin-top: 12px; } .data-map-node { padding: 12px; gap: 5px; } .data-map-connectors { height: 24px; } .data-map-connectors::before { height: 24px; } }
+@media (max-width: 600px) { .data-map-company { width: 78%; } .data-map-modules { gap: 12px; } .data-map-node { padding: 14px 8px; } .data-map-node strong { font-size: 15px; } }
