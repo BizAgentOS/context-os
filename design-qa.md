@@ -1,4 +1,14 @@
-# 最新调整：内容黑白灰 · 2026-09-16
+# 最新调整：断续网格 · 2026-09-16
+
+final result: passed
+
+参考：`/var/folders/6r/d_8jkq_j46b5y5bzyc6jhfhr0000gn/T/codex-clipboard-b6d36c2e-974f-4393-9ab1-a24a1aca2812.png`。用户指定的是网格纹理，不是重新排版。实际截图：`output/design-qa/enterprise-dashboard/broken-grid.png`，1117×837 CSS/图片 px，1:1。
+
+已查看完整页面：网格在导航后、侧边和底部有疏密、深浅变化，横竖线的显现区域错开，边缘柔和断续。24px 尺度、渐变底色、黑白灰面板、字体、文案及资源保持原样，没有引入动画。浏览器检查两层 pointer-events 均为 none，无横向溢出；静态 HTML 导出及差异检查通过。无 P0/P1/P2；本轮只改背景纹理，不重复领域或模型测试。
+
+---
+
+# 上一轮：内容黑白灰 · 2026-09-16
 
 final result: passed
 

@@ -3283,17 +3283,31 @@ tr.highlight td {
 .canvas-app:has(.enterprise-dashboard) {
   background: linear-gradient(135deg, #fbf7eb 0%, #f2f4f3 42%, #e2ebf9 100%);
 }
-.canvas-app:has(.enterprise-dashboard)::before {
+.canvas-app:has(.enterprise-dashboard)::before,
+.canvas-app:has(.enterprise-dashboard)::after {
   content: "";
   position: absolute;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background-image:
-    linear-gradient(#63758d12 1px, transparent 1px),
-    linear-gradient(90deg, #63758d12 1px, transparent 1px);
   background-size: 24px 24px;
-  mask-image: linear-gradient(135deg, #0005, #000 46%, #0008);
+}
+/* Independent, offset masks leave soft gaps in individual grid lines. */
+.canvas-app:has(.enterprise-dashboard)::before {
+  background-image: linear-gradient(90deg, #22222219 1px, transparent 1px);
+  mask-image:
+    radial-gradient(ellipse 96px 88px at 60% 25%, #000 8%, #0007 40%, transparent 85%),
+    radial-gradient(ellipse 126px 88px at 12% 70%, #000b 12%, transparent 87%);
+  mask-size: 347px 229px, 461px 317px;
+  mask-position: 17px 9px, -83px 107px;
+}
+.canvas-app:has(.enterprise-dashboard)::after {
+  background-image: linear-gradient(#22222220 1px, transparent 1px);
+  mask-image:
+    radial-gradient(ellipse 148px 64px at 25% 40%, #000 10%, #0008 45%, transparent 90%),
+    radial-gradient(ellipse 118px 100px at 80% 72%, #000a 5%, transparent 85%);
+  mask-size: 419px 281px, 283px 373px;
+  mask-position: -39px 31px, 79px -57px;
 }
 .canvas-app:has(.enterprise-dashboard) > .topbar { background: transparent; }
 .canvas:has(> .enterprise-dashboard) { padding-inline: clamp(24px, 3.5vw, 64px); }
