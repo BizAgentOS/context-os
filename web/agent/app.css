@@ -3310,7 +3310,7 @@ tr.highlight td {
 .ed-board {
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr) minmax(0, 1fr);
-  grid-template-areas: "company company services" "uploads uploads services";
+  grid-template-areas: "company company services" "uploads api services";
   gap: 20px;
   padding: 0;
 }
@@ -3406,7 +3406,7 @@ tr.highlight td {
 @media (max-width: 700px) {
   .canvas:has(> .enterprise-dashboard) { padding-inline: 18px; }
   .enterprise-profile.enterprise-dashboard { padding-top: 0; }
-  .ed-board { grid-template-columns: minmax(0, 1fr); grid-template-areas: "company" "services" "uploads"; gap: 22px; }
+  .ed-board { grid-template-columns: minmax(0, 1fr); grid-template-areas: "company" "services" "uploads" "api"; gap: 22px; }
   .ed-company { min-height: 255px; padding: 22px; }
   .ed-facts { margin-top: 6px; }
   .ed-knowledge, .ed-uploads { padding-inline: 4px; }
@@ -3542,3 +3542,6 @@ tr.highlight td {
 .ed-services-column .ed-methods > p { grid-column: 1 / -1; margin: 0; }
 .ed-services-column .ed-methods > .ed-method-types { grid-column: 1 / 3; margin: 0; }
 .ed-services-column .ed-method-action { grid-column: 3; width: auto; gap: 8px; margin: 0; white-space: nowrap; }
+
+.ed-api { grid-area: api; min-width: 0; padding-top: 1px; }
+.ed-api .ed-file { overflow-wrap: anywhere; font-size: 11px; }

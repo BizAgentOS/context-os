@@ -102,7 +102,7 @@ export function renderEnterpriseProfile(state, actions) {
   }
 
   const knowledge = el("section", "ed-knowledge");
-  knowledge.append(panelHead("知识服务", "查看连接", showConnections));
+  knowledge.append(panelHead("MCP 接入", "查看连接", showConnections));
   const services = el("div", "ed-services");
   let feishuStatus;
   for (const serviceName of ["飞书文档 / 知识库", "腾讯文档", "语雀", "钉钉文档", "石墨文档", "金山文档", "WPS 云文档", "有道云笔记"]) {
@@ -122,6 +122,9 @@ export function renderEnterpriseProfile(state, actions) {
     service.replaceChildren(mark, copy, icon("caret-right"));
     services.append(service);
   }
+  for (const source of connections.filter(item => item.content.protocol === "mcp")) {
+    knowledge.append(button("ed-connection", source.title + (source.status === "ready" ? " · 按需读取" : " · 已停用"), showConnections, "caret-right"));
+  }
   knowledge.append(services);
 
   const uploads = el("section", "ed-uploads");
@@ -137,6 +140,16 @@ export function renderEnterpriseProfile(state, actions) {
   if (!files.length) fileList.append(button("ed-upload-entry", actions.readonly ? "查看资料" : "上传企业资料", showFiles, "plus"));
   if (files.length > 2) fileList.append(button("ed-text-button", `查看其余 ${files.length - 2} 份`, showFiles, "caret-right"));
   uploads.append(fileList);
+
+  const apiPanel = el("section", "ed-api");
+  const httpSources = connections.filter(item => item.content.protocol === "http");
+  apiPanel.append(panelHead("HTTP API 接入", "查看连接", showConnections));
+  const apiList = el("div", "ed-file-list");
+  for (const source of httpSources) {
+    apiList.append(button("ed-file", source.title + (source.status === "ready" ? " · 按需读取" : " · 已停用"), showConnections, "caret-right"));
+  }
+  if (!httpSources.length) apiList.append(el("p", "source-meta", "暂无 HTTP API 来源"));
+  apiPanel.append(apiList);
 
   const methods = el("section", "ed-methods");
   methods.append(icon("plugs-connected"), el("h2", "", "多种来源，同一企业"), el("p", "", "从知识文档到业务数据，逐步构建企业的语义底座。"));
@@ -165,12 +178,12 @@ export function renderEnterpriseProfile(state, actions) {
   company.append(companyInfo, data);
   const servicesColumn = el("div", "ed-services-column");
   servicesColumn.append(methods, knowledge);
-  board.append(company, uploads, servicesColumn);
+  board.append(company, uploads, apiPanel, servicesColumn);
   const note = el("footer", "ed-footer");
   note.append(el("span", "", "账号授权不代表内容已读取 · 待支持服务仅供查看"), el("span", "", "点击模块查看详情"));
   root.append(board, note, sources);
   if (actions.api) void actions.api("/api/connectors/feishu").then(result => {
-    feishuStatus.textContent = result.account ? "已授权 · 文档只读" : "可连接 · 文档只读";
+    feishuStatus.textContent = result.account ? "CLI 已授权 · 文档只读" : "CLI 可连接 · 文档只读";
     if (result.account) feishuStatus.classList.add("is-connected");
   }).catch(() => { feishuStatus.textContent = "状态暂不可用"; });
   return {root, sources};
