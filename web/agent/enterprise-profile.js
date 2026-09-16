@@ -88,7 +88,7 @@ export function renderEnterpriseProfile(state, actions) {
     if (subtitle) head.append(el("span", "sheet-caption", subtitle)); return head;
   };
   plan.append(label("01", "数据构成", "企业与来源的归属视图"), diagram);
-  const legend = el("div", "sheet-legend"); legend.append(el("span", "", "◎ 企业主体"), el("span", "", "蓝格：一个连接入口"), el("span", "", "绿格：一份上传文件")); plan.append(legend);
+  const legend = el("div", "sheet-legend"); legend.append(el("span", "", "◎ 企业主体"), el("span", "", "实格：连接入口"), el("span", "", "空格：上传文件")); plan.append(legend);
   const aside = el("div", "sheet-registers");
   const register = (number, name, summary, callback) => {
     const section = el("section", "sheet-register");
