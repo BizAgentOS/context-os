@@ -1,3 +1,4 @@
+import { fetchSource, sourceUrl, redactSource } from "./source-http.ts";
 import {
   Client,
   StreamableHTTPClientTransport,
@@ -37,6 +38,27 @@ const connectionSchema = z
     protocol: z.enum(["http", "mcp"]),
     url: z.string().url(),
     token: z.string().max(4000).optional(),
+    auth: z
+      .object({
+        type: z.enum(["none", "bearer", "apiKey", "basic"]),
+        headerName: z
+          .string()
+          .regex(/^[A-Za-z0-9-]+$/)
+          .max(100)
+          .optional(),
+      })
+      .strict()
+      .optional(),
+    importInfo: z
+      .object({
+        format: z.string().max(40),
+        title: name,
+        version: z.string().max(100),
+        digest: z.string().length(64),
+        operationIds: z.array(z.string().min(1).max(500)).max(30),
+      })
+      .strict()
+      .optional(),
     capabilities: z.array(capabilitySchema).min(1).max(30),
   })
   .strict();
@@ -85,51 +107,6 @@ export class SourceConnections {
     writeFileSync(tmp, JSON.stringify(this.secrets), { mode: 0o600 });
     renameSync(tmp, this.file);
   }
-  private validateUrl(value: string) {
-    const url = new URL(value);
-    if (
-      !["http:", "https:"].includes(url.protocol) ||
-      url.username ||
-      url.password ||
-      url.search ||
-      url.hash
-    )
-      throw new Error("源地址需为不含凭据、查询和片段的 HTTP(S) 地址");
-    if (
-      url.protocol === "http:" &&
-      !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
-    )
-      throw new Error("远端来源必须使用 HTTPS");
-    return url;
-  }
-  private async fetchBounded(
-    input: string | URL | Request,
-    init?: RequestInit,
-  ): Promise<Response> {
-    const response = await fetch(input, {
-      ...init,
-      redirect: "error",
-      signal: init?.signal
-        ? AbortSignal.any([init.signal, AbortSignal.timeout(12000)])
-        : AbortSignal.timeout(12000),
-    });
-    if (!response.body) return response;
-    let size = 0;
-    const bounded = response.body.pipeThrough(
-      new TransformStream<Uint8Array, Uint8Array>({
-        transform(chunk, controller) {
-          size += chunk.length;
-          if (size > 2_000_000) throw new Error("来源响应超过 2 MB");
-          controller.enqueue(chunk);
-        },
-      }),
-    );
-    return new Response(bounded, {
-      status: response.status,
-      headers: response.headers,
-    });
-  }
-
   private async mcp<T>(
     config: Connection,
     token: string | undefined,
@@ -144,7 +121,7 @@ export class SourceConnections {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         redirect: "error",
       },
-      fetch: (input, init) => this.fetchBounded(input, init),
+      fetch: (input, init) => fetchSource(input, init),
     });
     try {
       await client.connect(transport);
@@ -153,9 +130,27 @@ export class SourceConnections {
       await client.close();
     }
   }
-  async connect(input: unknown) {
+  private validate(input: unknown) {
     const config = connectionSchema.parse(input);
-    this.validateUrl(config.url);
+    sourceUrl(config.url);
+    if (config.token && /[\r\n]/.test(config.token))
+      throw new Error("认证值不能包含换行");
+    if (config.auth) {
+      if (config.protocol !== "http")
+        throw new Error("认证类型配置仅用于 HTTP");
+      if (config.auth.type !== "none" && !config.token)
+        throw new Error("请填写认证凭据");
+      if (
+        config.auth.type === "apiKey" &&
+        (!config.auth.headerName ||
+          /^(host|cookie|authorization|proxy-.*|content-.*|connection|transfer-encoding|accept|origin|referer|sec-.*)$/i.test(
+            config.auth.headerName,
+          ))
+      )
+        throw new Error("请使用独立的 API Key 请求头名称");
+      if (config.auth.type === "none" && config.token)
+        throw new Error("无认证连接不能携带凭据");
+    }
     if (
       new Set(config.capabilities.map((c) => c.name)).size !==
       config.capabilities.length
@@ -211,6 +206,59 @@ export class SourceConnections {
           throw new Error("HTTP 能力需要同一源上的绝对 GET 路径");
       }
     }
+    return config;
+  }
+  private async http(
+    config: Connection,
+    cap: Capability,
+    args: Record<string, unknown>,
+    token?: string,
+  ) {
+    const url = new URL(cap.path!, config.url);
+    if (url.origin !== new URL(config.url).origin)
+      throw new Error("来源路径必须在同一服务内");
+    for (const [key, value] of Object.entries(args))
+      url.searchParams.set(
+        key,
+        typeof value === "object" ? JSON.stringify(value) : String(value),
+      );
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (token && config.auth?.type !== "none") {
+      if (config.auth?.type === "apiKey")
+        headers[config.auth.headerName!] = token;
+      else
+        headers.Authorization = `${config.auth?.type === "basic" ? "Basic" : "Bearer"} ${token}`;
+    }
+    try {
+      const response = await fetchSource(url, { headers });
+      if (!response.ok) throw new Error("请求失败");
+      return redactSource(await response.json(), token);
+    } catch {
+      throw new Error(
+        "来源读取失败：请检查连接、授权或接口契约；未返回替代数据",
+      );
+    }
+  }
+  /** Validate a bounded sample without creating any source or storing its credentials. */
+  async preview(input: unknown, capability: string) {
+    const config = this.validate(input);
+    if (config.protocol !== "http") throw new Error("仅支持 HTTP 样本测试");
+    const cap = config.capabilities.find((c) => c.name === capability);
+    if (!cap || cap.contentKind !== "records")
+      throw new Error("请选择记录接口");
+    const raw = await this.http(
+      config,
+      cap,
+      { [cap.limitParam]: 3, [cap.offsetParam]: 0 },
+      config.token,
+    );
+    return {
+      ...this.records(raw, cap, {}, 0, 3),
+      readAt: new Date().toISOString(),
+    };
+  }
+  async connect(input: unknown) {
+    const config = this.validate(input);
     let toolSchemas: Record<string, string> | undefined;
     if (config.protocol === "mcp") {
       try {
@@ -277,19 +325,7 @@ export class SourceConnections {
     let raw: unknown;
     try {
       if (config.protocol === "http") {
-        const url = new URL(cap.path!, config.url);
-        for (const [k, v] of Object.entries(args))
-          url.searchParams.set(
-            k,
-            typeof v === "object" ? JSON.stringify(v) : String(v),
-          );
-        const response = await this.fetchBounded(url, {
-          headers: this.secrets[id]
-            ? { Authorization: `Bearer ${this.secrets[id]}` }
-            : {},
-        });
-        if (!response.ok) throw new Error("来源请求失败");
-        raw = await response.json();
+        raw = await this.http(config, cap, args, this.secrets[id]);
       } else
         raw = await this.mcp(config, this.secrets[id], async (client) => {
           const tools = await client.listTools();
@@ -317,10 +353,7 @@ export class SourceConnections {
     }
     // Check again after I/O, so revocation during a query takes effect.
     this.capability(id, capability, artifact.version);
-    if (this.secrets[id])
-      raw = JSON.parse(
-        JSON.stringify(raw).replaceAll(this.secrets[id], "[redacted]"),
-      );
+    raw = redactSource(raw, this.secrets[id]);
     return {
       raw,
       provenance: {
@@ -393,6 +426,24 @@ export class SourceConnections {
       args[cap.filters[field]] = value as string | number | boolean;
     }
     const { raw } = await this.invoke(id, capability, args, artifact.version);
+    return {
+      ...this.records(raw, cap, where, offset, limit),
+      provenance: {
+        sourceId: id,
+        connectionVersion: artifact.version,
+        capability,
+        readAt: new Date().toISOString(),
+        historicalReplay: false,
+      },
+    };
+  }
+  private records(
+    raw: unknown,
+    cap: Capability,
+    where: Data,
+    offset: number,
+    limit: number,
+  ) {
     const rows = at(raw, cap.itemsPath);
     if (!Array.isArray(rows) || rows.length > limit)
       throw new Error("来源未遵循记录数组或分页契约");
@@ -452,13 +503,6 @@ export class SourceConnections {
         total: typeof total === "number" ? total : null,
         complete:
           typeof total === "number" && offset === 0 && items.length === total,
-      },
-      provenance: {
-        sourceId: id,
-        connectionVersion: artifact.version,
-        capability,
-        readAt: new Date().toISOString(),
-        historicalReplay: false,
       },
     };
   }

@@ -620,6 +620,7 @@ function renderSetup() {
   const { root: section, sources } = renderEnterpriseProfile(state, {
     tab: ui.enterpriseTab, readonly: shareMode, label, edit: openStatement,
     api: !shareMode && !state.demo ? api : null,
+    onImportSaved: applySnapshot,
     upload: () => $("#file-input").click(),
     changeTab,
     ask: (text) => {
@@ -636,6 +637,7 @@ function renderSetup() {
     sources.append(
       renderLiveWorkspace("sources", state.live, {
         api,
+        onImportSaved: applySnapshot,
         mutate,
         showCredential,
       }),

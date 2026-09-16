@@ -1,3 +1,4 @@
+import { openApiImport } from "./openapi-import.js";
 import { openConnections } from "./connections.js";
 import {renderConsumerMigrations} from "./consumer-migrations.js";
 import {renderConsumerViews} from "./consumer-views.js";
@@ -202,7 +203,7 @@ function knowledgeDialog(source, cap, api) {
 export function renderLiveWorkspace(
   page,
   live,
-  { api, mutate, showCredential, selections = new Map(), onSelectContext, onSaved },
+  { api, mutate, showCredential, selections = new Map(), onSelectContext, onSaved, onImportSaved },
 ) {
   const section = el("section", "live-canvas");
   const action = async (fn) => {
@@ -223,6 +224,7 @@ export function renderLiveWorkspace(
       ),
     );
     section.append(
+      button("导入 Swagger / OpenAPI", () => openApiImport({ api, onSaved: onImportSaved })),
       button("接入服务", () =>
         openConnections(api, () => modal("连接企业系统", (dialog) => {
           const form = el("form");

@@ -1,3 +1,4 @@
+import { openApiImport } from "./openapi-import.js";
 // Presentation only: company facts, source accounts and imported files remain distinct.
 export function renderEnterpriseProfile(state, actions) {
   const el = (tag, cls, text) => {
@@ -144,12 +145,13 @@ export function renderEnterpriseProfile(state, actions) {
 
   const apiPanel = el("section", "ed-api");
   const httpSources = connections.filter(item => item.content.protocol === "http");
-  apiPanel.append(panelHead("HTTP API 接入", "查看连接", showConnections));
+  apiPanel.append(panelHead("HTTP API 接入", actions.api ? "添加接入" : "查看连接", actions.api
+    ? () => openApiImport({ api: actions.api, onSaved: actions.onImportSaved, ask: actions.ask }) : showConnections));
   const apiList = el("div", "ed-file-list");
   for (const source of httpSources) {
     apiList.append(button("ed-file", source.title + (source.status === "ready" ? " · 按需读取" : " · 已停用"), showConnections, "caret-right"));
   }
-  if (!httpSources.length) apiList.append(el("p", "source-meta", "暂无 HTTP API 来源"));
+  if (!httpSources.length) apiList.append(el("p", "source-meta", "通过 Swagger / OpenAPI 导入业务接口"));
   apiPanel.append(apiList);
 
   const methods = el("section", "ed-methods");

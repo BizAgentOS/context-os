@@ -1,4 +1,5 @@
 import {ConsumerMigrations} from "../live/consumer-migrations.ts";
+import { OpenApiImports } from "../live/openapi-import.ts";
 import {ConsumerViews} from "../live/consumer-views.ts";
 import { MappingChanges } from "../live/mapping-changes.ts";
 import { RelationCorrections } from "../live/relation-corrections.ts";
@@ -18,6 +19,7 @@ import type { AgentDriver } from "./runtime.ts";
 
 const webRoot = fileURLToPath(new URL("../../web/agent/", import.meta.url));
 const staticFiles: Record<string, { file: string; type: string }> = {
+  "/openapi-import.js": { file: "openapi-import.js", type: "text/javascript; charset=utf-8" },
   "/connections.js": { file: "connections.js", type: "text/javascript; charset=utf-8" },
   "/enterprise-profile.js": { file: "enterprise-profile.js", type: "text/javascript; charset=utf-8" },
   "/": { file: "index.html", type: "text/html; charset=utf-8" },
@@ -132,6 +134,7 @@ export async function createServer(
     throw new Error("管理员凭据文件无效");
   }
   const cookieName = `dataengine_admin_${createHash("sha256").update(token).digest("hex").slice(0, 16)}`;
+  const openApiImports = new OpenApiImports(app.live.sources);
   const matchesToken = (value: unknown) => {
     if (typeof value !== "string") return false;
     const bytes = Buffer.from(value);
@@ -412,6 +415,19 @@ export async function createServer(
             return app.capabilities.overview();
           });
           break;
+        case "/api/live/openapi/parse":
+          result = await openApiImports.parse(body);
+          break;
+        case "/api/live/openapi/preview":
+          result = await openApiImports.preview(body);
+          break;
+        case "/api/live/openapi/commit":
+          result = await queue(async () => {
+            if (app.canvasState().busy) throw new Error("请先停止当前整理，再保存来源");
+            const saved = await openApiImports.commit(body);
+            return { ...app.canvasState(), saved };
+          });
+          break;
         case "/api/live/connect":
         case "/api/live/propose":
         case "/api/live/adopt":
@@ -670,6 +686,7 @@ export async function createServer(
       await new Promise<void>((resolveClose) =>
         server.close(() => resolveClose()),
       );
+      openApiImports.close();
       await app.close();
     },
   };

@@ -3613,3 +3613,71 @@ dialog.unified-dialog .unified-dialog-close {
 }
 dialog.unified-dialog .unified-dialog-close:hover { background: #e4e4e4; color: #000; }
 @media (max-width: 600px) { dialog.unified-dialog { padding: 22px 18px; } }
+
+/* OpenAPI source import uses the same monochrome dialog shell as source details. */
+dialog.openapi-import { width: min(1040px, calc(100vw - 48px)); }
+.openapi-import .data-map-dialog-head { margin-bottom: 8px; }
+.openapi-import h3 { font-size: 16px; margin: 0 0 14px; }
+.openapi-import h4 { font-size: 13px; margin: 0 0 6px; }
+.openapi-import p { line-height: 1.65; }
+.oi-steps { display: flex; gap: 24px; border-bottom: 1px solid #e5e5e5; margin: 22px 0; color: #888; font-size: 12px; }
+.oi-steps > span { padding: 0 0 12px; }
+.oi-steps > .active { color: #111; border-bottom: 2px solid #111; }
+.oi-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.oi-panel { min-width: 0; border: 1px solid #dedede; border-radius: 14px; padding: 20px; }
+.oi-guide { min-width: 0; padding: 20px; background: #f7f7f7; border-radius: 14px; }
+.oi-eyebrow { color: #777; font-size: 11px; display: block; margin-bottom: 12px; }
+.oi-guide-row { padding-top: 14px; border-top: 1px solid #e6e6e6; margin-top: 14px; font-size: 13px; }
+.oi-guide-row p { margin: 6px 0 0; }
+.oi-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.oi-tabs .active { background: #111; color: #fff; border-color: #111; }
+.oi-field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; font-size: 12px; color: #555; }
+.oi-field input, .oi-field textarea, .oi-field select { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid #d6d6d6; border-radius: 8px; padding: 10px 12px; background: #fff; color: #111; font: inherit; font-size: 13px; }
+.oi-field textarea { min-height: 208px; resize: vertical; font-family: ui-monospace, monospace; line-height: 1.5; }
+.openapi-import input:focus-visible, .openapi-import select:focus-visible, .openapi-import textarea:focus-visible, .openapi-import button:focus-visible { outline: 2px solid #555; outline-offset: 3px; }
+.oi-field input[type=file] { padding: 8px; }
+.oi-field input[type=file]::file-selector-button { background: #f4f4f4; border: 0; padding: 6px 10px; border-radius: 5px; margin-right: 10px; }
+.oi-document-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
+.oi-document-summary > strong { font-size: 15px; }
+.oi-document-summary > button { margin-left: auto; }
+.oi-operation-list { max-height: 440px; overflow-y: auto; scrollbar-width: thin; }
+.oi-operation { padding: 14px 0; border-top: 1px solid #e8e8e8; }
+.oi-operation-choice { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; cursor: pointer; }
+.oi-operation-choice > span { min-width: 0; }
+.oi-operation-choice input, .oi-field-choices input { accent-color: #111; width: 15px; height: 15px; flex-shrink: 0; margin: 2px 0 0; }
+.oi-operation-choice:has(input:disabled) { color: #888; cursor: default; }
+.oi-operation code { display: block; margin-top: 5px; font-size: 11px; font-family: ui-monospace, monospace; overflow-wrap: anywhere; color: #777; }
+.oi-operation p { margin: 8px 0 0 25px; }
+.oi-operation details { margin: 10px 0 0 25px; font-size: 11px; }
+.oi-operation summary { cursor: pointer; color: #777; margin-bottom: 10px; }
+.oi-operation .oi-field { margin-top: 12px; }
+.oi-operation details p { margin: 0 0 10px; }
+.oi-field-choices { display: flex; gap: 6px 12px; flex-wrap: wrap; margin-top: 8px; }
+.oi-field-choices label { display: flex; gap: 5px; align-items: center; overflow-wrap: anywhere; }
+.oi-status { font-size: 12px; min-height: 18px; margin: 16px 0 8px; color: #555; overflow-wrap: anywhere; }
+.oi-status.error { border-left: 2px solid #111; padding-left: 10px; color: #111; font-weight: 600; }
+.oi-footer { display: flex; justify-content: flex-end; align-items: center; gap: 12px; border-top: 1px solid #e5e5e5; padding-top: 18px; }
+.oi-footer > span { margin-right: auto; max-width: 65%; }
+.oi-footer .primary-button { background: #111; color: #fff; white-space: nowrap; }
+.oi-results:empty { display: none; }
+.oi-results { border-top: 1px solid #ddd; padding-top: 18px; margin-top: 20px; }
+.oi-sample + .oi-sample { margin-top: 20px; }
+.oi-table-scroll { overflow: auto; max-height: 200px; }
+.oi-table-scroll table { border-collapse: collapse; font-size: 11px; width: 100%; }
+.oi-table-scroll th, .oi-table-scroll td { padding: 8px; text-align: left; border-bottom: 1px solid #e5e5e5; min-width: 65px; max-width: 240px; overflow-wrap: anywhere; }
+.oi-table-scroll th { background: #f5f5f5; }
+.oi-complete { padding: 30px 12px; text-align: center; max-width: 540px; margin-inline: auto; }
+.oi-complete-mark { display: grid; place-items: center; margin: 0 auto 20px; width: 46px; height: 46px; border-radius: 50%; background: #111; color: #fff; font-size: 23px; }
+@media (max-width: 720px) {
+  .oi-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .oi-guide { display: none; }
+  .oi-steps { gap: 12px; font-size: 11px; }
+  .oi-footer { flex-wrap: wrap; }
+  .oi-footer > span { flex-basis: 100%; max-width: none; }
+  .oi-operation-list { max-height: 320px; }
+}
+/* Keep the close control and final action visible while long API lists scroll. */
+dialog.openapi-import[open] { display: flex; flex-direction: column; height: min(800px, 85dvh); overflow: hidden; }
+.openapi-import > .data-map-dialog-head, .openapi-import > p, .openapi-import > .oi-steps, .openapi-import > .oi-footer { flex-shrink: 0; }
+.oi-content { min-height: 0; overflow-y: auto; overflow-x: hidden; flex: 1; scrollbar-width: thin; }
+.openapi-import > .oi-steps { margin-block: 16px; }
