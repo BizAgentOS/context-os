@@ -3556,3 +3556,18 @@ tr.highlight td {
 @media (max-width: 960px) {
   .ed-uploads, .ed-api, .ed-services-column .ed-knowledge { padding: 12px; }
 }
+/* Align desktop module boundaries to the existing 24px background grid. */
+@media (min-width: 701px) {
+  .canvas:has(> .enterprise-dashboard) { padding-inline: 48px; padding-top: calc(120px - var(--topbar-height)); }
+  .enterprise-profile.enterprise-dashboard { padding-top: 0; }
+  .enterprise-dashboard .ed-board {
+    width: round(down, 100%, 24px);
+    grid-template-columns: repeat(2, round(down, calc((100% - 48px) / 3), 24px)) minmax(0, 1fr);
+    gap: 24px;
+  }
+  .enterprise-dashboard .ed-company { min-height: 384px; }
+  .enterprise-dashboard .ed-uploads, .enterprise-dashboard .ed-api { min-height: 192px; }
+  .enterprise-dashboard .ed-services-column { gap: 24px; }
+  .ed-services-column .ed-methods { min-height: 120px; }
+  .ed-services-column .ed-knowledge { min-height: 480px; }
+}
