@@ -74,7 +74,7 @@ export function renderEnterpriseProfile(state, actions) {
   remote.classList.add("sheet-remote-node"); uploads.classList.add("sheet-upload-node");
   remote.append(squares(connections.length, "remote-units")); uploads.append(squares(files.length, "upload-units"));
   modules.append(remote, uploads); diagram.append(modules);
-  root.classList.add("enterprise-sheet");
+  root.classList.add("enterprise-sheet", "sheet-editorial");
   heading.replaceChildren();
   const identity = el("button", "sheet-identity"); identity.type = "button"; identity.onclick = () => company.click();
   identity.append(el("span", "sheet-eyebrow", "企业主体 / COMPANY"), el("h1", "", title));
@@ -96,21 +96,22 @@ export function renderEnterpriseProfile(state, actions) {
     const open = el("button", "sheet-open", "查看全部 ↗"); open.onclick = callback; head.append(open);
     section.append(head, el("p", "sheet-register-summary", summary)); aside.append(section); return section;
   };
-  const remoteList = register("02", "接入目录", `${connections.length} 个 API / MCP 数据源`, () => remote.click());
+  const remoteList = register("01", "接入数据", `${connections.length} 个 API / MCP 数据源`, () => remote.click());
   const item = (container, name, meta, callback) => {
     const b = el("button", "sheet-item"); b.type = "button"; b.append(el("strong", "", name), el("span", "", meta)); b.onclick = callback; container.append(b);
   };
   for (const source of connections.slice(0, 3)) item(remoteList, source.title, `${source.content.protocol === "mcp" ? "MCP" : "HTTP API"} · ${source.status === "ready" ? "按需读取" : "已停用"}`, () => remote.click());
-  const fileList = register("03", "上传目录", `${files.length} 份已上传资料`, () => uploads.click());
+  const fileList = register("02", "上传资料", `${files.length} 份已上传资料`, () => uploads.click());
   for (const source of files.slice(0, 3)) item(fileList, source.title, `${source.content.format || "文档"} · 第 ${source.version} 版${source.content.parseError ? " · 内容需修正" : ""}`, () => popup(source.title, d => {
     d.append(el("pre", "data-map-content", source.content.raw || JSON.stringify(source.content.rows || source.content, null, 2)));
   }));
   if (!files.length) item(fileList, "上传企业资料", "CSV / Markdown / TXT", () => uploads.click());
   if (files.length > 3) fileList.append(el("p", "sheet-caption", `展示前 3 份，其余 ${files.length - 3} 份在详情中查看`));
   if (connections.length > 3) remoteList.append(el("p", "sheet-caption", `展示前 3 个，其余 ${connections.length - 3} 个在详情中查看`));
-  layout.append(plan, aside); root.append(layout, sources);
+  remoteList.classList.add("sheet-connected"); fileList.classList.add("sheet-uploaded");
+  layout.append(remoteList, fileList); root.append(layout, sources);
   const note = el("div", "sheet-footer");
-  note.append(el("span", "", "连接状态与内容分别呈现 · 连线不表示本体融合"), el("span", "", "点击图示或目录查看详情 ↗")); root.append(note);
+  note.append(el("span", "", "账号授权不代表内容已读取"), el("span", "", "点击数据名称查看详情 ↗")); root.append(note);
   if (actions.api) {
     const accountRow = el("div", "sheet-account"); remoteList.append(accountRow);
     void actions.api("/api/connectors/feishu").then(result => {
