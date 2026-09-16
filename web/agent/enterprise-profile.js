@@ -122,15 +122,17 @@ export function renderEnterpriseProfile(state, actions) {
     service.replaceChildren(mark, copy, icon("caret-right"));
     services.append(service);
   }
+  const mcpList = el("div", "ed-source-scroll");
   for (const source of connections.filter(item => item.content.protocol === "mcp")) {
-    knowledge.append(button("ed-connection", source.title + (source.status === "ready" ? " · 按需读取" : " · 已停用"), showConnections, "caret-right"));
+    mcpList.append(button("ed-connection", source.title + (source.status === "ready" ? " · 按需读取" : " · 已停用"), showConnections, "caret-right"));
   }
-  knowledge.append(services);
+  mcpList.append(services);
+  knowledge.append(mcpList);
 
   const uploads = el("section", "ed-uploads");
   uploads.append(panelHead("上传资料", `${files.length} 份资料`, showFiles));
   const fileList = el("div", "ed-file-list");
-  for (const source of files.slice(0, 2)) {
+  for (const source of files) {
     const file = button("ed-file", "", () => showFile(source));
     const mark = el("span", "ed-file-icon"); mark.append(icon("files"));
     const copy = el("span", "ed-file-copy");
@@ -138,7 +140,6 @@ export function renderEnterpriseProfile(state, actions) {
     file.replaceChildren(mark, copy, icon("caret-right")); fileList.append(file);
   }
   if (!files.length) fileList.append(button("ed-upload-entry", actions.readonly ? "查看资料" : "上传企业资料", showFiles, "plus"));
-  if (files.length > 2) fileList.append(button("ed-text-button", `查看其余 ${files.length - 2} 份`, showFiles, "caret-right"));
   uploads.append(fileList);
 
   const apiPanel = el("section", "ed-api");

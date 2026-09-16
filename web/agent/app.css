@@ -3571,3 +3571,21 @@ tr.highlight td {
   .ed-services-column .ed-methods { min-height: 120px; }
   .ed-services-column .ed-knowledge { min-height: 456px; }
 }
+/* Bound source previews; headers and outer grid remain stationary. */
+.ed-uploads, .ed-api, .ed-services-column .ed-knowledge {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.ed-uploads, .ed-api { height: 192px; min-height: 0; }
+.ed-services-column .ed-knowledge { height: 456px; min-height: 0; flex: none; }
+.ed-uploads > .ed-panel-head, .ed-api > .ed-panel-head, .ed-knowledge > .ed-panel-head { flex-shrink: 0; }
+.ed-uploads > .ed-file-list, .ed-api > .ed-file-list, .ed-source-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #aaa transparent;
+}
