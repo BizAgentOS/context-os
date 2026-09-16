@@ -3589,3 +3589,27 @@ tr.highlight td {
   scrollbar-width: thin;
   scrollbar-color: #aaa transparent;
 }
+/* Shared shell; individual dialogs retain the width needed by their content. */
+dialog.unified-dialog {
+  border: 1px solid #d8d8d8;
+  border-radius: 20px;
+  padding: 28px;
+  color: #222;
+  background: #fff;
+  box-shadow: 0 20px 70px #0002;
+  max-height: 85dvh;
+  overflow: auto;
+}
+dialog.unified-dialog::backdrop { background: #0004; backdrop-filter: blur(3px); }
+dialog.unified-dialog > h2,
+dialog.unified-dialog .dialog-heading,
+dialog.unified-dialog .data-map-dialog-head { padding-right: 36px; }
+dialog.unified-dialog .unified-dialog-close {
+  position: absolute; top: 12px; right: 12px;
+  display: grid; place-items: center;
+  width: 32px; height: 32px; padding: 0; margin: 0;
+  border: 0; border-radius: 50%; background: #f2f2f2;
+  color: #444; font-size: 24px; line-height: 1; cursor: pointer;
+}
+dialog.unified-dialog .unified-dialog-close:hover { background: #e4e4e4; color: #000; }
+@media (max-width: 600px) { dialog.unified-dialog { padding: 22px 18px; } }

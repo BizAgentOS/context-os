@@ -14,6 +14,46 @@ import { createShareMode } from "./share-mode.js";
 
 const shareMode = createShareMode(document);
 
+// Give static and dynamically mounted dialogs the same dismissal affordance.
+const styledDialogs = new WeakSet();
+function styleDialog(dialog) {
+  if (styledDialogs.has(dialog)) return;
+  styledDialogs.add(dialog);
+  dialog.classList.add("unified-dialog");
+  let close = [...dialog.querySelectorAll("button")].find(button =>
+    button.closest("dialog") === dialog &&
+    (button.textContent.trim() === "关闭" || (button.getAttribute("aria-label") || "").startsWith("关闭")));
+  if (!close) {
+    close = document.createElement("button");
+    close.type = "button";
+    close.addEventListener("click", () => dialog.close());
+    dialog.prepend(close);
+  }
+  close.classList.add("unified-dialog-close");
+  close.setAttribute("aria-label", "关闭弹窗");
+  close.title = "关闭";
+  close.textContent = "×";
+  const outside = event => {
+    const rect = dialog.getBoundingClientRect();
+    return event.target === dialog && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom);
+  };
+  let backdropDown = false;
+  dialog.addEventListener("pointerdown", event => { backdropDown = outside(event); });
+  dialog.addEventListener("click", event => {
+    if (backdropDown && outside(event)) close.click();
+    backdropDown = false;
+  });
+}
+function styleDialogsIn(root) {
+  if (root instanceof Element && root.matches("dialog")) styleDialog(root);
+  root.querySelectorAll?.("dialog").forEach(styleDialog);
+}
+styleDialogsIn(document);
+new MutationObserver(records => {
+  for (const record of records) for (const added of record.addedNodes) styleDialogsIn(added);
+}).observe(document.body, { childList: true, subtree: true });
+
+
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const pageLabels = {
