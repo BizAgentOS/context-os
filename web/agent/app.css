@@ -3185,3 +3185,28 @@ tr.highlight td {
 @media (max-width: 780px) { .sheet-layout { grid-template-columns: minmax(0, 1.2fr) minmax(200px, 1fr); gap: 14px; } .sheet-plan { padding-inline: 10px; } .sheet-section-head .sheet-caption { display: none; } .enterprise-sheet .data-map-company { width: 80%; } .enterprise-sheet .data-map-modules { gap: 10px; } }
 @media (max-width: 560px) { .sheet-layout { grid-template-columns: 1fr; } .sheet-registers { grid-template-columns: 1fr 1fr; grid-template-rows: auto; gap: 15px; } .sheet-register + .sheet-register { border-top: 0; margin-top: 0; } .sheet-stamp { display: none; } .sheet-footer { flex-direction: column; } }
 @media (max-height: 760px) and (min-width: 561px) { .enterprise-sheet .data-map-node { padding: 10px 7px; gap: 4px; } .enterprise-sheet .data-map-diagram { margin-top: 8px; } .sheet-layout { padding-block: 12px; } .sheet-legend { margin-top: 15px; } }
+
+/* Warm paper and categorical grids, informed by Anthropic's economic explorer. */
+.enterprise-profile.enterprise-sheet { --sheet-paper: #faf9f5; --sheet-ink: #141413; --sheet-rule: #dedcd1; background: var(--sheet-paper); color: var(--sheet-ink); padding: 20px 24px; border-radius: 4px; }
+.enterprise-sheet .data-map-heading { border-top: 0; border-bottom-color: var(--sheet-rule); padding-top: 0; }
+.enterprise-sheet .sheet-identity h1 { font-family: Georgia, 'Songti SC', 'STSong', serif; font-size: 30px; font-weight: 500; letter-spacing: -.5px; }
+.enterprise-sheet .sheet-plan { border-color: var(--sheet-rule); background-color: #f0eee6; background-image: linear-gradient(#dedcd166 1px, transparent 1px), linear-gradient(90deg, #dedcd166 1px, transparent 1px); background-size: 24px 24px; }
+.enterprise-sheet .sheet-section-head { background: transparent; }
+.enterprise-sheet .data-map-node { box-shadow: none; border-color: #d1cfc5; border-radius: 3px; }
+.enterprise-sheet .data-map-company { background: #faf9f5; border-color: #87867f; }
+.enterprise-sheet .sheet-remote-node { background: #e8eff5; border-color: #a5bfd6; }
+.enterprise-sheet .sheet-upload-node { background: #e9ede1; border-color: #b3c1a0; }
+.enterprise-sheet .sheet-remote-node:hover { background: #dce7f0; }
+.enterprise-sheet .sheet-upload-node:hover { background: #dfe6d5; }
+.enterprise-sheet .sheet-remote-node .data-map-symbol { color: #426e98; }
+.enterprise-sheet .sheet-upload-node .data-map-symbol { color: #596e42; }
+.enterprise-sheet .sheet-register { padding: 0 12px 10px; border-top: 2px solid #6a9bcc; background: #f3f5f5; }
+.enterprise-sheet .sheet-register + .sheet-register { border-top: 2px solid #788c5d; background: #f2f3ed; }
+.enterprise-sheet .sheet-item { border-color: var(--sheet-rule); }
+.enterprise-sheet .sheet-item span, .enterprise-sheet .sheet-register-summary, .enterprise-sheet .sheet-caption, .enterprise-sheet .sheet-footer, .enterprise-sheet .data-map-description { color: #68675f; }
+.enterprise-sheet .sheet-footer { border-color: var(--sheet-rule); }
+.sheet-unit-grid { display: flex; justify-content: center; flex-wrap: wrap; gap: 3px; max-width: 150px; min-height: 12px; margin-top: 2px; }
+.sheet-unit-grid i { display: block; width: 11px; height: 11px; background: #6a9bcc; border: 1px solid #426e9833; }
+.sheet-unit-grid.upload-units i { background: #788c5d; border-color: #596e4233; }
+.sheet-unit-grid span { font-size: 10px; }
+@media (max-width: 700px) { .enterprise-profile.enterprise-sheet { padding: 14px; } .enterprise-sheet .sheet-identity h1 { font-size: 25px; } }

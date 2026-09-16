@@ -48,6 +48,14 @@ export function renderEnterpriseProfile(state, actions) {
     });
   });
   const files = state.sources || [];
+  const squares = (count, kind) => {
+    const grid = el("span", `sheet-unit-grid ${kind}`);
+    grid.setAttribute("aria-hidden", "true");
+    for (let i = 0; i < Math.min(count, 24); i++) grid.append(el("i", ""));
+    if (count > 24) grid.append(el("span", "", `+${count - 24}`));
+    return grid;
+  };
+
   const uploads = tile("", "▤", "上传数据", `${files.length} 份文件 · CSV / Markdown / TXT`, () => popup("上传数据", d => {
     if (!actions.readonly) {
       const upload = el("button", "quiet-button", "上传资料"); upload.onclick = () => { d.close(); actions.upload(); }; d.append(upload);
@@ -63,6 +71,8 @@ export function renderEnterpriseProfile(state, actions) {
     }
     if (!files.length) d.append(el("p", "", "尚未上传文件。"));
   }));
+  remote.classList.add("sheet-remote-node"); uploads.classList.add("sheet-upload-node");
+  remote.append(squares(connections.length, "remote-units")); uploads.append(squares(files.length, "upload-units"));
   modules.append(remote, uploads); diagram.append(modules);
   root.classList.add("enterprise-sheet");
   heading.replaceChildren();
@@ -78,7 +88,7 @@ export function renderEnterpriseProfile(state, actions) {
     if (subtitle) head.append(el("span", "sheet-caption", subtitle)); return head;
   };
   plan.append(label("01", "数据构成", "企业与来源的归属视图"), diagram);
-  const legend = el("div", "sheet-legend"); legend.append(el("span", "", "◎ 企业主体"), el("span", "", "⇄ 远程连接"), el("span", "", "▤ 本地上传")); plan.append(legend);
+  const legend = el("div", "sheet-legend"); legend.append(el("span", "", "◎ 企业主体"), el("span", "", "蓝格：一个连接入口"), el("span", "", "绿格：一份上传文件")); plan.append(legend);
   const aside = el("div", "sheet-registers");
   const register = (number, name, summary, callback) => {
     const section = el("section", "sheet-register");
@@ -106,6 +116,7 @@ export function renderEnterpriseProfile(state, actions) {
     void actions.api("/api/connectors/feishu").then(result => {
       if (result.account) {
         remoteList.querySelector(".sheet-register-summary").textContent = `1 个授权账号 · ${connections.length} 个 API / MCP 数据源`;
+        remote.querySelector(".sheet-unit-grid")?.replaceWith(squares(connections.length + 1, "remote-units"));
         remote.querySelector(".data-map-description").textContent = `飞书账号已连接${connections.length ? ` · ${connections.length} 个数据源` : " · 按需读取"}`;
         item(accountRow, "飞书", "官方 CLI · 账号已连接，文档按需读取", () => remote.click());
       } else if (!connections.length) item(accountRow, "接入企业服务", "账号授权 / API / MCP", () => remote.click());
