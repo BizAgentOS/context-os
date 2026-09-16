@@ -3317,7 +3317,7 @@ tr.highlight td {
 .ed-board > section { min-width: 0; }
 .ed-icon { display: inline-flex; flex: 0 0 auto; width: 18px; height: 18px; }
 .ed-icon svg { display: block; width: 100%; height: 100%; }
-.ed-company { grid-area: company; display: flex; flex-direction: column; min-height: 315px; padding: 25px 28px; border-radius: 22px; background: #fff; box-shadow: 0 8px 24px -16px #0000001a; }
+.ed-company { grid-area: company; display: flex; flex-direction: column; min-height: 380px; padding: 25px 28px; border-radius: 22px; background: #fff; box-shadow: 0 8px 24px -16px #0000001a; }
 .ed-company-head, .ed-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .ed-label { display: inline-flex; align-items: center; gap: 9px; color: var(--ed-muted); font-size: 12px; }
 .ed-label .ed-icon { color: var(--ed-accent); }
@@ -3552,7 +3552,7 @@ tr.highlight td {
   padding: 16px;
   min-width: 0;
 }
-.ed-uploads, .ed-api { align-self: start; min-height: 150px; }
+.ed-uploads, .ed-api { align-self: start; min-height: 188px; }
 @media (max-width: 960px) {
   .ed-uploads, .ed-api, .ed-services-column .ed-knowledge { padding: 12px; }
 }
