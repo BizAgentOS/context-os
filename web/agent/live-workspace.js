@@ -215,11 +215,11 @@ export function renderLiveWorkspace(
   const change = (path, body) => mutate("/api/live/" + path, body);
   if (page === "sources") {
     section.append(
-      el("h1", "", "连接企业数据"),
+      el("h1", "", "企业数据"),
       el(
         "p",
         "live-lead",
-        "统一来源目录：文件资料、知识文档、BI 指标与业务记录。远程数据保留在原系统，按需读取并引用。",
+        "查看接入了什么数据、来自哪里，以及当前可读取的范围。",
       ),
     );
     section.append(
@@ -375,6 +375,12 @@ export function renderLiveWorkspace(
         })),
       ),
     );
+    const account = el("div", "data-account");
+    section.append(account);
+    void api("/api/connectors/feishu").then(result => {
+      if (!result.account) return;
+      account.append(el("strong", "", "飞书"), el("span", "source-meta", "账号授权 · 官方 CLI"), el("p", "", `已保存连接 · ${result.account.label}`), el("p", "source-meta", "按文档链接读取；账号连接不代表文档已导入。"), button("查看连接与读取文档", () => openConnections(api)));
+    }).catch(() => { account.append(el("p", "source-meta", "账号连接状态暂不可用")); });
     const grid = el("div", "source-grid");
     for (const source of live.connections) {
       const card = el("article", "live-card");
@@ -384,10 +390,11 @@ export function renderLiveWorkspace(
           "p",
           "source-meta",
           source.status === "ready"
-            ? `${source.content.protocol.toUpperCase()} · 已配置连接`
+            ? `${source.content.protocol === "mcp" ? "MCP" : "HTTP API"} · 已配置，按需读取`
             : "已停用",
         ),
       );
+      card.append(el("p", "source-meta", `数据来源：${source.title}`));
       for (const cap of source.content.capabilities) {
         card.append(
           el(

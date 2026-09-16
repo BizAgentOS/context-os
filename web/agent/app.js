@@ -520,14 +520,15 @@ function renderSetup() {
         showCredential,
       }),
     );
-    const files = node("details", "live-legacy");
+    const files = node("section", "data-files");
     files.append(
       node(
-        "summary",
+        "h2",
         "",
         `文件资料${state.sources.length ? ` · ${state.sources.length} 份` : ""}`,
       ),
     );
+    files.append(button("上传资料", "quiet-button", () => $("#file-input").click()));
     files.append(
       state.sources.length
         ? renderSources()
@@ -535,7 +536,11 @@ function renderSetup() {
     );
     sources.append(files);
   } else sources.append(renderSources());
-  if (!shareMode && !state.demo) sources.append(renderEvidenceWorkspace(state, { api, mutate }));
+  if (!shareMode && !state.demo) {
+    const evidence = node("details", "data-evidence");
+    evidence.append(node("summary", "", "跨来源共同取证"), renderEvidenceWorkspace(state, { api, mutate }));
+    sources.append(evidence);
+  }
   if (!shareMode && (state.legacyHistory.length || ui.importedDrafts.length)) {
     const history = node("details", "setup-history");
     history.append(node("summary", "", "升级前保留的内容"));
@@ -674,7 +679,7 @@ function companyName() {
 function renderSources() {
   if (!state.sources.length) return emptyCanvas("接入第一份企业资料");
   const section = node("section", "sources-canvas");
-  section.append(heading("企业资料"));
+
   const grid = node("div", "source-grid");
   for (const source of state.sources) {
     const card = button("", "source-card", () => openSource(source));
@@ -704,6 +709,7 @@ function renderSources() {
           source.content.format === "csv"
             ? `${source.content.rows?.length || 0} 条记录`
             : "文档 · 可用于概念定义",
+          `文件上传 · ${(source.content.format || "文档").toUpperCase()}`,
           `第 ${source.version} 版`,
         ].join(" · "),
       ),
