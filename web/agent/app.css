@@ -3309,7 +3309,7 @@ tr.highlight td {
 }
 .ed-board {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr) minmax(0, 1.45fr);
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr) minmax(0, 1fr);
   grid-template-areas: "company company knowledge" "uploads methods knowledge";
   gap: 20px;
   padding: 0;
@@ -3383,7 +3383,7 @@ tr.highlight td {
 .enterprise-dashboard button:focus-visible { outline-color: #333333; outline-offset: 3px; }
 .ed-methods button:focus-visible { outline-color: #fff; }
 @media (max-width: 960px) and (min-width: 701px) {
-  .ed-board { gap: 16px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.65fr); }
+  .ed-board { gap: 16px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr); }
   .ed-company { padding: 23px; }
   .ed-services { gap: 0 9px; }
   .ed-service { gap: 6px; }
