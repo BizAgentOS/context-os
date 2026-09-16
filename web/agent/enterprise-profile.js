@@ -158,7 +158,9 @@ export function renderEnterpriseProfile(state, actions) {
     totals.append(count);
   }
   data.append(totals);
-  company.append(data);
+  const companyInfo = el("div", "ed-company-info");
+  companyInfo.append(...Array.from(company.children));
+  company.append(companyInfo, data);
   board.append(company, knowledge, uploads, methods);
   const note = el("footer", "ed-footer");
   note.append(el("span", "", "账号授权不代表内容已读取 · 待支持服务仅供查看"), el("span", "", "点击模块查看详情"));

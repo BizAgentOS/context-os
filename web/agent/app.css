@@ -3508,3 +3508,16 @@ tr.highlight td {
 
 .definition-card strong { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
 @media(max-width:480px) { .definition-card-relation { transform:none!important; } }
+
+/* Enterprise identity and vertical source totals share one card. */
+.ed-company { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 24px; }
+.ed-company-info { min-width: 0; display: flex; flex-direction: column; }
+.ed-company > .ed-data { margin: 0; padding: 0 0 0 20px; border-top: 0; border-left: 1px solid #ededed; }
+.ed-company .ed-data .ed-panel-head { align-items: flex-start; flex-direction: column; gap: 3px; }
+.ed-company .ed-data-totals { grid-template-columns: minmax(0, 1fr); gap: 17px; margin-top: 20px; }
+.ed-company .ed-data-count { padding: 0; border: 0; }
+@media (max-width: 480px) {
+  .ed-company { grid-template-columns: minmax(0, 1fr) 82px; gap: 14px; padding: 18px; }
+  .ed-company > .ed-data { padding-left: 12px; }
+  .ed-company-head { flex-wrap: wrap; gap: 8px; }
+}
