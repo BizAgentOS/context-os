@@ -3310,7 +3310,7 @@ tr.highlight td {
 .ed-board {
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr) minmax(0, 1fr);
-  grid-template-areas: "company company knowledge" "uploads methods knowledge";
+  grid-template-areas: "company company services" "uploads uploads services";
   gap: 20px;
   padding: 0;
 }
@@ -3406,7 +3406,7 @@ tr.highlight td {
 @media (max-width: 700px) {
   .canvas:has(> .enterprise-dashboard) { padding-inline: 18px; }
   .enterprise-profile.enterprise-dashboard { padding-top: 0; }
-  .ed-board { grid-template-columns: minmax(0, 1fr); grid-template-areas: "company" "knowledge" "uploads" "methods"; gap: 22px; }
+  .ed-board { grid-template-columns: minmax(0, 1fr); grid-template-areas: "company" "services" "uploads"; gap: 22px; }
   .ed-company { min-height: 255px; padding: 22px; }
   .ed-facts { margin-top: 6px; }
   .ed-knowledge, .ed-uploads { padding-inline: 4px; }
@@ -3520,4 +3520,12 @@ tr.highlight td {
   .ed-company { grid-template-columns: minmax(0, 3fr) minmax(82px, 1fr); gap: 14px; padding: 18px; }
   .ed-company > .ed-data { padding-left: 12px; }
   .ed-company-head { flex-wrap: wrap; gap: 8px; }
+}
+
+.ed-services-column { grid-area: services; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.ed-services-column .ed-knowledge { flex: 1; }
+.ed-services-column .ed-services { flex: none; }
+@media (min-width: 701px) {
+  .ed-board { grid-template-rows: auto 1fr; }
+  .ed-services-column .ed-service { padding-block: 7px; }
 }
