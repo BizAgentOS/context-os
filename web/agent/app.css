@@ -3310,7 +3310,7 @@ tr.highlight td {
 .ed-board {
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr) minmax(0, 1.45fr);
-  grid-template-areas: "company company knowledge" "uploads methods data";
+  grid-template-areas: "company company knowledge" "uploads methods knowledge";
   gap: 20px;
   padding: 0;
 }
@@ -3332,12 +3332,12 @@ tr.highlight td {
 .ed-fact p { font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .ed-fact:hover p { color: #000000; }
 .ed-start { margin-top: auto; display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; font-size: 13px; }
-.ed-knowledge { grid-area: knowledge; padding: 4px 0 0; }
+.ed-knowledge { grid-area: knowledge; padding: 4px 0 0; display: flex; flex-direction: column; }
 .enterprise-dashboard .ed-panel-head h2, .enterprise-dashboard .ed-methods h2 { font-size: 15px; font-weight: 550; letter-spacing: -.3px; }
 .ed-text-button { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; flex: 0 0 auto; padding: 3px 0; font-size: 11px; color: var(--ed-muted); }
 .ed-text-button .ed-icon { width: 12px; height: 12px; }
 .ed-text-button:hover { color: var(--ed-ink); }
-.ed-services { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; margin-top: 12px; }
+.ed-services { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1; gap: 0; margin-top: 12px; }
 .ed-service { display: flex; align-items: center; gap: 9px; padding: 11px 0; min-width: 0; border-bottom: 1px solid var(--ed-line); text-align: left; border-radius: 0; }
 .ed-service-featured { grid-column: 1 / -1; padding-top: 3px; padding-bottom: 14px; margin-bottom: 1px; }
 .ed-service-icon { display: grid; place-items: center; flex: 0 0 30px; height: 30px; background: #eeeeee; border: 1px solid #e0e0e0; border-radius: 8px; color: #666666; }
@@ -3369,8 +3369,8 @@ tr.highlight td {
 .ed-method-action { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 6px 9px; margin-top: 14px; background: #fff; color: #111; border-radius: 20px; font-size: 10px; }
 .ed-method-action .ed-icon { width: 12px; height: 12px; }
 .ed-method-action:hover { background: #eeeeee; }
-.ed-data { grid-area: data; background: #fff; padding: 17px 20px; border-radius: 18px; }
-.ed-data-totals { display: grid; grid-template-columns: 1fr 1fr; margin-top: 14px; }
+.ed-company > .ed-data { margin-top: 20px; padding-top: 16px; border-top: 1px solid #ededed; }
+.ed-data-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 14px; }
 .ed-data-count { display: flex; flex-direction: column; align-items: flex-start; padding: 0 18px; border-left: 1px solid #e0e0e0; }
 .ed-data-count:first-child { padding-left: 0; border: 0; }
 .ed-data-count span { color: var(--ed-muted); font-size: 10px; }
@@ -3390,7 +3390,6 @@ tr.highlight td {
   .ed-service-icon { flex-basis: 25px; height: 28px; }
   .ed-service > .ed-icon { display: none; }
   .ed-methods { padding: 14px; }
-  .ed-data { padding: 17px; }
   .ed-panel-head { gap: 8px; }
   .enterprise-dashboard .ed-panel-head h2 { font-size: 14px; }
 }
@@ -3407,7 +3406,7 @@ tr.highlight td {
 @media (max-width: 700px) {
   .canvas:has(> .enterprise-dashboard) { padding-inline: 18px; }
   .enterprise-profile.enterprise-dashboard { padding-top: 0; }
-  .ed-board { grid-template-columns: minmax(0, 1fr); grid-template-areas: "company" "knowledge" "uploads" "data" "methods"; gap: 22px; }
+  .ed-board { grid-template-columns: minmax(0, 1fr); grid-template-areas: "company" "knowledge" "uploads" "methods"; gap: 22px; }
   .ed-company { min-height: 255px; padding: 22px; }
   .ed-facts { margin-top: 6px; }
   .ed-knowledge, .ed-uploads { padding-inline: 4px; }

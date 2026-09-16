@@ -144,19 +144,22 @@ export function renderEnterpriseProfile(state, actions) {
   methods.append(ways, button("ed-method-action", "查看接入方式", showConnections, "arrow-up-right"));
 
   const data = el("section", "ed-data");
+  data.setAttribute("aria-label", "企业数据接入统计");
   data.append(panelHead("数据接入", "管理", showConnections));
   const totals = el("div", "ed-data-totals");
-  for (const [protocol, label] of [["http", "HTTP API"], ["mcp", "MCP"]]) {
-    const count = button("ed-data-count", "", showConnections);
-    count.replaceChildren(el("span", "", label), el("strong", "", String(connections.filter(item => item.content.protocol === protocol).length)));
+  for (const [label, value, open] of [
+    ["文件上传", files.length, showFiles],
+    ["HTTP API", connections.filter(item => item.content.protocol === "http").length, showConnections],
+    ["MCP", connections.filter(item => item.content.protocol === "mcp").length, showConnections],
+  ]) {
+    const count = button("ed-data-count", "", open);
+    count.replaceChildren(el("span", "", label), el("strong", "", String(value)));
+    count.title = label === "文件上传" ? "已上传资料数量" : "已配置来源数量（含停用），不代表内容已读取";
     totals.append(count);
   }
   data.append(totals);
-  for (const source of connections.slice(0, 2)) data.append(button("ed-connection", `${source.title} · ${source.status === "ready" ? "按需读取" : "已停用"}`, showConnections, "caret-right"));
-  if (connections.length > 2) data.append(button("ed-text-button", `另 ${connections.length - 2} 个数据源`, showConnections));
-  if (!connections.length) data.append(el("p", "ed-data-caption", "连接业务系统，按需读取获准的数据。"));
-
-  board.append(company, knowledge, uploads, methods, data);
+  company.append(data);
+  board.append(company, knowledge, uploads, methods);
   const note = el("footer", "ed-footer");
   note.append(el("span", "", "账号授权不代表内容已读取 · 待支持服务仅供查看"), el("span", "", "点击模块查看详情"));
   root.append(board, note, sources);
