@@ -1,4 +1,5 @@
 import { openApiImport } from "./openapi-import.js";
+import { openConnections } from "./connections.js";
 // Presentation only: company facts, source accounts and imported files remain distinct.
 export function renderEnterpriseProfile(state, actions) {
   const el = (tag, cls, text) => {
@@ -103,16 +104,15 @@ export function renderEnterpriseProfile(state, actions) {
   }
 
   const knowledge = el("section", "ed-knowledge");
-  knowledge.append(panelHead("MCP 接入", "查看连接", showConnections));
+  const openService = (options = {}) => actions.api
+    ? openConnections(actions.api, undefined, { ...options, onChanged: refreshConnections }) : showConnections();
+  knowledge.append(panelHead("MCP 接入", "添加 / 管理", () => openService()));
   const services = el("div", "ed-services");
   let feishuStatus;
   for (const serviceName of ["飞书文档 / 知识库", "腾讯文档", "语雀", "钉钉文档", "石墨文档", "金山文档", "WPS 云文档", "有道云笔记"]) {
     const isFeishu = serviceName.startsWith("飞书");
     const service = button(`ed-service${isFeishu ? " ed-service-featured" : ""}`, "", () => {
-      if (isFeishu) popup("飞书文档与知识库", dialog => {
-        dialog.append(el("p", "", "当前支持账号授权及按 docx 链接只读文档；尚不支持知识库目录遍历。"));
-        dialog.append(button("quiet-button", "查看连接与文档读取", () => { dialog.close(); showConnections(); }));
-      });
+      if (isFeishu) openService({ service: "feishu" });
       else popup(serviceName, dialog => dialog.append(el("p", "", "该服务尚未接入 DataEngine，当前仅列入服务目录。")));
     });
     const mark = el("span", "ed-service-icon"); mark.append(icon(isFeishu ? "book-open" : "cloud"));
@@ -124,6 +124,8 @@ export function renderEnterpriseProfile(state, actions) {
     services.append(service);
   }
   const mcpList = el("div", "ed-source-scroll");
+  const savedMcps = el("div", "ed-saved-mcps");
+  mcpList.append(savedMcps);
   for (const source of connections.filter(item => item.content.protocol === "mcp")) {
     mcpList.append(button("ed-connection", source.title + (source.status === "ready" ? " · 按需读取" : " · 已停用"), showConnections, "caret-right"));
   }
@@ -165,6 +167,7 @@ export function renderEnterpriseProfile(state, actions) {
   dataHead.append(el("h2", "", "数据接入"));
   data.append(dataHead);
   const totals = el("div", "ed-data-totals");
+  let mcpCounter;
   for (const [label, value] of [
     ["文件上传", files.length],
     ["HTTP API", connections.filter(item => item.content.protocol === "http").length],
@@ -173,6 +176,10 @@ export function renderEnterpriseProfile(state, actions) {
     const count = el("div", "ed-data-count");
     count.replaceChildren(el("span", "", label), el("strong", "", String(value)));
     count.title = label === "文件上传" ? "已上传资料数量" : "已配置来源数量（含停用），不代表内容已读取";
+    if (label === "MCP") {
+      mcpCounter = count.querySelector("strong");
+      count.title = "已保存的 MCP 服务（不含 CLI 账号），连接不代表内容已读取";
+    }
     totals.append(count);
   }
   data.append(totals);
@@ -185,10 +192,34 @@ export function renderEnterpriseProfile(state, actions) {
   const note = el("footer", "ed-footer");
   note.append(el("span", "", "账号授权不代表内容已读取 · 待支持服务仅供查看"), el("span", "", "点击模块查看详情"));
   root.append(board, note, sources);
-  if (actions.api) void actions.api("/api/connectors/feishu").then(result => {
-    feishuStatus.textContent = result.account ? "CLI 已授权 · 文档只读" : "CLI 可连接 · 文档只读";
-    if (result.account) feishuStatus.classList.add("is-connected");
-  }).catch(() => { feishuStatus.textContent = "状态暂不可用"; });
+  let connectionGeneration = 0;
+  async function refreshConnections() {
+    if (!actions.api) return;
+    const request = ++connectionGeneration;
+    const [feishu, mcp] = await Promise.allSettled([actions.api("/api/connectors/feishu"), actions.api("/api/capabilities/mcp")]);
+    if (request !== connectionGeneration || !root.isConnected) return;
+    if (feishu.status === "fulfilled") {
+      feishuStatus.textContent = feishu.value.account ? "CLI 已授权 · 点击读取文档" : "点击登录 · 文档只读";
+      feishuStatus.classList.toggle("is-connected", !!feishu.value.account);
+    } else feishuStatus.textContent = "状态暂不可用";
+    if (mcp.status === "fulfilled") {
+      savedMcps.replaceChildren();
+      const addresses = new Set(connections.filter(source => source.content.protocol === "mcp").map(source => source.content.url || source.id));
+      for (const server of mcp.value.servers) {
+        addresses.add(server.url || server.name);
+        const allowed = server.capabilities.filter(cap => cap.allowed).length;
+        const row = button("ed-connection", server.name, () => openService({ name: server.name }), "caret-right");
+        row.title = `${allowed} / ${server.capabilities.length} 项能力已开放给助手`;
+        row.append(el("small", "ed-service-status", `已授权 ${allowed} 项`));
+        savedMcps.append(row);
+      }
+      mcpCounter.textContent = String(addresses.size);
+    } else {
+      mcpCounter.textContent = "—";
+      savedMcps.replaceChildren(el("p", "source-meta", "MCP 连接状态暂不可用，可打开连接列表重试。"));
+    }
+  }
+  void refreshConnections();
   return {root, sources};
 }
 

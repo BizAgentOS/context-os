@@ -19,6 +19,9 @@ import type { AgentDriver } from "./runtime.ts";
 
 const webRoot = fileURLToPath(new URL("../../web/agent/", import.meta.url));
 const staticFiles: Record<string, { file: string; type: string }> = {
+  "/connection-ui.js": { file: "connection-ui.js", type: "text/javascript; charset=utf-8" },
+  "/feishu-connection.js": { file: "feishu-connection.js", type: "text/javascript; charset=utf-8" },
+  "/mcp-connection.js": { file: "mcp-connection.js", type: "text/javascript; charset=utf-8" },
   "/openapi-import.js": { file: "openapi-import.js", type: "text/javascript; charset=utf-8" },
   "/connections.js": { file: "connections.js", type: "text/javascript; charset=utf-8" },
   "/enterprise-profile.js": { file: "enterprise-profile.js", type: "text/javascript; charset=utf-8" },
@@ -273,6 +276,10 @@ export async function createServer(
         }
         if (url.pathname === "/api/connectors/feishu") {
           send(200, app.capabilities.feishu.status());
+          return;
+        }
+        if (url.pathname === "/api/capabilities/mcp") {
+          send(200, { servers: app.capabilities.mcp.list() });
           return;
         }
         if (url.pathname === "/api/consumers") {

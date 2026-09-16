@@ -18,8 +18,8 @@ import { createHash, randomInt } from "node:crypto";
 
 const connectionSchema = z
   .object({
-    name: z.string().regex(/^[a-z][a-z0-9-]{1,63}$/),
-    url: z.string().url(),
+    name: z.string().regex(/^[a-z][a-z0-9-]{1,63}$/).optional(),
+    url: z.string().trim().url().max(2048),
     type: z.enum(["http", "sse"]).default("http"),
     headers: z
       .record(z.string().regex(/^[A-Za-z0-9-]+$/), z.string().max(4000))
@@ -36,6 +36,8 @@ interface Connection {
 export class AgentMcp {
   private connections: Connection[] = [];
   private refreshing = new Set<string>();
+  private connecting = new Map<string, string>();
+  private closed = false;
   private managers = new Map<string, McpManager>();
   private directory: string;
   constructor(directory: string) {
@@ -71,6 +73,7 @@ export class AgentMcp {
   list() {
     return this.connections.map((c) => ({
       name: c.name,
+      url: c.config.url,
       transport: c.config.type,
       revision: c.revision,
       capabilities: c.capabilities.map((d) => ({
@@ -80,6 +83,7 @@ export class AgentMcp {
     }));
   }
   async connect(input: unknown) {
+    if (this.closed) throw new Error("连接服务已停止，请重新打开页面");
     const value = connectionSchema.parse(input);
     const url = new URL(value.url);
     if (url.username || url.password || url.search || url.hash)
@@ -92,10 +96,18 @@ export class AgentMcp {
       )
     )
       throw new Error("远程 MCP 需要 HTTPS，本机允许 HTTP");
-    if (this.connections.some((c) => c.name === value.name))
+    // The URL-only path reuses one connection; legacy explicitly named profiles
+    // may still connect the same endpoint with different account credentials.
+    if (!value.name && this.connections.some((c) => c.config.url === url.href))
+      throw new Error("该地址已经连接，请在已有连接中管理可用范围");
+    const name = value.name ?? `mcp-${url.hostname.replace(/[^a-z0-9-]/gi, "-").toLowerCase().slice(0, 42)}-${createHash("sha256").update(url.href).digest("hex").slice(0, 8)}`;
+    if (this.connections.some((c) => c.name === name))
       throw new Error("连接名称已存在");
+    if (this.connecting.has(name) || (!value.name && [...this.connecting.values()].includes(url.href)))
+      throw new Error("此 MCP 正在连接，请等待当前连接完成");
+    this.connecting.set(name, url.href);
     const c: Connection = {
-      name: value.name,
+      name,
       config: {
         type: value.type,
         url: url.href,
@@ -111,17 +123,24 @@ export class AgentMcp {
     };
     const manager = this.manager(c);
     try {
+      // getCatalog may return cached capabilities after a failed refresh.
+      // Explicit onboarding must complete a live discovery before saving.
+      await manager.startServer(c.name);
       c.capabilities = [
-        ...(await manager.getCatalog(c.name, { forceRefresh: true }))
+        ...(await manager.getCatalog(c.name))
           .descriptors,
       ];
+      if (this.closed) throw new Error("连接服务已停止");
       this.connections.push(c);
       this.save();
       return this.list();
     } catch {
+      this.connections = this.connections.filter(connection => connection !== c);
       this.managers.delete(c.name);
       await manager.dispose();
-      throw new Error("MCP 连接失败，请检查地址、请求头和服务状态");
+      throw new Error("未能发现 MCP 能力。请核对服务地址；若需要访问令牌，请展开身份验证。网页登录服务请使用已适配的服务入口。");
+    } finally {
+      this.connecting.delete(name);
     }
   }
   grant(name: string, ids: string[], expectedRevision?: number) {
@@ -178,8 +197,10 @@ export class AgentMcp {
     // Invalidate immediately, including results already in flight.
     try {
       this.grant(name, []);
+      const manager = this.manager(c);
+      await manager.startServer(name);
       c.capabilities = [
-        ...(await this.manager(c).getCatalog(name, { forceRefresh: true }))
+        ...(await manager.getCatalog(name))
           .descriptors,
       ];
       c.allowed = [];
@@ -228,6 +249,7 @@ export class AgentMcp {
     return result;
   }
   async close() {
+    this.closed = true;
     await Promise.all([...this.managers.values()].map((m) => m.dispose()));
     this.managers.clear();
   }

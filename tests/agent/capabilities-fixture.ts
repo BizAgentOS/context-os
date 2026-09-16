@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { McpServer, createMcpHandler } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
-export async function capabilityFixture() {
+export async function capabilityFixture(options: { token?: string } = {}) {
   let release!: () => void, started!: () => void;
   const held = new Promise<void>((r) => (release = r)),
     invoked = new Promise<void>((r) => (started = r));
@@ -46,6 +46,11 @@ export async function capabilityFixture() {
     return m;
   }, {});
   const server = createServer(async (req, res) => {
+    if (options.token && req.headers.authorization !== `Bearer ${options.token}`) {
+      res.writeHead(401);
+      res.end();
+      return;
+    }
     try {
       const chunks: Buffer[] = [];
       for await (const chunk of req) chunks.push(Buffer.from(chunk));

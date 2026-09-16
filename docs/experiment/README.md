@@ -6,6 +6,7 @@
 
 | 需要查看 | 记录 |
 |---|---|
+| Swagger 导入与 MCP 便捷接入 | [HTTP API 导入](OPENAPI_IMPORT.md)、[MCP 接入](MCP_ONBOARDING.md) |
 | 自定义模型 URL、协议与凭据隔离 | [自定义 API](CUSTOM_MODEL_API.md) |
 | 三页整链、真实模型、双消费者及离线兼容 | [整链验收](FUSION_CHAIN.md) |
 | 同一变更影响、指定消费者迁移与版本隔离 | [消费者迁移验收](CONSUMER_MIGRATIONS.md) |

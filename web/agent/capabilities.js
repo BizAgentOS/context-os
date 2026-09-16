@@ -18,7 +18,7 @@ const action = (text, callback) => {
   b.addEventListener("click", callback);
   return b;
 };
-export function createCapabilitiesPanel(api) {
+export function createCapabilitiesPanel(api, onConnectionsChanged) {
   const button = action("能力", open);
   button.id = "open-capabilities";
   button.classList.add("capabilities-button");
@@ -119,97 +119,16 @@ export function createCapabilitiesPanel(api) {
       "MCP",
       "连接 Agent 可使用的外部工具、资源和提示词。只开放你勾选的能力；这不会自动把它发布给第三方。",
     );
-    mcp.append(action("连接服务（飞书登录）", () => { dialog.close(); openConnections(api, open); }));
+    mcp.append(action("添加 MCP / 连接服务", () => { dialog.close(); openConnections(api, undefined, { onChanged: onConnectionsChanged }); }));
     for (const server of state.servers) {
       const box = el("div", null, "capability-row");
-      box.append(el("strong", server.name));
-      const checks = [];
-      for (const cap of server.capabilities) {
-        const label = el("label", null, "capability-check");
-        const check = el("input");
-        check.type = "checkbox";
-        check.checked = cap.allowed;
-        checks.push({ check, id: cap.id });
-        const text = el("span");
-        text.append(
-          el("strong", `${cap.name} · ${cap.kind}`),
-          el("small", cap.summary || "服务未提供说明"),
-        );
-        label.append(check, text);
-        box.append(label);
-      }
-      box.append(
-        action("保存可用范围", () =>
-          perform("/api/capabilities/mcp/grant", {
-            name: server.name,
-            revision: server.revision,
-            ids: checks.filter((c) => c.check.checked).map((c) => c.id),
-          }),
-        ),
-        action("撤销全部", () =>
-          perform("/api/capabilities/mcp/grant", {
-            name: server.name,
-            revision: server.revision,
-            ids: [],
-          }),
-        ),
-      );
-      box.append(
-        action("重新发现（清空授权）", () =>
-          perform("/api/capabilities/mcp/refresh", { name: server.name }),
-        ),
-        action("断开连接", () =>
-          perform("/api/capabilities/mcp/disconnect", { name: server.name }),
-        ),
-      );
+      const allowed = server.capabilities.filter(cap => cap.allowed).length;
+      box.append(el("strong", server.name), el("p", `${allowed} / ${server.capabilities.length} 项能力已开放给助手`), action("管理可用范围", () => {
+        dialog.close(); openConnections(api, undefined, { name: server.name, onChanged: onConnectionsChanged });
+      }));
       mcp.append(box);
     }
     if (!state.servers.length) mcp.append(el("p", "尚未连接 MCP。", "muted"));
-    const detail = el("details"),
-      title = el("summary", "高级：手动连接 MCP 服务");
-    detail.append(title);
-    const form = el("form"),
-      serverName = field("连接名称"),
-      url = field("服务地址", "url"),
-      headers = field("请求头 JSON（可选，凭据仅保存在本机）", "textarea");
-    headers.input.autocomplete = "off";
-    headers.input.spellcheck = false;
-    headers.input.rows = 2;
-    headers.input.placeholder = "{}";
-    url.input.placeholder = "https://example.com/mcp";
-    serverName.input.placeholder = "enterprise-tools";
-    const transport = el("label", "传输方式"),
-      select = el("select");
-    for (const [v, t] of [
-      ["http", "Streamable HTTP"],
-      ["sse", "SSE"],
-    ]) {
-      const o = el("option", t);
-      o.value = v;
-      select.append(o);
-    }
-    transport.append(select);
-    const connect = el("button", "连接并发现能力", "primary-button");
-    connect.type = "submit";
-    form.append(serverName.wrap, url.wrap, transport, headers.wrap, connect);
-    detail.append(form);
-    mcp.append(detail);
-    form.addEventListener("submit", (e) => {
-      e.preventDefault();
-      try {
-        const parsed = JSON.parse(headers.input.value || "{}");
-        const request = {
-          name: serverName.input.value,
-          url: url.input.value,
-          type: select.value,
-          headers: parsed,
-        };
-        headers.input.value = "";
-        void perform("/api/capabilities/mcp/connect", request);
-      } catch {
-        message("请求头需要合法的 JSON 对象。");
-      }
-    });
     const sdk = section(
       "业务 SDK",
       "通过已注册的方法调用业务系统。新增企业 SDK 由开发者接入适配器。",

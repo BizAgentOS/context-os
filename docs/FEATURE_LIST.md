@@ -1,6 +1,6 @@
 # DataEngine Feature List
 
-Last Updated: 2026-09-16
+Last Updated: 2026-09-17
 
 **2026-09-10 文档整理：**新增[产品与架构](DATA_ENGINE_DESIGN.md)、[语义契约](SEMANTIC_CONTRACTS.md)、[Agent 与前端协作](AGENT_UI_DESIGN.md)，并更新 `AGENTS.md` 阅读入口。只沉淀设计与纠正历史描述，未新增实现票、改变功能状态或运行产品验收。
 
@@ -21,7 +21,7 @@ Last Updated: 2026-09-16
 
 | Version | Status | Planned | InProgress | Completed | Progress |
 |---|---|---:|---:|---:|---:|
-| v0.1.0 | InProgress | 2 | 3 | 15 | 15/20 |
+| v0.1.0 | InProgress | 2 | 3 | 16 | 16/21 |
 
 ## Feature Index
 
@@ -49,6 +49,7 @@ Last Updated: 2026-09-16
 
 | 019 | 服务连接向导与飞书只读接入 | Enhancement | High | InProgress | v0.1.0 | 010 | [设计](features/v0.1.0.md#feature-019) |
 | 020 | Swagger/OpenAPI 来源导入 | Enhancement | High | Completed | v0.1.0 | 010、018 | [设计](features/v0.1.0.md#feature-020) |
+| 021 | MCP 便捷接入与统一连接入口 | Enhancement | High | Completed | v0.1.0 | 复用已实现的 011/019 | [设计](features/v0.1.0.md#feature-021) |
 
 此表保留已有能力与票的实际完成记录，计数不代表新 MVP 体验的完成比例。本轮按 [MVP 完成条件](MVP.md)及 FEATURE_012—016 的任务依赖验收。006、远程 MCP 服务和旧票中尚未覆盖的完整回归/恢复保留为后续工作，不因范围调整标为完成。
 
@@ -253,11 +254,11 @@ Last Updated: 2026-09-16
 
 ## Summary
 
-- Total: 20
+- Total: 21
 - Planned: 2
 - InProgress: 3
-- Completed: 15
-- New: 8；Internal: 1；Enhancement: 10；Refactor: 1；High: 20。
+- Completed: 16
+- New: 8；Internal: 1；Enhancement: 11；Refactor: 1；High: 21。
 - **已实现基础：FEATURE_011 已完成搜索、Skill、MCP 和业务 SDK 入口（[验收](experiment/AGENT_CAPABILITIES.md)）；FEATURE_010 已完成本地来源连接链路。HTTP/MCP 按需读取、Agent 本体候选、人工采用、第三方授权与源变化重读已验收；正式发布、多租户、专用 OAuth 连接器与自动演变仍未完成。**
 
 **本轮 FEATURE_012—016 已完成。** T016-04 通过真实模型、独立 HTTP/MCP、浏览器治理和离线兼容验收，见[记录](experiment/FUSION_CHAIN.md)。旧 FEATURE_002/004/005 的未完验收保持原状态，不提前勾选；后续范围需另行明确。
@@ -292,3 +293,13 @@ Last Updated: 2026-09-16
 - **Description:** 文档URL、JSON/YAML和文件导入，接口选择、认证、真实样本测试及保存HTTP来源。
 - **Design:** [FEATURE_020](features/v0.1.0.md#feature-020)。
 - **验证:** 137 项 Node 测试、类型检查与离线构建通过；独立工作区浏览器验证 URL/粘贴/上传、真实样本、保存刷新、关闭与窄屏；[使用与验收](experiment/OPENAPI_IMPORT.md)。
+
+### 021: MCP 便捷接入与统一连接入口
+
+- **Status:** Completed
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.1.0 / —
+- **Created / Started / Completed:** 2026-09-16 / 2026-09-16 / 2026-09-17
+- **Description:** API 保持 Swagger 导入；MCP 从企业页直达服务登录、已有连接或地址发现，取消常规路径的手写 JSON，统一能力选择与连接状态。
+- **Design:** [FEATURE_021](features/v0.1.0.md#feature-021)。
+- **验证:** 142 项 Node 测试、类型检查、离线构建及浏览器连接/权限/关闭/窄屏验收通过；[使用与验收](experiment/MCP_ONBOARDING.md)。真实飞书文档读取和通用 OAuth 不作为本轮完成项。

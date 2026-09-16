@@ -203,7 +203,7 @@ function knowledgeDialog(source, cap, api) {
 export function renderLiveWorkspace(
   page,
   live,
-  { api, mutate, showCredential, selections = new Map(), onSelectContext, onSaved, onImportSaved },
+  { api, mutate, showCredential, selections = new Map(), onSelectContext, onSaved, onImportSaved, onConnectionsChanged },
 ) {
   const section = el("section", "live-canvas");
   const action = async (fn) => {
@@ -374,14 +374,14 @@ export function renderLiveWorkspace(
               submit.disabled = false;
             }
           };
-        })),
+        }), { onChanged: onConnectionsChanged }),
       ),
     );
     const account = el("div", "data-account");
     section.append(account);
     void api("/api/connectors/feishu").then(result => {
       if (!result.account) return;
-      account.append(el("strong", "", "飞书"), el("span", "source-meta", "账号授权 · 官方 CLI"), el("p", "", `已保存连接 · ${result.account.label}`), el("p", "source-meta", "按文档链接读取；账号连接不代表文档已导入。"), button("查看连接与读取文档", () => openConnections(api)));
+      account.append(el("strong", "", "飞书"), el("span", "source-meta", "账号授权 · 官方 CLI"), el("p", "", `已保存连接 · ${result.account.label}`), el("p", "source-meta", "按文档链接读取；账号连接不代表文档已导入。"), button("查看连接与读取文档", () => openConnections(api, undefined, { service: "feishu", onChanged: onConnectionsChanged })));
     }).catch(() => { account.append(el("p", "source-meta", "账号连接状态暂不可用")); });
     const grid = el("div", "source-grid");
     for (const source of live.connections) {

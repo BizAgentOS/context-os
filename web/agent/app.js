@@ -369,7 +369,7 @@ async function navigate(page) {
       .getElementById(`setup-${page}`)
       ?.scrollIntoView({ block: "start" });
 }
-const capabilityPanel = createCapabilitiesPanel(api);
+const capabilityPanel = createCapabilitiesPanel(api, () => renderCanvas(true));
 
 function render() {
   capabilityPanel.button.hidden = !!shareMode || !!state.demo;
@@ -638,6 +638,7 @@ function renderSetup() {
       renderLiveWorkspace("sources", state.live, {
         api,
         onImportSaved: applySnapshot,
+        onConnectionsChanged: () => renderCanvas(true),
         mutate,
         showCredential,
       }),

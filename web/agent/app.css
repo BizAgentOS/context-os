@@ -3681,3 +3681,62 @@ dialog.openapi-import[open] { display: flex; flex-direction: column; height: min
 .openapi-import > .data-map-dialog-head, .openapi-import > p, .openapi-import > .oi-steps, .openapi-import > .oi-footer { flex-shrink: 0; }
 .oi-content { min-height: 0; overflow-y: auto; overflow-x: hidden; flex: 1; scrollbar-width: thin; }
 .openapi-import > .oi-steps { margin-block: 16px; }
+
+/* MCP onboarding shares the source dialogs; only the required step is expanded. */
+dialog.connection-dialog { width: min(660px, calc(100vw - 40px)); max-width: 660px; }
+dialog.connection-dialog[open] { display: flex; flex-direction: column; overflow: hidden; }
+.connection-dialog > .dialog-heading, .connection-dialog > p, .connection-dialog > button { flex-shrink: 0; }
+.connection-dialog > button { align-self: flex-start; }
+.connection-dialog .connection-body { min-height: 0; overflow: auto; scrollbar-width: thin; }
+.connection-dialog .dialog-heading { margin-bottom: 8px; }
+.connection-dialog .dialog-heading h2 { margin: 0; }
+.connection-dialog .connection-footer { flex-shrink: 0; border-top: 1px solid #e6e6e6; }
+.connection-dialog .connection-footer:empty { display: none; }
+.connection-footer .connection-actions { margin: 10px 0 0; }
+.connection-dialog .muted { font-size: 13px; line-height: 1.65; color: #777; }
+.connection-dialog .connection-description { margin: 8px 0 18px; font-size: 13px; line-height: 1.7; color: #666; }
+.connection-dialog .connection-note { font-size: 12px; line-height: 1.65; color: #707070; margin: 10px 0 16px; overflow-wrap: anywhere; }
+.connection-dialog h3 { margin: 0 0 12px; font-size: 15px; }
+.connection-dialog .primary-button { display: inline-block; text-decoration: none; padding: 10px 18px; font-size: 13px; margin: 8px 0; }
+.connection-dialog .connection-paths { display: grid; gap: 12px; margin: 18px 0 24px; }
+.connection-dialog .connection-entry { display: flex; align-items: center; justify-content: space-between; gap: 18px; width: 100%; text-align: left; border: 1px solid #ddd; border-radius: 12px; padding: 18px; background: #fff; }
+.connection-entry > span:first-child { min-width: 0; }
+.connection-entry strong, .connection-entry small { display: block; overflow-wrap: anywhere; }
+.connection-entry strong { font-size: 14px; font-weight: 600; }
+.connection-entry small { margin-top: 6px; font-size: 12px; color: #777; line-height: 1.6; }
+.connection-entry-action { flex-shrink: 0; font-size: 12px; color: #444; }
+.connection-dialog .connection-entry:hover { background: #f6f6f6; border-color: #bbb; }
+.connection-saved { margin: 22px 0 16px; }
+.connection-saved .connection-entry { margin-top: 10px; padding: 14px 16px; }
+.connection-dialog .connection-field { display: flex; flex-direction: column; gap: 8px; margin: 18px 0 12px; font-size: 12px; color: #555; }
+.connection-dialog .connection-field input, .connection-dialog .connection-field select, .connection-dialog .connection-field textarea { width: 100%; min-width: 0; box-sizing: border-box; background: #fff; border: 1px solid #d6d6d6; border-radius: 8px; padding: 10px 12px; color: #111; font: inherit; font-size: 13px; }
+.connection-dialog .connection-field textarea { resize: vertical; }
+.connection-dialog [hidden] { display: none !important; }
+.connection-advanced { margin: 16px 0; border-top: 1px solid #e6e6e6; padding-top: 14px; }
+.connection-advanced > summary { cursor: pointer; color: #666; font-size: 12px; }
+.connection-advanced > button { margin: 0 10px 8px 0; }
+.connection-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 14px 0; }
+.connection-dialog .connection-summary { padding: 18px; background: #f6f6f6; border-radius: 12px; margin: 18px 0; overflow-wrap: anywhere; }
+.connection-summary > strong { font-size: 14px; }
+.connection-summary .connection-note:last-child { margin-bottom: 0; }
+.connection-count { font-size: 13px; color: #555; margin: 18px 0 10px; }
+.connection-capabilities { max-height: 320px; overflow: auto; scrollbar-width: thin; border-block: 1px solid #e6e6e6; }
+.connection-dialog .connection-capability { display: flex; flex-direction: row; align-items: flex-start; gap: 12px; padding: 16px 4px; margin: 0; border-bottom: 1px solid #eee; cursor: pointer; }
+.connection-capability:last-child { border-bottom: 0; }
+.connection-dialog .connection-capability input { accent-color: #111; width: 16px; height: 16px; flex: 0 0 16px; margin: 2px 0 0; }
+.connection-capability > span { min-width: 0; }
+.connection-capability strong { display: block; font-size: 13px; overflow-wrap: anywhere; }
+.connection-capability small { display: block; font-size: 11px; color: #777; margin-top: 5px; }
+.connection-capability p { font-size: 12px; line-height: 1.65; margin: 8px 0 0; color: #555; white-space: pre-wrap; overflow-wrap: anywhere; }
+.connection-dialog .connection-progress { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 0; margin: 24px 0; list-style: none; }
+.connection-dialog .connection-progress li { font-size: 11px; color: #999; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+.connection-dialog .connection-progress li.active { border-color: #111; color: #111; }
+.connection-dialog button:focus-visible, .connection-dialog input:focus-visible, .connection-dialog summary:focus-visible, .connection-dialog a:focus-visible { outline: 2px solid #555; outline-offset: 3px; }
+.ed-saved-mcps:empty { display: none; }
+.ed-saved-mcps .ed-connection { flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid #ddd; }
+.ed-saved-mcps .ed-service-status { flex-basis: 100%; }
+@media (max-width: 520px) {
+  .connection-dialog .connection-entry { align-items: flex-start; flex-direction: column; gap: 10px; padding: 14px; }
+  .connection-dialog .connection-progress { grid-template-columns: repeat(2, 1fr); }
+  .connection-capabilities { max-height: 38dvh; }
+}
