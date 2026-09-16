@@ -74,7 +74,7 @@ export function renderEnterpriseProfile(state, actions) {
   remote.classList.add("sheet-remote-node"); uploads.classList.add("sheet-upload-node");
   remote.append(squares(connections.length, "remote-units")); uploads.append(squares(files.length, "upload-units"));
   modules.append(remote, uploads); diagram.append(modules);
-  root.classList.add("enterprise-sheet", "sheet-editorial");
+  root.classList.add("enterprise-sheet", "sheet-editorial", "sheet-company-led");
   heading.replaceChildren();
   const identity = el("button", "sheet-identity"); identity.type = "button"; identity.onclick = () => company.click();
   identity.append(el("span", "sheet-eyebrow", "企业主体 / COMPANY"), el("h1", "", title));
@@ -96,32 +96,55 @@ export function renderEnterpriseProfile(state, actions) {
     const open = el("button", "sheet-open", "查看全部 ↗"); open.onclick = callback; head.append(open);
     section.append(head, el("p", "sheet-register-summary", summary)); aside.append(section); return section;
   };
-  const remoteList = register("01", "接入数据", `${connections.length} 个 API / MCP 数据源`, () => remote.click());
+  const remoteList = register("02", "知识与数据接入", `${connections.length} 个 API / MCP 数据源`, () => remote.click());
   const item = (container, name, meta, callback) => {
     const b = el("button", "sheet-item"); b.type = "button"; b.append(el("strong", "", name), el("span", "", meta)); b.onclick = callback; container.append(b);
   };
   for (const source of connections.slice(0, 3)) item(remoteList, source.title, `${source.content.protocol === "mcp" ? "MCP" : "HTTP API"} · ${source.status === "ready" ? "按需读取" : "已停用"}`, () => remote.click());
-  const fileList = register("02", "上传资料", `${files.length} 份已上传资料`, () => uploads.click());
+  const fileList = register("03", "上传资料", `${files.length} 份已上传资料`, () => uploads.click());
   for (const source of files.slice(0, 3)) item(fileList, source.title, `${source.content.format || "文档"} · 第 ${source.version} 版${source.content.parseError ? " · 内容需修正" : ""}`, () => popup(source.title, d => {
     d.append(el("pre", "data-map-content", source.content.raw || JSON.stringify(source.content.rows || source.content, null, 2)));
   }));
   if (!files.length) item(fileList, "上传企业资料", "CSV / Markdown / TXT", () => uploads.click());
   if (files.length > 3) fileList.append(el("p", "sheet-caption", `展示前 3 份，其余 ${files.length - 3} 份在详情中查看`));
   if (connections.length > 3) remoteList.append(el("p", "sheet-caption", `展示前 3 个，其余 ${connections.length - 3} 个在详情中查看`));
+  const serviceGrid = el("div", "company-service-grid");
+  let feishuStatus;
+  for (const [name, mark] of [["飞书文档 / 知识库", "飞"], ["腾讯文档", "腾"], ["语雀", "语"], ["钉钉文档", "钉"], ["石墨文档", "石"], ["金山文档", "金"], ["WPS 云文档", "W"], ["有道云笔记", "有"]]) {
+    const b = el("button", "company-service"); b.type = "button";
+    const status = el("small", "", name.startsWith("飞书") ? (actions.api ? "检查连接…" : "离线视图") : "待支持");
+    b.append(el("span", "company-service-mark", mark), el("strong", "", name), status);
+    if (name.startsWith("飞书")) {
+      feishuStatus = status;
+      b.onclick = () => popup("飞书文档与知识库", d => {
+        d.append(el("p", "", "当前支持账号授权及按 docx 链接只读文档；尚不支持知识库目录遍历。"));
+        const open = el("button", "quiet-button", "查看连接与文档读取"); open.onclick = () => { d.close(); remote.click(); }; d.append(open);
+      });
+    } else b.onclick = () => popup(name, d => d.append(el("p", "", "该服务尚未接入 DataEngine，当前仅列入服务目录。")));
+    serviceGrid.append(b);
+  }
+  remoteList.insertBefore(serviceGrid, remoteList.querySelector(".sheet-register-summary").nextSibling);
+  const hero = el("section", "company-hero");
+  hero.append(el("span", "sheet-eyebrow", "01 / 企业主体"), identity);
+  const facts = el("div", "company-hero-facts");
+  const otherFacts = rows.filter(r => r !== name && r !== business);
+  for (const fact of otherFacts.slice(0, 3)) {
+    const block = el("button", "company-hero-fact"); block.type = "button"; block.onclick = () => company.click();
+    block.append(el("span", "", `${actions.label(fact.key)}${fact.origin === "suggestion" ? " · 待核实" : ""}`), el("p", "", fact.text)); facts.append(block);
+  }
+  hero.append(facts);
+  const inspect = el("button", "company-inspect", "查看企业完整信息 ↗"); inspect.onclick = () => company.click(); hero.append(inspect);
+  heading.replaceChildren(el("span", "sheet-eyebrow", "企业与数据 / OVERVIEW"), stamp);
   remoteList.classList.add("sheet-connected"); fileList.classList.add("sheet-uploaded");
-  layout.append(remoteList, fileList); root.append(layout, sources);
+  aside.replaceChildren(remoteList, fileList);
+  layout.append(hero, aside); root.append(layout, sources);
   const note = el("div", "sheet-footer");
-  note.append(el("span", "", "账号授权不代表内容已读取"), el("span", "", "点击数据名称查看详情 ↗")); root.append(note);
+  note.append(el("span", "", "账号授权不代表内容已读取 · 待支持服务仅供查看"), el("span", "", "点击模块查看详情 ↗")); root.append(note);
   if (actions.api) {
-    const accountRow = el("div", "sheet-account"); remoteList.append(accountRow);
     void actions.api("/api/connectors/feishu").then(result => {
-      if (result.account) {
-        remoteList.querySelector(".sheet-register-summary").textContent = `1 个授权账号 · ${connections.length} 个 API / MCP 数据源`;
-        remote.querySelector(".sheet-unit-grid")?.replaceWith(squares(connections.length + 1, "remote-units"));
-        remote.querySelector(".data-map-description").textContent = `飞书账号已连接${connections.length ? ` · ${connections.length} 个数据源` : " · 按需读取"}`;
-        item(accountRow, "飞书", "官方 CLI · 账号已连接，文档按需读取", () => remote.click());
-      } else if (!connections.length) item(accountRow, "接入企业服务", "账号授权 / API / MCP", () => remote.click());
-    }).catch(() => { item(accountRow, "查看服务连接", "账号状态暂不可用", () => remote.click()); });
-  } else if (!connections.length) item(remoteList, "在线连接", "当前视图未提供连接状态", () => remote.click());
+      feishuStatus.textContent = result.account ? "已授权 · 文档只读" : "可连接 · 文档只读";
+      if (result.account) remoteList.querySelector(".sheet-register-summary").textContent = `1 个授权账号 · ${connections.length} 个 API / MCP 数据源`;
+    }).catch(() => { feishuStatus.textContent = "状态暂不可用"; });
+  }
   return {root, sources};
 }
