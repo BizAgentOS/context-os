@@ -3545,3 +3545,14 @@ tr.highlight td {
 
 .ed-api { grid-area: api; min-width: 0; padding-top: 1px; }
 .ed-api .ed-file { overflow-wrap: anywhere; font-size: 11px; }
+/* The three source modules share a restrained outline. */
+.ed-uploads, .ed-api, .ed-services-column .ed-knowledge {
+  border: 1px solid #cecece;
+  border-radius: 14px;
+  padding: 16px;
+  min-width: 0;
+}
+.ed-uploads, .ed-api { align-self: start; min-height: 150px; }
+@media (max-width: 960px) {
+  .ed-uploads, .ed-api, .ed-services-column .ed-knowledge { padding: 12px; }
+}
