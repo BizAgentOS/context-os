@@ -145,14 +145,16 @@ export function renderEnterpriseProfile(state, actions) {
 
   const data = el("section", "ed-data");
   data.setAttribute("aria-label", "企业数据接入统计");
-  data.append(panelHead("数据接入", "管理", showConnections));
+  const dataHead = el("header", "ed-panel-head");
+  dataHead.append(el("h2", "", "数据接入"));
+  data.append(dataHead);
   const totals = el("div", "ed-data-totals");
-  for (const [label, value, open] of [
-    ["文件上传", files.length, showFiles],
-    ["HTTP API", connections.filter(item => item.content.protocol === "http").length, showConnections],
-    ["MCP", connections.filter(item => item.content.protocol === "mcp").length, showConnections],
+  for (const [label, value] of [
+    ["文件上传", files.length],
+    ["HTTP API", connections.filter(item => item.content.protocol === "http").length],
+    ["MCP", connections.filter(item => item.content.protocol === "mcp").length],
   ]) {
-    const count = button("ed-data-count", "", open);
+    const count = el("div", "ed-data-count");
     count.replaceChildren(el("span", "", label), el("strong", "", String(value)));
     count.title = label === "文件上传" ? "已上传资料数量" : "已配置来源数量（含停用），不代表内容已读取";
     totals.append(count);
