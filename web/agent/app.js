@@ -1,6 +1,7 @@
 import { renderEnterpriseProfile } from "./enterprise-profile.js";
 import { renderEvidenceWorkspace } from "./evidence.js";
 import { renderFoundationWorkspace } from "./foundation-workspace.js";
+import { renderLiveObjects } from "./live-objects.js";
 import { renderFoundation } from "./foundation.js";
 import { createCapabilitiesPanel } from "./capabilities.js";
 import {
@@ -466,14 +467,91 @@ function renderCanvas(force = false) {
         node("summary", "", "完整基础定义与采用操作"),
         foundationPanel(),
       );
-      live.prepend(workspace, full);
-    }
-    canvas.replaceChildren(live);
+      canvas.replaceChildren(renderOntologyBoard(workspace, full, live));
+    } else canvas.replaceChildren(live);
   } else if (ui.page === "ontology") canvas.replaceChildren(renderOntology());
   else canvas.replaceChildren(renderConsumption());
-  if (!shareMode && !state.demo && ui.page === "ontology")
-    canvas.append(renderEvidenceWorkspace(state, { api, mutate }));
+
   renderAttention(canvas);
+}
+function renderOntologyBoard(workspace, full, operations) {
+  const board = node("section", "ontology-board");
+  board.setAttribute("aria-label", "企业本体画布");
+  const header = node("header", "ontology-board-header");
+  const title = node("div");
+  title.append(node("p", "source-meta", state.foundation?.current?.content.enterprise?.name || "企业语义底座"), node("h1", "", "企业本体"));
+  const actions = node("div", "ontology-board-actions");
+  function panel(label, contents) {
+    const dialog = node("dialog", "live-dialog ontology-panel");
+    dialog.setAttribute("aria-label", label);
+    dialog.append(node("h2", "", label), button("关闭", "quiet-button", () => dialog.close()), contents);
+    board.append(dialog);
+    return button(label, "quiet-button", () => dialog.showModal());
+  }
+  const management = node("div");
+  management.append(full, operations);
+  actions.append(panel("定义与映射", management), panel("共同取证", renderEvidenceWorkspace(state, { api, mutate })));
+  header.append(title, actions);
+  const tabs = node("div", "ontology-board-tabs");
+  tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "本体视角");
+  const definitions = node("div", "ontology-board-definitions");
+  definitions.id = "ontology-definitions";
+  definitions.append(workspace);
+  const objects = node("div", "ontology-board-objects"); objects.id = "ontology-objects";
+  let loaded = false;
+  const modes = [["definitions", "概念与关系", definitions], ["objects", "实际对象", objects]];
+  const loadObjects = () => {
+    if (loaded) return;
+    loaded = true;
+    const models = state.live.models;
+    if (!models.length) {
+      const empty = node("div", "ontology-object-empty");
+      empty.append(node("h2", "", "先让概念对应到真实记录"), node("p", "", "当前尚未建立执行映射。连接来源并完成映射后，这里展示具体对象与逐属性依据。"));
+      objects.append(empty); return;
+    }
+    const picker = node("select", "model-select"); picker.setAttribute("aria-label", "对象的执行映射");
+    for (const model of models) {
+      const option = node("option", "", `${model.title} · v${model.version} · ${model.status === "adopted" ? "已采用" : "候选预览"}`);
+      option.value = model.id; picker.append(option);
+    }
+    const saved = ui.graphSelections.get("ontology-object-model");
+    picker.value = models.find(m => m.id === saved)?.id || models.find(m => m.status === "adopted")?.id || models[0].id;
+    const host = node("div"); objects.append(picker, host);
+    const show = () => {
+      const model = models.find(m => m.id === picker.value);
+      ui.graphSelections.set("ontology-object-model", model.id);
+      host.replaceChildren();
+      if (model.status !== "adopted") host.append(node("p", "source-meta", "候选映射下的对象预览，尚未采用。"));
+      host.append(renderLiveObjects(model, {api, selections: ui.graphSelections,
+        select: (m, t, scope, guard) => selectLiveContext(m, t, scope, false, () => !objects.hidden && (!guard || guard()))}));
+    };
+    picker.onchange = show; show();
+  };
+  const choose = (mode) => {
+    ui.graphSelections.set("ontology-board-mode", mode);
+    for (const [id, , pane] of modes) {
+      pane.hidden = id !== mode;
+      tabs.querySelector(`[data-mode="${id}"]`).setAttribute("aria-selected", String(id === mode));
+    }
+    if (mode === "objects") loadObjects();
+  };
+  for (const [id, label, pane] of modes) {
+    const control = button(label, "quiet-button", () => choose(id));
+    control.dataset.mode = id; control.id = `ontology-tab-${id}`;
+    control.setAttribute("role", "tab"); control.setAttribute("aria-controls", pane.id);
+    pane.setAttribute("role", "tabpanel"); pane.setAttribute("aria-labelledby", control.id);
+    control.addEventListener("keydown", (event) => {
+      if (["ArrowLeft", "ArrowRight"].includes(event.key)) {
+        event.preventDefault();
+        const next = id === "definitions" ? "objects" : "definitions";
+        choose(next); tabs.querySelector(`[data-mode="${next}"]`).focus();
+      }
+    });
+    tabs.append(control);
+  }
+  board.prepend(header, tabs, definitions, objects);
+  choose(ui.graphSelections.get("ontology-board-mode") || "definitions");
+  return board;
 }
 function foundationPanel() {
   return renderFoundation(state.foundation, {

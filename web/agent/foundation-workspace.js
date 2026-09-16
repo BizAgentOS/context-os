@@ -16,7 +16,7 @@ const status = (item) => (item.mappingStatus === "bound" ? "已映射" : "未映
 export function renderFoundationWorkspace(value, { selections, select, read }) {
   const section = el("section", "definition-workspace");
   section.setAttribute("aria-label", "基础定义与映射");
-  section.append(el("h1", "", "基础定义与映射"));
+
   if (!value?.current) {
     section.append(
       el(
@@ -77,17 +77,24 @@ export function renderFoundationWorkspace(value, { selections, select, read }) {
   const detail = el("section", "definition-detail");
   detail.setAttribute("aria-label", "所选基础定义");
   detail.setAttribute("aria-live", "polite");
-  body.append(diagram, list, detail);
+  const dialog = el("dialog", "live-dialog definition-dialog");
+  dialog.setAttribute("aria-label", "基础定义详情");
+  const close = button("关闭", () => { generation++; dialog.close(); });
+  close.classList.add("definition-close");
+  dialog.append(close, detail);
+  dialog.addEventListener("cancel", () => { generation++; });
+  body.append(diagram, list, dialog);
   section.append(toolbar, scope, body);
   const artifact = () => versions.find((v) => v.version === ui.version);
   const target = () => ({ kind: ui.kind, member: ui.member });
-  const show = async (kind, member, attach = true, focusComposer = false) => {
+  const show = async (kind, member, attach = false, focusComposer = false) => {
     const request = ++generation;
     const model = artifact();
     ui.kind = kind;
     ui.member = member;
     detail.replaceChildren(el("p", "muted", "正在读取同一业务引用…"));
     draw(false);
+    if (!dialog.open) dialog.showModal();
     try {
       const result = await (attach
         ? select(
@@ -114,7 +121,16 @@ export function renderFoundationWorkspace(value, { selections, select, read }) {
         detail.append(
           el("p", "muted", "正在查看定义；点“引用到对话”固定本次讨论目标。"),
         );
-      detail.append(button("引用到对话", () => show(kind, member, true, true)));
+      detail.append(button("引用到对话", () => {
+        // Close first so native dialog focus restoration precedes composer focus.
+        dialog.close();
+        const guard = ++generation;
+        select(model, target(), () => guard === generation && section.isConnected, true)
+          .catch((error) => { if (guard === generation && section.isConnected) { detail.replaceChildren(el("p", "", error.message)); dialog.showModal(); } });
+      }));
+      if (kind === "foundation_concept") detail.append(button("以此概念为中心", () => {
+        ui.center = member; ui.edgePage = 0; dialog.close(); draw();
+      }));
       const describeMeaning = (item) => {
         const concepts = model.content.concepts;
         const endpoint = (id) =>
@@ -154,7 +170,7 @@ export function renderFoundationWorkspace(value, { selections, select, read }) {
           el(
             "p",
             "muted",
-            "未决项不一定只属于当前目标，完整内容见下方“完整基础定义与采用操作”。",
+            "未决项不一定只属于当前目标，完整内容见页面“定义与映射”中的“完整基础定义与采用操作”。",
           ),
         );
         detail.append(issues);
@@ -226,7 +242,7 @@ export function renderFoundationWorkspace(value, { selections, select, read }) {
         el(
           "p",
           "muted",
-          "映射描述不代表实际值或业务正确性；具体对象与证据可在下方现有执行映射中按需查看。",
+          "映射描述不代表实际值或业务正确性；可在“实际对象”中按需查看记录与证据。",
         ),
       );
     } catch (error) {
@@ -254,7 +270,7 @@ export function renderFoundationWorkspace(value, { selections, select, read }) {
         .includes(ui.query.toLowerCase());
     const concepts = data.concepts.filter(matches),
       relations = data.relations.filter(matches);
-    scope.textContent = `当前版本：${data.concepts.length} 个概念、${data.relations.length} 条关系定义。待核对 ${(data.conflicts || []).filter((i) => !i.resolvedBy).length} 项冲突、${(data.unknowns || []).filter((i) => !i.resolvedBy).length} 项未知。${ui.query ? `搜索命中 ${concepts.length} 个概念、${relations.length} 条关系。` : ""}图仅展示所选概念的一跳关系，实例数量未读取。`;
+    scope.textContent = `当前版本：${data.concepts.length} 个概念、${data.relations.length} 条关系定义。待核对 ${(data.conflicts || []).filter((i) => !i.resolvedBy).length} 项冲突、${(data.unknowns || []).filter((i) => !i.resolvedBy).length} 项未知。${ui.query ? `搜索命中 ${concepts.length} 个概念、${relations.length} 条关系。` : ""}图仅展示焦点概念的一跳关系，实例数量未读取。`;
     graphMode.setAttribute("aria-pressed", String(ui.mode === "graph"));
     listMode.setAttribute("aria-pressed", String(ui.mode === "list"));
     diagram.hidden = ui.mode !== "graph";
@@ -285,125 +301,78 @@ export function renderFoundationWorkspace(value, { selections, select, read }) {
       }
     }
     diagram.replaceChildren();
-    const chosenRelation = data.relations.find(
-      (r) => r.id === ui.member && ui.kind === "foundation_relation",
-    );
-    const center =
-      data.concepts.find((c) => c.id === (chosenRelation?.from || ui.member)) ||
-      concepts[0] ||
-      data.concepts.find((c) => c.id === relations[0]?.from);
-    if (!center || (!concepts.length && !relations.length))
+    const center = data.concepts.find((c) => c.id === ui.center && (!ui.query || matches(c))) ||
+      concepts[0] || data.concepts.find((c) => c.id === relations[0]?.from);
+    if (!center || (!concepts.length && !relations.length)) {
       diagram.append(el("p", "muted", "无匹配定义，请调整搜索。"));
-    else {
-      const allEdges = data.relations.filter(
-        (r) => r.from === center.id || r.to === center.id,
-      );
-      const edges = allEdges.slice(0, 8);
-      diagram.append(
-        el(
-          "p",
-          "source-meta",
-          `${center.name}的一跳局部图 · 显示 ${edges.length}/${allEdges.length} 条关系。更多定义见等价列表；关系箭头表示定义方向。`,
-        ),
-      );
+    } else {
+      const allEdges = data.relations.filter((r) => r.from === center.id || r.to === center.id);
+      const pageCount = Math.max(1, Math.ceil(allEdges.length / 3));
+      ui.edgePage = Math.min(ui.edgePage || 0, pageCount - 1);
+      const edges = allEdges.slice(ui.edgePage * 3, ui.edgePage * 3 + 3);
+      const graph = el("div", "definition-card-graph");
+      graph.setAttribute("aria-label", `${center.name}的一跳关系`);
+      const rows = Math.max(2, edges.length);
+      graph.style.setProperty("--graph-rows", rows);
       const ns = "http://www.w3.org/2000/svg";
-      const svg = document.createElementNS(ns, "svg");
-      const height = Math.max(220, edges.length * 100);
-      svg.setAttribute("viewBox", `0 0 700 ${height}`);
-      svg.setAttribute("role", "group");
-      svg.setAttribute("aria-label", `${center.name}局部定义图`);
-      const shape = (tag, attrs, text) => {
-        const e = document.createElementNS(ns, tag);
-        for (const [k, v] of Object.entries(attrs))
-          e.setAttribute(k, String(v));
-        if (text) e.textContent = text;
-        return e;
+      const lines = document.createElementNS(ns, "svg");
+      lines.setAttribute("viewBox", `0 0 1000 ${rows * 150}`);
+      lines.setAttribute("preserveAspectRatio", "none");
+      lines.setAttribute("aria-hidden", "true");
+      lines.classList.add("definition-card-lines");
+      graph.append(lines);
+      const card = (item, primary = false) => {
+        const b = button("", () => show("foundation_concept", item.id));
+        b.className = `definition-card${primary ? " definition-card-primary" : ""}`;
+        b.dataset.definitionId = item.id;
+        b.dataset.definitionKind = "foundation_concept";
+        b.append(el("span", "definition-card-caption", primary ? "焦点概念" : "关联概念"),
+          el("strong", "", item.name), el("span", "definition-card-status", status(item)));
+        if (primary) b.append(el("span", "definition-card-open", "含义与依据 ↗"));
+        return b;
       };
-      const control = (label, kind, id, x, y) => {
-        const group = shape("g", {
-          role: "button",
-          tabindex: 0,
-          "aria-label": label,
-          "aria-pressed": String(ui.member === id && ui.kind === kind),
-          class: "definition-node",
-        });
-        group.dataset.definitionId = id;
-        group.dataset.definitionKind = kind;
-        group.append(
-          shape("rect", {
-            x: x - 95,
-            y: y - 26,
-            width: 190,
-            height: 52,
-            rx: 7,
-          }),
-          shape(
-            "text",
-            { x, y: y + 5, "text-anchor": "middle" },
-            label.length > 19 ? label.slice(0, 18) + "…" : label,
-          ),
-        );
-        group.onclick = () => show(kind, id);
-        group.onkeydown = (e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            show(kind, id);
-          }
-        };
-        svg.append(group);
-      };
+      const main = card(center, true);
+      main.style.gridRow = `1 / span ${rows}`;
+      graph.append(main);
       edges.forEach((r, i) => {
-        const other = data.concepts.find(
-          (c) => c.id === (r.from === center.id ? r.to : r.from),
-        );
-        const y = i * 100 + 50;
-        svg.append(
-          shape("path", {
-            d: `M 215 ${height / 2} L 485 ${y}`,
-            class: "definition-edge",
-            "stroke-dasharray": r.mappingStatus === "bound" ? "" : "5 4",
-          }),
-        );
-        const label = shape(
-          "text",
-          {
-            x: 350,
-            y: (height / 2 + y) / 2 - 8,
-            "text-anchor": "middle",
-            role: "button",
-            tabindex: 0,
-            class: "definition-edge-label",
-            "aria-label": `${name(r.from)} → ${r.name} → ${name(r.to)} · ${status(r)}`,
-          },
-          `${r.from === center.id ? "→" : "←"} ${r.name} · ${status(r)}`,
-        );
-        label.dataset.definitionId = r.id;
-        label.dataset.definitionKind = "foundation_relation";
-        label.onclick = () => show("foundation_relation", r.id);
-        label.onkeydown = (e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            show("foundation_relation", r.id);
-          }
-        };
-        svg.append(label);
-        if (other)
-          control(
-            `${other.name} · ${status(other)}`,
-            "foundation_concept",
-            other.id,
-            580,
-            y,
-          );
+        const other = data.concepts.find(c => c.id === (r.from === center.id ? r.to : r.from));
+        const y = edges.length === 1 ? rows * 75 : (i + .5) * rows * 150 / edges.length;
+        const path = document.createElementNS(ns, "path");
+        path.setAttribute("d", `M420,${rows * 75} C545,${rows * 75} 545,${y} 670,${y}`);
+        lines.append(path);
+        const branch = el("div", "definition-card-branch");
+        branch.style.gridRow = edges.length === 1 ? `1 / span ${rows}` : String(i + 1);
+        const edge = button(`${r.from === center.id ? "" : "← "}${r.name}${r.from === center.id ? " →" : ""}`, () => show("foundation_relation", r.id));
+        edge.className = "definition-card-relation";
+        edge.style.transform = `translateY(${(rows * 75 - y) / 2}px)`;
+        edge.setAttribute("aria-label", `${name(r.from)} → ${r.name} → ${name(r.to)} · ${status(r)}`);
+        edge.dataset.definitionId = r.id; edge.dataset.definitionKind = "foundation_relation";
+        branch.append(edge);
+        if (other) branch.append(card(other));
+        graph.append(branch);
       });
-      control(
-        `${center.name} · ${status(center)}`,
-        "foundation_concept",
-        center.id,
-        120,
-        height / 2,
-      );
-      diagram.append(svg);
+      if (!edges.length) graph.append(el("p", "definition-no-relations", "此概念尚未定义关联关系"));
+      diagram.append(graph);
+      if (pageCount > 1) {
+        const pager = el("div", "definition-card-pager");
+        const previous = button("上一组", () => { ui.edgePage--; draw(); });
+        const next = button("下一组", () => { ui.edgePage++; draw(); });
+        previous.disabled = ui.edgePage === 0; next.disabled = ui.edgePage === pageCount - 1;
+        pager.append(previous, el("span", "source-meta", `第 ${ui.edgePage + 1}/${pageCount} 组 · 共 ${allEdges.length} 条关系`), next);
+        diagram.append(pager);
+      }
+      const shown = new Set([center.id, ...edges.flatMap(r => [r.from, r.to])]);
+      const others = concepts.filter(c => !shown.has(c.id));
+      if (others.length) {
+        const rest = el("div", "definition-other-concepts");
+        rest.append(el("span", "source-meta", "其他概念"));
+        for (const item of others.slice(0, 8)) {
+          const b = button(item.name, () => { ui.center = item.id; ui.edgePage = 0; draw(); });
+          b.setAttribute("aria-label", `以${item.name}为中心`); rest.append(b);
+        }
+        if (others.length > 8) rest.append(button(`查看全部 ${concepts.length} 个概念`, () => { ui.mode = "list"; draw(); }));
+        diagram.append(rest);
+      }
     }
     if (focusTarget)
       [...section.querySelectorAll("[data-definition-id]")]
@@ -416,7 +385,7 @@ export function renderFoundationWorkspace(value, { selections, select, read }) {
         ?.focus({ preventScroll: true });
     if (resetDetail)
       detail.replaceChildren(
-        el("p", "muted", "选择一个概念或关系，读取含义、映射和依据。"),
+        el("p", "muted", "点击概念或关系，查看含义、映射与依据。"),
       );
   }
   version.onchange = () => {
@@ -424,6 +393,7 @@ export function renderFoundationWorkspace(value, { selections, select, read }) {
     ui.version = Number(version.value);
     ui.member = null;
     ui.kind = null;
+    ui.center = null; ui.edgePage = 0;
     draw(true);
   };
   search.oninput = () => {
@@ -431,10 +401,10 @@ export function renderFoundationWorkspace(value, { selections, select, read }) {
     ui.query = search.value;
     ui.member = null;
     ui.kind = null;
+    ui.center = null; ui.edgePage = 0;
     draw(true);
   };
   draw(true);
-  if (ui.member && ui.kind)
-    queueMicrotask(() => show(ui.kind, ui.member, false));
+
   return section;
 }

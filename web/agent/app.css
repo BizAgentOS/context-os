@@ -3418,3 +3418,94 @@ tr.highlight td {
   .ed-footer { font-size: 10px; padding-top: 12px; }
   .ed-footer > span:last-child { display: none; }
 }
+
+/* Object-centered ontology canvas; shared services continue to own all facts. */
+.canvas-app:has(.ontology-board) { background:linear-gradient(135deg,#fbf7eb 0%,#f2f4f3 42%,#e2ebf9 100%); }
+.canvas-app:has(.ontology-board)::before { content:""; position:absolute; inset:0; z-index:-1; pointer-events:none; background-image:linear-gradient(#2222220e 1px,transparent 1px),linear-gradient(90deg,#2222220e 1px,transparent 1px); background-size:24px 24px; mask-image:radial-gradient(ellipse 65% 65% at 50% 50%,#000 36%,#0008 66%,transparent 100%); }
+.canvas-app:has(.ontology-board) > .topbar { background:transparent; }
+.canvas:has(> .ontology-board) { padding:20px clamp(24px,4vw,64px) 110px; }
+.ontology-board { max-width:1300px; margin:0 auto; color:#222; }
+.ontology-board [hidden] { display:none!important; }
+.ontology-board-header { display:flex; align-items:center; justify-content:space-between; gap:18px; margin-bottom:20px; }
+.ontology-board-header h1 { font-size:27px; letter-spacing:-.8px; margin:4px 0 0; font-weight:550; }
+.ontology-board-header .source-meta { margin:0; font-size:11px; color:#666; }
+.ontology-board-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.ontology-board-actions button { font-size:12px; padding:9px 14px; border-radius:24px; background:#ffffffa0; border-color:#dedede; }
+.ontology-board-tabs { display:inline-flex; gap:4px; padding:4px; background:#ffffffa0; border-radius:28px; margin-bottom:18px; }
+.ontology-board-tabs button { border:0; border-radius:22px; padding:9px 18px; font-size:12px; background:transparent; }
+.ontology-board-tabs button[aria-selected="true"] { color:#fff; background:#171717; }
+.ontology-board .definition-workspace { margin:0; }
+.ontology-board .definition-toolbar { justify-content:flex-end; gap:8px; }
+.ontology-board .definition-toolbar input,.ontology-board .definition-toolbar select,.ontology-board .definition-toolbar button { border:1px solid #dedede; border-radius:20px; background:#ffffffa0; font-size:11px; padding:8px 12px; }
+.ontology-board .definition-toolbar input { width:180px; }
+.ontology-board .definition-toolbar button[aria-pressed="true"] { background:#fff; border-color:#999; font-weight:500; }
+.ontology-board .definition-workspace > .source-meta { font-size:11px; color:#686868; line-height:1.6; margin:13px 0; }
+.ontology-board .definition-body { display:block; }
+.ontology-board .definition-diagram { overflow:visible; }
+.definition-card-graph { display:grid; position:relative; grid-template-columns:42% 25% 33%; grid-template-rows:repeat(var(--graph-rows),150px); align-items:center; margin:24px 0; }
+.definition-card-graph > svg.definition-card-lines { position:absolute; inset:0; width:100%; height:100%; min-width:0; min-height:0; pointer-events:none; overflow:visible; }
+.definition-card-lines path { stroke:#999; fill:none; stroke-width:1; vector-effect:non-scaling-stroke; }
+.definition-card-graph .definition-card { position:relative; display:flex; flex-direction:column; align-items:flex-start; text-align:left; white-space:normal; width:100%; min-width:0; border:1px solid #fff; border-radius:24px; background:#fff; padding:22px 26px; box-shadow:0 8px 30px #00000003; gap:9px; min-height:120px; }
+.definition-card-graph .definition-card:hover { border-color:#bbb; box-shadow:0 8px 30px #00000009; }
+.definition-card-graph .definition-card strong { font-size:19px; font-weight:550; line-height:1.35; overflow-wrap:anywhere; }
+.definition-card-graph .definition-card-primary { grid-column:1; min-height:200px; padding:30px; gap:16px; }
+.definition-card-graph .definition-card-primary strong { font-size:clamp(23px,2.4vw,32px); letter-spacing:-.7px; }
+.definition-card-caption,.definition-card-status { font-size:11px; color:#666; }
+.definition-card-open { font-size:12px; margin-top:12px; }
+.definition-card-branch { grid-column:2 / 4; display:grid; grid-template-columns:25fr 33fr; align-items:center; min-width:0; }
+.definition-card-relation { z-index:1; justify-self:center; max-width:90%; border:0; padding:6px 8px; border-radius:12px; background:#f2f4f3; font-size:11px; line-height:1.6; overflow-wrap:anywhere; }
+.definition-card-relation:hover { background:#e5e5e5; }
+.definition-other-concepts { display:flex; flex-wrap:wrap; gap:10px; align-items:center; border-top:1px solid #d9d9d9; padding:18px 0; }
+.definition-other-concepts .source-meta { font-size:11px; margin-right:8px; }
+.definition-other-concepts button { padding:10px 14px; font-size:12px; background:#ffffffd9; border:1px solid #e5e5e5; border-radius:16px; }
+.definition-card-pager { display:flex; align-items:center; justify-content:center; gap:15px; }
+.definition-card-pager button { font-size:12px; border-radius:16px; padding:6px 12px; }
+.definition-no-relations { grid-column:2 / 4; font-size:13px; color:#666; text-align:center; }
+.ontology-board .foundation-definition-list { padding:12px; border-radius:22px; background:#ffffffa0; }
+.ontology-board .foundation-definition-list h2 { font-size:15px; }
+.ontology-board .foundation-definition-list button { font-size:13px; border-radius:14px; padding:12px; }
+.definition-dialog { width:min(620px,calc(100vw - 32px)); border:1px solid #e0e0e0; border-radius:26px; padding:26px; color:#222; }
+.definition-dialog::backdrop,.ontology-panel::backdrop { background:#22222224; backdrop-filter:blur(3px); }
+.definition-dialog .definition-detail { border:0; padding:0; font-size:13px; line-height:1.8; }
+.definition-dialog .definition-detail h2 { font-size:23px; font-weight:550; padding-right:65px; margin:0 0 16px; }
+.definition-dialog .definition-detail h3 { font-size:14px; }
+.definition-dialog .definition-detail p { margin:10px 0; }
+.definition-dialog .definition-detail .source-meta,.definition-dialog .definition-detail .muted { font-size:11px; color:#666; }
+.definition-dialog .definition-detail button { font-size:12px; margin:8px 8px 8px 0; border-radius:18px; padding:8px 14px; }
+.definition-dialog .definition-close { float:right; position:relative; z-index:1; border-radius:20px; font-size:12px; padding:6px 12px; }
+.definition-dialog blockquote { background:#f6f6f6; border:0; border-radius:14px; padding:15px; }
+.ontology-panel { width:min(1040px,calc(100vw - 32px)); border:1px solid #ddd; border-radius:26px; color:#222; font-size:14px; }
+.ontology-panel > h2 { font-size:22px; }
+.ontology-panel h1 { font-size:24px; }
+.ontology-object-empty { min-height:320px; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; }
+.ontology-object-empty h2 { font-size:21px; font-weight:500; }
+.ontology-object-empty p { max-width:450px; color:#666; font-size:13px; line-height:1.8; }
+.ontology-board-objects .live-object-workspace { padding:22px; border-radius:24px; background:#fff; font-size:13px; }
+.ontology-board-objects .live-actions { flex-wrap:wrap; }
+@media(max-width:700px) {
+ .canvas:has(> .ontology-board) { padding:12px 20px 115px; }
+ .ontology-board-header { align-items:flex-start; gap:12px; }
+ .ontology-board-header h1 { font-size:24px; }
+ .ontology-board-actions button { padding:8px 10px; font-size:11px; }
+ .ontology-board .definition-toolbar { justify-content:flex-start; }
+ .ontology-board .definition-toolbar input { width:150px; }
+ .definition-card-graph .definition-card { padding:18px; border-radius:20px; }
+ .definition-card-graph .definition-card-primary { padding:22px; }
+ .definition-card-graph .definition-card strong { font-size:16px; }
+ .definition-card-graph .definition-card-primary strong { font-size:24px; }
+}
+@media(max-width:480px) {
+ .ontology-board-header { flex-wrap:wrap; }
+ .definition-card-graph { display:flex; flex-direction:column; gap:16px; margin-top:20px; }
+ .definition-card-graph > svg.definition-card-lines { display:none; }
+ .definition-card-graph .definition-card-primary { min-height:160px; }
+ .definition-card-branch { display:flex; flex-direction:column; width:100%; gap:12px; }
+ .definition-card-relation { width:auto; max-width:100%; border-left:1px solid #bbb; border-radius:0; background:transparent; }
+ .definition-card-graph .definition-card { min-height:115px; }
+ .definition-no-relations { margin:15px 0; }
+ .definition-other-concepts { padding-top:15px; }
+ .ontology-board-objects .live-object-workspace { padding:12px; }
+}
+
+.definition-card strong { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+@media(max-width:480px) { .definition-card-relation { transform:none!important; } }
