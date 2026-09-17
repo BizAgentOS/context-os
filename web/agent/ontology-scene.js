@@ -8,6 +8,51 @@ const ease = value => 1 - Math.pow(1 - value, 3);
 const hash = text => [...text].reduce((value, char) => (value * 31 + char.charCodeAt(0)) >>> 0, 7);
 const vec = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 
+// Shared fine-grain finish. The color and lighting stay close to the original pearl spheres.
+function createMatteFinish() {
+  const size = 128;
+  const heights = new Float32Array(size * size);
+  const roughness = new Uint8Array(size * size * 4);
+  const normals = new Uint8Array(size * size * 4);
+  let seed = 2087;
+  for (let i = 0; i < heights.length; i++) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    heights[i] = seed / 4294967295;
+    const value = Math.round(195 + heights[i] * 55);
+    roughness.set([value, value, value, 255], i * 4);
+  }
+  const sample = (x, y) => heights[((y + size) % size) * size + (x + size) % size];
+  const normal = new THREE.Vector3();
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    normal.set((sample(x - 1, y) - sample(x + 1, y)) * .35,
+      (sample(x, y - 1) - sample(x, y + 1)) * .35, 1).normalize();
+    normals.set([Math.round((normal.x + 1) * 127.5), Math.round((normal.y + 1) * 127.5), Math.round((normal.z + 1) * 127.5), 255], (y * size + x) * 4);
+  }
+  const texture = data => {
+    const map = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+    map.wrapS = map.wrapT = THREE.RepeatWrapping;
+    map.magFilter = THREE.LinearFilter; map.minFilter = THREE.LinearMipmapLinearFilter;
+    map.generateMipmaps = true; map.repeat.set(2, 2); map.needsUpdate = true;
+    return map;
+  };
+  return {roughness: texture(roughness), normal: texture(normals)};
+}
+
+// Closed radial curves produce real rounded filaments, including their depth and lighting.
+class WaveRingCurve extends THREE.Curve {
+  constructor(radius, amplitude, frequency, phase) {
+    super(); Object.assign(this, {radius, amplitude, frequency, phase});
+  }
+  getPoint(t, target = new THREE.Vector3()) {
+    const angle = t * Math.PI * 2;
+    const {radius, amplitude, frequency, phase} = this;
+    const envelope = .85 + Math.sin(angle * 5 + phase) * .15 + Math.cos(angle * 11 - phase) * .1;
+    const wave = Math.sin(angle * frequency + phase) * .6 + Math.sin(angle * (frequency * 2 + 3) - phase) * .28 + Math.sin(angle * (frequency * 3 + 7) + phase) * .12;
+    const distance = radius + wave * amplitude * envelope;
+    return target.set(Math.cos(angle) * distance, Math.sin(angle) * distance, Math.sin(angle * 4 + phase) * amplitude * .22);
+  }
+}
+
 // Real spheres and camera projection; DOM labels follow the same world coordinates.
 export function createOntologyScene(host, graph, { onActivate, onBackground, onUnavailable }) {
   const canvas = document.createElement("canvas");
@@ -23,6 +68,8 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.7));
   renderer.setClearColor(0x000000, 0);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(43, 1, 1, 6000);
   camera.position.set(0, 0, 950);
@@ -35,10 +82,14 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
   controls.maxPolarAngle = Math.PI - .6;
   controls.rotateSpeed = .35;
   controls.zoomSpeed = .65;
-  const ambient = new THREE.HemisphereLight(0xc8f2ec, 0x151626, 2.2);
+  const ambient = new THREE.HemisphereLight(0xc8f2ec, 0x151626, 1.7);
   scene.add(ambient);
   const keyLight = new THREE.DirectionalLight(0xffffff, 4.5);
-  keyLight.position.set(-200, 350, 500); scene.add(keyLight);
+  keyLight.position.set(-200, 350, 500);
+  keyLight.castShadow = true; keyLight.shadow.mapSize.set(2048, 2048);
+  Object.assign(keyLight.shadow.camera, {left: -650, right: 650, top: 650, bottom: -650, near: 1, far: 1800});
+  keyLight.shadow.normalBias = .08; keyLight.shadow.bias = -.00015;
+  scene.add(keyLight);
   const rimLight = new THREE.DirectionalLight(0x66bcb5, 2.5);
   rimLight.position.set(300, -150, -200); scene.add(rimLight);
   const world = new THREE.Group(); scene.add(world);
@@ -48,7 +99,8 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
   const materials = new Set();
   const geometry = value => { geometries.add(value); return value; };
   const material = value => { materials.add(value); return value; };
-  const sphereGeometry = geometry(new THREE.SphereGeometry(1, 40, 28));
+  const sphereGeometry = geometry(new THREE.SphereGeometry(1, 64, 48));
+  const finish = createMatteFinish();
   let width = 1, height = 1, disposed = false, animationId = 0;
   let view = {stage: "global", focus: null, target: null};
   let moving = null, userMoving = false, motion = true, elapsed = 0, previous = performance.now();
@@ -80,38 +132,90 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
     plane.renderOrder = -1;
     return plane;
   }
+  function createRays(item, radius, connections) {
+    const count = connections ? Math.min(40, 8 + connections * 5) : 0;
+    if (!count) return null;
+    const vertices = [], uvs = [], phases = [];
+    for (let i = 0; i < count; i++) {
+      const seed = Math.imul(hash(`${item.key}:${i}`) ^ 0x9e3779b9, 0x85ebca6b) >>> 0;
+      const random = ((seed ^ (seed >>> 16)) >>> 0) / 4294967295;
+      const angle = (i + random * .6) / count * Math.PI * 2;
+      const start = radius * 1.76, end = start + radius * (.5 + random * 1.4);
+      const halfWidth = radius * (.018 + random * .025);
+      const corners = [[start, -halfWidth], [end, -halfWidth * 3], [end, halfWidth * 3], [start, halfWidth]];
+      for (const index of [0, 1, 2, 0, 2, 3]) {
+        const [length, side] = corners[index];
+        vertices.push(Math.cos(angle) * length - Math.sin(angle) * side, Math.sin(angle) * length + Math.cos(angle) * side, -radius * .22);
+        uvs.push(index === 0 || index === 3 ? 0 : 1, index < 2 ? 0 : 1); phases.push(random * 6.28);
+      }
+    }
+    const beamGeometry = geometry(new THREE.BufferGeometry());
+    beamGeometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+    beamGeometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+    beamGeometry.setAttribute("phase", new THREE.Float32BufferAttribute(phases, 1));
+    const beamMaterial = material(new THREE.ShaderMaterial({
+      uniforms: {tint: {value: new THREE.Color(item.color)}, opacity: {value: .5}, time: {value: 0}},
+      vertexShader: `attribute float phase; varying vec2 vUv; varying float vPhase;
+        void main(){vUv=uv;vPhase=phase;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+      fragmentShader: `varying vec2 vUv; varying float vPhase; uniform vec3 tint; uniform float opacity; uniform float time;
+        void main(){float across=pow(max(0.,1.-abs(vUv.y*2.-1.)),1.7);
+          float fade=pow(1.-vUv.x,1.8)*smoothstep(0.,.06,vUv.x);
+          float pulse=.72+.28*sin(time*.85+vPhase-vUv.x*2.);
+          float core=exp(-pow(abs(vUv.y*2.-1.)*10.,2.))*.3;
+          gl_FragColor=vec4(mix(tint,vec3(1.),core), (across*.8+core)*fade*pulse*opacity);
+          #include <colorspace_fragment>
+        }`,
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    }));
+    return new THREE.Mesh(beamGeometry, beamMaterial);
+  }
   for (const item of graph.nodes) {
     const group = new THREE.Group();
     const radius = item.primary ? 25 : item.kind === "concept" ? 17 : 7;
-    const surface = material(new THREE.MeshPhysicalMaterial({color: item.color, metalness: .4, roughness: .24,
-      clearcoat: 1, clearcoatRoughness: .13, emissive: item.color, emissiveIntensity: .17, transparent: true}));
+    const surface = material(new THREE.MeshPhysicalMaterial({color: item.color, metalness: .16, roughness: .46,
+      roughnessMap: finish.roughness, normalMap: finish.normal, normalScale: new THREE.Vector2(.28, .28),
+      clearcoat: .3, clearcoatRoughness: .38, emissive: item.color, emissiveIntensity: .1, transparent: true}));
     const sphere = new THREE.Mesh(sphereGeometry, surface); sphere.scale.setScalar(radius);
     sphere.userData.key = item.key;
+    sphere.castShadow = true; sphere.receiveShadow = true;
     const aura = glow(item.color, radius);
     group.add(aura, sphere);
     const rings = new THREE.Group();
-    for (let i = 0; i < (item.kind === "concept" ? 3 : 1); i++) {
-      const ring = new THREE.Mesh(geometry(new THREE.TorusGeometry(radius * (1.27 + i * .17), i === 0 ? .65 : .28, 6, 90)),
-        material(new THREE.MeshBasicMaterial({color: i === 1 ? 0xbff6e6 : item.color, transparent: true, opacity: i === 0 ? .7 : .28, depthWrite: false})));
+    const connections = item.neighborCount || 0;
+    const layers = item.kind === "concept" ? Math.min(14, connections === 0 ? 2 : 4 + connections * 2) : 1;
+    const frequency = Math.min(96, 24 + connections * 6);
+    // Denser groups retain a fixed silhouette; more layers fill the gaps rather than enlarge the node.
+    for (let i = 0; i < layers; i++) {
+      const outer = layers > 1 ? i / (layers - 1) : 0;
+      const base = radius * (1.13 + outer * (connections ? .68 : .2));
+      const amplitude = radius * (connections ? .005 + outer * outer * .075 : .008);
+      const phase = hash(item.key) % 100 / 10 + i * 1.72;
+      const path = new WaveRingCurve(base, amplitude, frequency, phase);
+      const thickness = radius * (i < 2 ? .027 : i % 3 === 0 ? .021 : .016);
+      const ringGeometry = geometry(new THREE.TubeGeometry(path, Math.min(768, frequency * 12), thickness, 6, true));
+      const tint = i % 3 === 1 ? "#a6d9ca" : i % 3 === 2 ? "#f0dcaf" : item.color;
+      const ringMaterial = material(new THREE.MeshStandardMaterial({
+        color: tint, metalness: .05, roughness: .52, roughnessMap: finish.roughness,
+        normalMap: finish.normal, normalScale: new THREE.Vector2(.18, .18),
+        emissive: tint, emissiveIntensity: .045, transparent: true, opacity: .96,
+      }));
+      ringMaterial.userData.restOpacity = .96;
+      const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+      ring.position.z = radius * (.1 + Math.sin(i * 1.8) * .05);
+      ring.castShadow = true; ring.receiveShadow = true;
       rings.add(ring);
     }
-    if (item.kind === "concept") {
-      const positions = [];
-      for (let i = 0; i < 64; i++) {
-        const angle = i / 64 * Math.PI * 2;
-        const outer = radius * (1.75 + (i % 4 === 0 ? .17 : .04));
-        positions.push(Math.cos(angle) * radius * 1.72, Math.sin(angle) * radius * 1.72, 0,
-          Math.cos(angle) * outer, Math.sin(angle) * outer, 0);
-      }
-      const ticks = new THREE.LineSegments(geometry(new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(positions, 3))),
-        material(new THREE.LineBasicMaterial({color: item.color, transparent: true, opacity: .4})));
-      rings.add(ticks);
-    }
+    const rays = createRays(item, radius, connections);
+    if (rays) group.add(rays);
     group.add(rings);
     group.position.copy(globalPositions.get(item.key));
     world.add(group);
     const label = document.createElement("button"); label.type = "button"; label.className = `os-node-label os-node-${item.kind}`;
     label.dataset.nodeKey = item.key;
+    if (item.kind === "concept") {
+      label.dataset.neighborCount = String(connections);
+      label.title = `${item.name} · ${connections} 个关联节点，外圈密度随关联数量增加`;
+    }
     label.setAttribute("aria-label", `${item.kind === "concept" ? "查看概念" : "查看依据"}：${item.name}`);
     const name = document.createElement("strong"); name.textContent = item.name;
     if (item.kind === "evidence") {
@@ -124,7 +228,7 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
     label.onclick = event => { event.stopPropagation(); onActivate(item.key); };
     label.style.setProperty("--node-tint", item.color);
     labels.append(label);
-    items.set(item.key, {item, group, sphere, aura, rings, label, caption, radius, home: group.position.clone(), target: group.position.clone(), opacity: 1, targetOpacity: 1, targetScale: 1});
+    items.set(item.key, {item, group, sphere, aura, rings, rays, label, caption, radius, home: group.position.clone(), target: group.position.clone(), opacity: 1, targetOpacity: 1, targetScale: 1});
   }
   const links = graph.edges.map((edge, index) => {
     const positions = new Float32Array(41 * 3);
@@ -190,7 +294,7 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
       item.label.disabled = item.targetOpacity < .2;
       item.labelWidth = 0;
     }
-    const distance = narrow ? 1250 : 900;
+    const distance = narrow ? 1250 : next.stage === "global" ? Math.max(900, 1200 / camera.aspect) : 900;
     moving = {start: performance.now(), duration: immediate ? 0 : transitionDuration(),
       position: camera.position.clone(), target: controls.target.clone(), toPosition: vec(0, 0, distance), toTarget: vec(0, 0, 0)};
     controls.enableRotate = next.stage !== "detail";
@@ -219,10 +323,21 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
       const scale = item.group.scale.x + (item.targetScale - item.group.scale.x) * alpha; item.group.scale.setScalar(scale);
       item.sphere.material.opacity = item.opacity;
       item.rings.quaternion.copy(camera.quaternion);
-      item.rings.rotateZ(animate ? elapsed * .05 : 0);
-      item.rings.children.forEach((ring, i) => {ring.material.opacity = item.opacity * (i === 0 ? .75 : .35);});
+      item.rings.children.forEach((ring, i) => {
+        ring.rotation.z = elapsed * (i % 2 ? -.025 : .02);
+        ring.scale.setScalar(1 + Math.sin(elapsed * .85 + i * .9) * .006);
+        ring.material.opacity = item.opacity * ring.material.userData.restOpacity;
+      });
+      if (item.rays) {
+        item.rays.quaternion.copy(camera.quaternion);
+        item.rays.material.uniforms.opacity.value = item.opacity * .85;
+        item.rays.material.uniforms.time.value = elapsed;
+      }
+      // Transparent background nodes must not cast opaque shadows over the active neighborhood.
+      item.sphere.castShadow = item.opacity > .8;
+      for (const ring of item.rings.children) ring.castShadow = item.opacity > .8;
       item.aura.quaternion.copy(camera.quaternion);
-      item.aura.material.uniforms.opacity.value = item.opacity * (.3 + (animate ? Math.sin(elapsed * 1.2) * .04 : 0));
+      item.aura.material.uniforms.opacity.value = item.opacity * (.2 + Math.sin(elapsed * 1.2) * .02);
       const point = projection(item.group.position);
       const isHidden = !point.visible || item.targetOpacity < .2 || point.x < -50 || point.x > width + 50 || point.y < 0 || point.y > height - 65;
       item.label.hidden = isHidden;
@@ -289,6 +404,7 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
     canvas.removeEventListener("webglcontextlost", contextLost);
     for (const item of geometries) item.dispose();
     for (const item of materials) item.dispose();
+    finish.roughness.dispose(); finish.normal.dispose(); keyLight.shadow.dispose();
     renderer.dispose(); canvas.remove(); labels.remove();
   }
   resize(); animationId = requestAnimationFrame(frame);

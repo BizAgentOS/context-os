@@ -52,6 +52,27 @@ test("the graph preserves isolated concepts and only connects actual relations a
   assert.equal(graph.nodes.find((node: {id: string}) => node.id === "customer").target.member, "customer");
 });
 
+test("node ring density follows distinct connected concepts, not duplicate relations or evidence", () => {
+  const input = structuredClone(foundation);
+  input.content.relations.push(
+    {id: "manages", name: "管理", from: "customer", to: "contract", evidenceRefs: []},
+    {id: "reverse", name: "归属", from: "contract", to: "customer", evidenceRefs: []},
+    {id: "self", name: "自身", from: "customer", to: "customer", evidenceRefs: []},
+    {id: "invalid", name: "无效", from: "customer", to: "missing", evidenceRefs: []},
+  );
+  const before = JSON.stringify(input);
+  const node = (graph: ReturnType<typeof buildOntologyGraph>, id: string) => graph.nodes.find((item: {id: string}) => item.id === id);
+  const graph = buildOntologyGraph(input);
+  assert.equal(node(graph, "customer").neighborCount, 1);
+  assert.equal(node(graph, "contract").neighborCount, 1);
+  assert.equal(node(graph, "unlinked").neighborCount, 0);
+  assert.equal(JSON.stringify(input), before);
+  input.content.relations.push({id: "new", name: "新增关联", from: "unlinked", to: "customer", evidenceRefs: []});
+  const expanded = buildOntologyGraph(input);
+  assert.equal(node(expanded, "customer").neighborCount, 2);
+  assert.equal(node(expanded, "unlinked").neighborCount, 1);
+});
+
 test("stale selections cannot restore removed members, invalid kinds or invalid stages", () => {
   const graph = buildOntologyGraph(foundation);
   for (const saved of [

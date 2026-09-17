@@ -6,14 +6,19 @@ export function buildOntologyGraph(artifact) {
   const conceptIds = new Set(concepts.map(item => item.id));
   const relations = (content.relations || []).filter(item => conceptIds.has(item.from) && conceptIds.has(item.to));
   const degree = new Map(concepts.map(item => [item.id, 0]));
+  const neighbors = new Map(concepts.map(item => [item.id, new Set()]));
   for (const relation of relations) {
     degree.set(relation.from, degree.get(relation.from) + 1);
     degree.set(relation.to, degree.get(relation.to) + 1);
+    if (relation.from !== relation.to) {
+      neighbors.get(relation.from).add(relation.to);
+      neighbors.get(relation.to).add(relation.from);
+    }
   }
   const primary = [...concepts].sort((a, b) => degree.get(b.id) - degree.get(a.id))[0]?.id;
   const nodes = concepts.map((item, index) => ({
     key: `concept:${item.id}`, id: item.id, kind: "concept", name: item.name,
-    item, degree: degree.get(item.id), primary: item.id === primary,
+    item, degree: degree.get(item.id), neighborCount: neighbors.get(item.id).size, primary: item.id === primary,
     color: item.id === primary ? "#e9c988" : index % 2 ? "#c0a1ed" : "#e79fbd",
     target: {kind: "foundation_concept", member: item.id},
   }));
