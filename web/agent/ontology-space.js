@@ -99,6 +99,7 @@ export function renderOntologySpace(value, {selections, read, select, management
   }
   legend.append(el("small", "", "连线仅表示已有关系与依据"));
   const status = el("div", "os-status"); status.setAttribute("aria-live", "polite");
+  identity.append(status);
   const hint = el("p", "os-hint", "点击节点探索 · 拖动旋转 · 滚轮缩放");
   const local = el("section", "os-local-card"); local.hidden = true; local.setAttribute("aria-label", "当前概念概览");
   const inspector = el("aside", "os-inspector"); inspector.hidden = true; inspector.setAttribute("aria-label", "本体内容详情");
@@ -111,7 +112,7 @@ export function renderOntologySpace(value, {selections, read, select, management
   const groups = el("div", "os-fan-groups");
   const leaves = el("div", "os-fan-leaves");
   fan.append(fanCanvas, groups, leaves);
-  root.prepend(content, top, directory, legend, status, hint, local, fan, inspector);
+  root.prepend(content, top, directory, legend, hint, local, fan, inspector);
 
   function activate(key) {nav.activate(key); renderView();}
   function currentConcept() {
