@@ -18,6 +18,18 @@ const record = (value: unknown): Record<string, any> => {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("飞书返回格式不正确");
   return value as Record<string, any>;
 };
+const nodeToken = (value: unknown): value is string => typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(value);
+const pageToken = (value: unknown): value is string => typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_+/=-]{0,2047}$/.test(value);
+function documentUrl(url: string) {
+  const u = new URL(url);
+  if (u.protocol !== "https:" || !(u.hostname === "feishu.cn" || u.hostname.endsWith(".feishu.cn")) || u.port || u.username || u.password || u.search || u.hash || !/^\/(docx|wiki)\/[A-Za-z0-9_-]{1,128}$/.test(u.pathname)) throw new Error("请填写飞书 docx 文档或 wiki 知识库页面链接（不含查询参数）");
+  return u;
+}
+function directoryNode(value: unknown) {
+  const node = record(value);
+  if (!nodeToken(node.node_token) || !nodeToken(node.obj_token) || typeof node.space_id !== "string" || !/^\d{1,30}$/.test(node.space_id) || (node.parent_node_token !== "" && !nodeToken(node.parent_node_token)) || typeof node.title !== "string" || node.title.length > 1000 || typeof node.has_child !== "boolean" || typeof node.obj_type !== "string") throw new Error("知识库目录返回无法验证");
+  return { node_token: node.node_token, obj_token: node.obj_token, space_id: node.space_id, parent_node_token: node.parent_node_token as string, title: node.title, has_child: node.has_child, obj_type: node.obj_type };
+}
 interface Account { profile: string; appId: string; openId: string; label: string; verifiedAt: string; scopes?: string[]; }
 type Phase = "preparing" | "waiting_app" | "waiting_authorization" | "verifying" | "connected" | "cancelled" | "failed";
 interface Job { id: string; phase: Phase; authorizationUrl?: string; error?: string; }
@@ -121,9 +133,7 @@ export class FeishuConnector {
     this.account = undefined; this.job = undefined; this.save();
     return this.status();
   }
-  async readDocument(url: string) {
-    const u = new URL(url);
-    if (u.protocol !== "https:" || !(u.hostname === "feishu.cn" || u.hostname.endsWith(".feishu.cn")) || u.port || u.username || u.password || u.search || u.hash || !/^\/(docx|wiki)\/[A-Za-z0-9_-]{1,128}$/.test(u.pathname)) throw new Error("请填写飞书 docx 文档或 wiki 知识库页面链接（不含查询参数）");
+  private async readSession() {
     const account = this.account, revision = this.revision;
     if (!account) throw new Error("请先连接飞书账号");
     const signal = AbortSignal.timeout(60000);
@@ -134,6 +144,47 @@ export class FeishuConnector {
       signal.throwIfAborted();
       if (revision !== this.revision || this.account !== account) throw new Error("连接已断开，读取结果不再交付");
     };
+    authorized();
+    return { account, signal, verified, authorized };
+  }
+  async browseDirectory(url: string, options: { parent?: boolean; pageToken?: string } = {}) {
+    const u = documentUrl(url);
+    if (!u.pathname.startsWith("/wiki/")) throw new Error("查看目录需要飞书 wiki 链接");
+    if (options.parent !== undefined && typeof options.parent !== "boolean") throw new Error("目录范围无效");
+    if (options.pageToken !== undefined && !pageToken(options.pageToken)) throw new Error("目录分页标识无效，请重新打开目录");
+    const { account, signal, verified, authorized } = await this.readSession();
+    if (!verified.scopes?.some(s => ["wiki:node:read", "wiki:wiki:readonly", "wiki:wiki"].includes(s))) throw new Error("此账号缺少知识库只读权限，请在飞书补充 wiki:node:read 授权后重试");
+    const run = async (args: string[]) => {
+      authorized();
+      const envelope = record(JSON.parse(await this.cli.run({ args: [`--profile=${account.profile}`, "wiki", ...args, "--as", "user", "--json"], signal })));
+      authorized();
+      if (envelope.ok !== true || envelope.identity !== "user") throw new Error("知识库目录返回无法验证");
+      return envelope.data;
+    };
+    const getNode = async (id: string) => {
+      const node = directoryNode(await run(["+node-get", "--node-token", `${u.origin}/wiki/${id}`]));
+      if (node.node_token !== id) throw new Error("知识库页面身份不一致");
+      return node;
+    };
+    let node = await getNode(u.pathname.split("/").at(-1)!);
+    if (options.parent) {
+      if (!node.parent_node_token) throw new Error("此页面没有可查看的上级目录");
+      const space = node.space_id;
+      node = await getNode(node.parent_node_token);
+      if (node.space_id !== space) throw new Error("上级目录不在同一知识空间");
+    }
+    const data = record(await run(["+node-list", "--space-id", node.space_id, "--parent-node-token", node.node_token, "--page-size", "20", ...(options.pageToken ? ["--page-token", options.pageToken] : [])]));
+    if (!Array.isArray(data.nodes) || data.nodes.length > 20 || typeof data.has_more !== "boolean" || (data.has_more && (!pageToken(data.page_token) || data.page_token === options.pageToken))) throw new Error("目录分页返回无法验证，请重新读取");
+    const items = data.nodes.map(directoryNode).map(child => {
+      if (child.parent_node_token !== node.node_token || child.space_id !== node.space_id) throw new Error("返回文件不属于当前目录");
+      return { title: child.title, url: `${u.origin}/wiki/${child.node_token}`, nodeToken: child.node_token, documentId: child.obj_token, type: child.obj_type, hasChildren: child.has_child, readable: child.obj_type === "docx" || child.obj_type === "file" && /\.(md|markdown|txt|csv)$/i.test(child.title) };
+    });
+    if (new Set(items.map(item => item.nodeToken)).size !== items.length) throw new Error("目录返回重复文件，请重新读取");
+    return { directory: { title: node.title, url: `${u.origin}/wiki/${node.node_token}`, parentUrl: node.parent_node_token ? `${u.origin}/wiki/${node.parent_node_token}` : null }, items, readAt: new Date().toISOString(), coverage: { shown: items.length, complete: !options.pageToken && !data.has_more, hasMore: data.has_more, nextPageToken: data.has_more ? data.page_token as string : null, scope: "direct-children" } };
+  }
+  async readDocument(url: string) {
+    const u = documentUrl(url);
+    const { account, signal, verified, authorized } = await this.readSession();
     let id = u.pathname.split("/").at(-1)!, title: string | undefined;
     if (u.pathname.startsWith("/wiki/")) {
       if (!verified.scopes?.some(s => ["wiki:node:read", "wiki:wiki:readonly", "wiki:wiki"].includes(s))) throw new Error("此账号缺少知识库只读权限，请在飞书补充 wiki:node:read 授权后重试");

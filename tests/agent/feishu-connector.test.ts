@@ -16,6 +16,9 @@ class FakeCli implements FeishuCliPort {
   fileContent = "# 库存快照\n门店 A：12 件";
   fetchGate?: Promise<void>;
   prepareGate?: Promise<void>;
+  directoryGate?: Promise<void>;
+  nodes = new Map<string, Record<string, unknown>>();
+  directory: { has_more: boolean; nodes: Record<string, unknown>[]; page_token: string } = { has_more: false, nodes: [], page_token: "" };
   async prepare(signal: AbortSignal) { await this.prepareGate; signal.throwIfAborted(); }
   async run({ args, signal, onLine }: CliRequest) {
     this.calls.push(args);
@@ -34,7 +37,11 @@ class FakeCli implements FeishuCliPort {
       return "";
     }
     if (args.includes("status")) return JSON.stringify({ brand: "feishu", appId: "cli_test", identities: { user: { openId: this.openId, userName: "测试账号", verified: true, available: true, scope: this.scopes } } });
-    if (args.includes("+node-get")) return JSON.stringify({ ok: true, identity: "user", data: this.node });
+    if (args.includes("+node-get")) {
+      const token = args[args.indexOf("--node-token") + 1].split("/").at(-1)!;
+      return JSON.stringify({ ok: true, identity: "user", data: this.nodes.get(token) ?? this.node });
+    }
+    if (args.includes("+node-list")) { await this.directoryGate; return JSON.stringify({ ok: true, identity: "user", data: this.directory }); }
     if (args.includes("+fetch")) {
       await this.fetchGate;
       return JSON.stringify({ ok: true, identity: "user", data: { document: { document_id: "testDoc", revision_id: 3, content: "# 企业资料\n实际正文" } } });
@@ -62,6 +69,32 @@ function fixture() {
 test("Feishu accepts only its two device authorization surfaces", () => {
   assert.equal(authorizationUrl("https://open.feishu.cn/page/cli?user_code=abc"), true);
   for (const url of ["https://evil.example/?user_code=abc", "https://open.feishu.cn.evil.example/page/cli?user_code=x", "https://open.feishu.cn/page/cli?user_code=x&redirect_uri=https://evil.example", "https://accounts.feishu.cn/oauth/v1/device/verify?user_code=a&user_code=b", "javascript:alert(1)"]) assert.equal(authorizationUrl(url), false);
+});
+
+test("a file's containing wiki directory exposes all direct files without reading their bodies, with explicit pagination", async () => {
+  const f = fixture();
+  try {
+    f.connector.start(); await settle(f.connector);
+    f.cli.nodes.set("testWiki", { ...f.cli.node, parent_node_token: "folder", space_id: "123" });
+    f.cli.nodes.set("folder", { node_token: "folder", obj_token: "folderDoc", obj_type: "docx", title: "数据", has_child: true, parent_node_token: "", space_id: "123" });
+    f.cli.directory.nodes = [
+      { node_token: "testWiki", title: "01-库存.md" }, { node_token: "file2", title: "02-收货.md" }, { node_token: "file3", title: "page-links.csv" },
+    ].map(n => ({ ...n, obj_token: n.node_token + "Obj", obj_type: "file", has_child: false, parent_node_token: "folder", space_id: "123" }));
+    const listing = await f.connector.browseDirectory("https://team.feishu.cn/wiki/testWiki", { parent: true });
+    assert.equal(listing.directory.title, "数据");
+    assert.deepEqual(listing.items.map(n => n.title), ["01-库存.md", "02-收货.md", "page-links.csv"]);
+    assert(listing.items.every(n => n.readable));
+    assert.equal(listing.coverage.complete, true);
+    assert.equal(f.cli.calls.some(c => c.includes("+download") || c.includes("+fetch")), false);
+    assert(f.cli.calls.some(c => c.includes("--parent-node-token") && c.includes("folder") && c.includes("20") && !c.includes("--page-all")));
+    f.cli.directory.has_more = true; f.cli.directory.page_token = "next-page";
+    const page = await f.connector.browseDirectory(listing.directory.url);
+    assert.equal(page.coverage.complete, false); assert.equal(page.coverage.nextPageToken, "next-page");
+    f.cli.directory.has_more = false; f.cli.directory.page_token = "";
+    const next = await f.connector.browseDirectory(listing.directory.url, { pageToken: "next-page" });
+    assert.equal(next.coverage.complete, false, "a later page is not the whole directory");
+    assert(f.cli.calls.some(c => c.includes("--page-token") && c.includes("next-page")));
+  } finally { await f.close(); }
 });
 test("Feishu onboarding verifies identity, persists no tokens, and reads only explicit documents", async () => {
   const f = fixture();
@@ -162,6 +195,35 @@ test("wiki reads reject wrong nodes, unsupported files, oversized content and mi
     await assert.rejects(f.connector.readDocument("https://team.feishu.cn/wiki/testWiki"), /超过单次读取范围/);
     for (const url of ["https://team.feishu.cn.evil.example/wiki/testWiki", "http://team.feishu.cn/wiki/testWiki", "https://team.feishu.cn/wiki/testWiki?redirect=evil"]) await assert.rejects(f.connector.readDocument(url), /请填写飞书/);
   } finally { await f.close(); }
+});
+
+test("directory discovery rejects invalid scope, foreign children and malformed pagination; disconnect drops late results", async () => {
+  const f = fixture(); let release!: () => void;
+  try {
+    f.connector.start(); await settle(f.connector);
+    f.cli.nodes.set("folder", { node_token: "folder", obj_token: "folderDoc", obj_type: "docx", title: "数据", has_child: true, parent_node_token: "", space_id: "123" });
+    const url = "https://team.feishu.cn/wiki/folder";
+    f.cli.scopes = "docx:document:readonly";
+    await assert.rejects(f.connector.browseDirectory(url), /wiki:node:read/);
+    assert.equal(f.cli.calls.some(c => c.includes("+node-list")), false);
+    f.cli.scopes += " wiki:node:read";
+    await assert.rejects(f.connector.browseDirectory(url, { parent: true }), /没有可查看的上级/);
+    await assert.rejects(f.connector.browseDirectory(url, { pageToken: "--page-all" }), /分页/);
+    await assert.rejects(f.connector.browseDirectory("https://evil.example/wiki/folder"), /请填写飞书/);
+    f.cli.directory.nodes = [{ node_token: "child", obj_token: "childDoc", title: "binary.zip", obj_type: "file", has_child: false, space_id: "123", parent_node_token: "other" }];
+    await assert.rejects(f.connector.browseDirectory(url), /不属于当前目录/);
+    f.cli.directory.nodes[0].parent_node_token = "folder";
+    const unsupported = await f.connector.browseDirectory(url);
+    assert.equal(unsupported.items[0].readable, false);
+    f.cli.directory.has_more = true; f.cli.directory.page_token = "";
+    await assert.rejects(f.connector.browseDirectory(url), /分页返回无法验证/);
+    f.cli.directory.has_more = false;
+    f.cli.directoryGate = new Promise<void>(resolve => release = resolve);
+    const before = f.cli.calls.filter(c => c.includes("+node-list")).length;
+    const reading = f.connector.browseDirectory(url), rejected = assert.rejects(reading, /连接已断开/);
+    for (let i = 0; i < 50 && f.cli.calls.filter(c => c.includes("+node-list")).length === before; i++) await new Promise(resolve => setImmediate(resolve));
+    await f.connector.disconnect(); release(); await rejected;
+  } finally { release?.(); await f.close(); }
 });
 
 test("disconnect blocks an in-flight attachment from reaching the caller", async () => {

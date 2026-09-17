@@ -17,6 +17,8 @@ description: 从用户对话、已上传企业文档和确认企业后的公开�
 
 ## 已保存企业资料路径
 
+- 飞书文件链接只代表对应文件。用户要求接入目录中的资料时，先用 `feishu.directory.list` 查看指定 wiki 页的直接子文件；从单文件查看上级需明确 `parent:true`。每页最多 20 项，按返回目录 URL 与 nextPageToken 翻页，未翻页不宣称读取完整目录。目录只有元数据，按用户要求选择文件并逐项调用 `feishu.document.read` 保存正文；不自动递归或跟随 CSV/Markdown 正文中的链接，失败逐项报告。
+
 - 用户上传 Markdown/TXT 企业说明或要求用资料补充定义时，先 foundation_read，再 foundation_document_read {sourceId,version?,offset?,limit?}。sourceId/version 从 focus 或来源目录取得；不要把文件名、结构或未读正文当作事实。本地上传 CSV 沿原有记录源建模方法，PDF/DOCX 上传当前不支持。飞书在线 docx 和 wiki 文本附件经 feishu.document.read 读取后保存为文本快照；用返回的 sourceId/sourceVersion 再调用 foundation_document_read 取得本轮可引用片段。飞书 CSV 快照仅作为原文资料理解，不表示已建立业务记录映射。来源元数据中的远端读取时间与本轮片段读取时间分别保留；快照不代表远端实时状态。
 - 默认读取 4000、每次最多 6000 UTF-16 字符，按 coverage.nextOffset 继续；部分读取不代表整份资料已审查。只取完成当前任务所需的段落，失败、空文档和截断如实说明。
 - 文档新增证据参数是 {id,kind:"document",readId,quote}，readId 必须从本轮实际读取结果复制，quote 必须完整落在那次读取片段中。宿主保存文件版本、原文位置和读取时间；不需要模型计算字符偏移。重复短句无法唯一定位时重新读取更窄范围或引用更完整句子。既有证据通过旧 evidenceRefs 复用，不把保存后的元数据全复制进新证据输入。

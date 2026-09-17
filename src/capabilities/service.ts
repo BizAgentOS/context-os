@@ -24,6 +24,16 @@ export class AgentCapabilities {
       schema: z.object({ url: z.string().url().max(2048) }).strict(),
       execute: async (args, context) => this.readFeishu((args as { url: string }).url, context),
     });
+    this.sdk.register({
+      id: "feishu.directory.list",
+      description: "列出指定飞书 wiki 页面的直接子文件；parent=true 明确查看该文件所在目录。每页最多20项，按返回目录URL与nextPageToken翻页。只返回目录，不读取正文、不递归；按用户选择对各文件调用feishu.document.read。",
+      schema: z.object({ url: z.string().url().max(2048), parent: z.boolean().optional(), pageToken: z.string().min(1).max(2048).optional() }).strict(),
+      execute: async args => {
+        const input = args as { url: string; parent?: boolean; pageToken?: string };
+        const listing = await this.feishu.browseDirectory(input.url, input);
+        return this.feishuDocuments ? this.feishuDocuments.matchDirectory(listing) : listing;
+      },
+    });
   }
   readFeishu(url: string, context?: WriteContext) {
     return this.feishuDocuments ? this.feishuDocuments.read(url, context) : this.feishu.readDocument(url);

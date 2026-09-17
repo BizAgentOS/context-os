@@ -12,6 +12,7 @@ export interface FeishuSourceOrigin {
   coverage: string;
 }
 const origin = (source: Artifact) => source.content.feishu as unknown as FeishuSourceOrigin;
+const remoteKey = (url: string, coverage: string, id: string) => `${new URL(url).hostname}/${coverage}/${id}`;
 
 /** Explicit remote reads become local evidence snapshots, never automatic ontology adoption. */
 export class FeishuDocuments {
@@ -26,7 +27,7 @@ export class FeishuDocuments {
     const doc = await this.reader.readDocument(url);
     if (context) this.memory.assertWritable(context);
     const hash = createHash("sha256").update(doc.content).digest("hex");
-    const key = `${new URL(doc.url).hostname}/${doc.coverage}/${doc.documentId}`;
+    const key = remoteKey(doc.url, doc.coverage, doc.documentId);
     const prior = this.memory.listArtifacts("source").find(s => s.content.remoteKey === key && s.content.origin === "feishu");
     const title = doc.title || doc.content.split("\n").find(line => /^#\s+\S/.test(line))?.replace(/^#\s+/, "").slice(0, 180) || "飞书在线文档";
     const changed = !prior || prior.content.hash !== hash || prior.title !== title || origin(prior).revision !== doc.revision;
@@ -53,6 +54,14 @@ export class FeishuDocuments {
   }
   list() {
     return this.memory.listArtifacts("source").filter(s => s.content.origin === "feishu").map(s => this.summary(s));
+  }
+  matchDirectory(listing: Awaited<ReturnType<FeishuConnector["browseDirectory"]>>) {
+    const sources = new Map(this.memory.listArtifacts("source").filter(s => s.content.origin === "feishu").map(s => [s.content.remoteKey, s]));
+    return { ...listing, items: listing.items.map(item => {
+      const coverage = item.type === "docx" ? "document" : item.type === "file" ? "file" : null;
+      const source = coverage ? sources.get(remoteKey(item.url, coverage, item.documentId)) : null;
+      return { ...item, saved: source ? { sourceId: source.id, sourceVersion: source.version, characters: String(source.content.raw ?? "").length } : null };
+    }) };
   }
   private summary(source: Artifact) {
     const current = this.memory.listArtifacts("foundation")[0];

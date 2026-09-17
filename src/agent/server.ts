@@ -29,6 +29,7 @@ const staticFiles: Record<string, { file: string; type: string }> = {
   "/ontology-scene.js": { file: "ontology-scene.js", type: "text/javascript; charset=utf-8" },
   "/connection-ui.js": { file: "connection-ui.js", type: "text/javascript; charset=utf-8" },
   "/feishu-connection.js": { file: "feishu-connection.js", type: "text/javascript; charset=utf-8" },
+  "/feishu-directory.js": { file: "feishu-directory.js", type: "text/javascript; charset=utf-8" },
   "/mcp-connection.js": { file: "mcp-connection.js", type: "text/javascript; charset=utf-8" },
   "/openapi-import.js": { file: "openapi-import.js", type: "text/javascript; charset=utf-8" },
   "/connections.js": { file: "connections.js", type: "text/javascript; charset=utf-8" },
@@ -418,6 +419,9 @@ export async function createServer(
           break;
         case "/api/connectors/feishu/read":
           result = await app.capabilities.readFeishu(String(body.url));
+          break;
+        case "/api/connectors/feishu/directory":
+          result = await app.capabilities.sdk.call("feishu.directory.list", body);
           break;
         case "/api/connectors/feishu/prepare":
           result = await queue(() => app.prepareFeishuFoundation(body));

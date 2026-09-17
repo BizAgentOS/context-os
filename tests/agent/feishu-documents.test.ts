@@ -29,6 +29,12 @@ test("explicit Feishu reads persist inspectable, versioned sources and retain or
     assert.equal(documents.list()[0].characters, 14);
     assert.equal(documents.get(first.sourceId).content, content);
     assert.deepEqual(documents.list()[0].usage, []);
+    const listing = documents.matchDirectory({ directory: { title: "数据", url: "https://team.feishu.cn/wiki/folder", parentUrl: null }, readAt: "2026-09-17T06:00:00.000Z", coverage: { shown: 2, complete: true, hasMore: false, nextPageToken: null, scope: "direct-children" }, items: [
+      { title: "同一文件的另一个入口.md", url: "https://team.feishu.cn/wiki/alias", nodeToken: "alias", documentId: "file1", type: "file", hasChildren: false, readable: true },
+      { title: "另一个空间的同名ID.md", url: "https://other.feishu.cn/wiki/alias", nodeToken: "alias", documentId: "file1", type: "file", hasChildren: false, readable: true },
+    ] });
+    assert.equal(listing.items[0].saved?.sourceId, first.sourceId);
+    assert.equal(listing.items[1].saved, null);
     const reread = await documents.read("https://team.feishu.cn/wiki/page1");
     assert.equal(reread.sourceId, first.sourceId);
     assert.equal(reread.sourceVersion, 1, "identical reads do not invalidate existing evidence");

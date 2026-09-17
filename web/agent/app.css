@@ -3114,6 +3114,13 @@ tr.highlight td {
 .feishu-document-progress span { padding: 5px 9px; border-radius: 6px; background: #88bda31a; }
 .service-connections .feishu-document-detail .service-document { border: 1px solid #72958e44; border-radius: 12px; padding: 16px; line-height: 1.7; min-height: 100px; max-height: 380px; }
 .ed-feishu-documents:not(:empty) { margin-top: 12px; border-top: 1px solid var(--ed-line); padding-top: 8px; }
+.feishu-directory-list { display: grid; gap: 10px; margin: 18px 0; }
+.feishu-directory-row { border: 1px solid #72958e44; border-radius: 12px; padding: 14px; }
+.service-connections .feishu-directory-row label { display: flex; flex-direction: row; align-items: start; gap: 10px; cursor: pointer; color: inherit; font-size: 14px; margin: 0; }
+.service-connections .feishu-directory-row input { flex: 0 0 auto; width: 16px; margin: 3px 0 0; padding: 0; accent-color: #75aa96; }
+.feishu-directory-row label span { display: grid; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+.feishu-directory-row small { font-size: 12px; opacity: .75; line-height: 1.5; }
+.feishu-directory-row button { margin: 10px 8px 0 0; }
 @media (max-width: 480px) { .feishu-document-meta { grid-template-columns: 1fr; } }
 
 /* Data-led enterprise page: scope all changes to its middle content. */
