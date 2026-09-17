@@ -9,6 +9,7 @@ Skill 是内部 Agent 按需使用的方法说明，KodaX 保持唯一模型循�
 | name | 状态与方法 | 入口及限制 |
 |---|---|---|
 | `enterprise-research` | 已有运行包：查证企业公开信息并提出有出处的建议 | [SKILL.md](../config/skills/enterprise-research/SKILL.md)；明确名称/地区、核对官方网页，使用 `profile_update` 保存 suggestion，不伪造 user 陈述 |
+| `api-ontology-mapping` | API 自动映射方法：真实样本、稳定概念、关系端点名称与字段规则 | [SKILL.md](../config/skills/api-ontology-mapping/SKILL.md)；仅在宿主自动构建模式中直接生效，不扩大读取或消费权限 |
 | `ontology-modeling` | 已有运行包：围绕业务问题检查实际源契约与样本，提出在线本体候选 | [SKILL.md](../config/skills/ontology-modeling/SKILL.md)；使用 `live_overview/read/propose`，用户采用前保持候选，工具结果不等于正式来源 |
 | `company-foundation-ontology` | 已实现对话、Markdown/TXT 与公开研究路径：实际依据、基础候选、未知与冲突，人工采用 | [SKILL.md](../config/skills/company-foundation-ontology/SKILL.md)、[接口规格](COMPANY_FOUNDATION_SKILL.md)；资料验收见[记录](experiment/FOUNDATION_DOCUMENTS.md)，公开研究验收见[记录](experiment/FOUNDATION_WEB.md) |
 
