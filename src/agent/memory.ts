@@ -133,7 +133,7 @@ export class MemoryStore implements Repository {
       .all();
     return rows
       .map((row) => parse<Artifact>(row))
-      .filter((a) => !kind || a.kind === kind);
+      .filter((a) => (!kind || a.kind === kind) && !(a.kind === "source" && a.status === "removed"));
   }
 
   getArtifact(id: string, version?: number): Artifact {

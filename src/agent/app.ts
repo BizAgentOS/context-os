@@ -1011,6 +1011,16 @@ export class AgentApplication {
     });
   }
 
+  async removeUpload(body: Record<string, unknown>) {
+    const id = string(body.id, "资料");
+    const source = this.memory.getArtifact(id);
+    if (source.kind !== "source" || source.content.origin === "feishu") throw new Error("只能删除上传资料");
+    if (!Number.isSafeInteger(body.version) || source.version !== body.version) throw new Error("资料版本已变化，请刷新后重试");
+    await this.stopActive("上传资料已删除，请使用当前资料继续。");
+    this.memory.putArtifact({ ...source, expectedVersion: source.version, status: "removed" });
+    return this.canvasState();
+  }
+
   async canvasUpload(body: Record<string, unknown>) {
     if (this.modelTest) throw new Error("正在测试连接，请稍后上传");
     const page = this.canvasPage(body.page);

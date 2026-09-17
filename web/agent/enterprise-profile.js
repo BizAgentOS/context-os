@@ -170,7 +170,19 @@ export function renderEnterpriseProfile(state, actions) {
     const mark = el("span", "ed-file-icon"); mark.append(icon("files"));
     const copy = el("span", "ed-file-copy");
     copy.append(el("strong", "", source.title), el("small", "", `${format(source)} · 第 ${source.version} 版${source.content.parseError ? " · 内容需修正" : ""}`));
-    file.replaceChildren(mark, copy, icon("caret-right")); fileList.append(file);
+    file.replaceChildren(mark, copy, icon("caret-right"));
+    if (actions.api) {
+      const row = el("div", "ed-upload-row");
+      const remove = button("ed-upload-delete", "删除", async () => {
+        remove.disabled = true;
+        try {
+          const snapshot = await actions.api("/api/canvas/upload/remove", { id: source.id, version: source.version });
+          actions.onImportSaved(snapshot);
+        } catch (error) { remove.disabled = false; remove.title = error.message; remove.textContent = "删除失败，重试"; }
+      });
+      remove.setAttribute("aria-label", `删除 ${source.title}`);
+      row.append(file, remove); fileList.append(row);
+    } else fileList.append(file);
   }
   if (!files.length) fileList.append(button("ed-upload-entry", actions.readonly ? "查看资料" : "上传企业资料", showFiles, "plus"));
   uploads.append(fileList);

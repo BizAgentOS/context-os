@@ -4068,3 +4068,8 @@ dialog.ds-dialog[open] { display: flex; flex-direction: column; overflow: hidden
 dialog.ds-dialog > h2 { flex-shrink: 0; }
 .ds-dialog-content { min-height: 0; overflow: auto; max-height: calc(85dvh - 112px); padding: 0 4px 4px; scrollbar-width: thin; }
 .ds-business-summary:not(:empty) { margin-top: 16px; border-top: 1px solid #7baca72b; padding-top: 8px; }
+
+.enterprise-dashboard .ed-upload-row { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--ed-line); }
+.enterprise-dashboard .ed-upload-row > .ed-file { flex: 1; min-width: 0; border-bottom: 0; }
+.enterprise-dashboard .ed-upload-delete { flex-shrink: 0; padding: 8px 4px; color: #ba9990; font-size: 11px; }
+.enterprise-dashboard .ed-upload-delete:hover { color: #ffcec1; }
