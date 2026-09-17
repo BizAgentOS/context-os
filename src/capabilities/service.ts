@@ -16,7 +16,7 @@ export class AgentCapabilities {
     this.feishu = new FeishuConnector(directory);
     this.sdk.register({
       id: "feishu.document.read",
-      description: "通过已登录的飞书账号按指定 docx 文档链接只读获取内容与版本；需先在资料与数据连接飞书。不创建或修改远端文档。",
+      description: "通过已登录飞书账号，只读获取指定 docx 文档或 wiki 页面中的 docx / Markdown / TXT / CSV 内容。在线文档返回版本，文本附件返回本次内容摘要与读取时间；不递归读取目录、不创建或修改远端文件。需先在企业与数据连接飞书。",
       schema: z.object({ url: z.string().url().max(2048) }).strict(),
       execute: async (args) => this.feishu.readDocument((args as { url: string }).url),
     });

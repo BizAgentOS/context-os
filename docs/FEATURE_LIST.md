@@ -284,7 +284,8 @@ Last Updated: 2026-09-17
 - **Category / Priority:** Enhancement / High
 - **Planned / Released:** v0.1.0 / —
 - **Created / Started / Completed:** 2026-09-15 / 2026-09-15 / —
-- **Description:** 借鉴 Space 的官方网页授权流程，首个服务为飞书；实现向导、受控 CLI 与只读 docx。模拟验证通过，真实账号授权和读取待用户完成。
+- **Description:** 借鉴 Space 的官方网页授权流程，首个服务为飞书；实现向导、受控 CLI、只读 docx 与 wiki 文本附件。已有账号的真实 wiki Markdown 读取已验收；在线 docx 真实读取仍待验收。
+- **验证补充:** [知识库附件读取修复](experiment/FEISHU_WIKI_FILES.md)，154 项 Node 与真实用户指定文件的网页读取通过。
 - **Design:** [FEATURE_019](features/v0.1.0.md#feature-019)。
 
 ### 020: Swagger/OpenAPI 来源导入

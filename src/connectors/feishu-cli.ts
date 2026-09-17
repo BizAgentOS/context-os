@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { mkdir, readFile, writeFile, rename, mkdtemp, lstat, rm } from "node:fs/promises";
+import { join, resolve, relative } from "node:path";
 import { gunzipSync } from "node:zlib";
 
 // Command protocol and pinned release checked against KodaX Space's Feishu adapter.
@@ -22,6 +22,7 @@ export interface CliRequest {
 export interface FeishuCliPort {
   prepare(signal: AbortSignal): Promise<void>;
   run(request: CliRequest): Promise<string>;
+  downloadText(request: CliRequest): Promise<{ content: string; bytes: number }>;
 }
 export function extractExecutable(archive: Buffer): Buffer {
   const tar = gunzipSync(archive, { maxOutputLength: 100 * 1024 * 1024 });
@@ -51,7 +52,7 @@ export function createFeishuCli(directory: string): FeishuCliPort {
   const asset = releases[`${process.platform}-${process.arch}`];
   let prepared = false;
   let preparing: Promise<void> | undefined;
-  return {
+  const cli: FeishuCliPort = {
     async prepare(signal) {
       if (prepared) return;
       if (!asset) throw new Error("当前系统尚未适配飞书连接组件");
@@ -121,5 +122,33 @@ export function createFeishuCli(directory: string): FeishuCliPort {
         });
       });
     },
+    async downloadText(request) {
+      const directory = await mkdtemp(join(root, ".reading-"));
+      const file = join(directory, "content.txt");
+      const limit = 256_000, controller = new AbortController();
+      const tooLarge = () => new Error("文件超过单次读取范围（250 KB），请拆分后读取");
+      // The CLI only permits paths beneath its working directory. The path is host-generated.
+      const timer = setInterval(() => {
+        void lstat(file).then(s => { if (s.size > limit) controller.abort(tooLarge()); }).catch(() => {});
+      }, 50);
+      try {
+        const raw = await cli.run({ ...request, args: [...request.args, "--output", relative(root, file)], signal: AbortSignal.any([request.signal, controller.signal]) });
+        const receipt = JSON.parse(raw);
+        const info = await lstat(file);
+        if (info.size > limit) throw tooLarge();
+        if (!info.isFile() || receipt?.ok !== true || receipt.identity !== "user" || receipt.data?.saved_path !== file || receipt.data.size_bytes !== info.size)
+          throw new Error("文件读取回执无法验证");
+        const bytes = await readFile(file);
+        let content: string;
+        try { content = new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
+        catch { throw new Error("文件不是 UTF-8 文本，请转换编码后重试"); }
+        if (content.includes("\0") || content.length > 60000) throw new Error("文件不是支持的文本或超过 60000 字符，请拆分后读取");
+        return { content, bytes: bytes.length };
+      } catch (error) {
+        if (controller.signal.aborted) throw controller.signal.reason;
+        throw error;
+      } finally { clearInterval(timer); await rm(directory, { recursive: true, force: true }); }
+    },
   };
+  return cli;
 }

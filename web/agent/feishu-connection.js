@@ -55,7 +55,12 @@ export function openFeishuConnection(api, options = {}) {
   }
   function showDocument(target) {
     if (!documentResult) return;
-    target.replaceChildren(el("p", `已读取 · 版本 ${documentResult.revision} · ${new Date(documentResult.readAt).toLocaleString("zh-CN")}`), el("pre", documentResult.content, "service-document"));
+    const version = documentResult.revision == null ? "文本文件 · 本次读取内容" : `版本 ${documentResult.revision}`;
+    target.replaceChildren(
+      ...(documentResult.title ? [el("h3", documentResult.title)] : []),
+      el("p", `已读取 · ${version} · ${new Date(documentResult.readAt).toLocaleString("zh-CN")}`),
+      el("pre", documentResult.content, "service-document"),
+    );
   }
   function render() {
     shell.body.replaceChildren();
@@ -63,7 +68,7 @@ export function openFeishuConnection(api, options = {}) {
       const account = el("section", null, "connection-summary");
       account.append(el("strong", state.account.label), el("p", "已保存飞书账号 · 文档只读", "connection-note"));
       const form = el("form"), url = field("飞书文档链接", "url");
-      url.input.required = true; url.input.placeholder = "https://企业.feishu.cn/docx/…"; url.input.value = documentUrl;
+      url.input.required = true; url.input.placeholder = "https://企业.feishu.cn/wiki/… 或 /docx/…"; url.input.value = documentUrl;
       url.input.addEventListener("input", () => { documentUrl = url.input.value; });
       const read = el("button", "读取文档", "primary-button"); read.type = "submit";
       const result = el("div"); result.setAttribute("aria-live", "polite"); showDocument(result);
@@ -84,7 +89,7 @@ export function openFeishuConnection(api, options = {}) {
         documentResult = undefined;
         return perform("/api/connectors/feishu/disconnect", {});
       }), el("p", "飞书侧应用授权需在飞书中管理。", "connection-note"));
-      shell.body.append(account, form, el("p", "当前支持 docx 文档链接；知识库目录暂未接入。读取内容不会自动保存为上传资料。", "connection-note"), manage);
+      shell.body.append(account, form, el("p", "支持 docx 在线文档，以及 wiki 页面中的在线文档或 Markdown、TXT、CSV 文件。请使用具体内容页的链接；目录不会批量导入。文本附件限 250 KB、60000 字符，需为 UTF-8 编码。读取内容不会自动保存为上传资料。", "connection-note"), manage);
     } else if (active()) {
       const steps = [["preparing", "准备组件"], ["waiting_app", "创建应用"], ["waiting_authorization", "授权文档"], ["verifying", "验证账号"]];
       const progress = el("ol", null, "connection-progress");

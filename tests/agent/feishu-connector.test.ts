@@ -11,6 +11,9 @@ class FakeCli implements FeishuCliPort {
   calls: string[][] = [];
   openId = "ou_user";
   missing = false;
+  scopes = "docx:document:readonly wiki:node:read drive:file:download";
+  node = { node_token: "testWiki", obj_type: "file", obj_token: "testFile", title: "库存快照.md", has_child: false };
+  fileContent = "# 库存快照\n门店 A：12 件";
   fetchGate?: Promise<void>;
   prepareGate?: Promise<void>;
   async prepare(signal: AbortSignal) { await this.prepareGate; signal.throwIfAborted(); }
@@ -30,12 +33,17 @@ class FakeCli implements FeishuCliPort {
       onLine?.("stdout", JSON.stringify({ event: "authorization_complete", granted: this.missing ? [] : ["docx:document:readonly"], missing: this.missing ? ["docx:document:readonly"] : [] }));
       return "";
     }
-    if (args.includes("status")) return JSON.stringify({ brand: "feishu", appId: "cli_test", identities: { user: { openId: this.openId, userName: "测试账号", verified: true, available: true, scope: "docx:document:readonly" } } });
+    if (args.includes("status")) return JSON.stringify({ brand: "feishu", appId: "cli_test", identities: { user: { openId: this.openId, userName: "测试账号", verified: true, available: true, scope: this.scopes } } });
+    if (args.includes("+node-get")) return JSON.stringify({ ok: true, identity: "user", data: this.node });
     if (args.includes("+fetch")) {
       await this.fetchGate;
       return JSON.stringify({ ok: true, identity: "user", data: { document: { document_id: "testDoc", revision_id: 3, content: "# 企业资料\n实际正文" } } });
     }
     throw new Error("Unexpected command");
+  }
+  async downloadText(request: CliRequest) {
+    this.calls.push(request.args); await this.fetchGate;
+    return { content: this.fileContent, bytes: Buffer.byteLength(this.fileContent) };
   }
 }
 async function settle(connector: FeishuConnector) {
@@ -98,5 +106,73 @@ test("disconnect suppresses an in-flight read result", async () => {
     for (let i=0; i<20 && !f.cli.calls.some(args => args.includes("+fetch")); i++) await new Promise(resolve => setImmediate(resolve));
     await f.connector.disconnect(); release(); await rejected;
     assert.equal(f.connector.status().account, null);
+  } finally { release?.(); await f.close(); }
+});
+
+test("a wiki link to a Markdown attachment reads that file without changing the original source", async () => {
+  const f = fixture();
+  try {
+    f.connector.start(); await settle(f.connector);
+    const doc = await f.connector.readDocument("https://team.feishu.cn/wiki/testWiki");
+    assert.equal(doc.content, "# 库存快照\n门店 A：12 件");
+    assert.equal(doc.title, "库存快照.md");
+    assert.equal(doc.documentId, "testFile");
+    assert.equal(doc.url, "https://team.feishu.cn/wiki/testWiki");
+    assert.equal(doc.format, "markdown");
+    assert.equal(doc.revision, null);
+    assert.match(doc.contentHash!, /^[a-f0-9]{64}$/);
+    assert.ok(f.cli.calls.some(a => a.includes("+download") && a.includes("testFile")));
+    assert.equal(f.cli.calls.some(a => a.includes("+fetch") || a.includes("+import")), false);
+  } finally { await f.close(); }
+});
+
+test("wiki online documents and CSV attachments preserve their real content kinds", async () => {
+  const f = fixture();
+  try {
+    f.connector.start(); await settle(f.connector);
+    f.cli.node = { ...f.cli.node, obj_type: "docx", obj_token: "testDoc", title: "在线说明" };
+    const online = await f.connector.readDocument("https://team.feishu.cn/wiki/testWiki");
+    assert.equal(online.revision, 3);
+    assert.equal(online.coverage, "document");
+    f.cli.node = { ...f.cli.node, obj_type: "file", obj_token: "testFile", title: "数据.CSV" };
+    f.cli.fileContent = "门店,数量\nA,12";
+    const csv = await f.connector.readDocument("https://team.feishu.cn/wiki/testWiki");
+    assert.equal(csv.format, "csv");
+    assert.equal(csv.content, "门店,数量\nA,12");
+  } finally { await f.close(); }
+});
+
+test("wiki reads reject wrong nodes, unsupported files, oversized content and missing grants", async () => {
+  const f = fixture();
+  try {
+    f.connector.start(); await settle(f.connector);
+    f.cli.node.node_token = "otherWiki";
+    await assert.rejects(f.connector.readDocument("https://team.feishu.cn/wiki/testWiki"), /无法验证/);
+    f.cli.node.node_token = "testWiki"; f.cli.node.title = "archive.zip";
+    await assert.rejects(f.connector.readDocument("https://team.feishu.cn/wiki/testWiki"), /目前支持/);
+    assert.equal(f.cli.calls.some(a => a.includes("+download")), false);
+    f.cli.node.title = "数据.txt"; f.cli.scopes = "docx:document:readonly wiki:node:read";
+    await assert.rejects(f.connector.readDocument("https://team.feishu.cn/wiki/testWiki"), /drive:file:download/);
+    assert.equal(f.cli.calls.some(a => a.includes("+download")), false);
+    f.cli.scopes = "docx:document:readonly";
+    const count = f.cli.calls.filter(a => a.includes("+node-get")).length;
+    await assert.rejects(f.connector.readDocument("https://team.feishu.cn/wiki/testWiki"), /wiki:node:read/);
+    assert.equal(f.cli.calls.filter(a => a.includes("+node-get")).length, count);
+    f.cli.scopes += " wiki:node:read drive:file:download"; f.cli.fileContent = "a".repeat(60001);
+    await assert.rejects(f.connector.readDocument("https://team.feishu.cn/wiki/testWiki"), /超过单次读取范围/);
+    for (const url of ["https://team.feishu.cn.evil.example/wiki/testWiki", "http://team.feishu.cn/wiki/testWiki", "https://team.feishu.cn/wiki/testWiki?redirect=evil"]) await assert.rejects(f.connector.readDocument(url), /请填写飞书/);
+  } finally { await f.close(); }
+});
+
+test("disconnect blocks an in-flight attachment from reaching the caller", async () => {
+  const f = fixture(); let release!: () => void;
+  try {
+    f.connector.start(); await settle(f.connector);
+    f.cli.fetchGate = new Promise<void>(r => release = r);
+    const pending = f.connector.readDocument("https://team.feishu.cn/wiki/testWiki");
+    const rejected = assert.rejects(pending, /连接已断开/);
+    for (let i = 0; i < 50 && !f.cli.calls.some(a => a.includes("+download")); i++) await new Promise(r => setImmediate(r));
+    assert.ok(f.cli.calls.some(a => a.includes("+download")));
+    await f.connector.disconnect(); release(); await rejected;
   } finally { release?.(); await f.close(); }
 });
