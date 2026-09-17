@@ -1392,7 +1392,7 @@ function openVerification(record) {
   );
 }
 function renderAttention(canvas) {
-  if (shareMode) return;
+  if (shareMode || canvas.querySelector(".ontology-space")) return;
   const entries = (state.attention || []).filter(
     (item) =>
       item.page === ui.page &&
