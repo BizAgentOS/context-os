@@ -3142,6 +3142,17 @@ tr.highlight td {
 .data-map-note { text-align: center; font-size: 11px; color: #999; margin: 20px 0 0; }
 .data-map-dialog { width: min(850px, 90vw); max-height: 80dvh; overflow: auto; }
 .data-map-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.enterprise-profile.ed-methods-dialog { width: min(900px, 90vw); color: #171717; background: #fff; }
+.ed-methods-dialog .ed-methods-intro { margin: 16px 0 24px; color: #666; line-height: 1.7; }
+.ed-methods-dialog .ed-methods-comparison { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.ed-methods-dialog .ed-method-card { padding: 20px; border: 1px solid #e5e5e5; border-radius: 16px; }
+.ed-methods-dialog .ed-method-card h3 { margin: 0; font-size: 18px; }
+.ed-methods-dialog .ed-method-summary { margin: 8px 0 24px; color: #666; font-size: 13px; }
+.ed-methods-dialog dl { margin: 0; font-size: 13px; line-height: 1.7; }
+.ed-methods-dialog dt { margin-top: 16px; font-weight: 600; }
+.ed-methods-dialog dd { margin: 4px 0 0; color: #666; }
+.ed-methods-dialog .ed-methods-note { margin: 20px 0 0; color: #666; font-size: 12px; line-height: 1.7; }
+@media (max-width: 700px) { .ed-methods-dialog .ed-methods-comparison { grid-template-columns: 1fr; } }
 .data-map-fact, .data-map-file { padding: 16px 0; border-bottom: 1px solid #eee; }
 .data-map-file { display: flex; width: 100%; flex-direction: column; gap: 8px; text-align: left; }
 .data-map-content { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 13px; line-height: 1.7; }
@@ -3740,3 +3751,297 @@ dialog.connection-dialog[open] { display: flex; flex-direction: column; overflow
   .connection-dialog .connection-progress { grid-template-columns: repeat(2, 1fr); }
   .connection-capabilities { max-height: 38dvh; }
 }
+
+/* Enterprise overview: the ontology palette, with the existing information layout. */
+body:has(:is(.enterprise-dashboard, .dataset-workspace)) {
+  --ed-ink: #e2ece9;
+  --ed-muted: #a1b7b1;
+  --ed-line: #7baca733;
+  --ed-accent: #9ddbd1;
+  --ed-gold: #e8d1a0;
+  --ed-surface: #0d2327;
+}
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) {
+  color: var(--ed-ink);
+  color-scheme: dark;
+  background: radial-gradient(ellipse at 46% 37%, #1b3d3e 0%, #0c2227 42%, #040b0e 85%);
+}
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace))::before {
+  background-image: linear-gradient(#ffffff14 1px, transparent 1px), linear-gradient(90deg, #ffffff14 1px, transparent 1px);
+  background-size: 24px 24px;
+  mask-image: radial-gradient(ellipse 65% 65% at 50% 50%, #000 36%, #0008 66%, transparent 100%);
+}
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) > .topbar { color: var(--ed-ink); }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .wordmark .launcher-mark { filter: invert(1); }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .wordmark-dot { color: var(--ed-accent); }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .page-nav button { color: var(--ed-muted); }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .page-nav button[aria-current="page"] { color: var(--ed-gold); }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .page-nav button[aria-current="page"]::after { box-shadow: 0 0 9px #e8d1a077; }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .page-nav button:not(:disabled):hover { color: #f4eddb; }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .topbar :is(.quiet-button, .icon-button, #open-capabilities) { color: #ccded8; background: #102529; border-color: var(--ed-line); }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .topbar :is(.quiet-button, .icon-button, #open-capabilities):hover { background: #21403f; }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .canvas { scrollbar-color: #52756d transparent; }
+.enterprise-profile.enterprise-dashboard {
+  --ed-ink: #e2ece9;
+  --ed-muted: #a1b7b1;
+  --ed-line: #7baca733;
+  --ed-accent: #9ddbd1;
+}
+.enterprise-dashboard :is(.ed-company, .ed-uploads, .ed-api, .ed-knowledge, .ed-methods) {
+  background: linear-gradient(135deg, #1b3538e8, #0b1d23ed);
+  border-color: var(--ed-line);
+  box-shadow: 0 16px 40px -24px #000c, inset 0 1px #c6f3e716;
+  backdrop-filter: blur(18px);
+  transition: border-color .25s ease, box-shadow .25s ease;
+  animation: ed-surface-enter .65s cubic-bezier(.22,.7,.22,1) backwards;
+}
+.enterprise-dashboard .ed-company {
+  background: radial-gradient(ellipse at 85% 0, #42605735, transparent 62%), linear-gradient(135deg, #203e40ee, #0c2025f5);
+  box-shadow: 0 20px 55px -28px #000c, inset 0 0 0 1px #91b8ad44, inset 0 1px #ddf5dd16;
+}
+.enterprise-dashboard .ed-uploads { animation-delay: .07s; }
+.enterprise-dashboard .ed-api { animation-delay: .13s; }
+.enterprise-dashboard .ed-methods { animation-delay: .1s; }
+.enterprise-dashboard .ed-knowledge { animation-delay: .18s; }
+.enterprise-dashboard :is(.ed-uploads, .ed-api, .ed-knowledge):focus-within {
+  border-color: #9ddbd17a;
+  box-shadow: 0 16px 40px -24px #000c, 0 0 22px #88d7cf0c;
+}
+.enterprise-dashboard .ed-company-name { color: #f1edda; text-shadow: 0 2px 24px #d8ddba12; }
+.enterprise-dashboard .ed-business { color: #b8cdc5; }
+.enterprise-dashboard :is(.ed-facts, .ed-company > .ed-data) { border-color: var(--ed-line); }
+.enterprise-dashboard .ed-data-count strong { color: var(--ed-gold); text-shadow: 0 0 22px #e8d1a020; }
+.enterprise-dashboard :is(.ed-pill, .ed-upload-entry) { color: #c8ded8; background: #8ac1b40d; border-color: #8bb8ad33; }
+.enterprise-dashboard :is(.ed-file-icon, .ed-service-icon) { color: #9dbdb4; background: #8ebeb111; border-color: #8bb8ad24; }
+.enterprise-dashboard .ed-service-featured .ed-service-icon { color: #bcebdd; background: #27564f; border-color: #8ed8c959; box-shadow: 0 0 16px #7fc8b411; }
+.enterprise-dashboard .ed-service-status.is-connected { color: #a2dbc3; }
+.enterprise-dashboard :is(.ed-service, .ed-file, .ed-connection) > .ed-icon { color: #91b9ae; }
+.enterprise-dashboard :is(.ed-file, .ed-service, .ed-saved-mcps .ed-connection) { border-color: var(--ed-line); }
+.enterprise-dashboard :is(.ed-file-list, .ed-source-scroll) { scrollbar-color: #52756d transparent; }
+.enterprise-dashboard :is(.source-meta, .ed-footer) { color: var(--ed-muted); }
+.enterprise-dashboard .ed-methods {
+  background: radial-gradient(ellipse at 0 0, #4b66532e, transparent 75%), linear-gradient(130deg, #264748, #142e31);
+  box-shadow: inset 0 0 0 1px #abc3a43d, inset 0 1px #e6eac626, 0 16px 40px -24px #000c;
+}
+.enterprise-dashboard .ed-methods > :is(.ed-icon, h2) { color: #eee6c9; }
+.enterprise-dashboard .ed-methods > p { color: #bed0c6; }
+.enterprise-dashboard .ed-method-action { background: #b1e2d6; color: #0d3535; box-shadow: 0 0 18px #9ddbd119; }
+.enterprise-dashboard button { transition: color .2s ease, background .2s ease, box-shadow .2s ease; }
+.enterprise-dashboard button .ed-icon { transition: transform .2s ease, color .2s ease; }
+.enterprise-dashboard :is(.ed-file, .ed-service, .ed-connection, .ed-upload-entry):hover { background: #8bb8ad0e; }
+.enterprise-dashboard :is(.ed-pill, .ed-upload-entry):hover { background: #8ac1b422; color: #e4f4ea; }
+.enterprise-dashboard :is(.ed-file:hover strong, .ed-service:hover strong, .ed-fact:hover p, .ed-text-button:hover) { color: #e2f4e5; }
+.enterprise-dashboard .ed-service:hover .ed-service-icon { color: #d6eee1; background: #345b52; border-color: #8bb8ad55; }
+.enterprise-dashboard .ed-method-action:hover { background: #ceeede; box-shadow: 0 0 24px #9ddbd12b; }
+.enterprise-dashboard :is(.ed-method-action, .ed-pill, .ed-text-button):hover > .ed-icon { transform: translate(2px, -2px); }
+.enterprise-dashboard :is(.ed-service, .ed-file, .ed-connection):hover > .ed-icon { transform: translateX(3px); }
+.enterprise-dashboard button:active { box-shadow: inset 0 0 0 1px #9ddbd144; }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) :is(button, input, textarea, summary, select, a):focus-visible {
+  outline: 2px solid #a8e3d9; outline-offset: 4px;
+}
+
+/* Keep the shared composer in its established position and size. */
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .chat-surface .composer-wrap {
+  background: #e4eeea;
+  box-shadow: 0 0 0 5px #26464a88, 0 12px 48px #0005, 0 0 30px #88d7cf0c;
+}
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .chat-surface .composer { color: #173d3d; background: #e4eeea; border-color: #cde4da; }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .chat-surface textarea { color: #1a4342; }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .chat-surface textarea::placeholder { color: #58766c; }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) :is(.composer-note, .chat-surface #upload-button, .demo-question) { color: #56756d; }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .chat-surface .send-button { background: #215957; color: #d2eee0; }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .chat-surface .send-button:disabled { opacity: .4; }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .history-panel { color: var(--ed-ink); background: #10292df5; border-color: #67988a55; backdrop-filter: blur(22px); }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .history-toggle { color: #b0c7bc; background: transparent; }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .history-toggle:hover { color: #e0eee1; background: #8bb8ad11; }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) :is(.dialogue-line, .dialogue-line.assistant) { color: #d1e1d8; }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .history-panel .dialogue-line.user { color: #e0e9d8; background: #31524c88; }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .dialogue-empty { color: #a1b7b1; }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) :is(.chat-collapse, .chat-launcher) { background: #18383a; border-color: #7eb2a655; color: #c0dfd1; }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .focus-context { background: #234139; border-color: #85bda453; color: #c2deca; }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .focus-context .icon-button { color: #c2deca; }
+.canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .request-error { background: #442a2b; color: #f0beb2; }
+
+/* Dialogs stay in the same flow, using the inspector's deep glass surface. */
+body:has(:is(.enterprise-dashboard, .dataset-workspace)) dialog.unified-dialog:is(.data-map-dialog, .openapi-import, .connection-dialog) {
+  color-scheme: dark;
+  color: var(--ed-ink);
+  background: linear-gradient(145deg, #1d3c3ff7, #0c2027fa 65%);
+  border-color: #759c9466;
+  box-shadow: 0 24px 90px #0008, inset 0 1px #b9ede622;
+  backdrop-filter: blur(24px);
+  scrollbar-color: #52756d transparent;
+}
+body:has(:is(.enterprise-dashboard, .dataset-workspace)) dialog.unified-dialog:is(.data-map-dialog, .openapi-import, .connection-dialog)[open] { animation: ed-dialog-enter .3s cubic-bezier(.22,.7,.22,1) both; }
+body:has(:is(.enterprise-dashboard, .dataset-workspace)) dialog.unified-dialog:is(.data-map-dialog, .openapi-import, .connection-dialog)::backdrop { background: #020b0ebb; backdrop-filter: blur(6px); }
+body:has(:is(.enterprise-dashboard, .dataset-workspace)) dialog.unified-dialog:is(.data-map-dialog, .openapi-import, .connection-dialog) :is(.unified-dialog-close, .quiet-button) { color: #c7ded4; background: #9ddbd111; border-color: #8bb8ad44; }
+body:has(:is(.enterprise-dashboard, .dataset-workspace)) dialog.unified-dialog:is(.data-map-dialog, .openapi-import, .connection-dialog) :is(.unified-dialog-close, .quiet-button):hover { color: #f0f5e5; background: #9ddbd125; }
+body:has(:is(.enterprise-dashboard, .dataset-workspace)) dialog.unified-dialog:is(.data-map-dialog, .openapi-import, .connection-dialog) :is(h2, h3, h4) { color: #f1edda; }
+body:has(:is(.enterprise-dashboard, .dataset-workspace)) dialog.unified-dialog:is(.data-map-dialog, .openapi-import, .connection-dialog) :is(.source-meta, .muted, .ed-methods-intro, .ed-method-summary, .ed-methods-note, dd, .connection-description, .connection-note, .connection-count, .connection-entry small, .connection-entry-action, .connection-capability small, .connection-capability p, .oi-eyebrow, .oi-status, .oi-operation code, .oi-operation summary) { color: var(--ed-muted); }
+body:has(:is(.enterprise-dashboard, .dataset-workspace)) dialog.unified-dialog:is(.data-map-dialog, .openapi-import, .connection-dialog) :is(.data-map-fact, .data-map-file, .ed-method-card, .oi-panel, .oi-guide-row, .oi-operation, .oi-footer, .oi-results, .oi-steps, .connection-footer, .connection-advanced, .connection-capabilities, .connection-capability) { border-color: var(--ed-line); }
+body:has(:is(.enterprise-dashboard, .dataset-workspace)) dialog.unified-dialog:is(.data-map-dialog, .openapi-import, .connection-dialog) :is(.ed-method-card, .connection-entry, .connection-summary, .oi-guide, .oi-table-scroll th) { color: var(--ed-ink); background: #061a2155; border-color: var(--ed-line); }
+body:has(:is(.enterprise-dashboard, .dataset-workspace)) dialog.unified-dialog:is(.data-map-dialog, .openapi-import, .connection-dialog) .connection-entry:hover { background: #7ab7a711; border-color: #9ddbd166; }
+body:has(:is(.enterprise-dashboard, .dataset-workspace)) dialog.unified-dialog:is(.data-map-dialog, .openapi-import, .connection-dialog) :is(.connection-field, .connection-advanced > summary, .oi-field) { color: #bdcec6; }
+body:has(:is(.enterprise-dashboard, .dataset-workspace)) dialog.unified-dialog:is(.data-map-dialog, .openapi-import, .connection-dialog) :is(input, textarea, select) { color: #e2ece9; background: #091c22; border-color: #789e9155; accent-color: #9ddbd1; }
+body:has(:is(.enterprise-dashboard, .dataset-workspace)) dialog.unified-dialog:is(.data-map-dialog, .openapi-import, .connection-dialog) :is(input, textarea)::placeholder { color: #91aaa4; }
+body:has(:is(.enterprise-dashboard, .dataset-workspace)) dialog.unified-dialog:is(.data-map-dialog, .openapi-import, .connection-dialog) input::file-selector-button { color: #d1e8df; background: #254944; }
+body:has(:is(.enterprise-dashboard, .dataset-workspace)) dialog.unified-dialog:is(.data-map-dialog, .openapi-import, .connection-dialog) :is(.primary-button, .oi-tabs .active, .oi-complete-mark) { color: #0d3535; background: #b1e2d6; border-color: #b1e2d6; }
+body:has(:is(.enterprise-dashboard, .dataset-workspace)) dialog.unified-dialog:is(.data-map-dialog, .openapi-import, .connection-dialog) .primary-button:not(:disabled):hover { background: #ceeede; }
+body:has(:is(.enterprise-dashboard, .dataset-workspace)) dialog.unified-dialog:is(.data-map-dialog, .openapi-import, .connection-dialog) :is(.oi-steps > .active, .connection-progress li.active) { color: #e8d1a0; border-color: #e8d1a0; }
+body:has(:is(.enterprise-dashboard, .dataset-workspace)) dialog.unified-dialog:is(.data-map-dialog, .openapi-import, .connection-dialog) .connection-progress li { color: #a1b7b1; border-color: var(--ed-line); }
+body:has(:is(.enterprise-dashboard, .dataset-workspace)) dialog.unified-dialog:is(.data-map-dialog, .openapi-import, .connection-dialog) :is(.oi-status.error, .request-error, .error) { color: #f0beb2; border-color: #e4a396; }
+body:has(:is(.enterprise-dashboard, .dataset-workspace)) dialog.unified-dialog:is(.data-map-dialog, .openapi-import, .connection-dialog) :is(button, input, textarea, summary, select, a):focus-visible { outline: 2px solid #a8e3d9; outline-offset: 4px; }
+@keyframes ed-surface-enter { from { opacity: 0; translate: 0 10px; } to { opacity: 1; translate: 0 0; } }
+@keyframes ed-dialog-enter { from { opacity: 0; transform: translateY(12px) scale(.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .enterprise-dashboard *, .canvas-app:has(:is(.enterprise-dashboard, .dataset-workspace)) .interaction, body:has(:is(.enterprise-dashboard, .dataset-workspace)) dialog.unified-dialog:is(.data-map-dialog, .openapi-import, .connection-dialog) { animation: none !important; transition: none !important; }
+}
+
+/* MCP publication workspace, sharing the ontology and enterprise shell. */
+.canvas-app:has(.dataset-workspace) { isolation: isolate; }
+.canvas-app:has(.dataset-workspace)::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+}
+.canvas-app:has(.dataset-workspace) > .topbar { background: transparent; }
+.canvas:has(> .dataset-workspace) { display: block; padding: 30px clamp(24px, 4vw, 72px) 170px; }
+.dataset-workspace { max-width: 1280px; margin: 0 auto; color: var(--ed-ink); font-size: 14px; }
+.dataset-workspace *, .ds-dialog * { box-sizing: border-box; }
+.dataset-workspace h1, .dataset-workspace h2, .dataset-workspace h3, .ds-dialog h2, .ds-dialog h3 { color: #f1edda; }
+.ds-hero { display: grid; grid-template-columns: 1.2fr 1fr; align-items: center; gap: 36px; padding: 24px 0 34px; }
+.ds-eyebrow { color: #a8c8bd; font-size: 10px; letter-spacing: .18em; margin: 0 0 18px; }
+.ds-hero h1 { font-size: clamp(25px, 2.5vw, 36px); font-weight: 550; letter-spacing: -.04em; line-height: 1.45; margin: 0 0 15px; }
+.ds-description { color: #b6cac2; font-size: 13px; line-height: 1.9; margin: 0; max-width: 520px; }
+.ds-flow { display: flex; align-items: center; justify-content: center; padding: 38px 0; min-width: 0; }
+.ds-flow-end { color: #b6cfc5; font-size: 12px; white-space: nowrap; }
+.ds-flow-line { min-width: 18px; height: 1px; flex: 1; max-width: 75px; background: linear-gradient(90deg, #9ddbd130, #9ddbd1a0); position: relative; margin: 0 12px; }
+.ds-flow-line::after { content: ""; width: 5px; height: 5px; border-top: 1px solid #9ddbd1; border-right: 1px solid #9ddbd1; rotate: 45deg; position: absolute; right: 0; top: -2px; }
+.ds-flow-core { position: relative; flex-shrink: 0; display: grid; place-content: center; width: 112px; height: 112px; text-align: center; border-radius: 50%; border: 1px solid #b3d9be70; background: radial-gradient(circle at 40% 30%, #48635770, #112d31); box-shadow: 0 0 38px #9ddbd11b, inset 0 0 30px #9ddbd112; }
+.ds-flow-core::before { content: ""; position: absolute; inset: -12px; border: 1px solid #a2c9b824; border-radius: inherit; }
+.ds-flow-core strong { font-size: 24px; font-weight: 500; color: #eee6c9; letter-spacing: .08em; }
+.ds-flow-core small { margin-top: 8px; color: #a9c5b8; font-size: 10px; }
+.ds-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 24px 0; margin-bottom: 32px; border-block: 1px solid #91b7aa2b; }
+.ds-steps > div { display: grid; grid-template-columns: auto 1fr; column-gap: 13px; padding: 0 22px; border-left: 1px solid #91b7aa2b; }
+.ds-steps > div:first-child { padding-left: 0; border-left: 0; }
+.ds-steps > div > span { grid-row: span 2; color: #d9c597; font-size: 13px; padding-top: 2px; font-variant-numeric: tabular-nums; }
+.ds-steps strong { font-size: 13px; font-weight: 500; color: #d9e6dc; }
+.ds-steps small { color: #96afa4; font-size: 11px; margin-top: 7px; line-height: 1.6; }
+.ds-workspace-grid { display: grid; grid-template-columns: minmax(220px, .7fr) minmax(0, 1.65fr); gap: 28px; align-items: start; }
+.ds-panel { background: linear-gradient(135deg, #1b3538e8, #0b1d23ed); border: 1px solid #7baca733; border-radius: 20px; box-shadow: 0 16px 40px -24px #000c, inset 0 1px #c6f3e716; backdrop-filter: blur(18px); }
+.ds-source { padding: 28px; }
+.ds-source h2 { font-size: 20px; font-weight: 500; margin: 0 0 16px; line-height: 1.5; overflow-wrap: anywhere; }
+.ds-source .ds-description { margin-bottom: 24px; }
+.ds-source > .ds-button { margin-top: 14px; max-width: 100%; }
+.ds-source-stats { display: flex; gap: 32px; margin: 28px 0 20px; }
+.ds-source-stats > div { display: flex; flex-direction: column; gap: 7px; }
+.ds-source-stats strong { color: #e8d1a0; font-size: 32px; font-weight: 400; line-height: 1; }
+.ds-source-stats span { font-size: 11px; color: #9fb9ac; }
+.ds-source-notes { margin-top: 26px; border-top: 1px solid #7baca72b; padding-top: 20px; white-space: pre-line; color: #a7bdb0; font-size: 11px; line-height: 2.4; }
+.ds-list-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 4px 0 20px; }
+.ds-list-head h2 { font-size: 18px; font-weight: 500; margin: 0 0 8px; }
+.ds-muted { color: #a1b7b1; font-size: 12px; line-height: 1.85; margin: 8px 0; overflow-wrap: anywhere; }
+.ds-list-head .ds-muted { margin: 0; }
+.ds-button { border: 1px solid #8bb8ad44; background: #9ddbd10a; color: #c7ded4; border-radius: 9px; font: inherit; font-size: 12px; padding: 10px 14px; min-height: 38px; cursor: pointer; transition: background .2s, border-color .2s, box-shadow .2s; }
+.ds-button:hover:not(:disabled) { background: #9ddbd121; border-color: #9ddbd177; }
+.ds-button.ds-primary { color: #123e3a; background: #b1e2d6; border-color: #b1e2d6; font-weight: 600; }
+.ds-button.ds-primary:hover:not(:disabled) { background: #ceeede; box-shadow: 0 0 20px #9ddbd124; }
+.ds-button:disabled { opacity: .4; cursor: not-allowed; }
+.ds-empty { display: flex; min-height: 264px; padding: 32px 20px; flex-direction: column; align-items: center; justify-content: center; text-align: center; border-style: dashed; background: #112b2d66; }
+.ds-empty-mark { display: grid; place-items: center; width: 54px; height: 54px; border: 1px solid #a6c8b538; border-radius: 16px; color: #a3c9b7; font-size: 11px; letter-spacing: .08em; background: #8bb8ad0b; transform: rotate(-6deg); margin-bottom: 12px; }
+.ds-empty h3 { font-size: 16px; font-weight: 450; margin: 10px 0 5px; }
+.ds-dataset { padding: 24px; margin-bottom: 16px; }
+.ds-dataset > header { display: flex; justify-content: space-between; gap: 16px; align-items: start; }
+.ds-dataset h3 { margin: 0; font-size: 18px; line-height: 1.6; font-weight: 500; overflow-wrap: anywhere; }
+.ds-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; color: #b4e0c4; background: #72b99915; border: 1px solid #8abb9940; border-radius: 20px; padding: 5px 9px; white-space: nowrap; }
+.ds-badge::before { content: ""; width: 5px; height: 5px; background: #acd8b8; border-radius: 50%; }
+.ds-badge.ds-inactive { color: #99aca7; background: #afc6c00a; border-color: #95aaa833; }
+.ds-badge.ds-inactive::before { background: #829995; }
+.ds-dataset-scope { color: #c4d5c9; font-size: 12px; margin: 12px 0; }
+.ds-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0; }
+.ds-tags > span { color: #b4cdc1; padding: 5px 9px; font-size: 10px; border-radius: 6px; background: #8bb8ad10; border: 1px solid #8bb8ad22; overflow-wrap: anywhere; }
+.ds-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 20px; }
+.ds-dataset .ds-actions { padding-top: 16px; border-top: 1px solid #7baca726; }
+.ds-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 25px; color: #91aaa1; font-size: 10px; line-height: 1.8; }
+.ds-footer > span { flex: 1; }
+.ds-footer > .ds-button { font-size: 10px; border-color: transparent; background: transparent; min-height: 30px; padding: 4px 8px; }
+.ds-hero, .ds-steps, .ds-workspace-grid { animation: ed-surface-enter .55s cubic-bezier(.22,.7,.22,1) backwards; }
+.ds-steps { animation-delay: .06s; } .ds-workspace-grid { animation-delay: .12s; }
+
+dialog.ds-dialog { width: min(720px, calc(100vw - 40px)); max-width: 720px; max-height: 85dvh; padding: 30px; color-scheme: dark; color: #e2ece9; background: linear-gradient(145deg, #1d3c3ff7, #0c2027fa 65%); border: 1px solid #759c9466; border-radius: 20px; box-shadow: 0 24px 90px #0008, inset 0 1px #b9ede622; backdrop-filter: blur(24px); scrollbar-color: #52756d transparent; }
+dialog.ds-dialog.ds-dialog-wide { width: min(1040px, calc(100vw - 40px)); max-width: 1040px; }
+dialog.ds-dialog[open] { animation: ed-dialog-enter .25s ease both; }
+dialog.ds-dialog::backdrop { background: #020b0ebb; backdrop-filter: blur(6px); }
+dialog.ds-dialog > h2 { margin: 0 42px 12px 0; font-size: 24px; font-weight: 500; }
+dialog.ds-dialog > .unified-dialog-close { color: #c7ded4; background: #9ddbd111; border-color: #8bb8ad44; }
+.ds-dialog .ds-field, .ds-dialog form > label { display: flex; flex-direction: column; gap: 9px; margin: 20px 0; color: #bdcec6; font-size: 12px; }
+.ds-dialog :is(input:not([type="checkbox"]), textarea) { width: 100%; min-width: 0; background: #091c22; border: 1px solid #789e9155; border-radius: 8px; padding: 11px 12px; color: #e2ece9; font: inherit; font-size: 13px; }
+.ds-dialog :is(input, textarea)::placeholder { color: #829c96; }
+.ds-dialog .ds-config { min-height: 240px; resize: vertical; font-family: ui-monospace, monospace; font-size: 11px; line-height: 1.7; }
+.ds-create-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(220px, .75fr); gap: 28px; align-items: start; }
+.ds-section-heading { font-size: 13px; font-weight: 500; margin: 26px 0 14px; }
+.ds-create-grid > div > .ds-section-heading:first-child { margin-top: 10px; }
+.ds-check-list { border: 1px solid #7baca72d; border-radius: 12px; overflow: hidden; }
+.ds-check { display: flex; align-items: flex-start; gap: 12px; padding: 16px; cursor: pointer; border-bottom: 1px solid #7baca722; margin: 0; }
+.ds-check:last-child { border-bottom: 0; }
+.ds-check:has(input:checked) { background: #86bdab12; }
+.ds-check:has(input:disabled) { opacity: .45; cursor: not-allowed; }
+.ds-check:hover:has(input:not(:disabled)) { background: #86bdab1c; }
+.ds-check input { flex: 0 0 15px; width: 15px; height: 15px; margin: 3px 0 0; accent-color: #9ddbd1; }
+.ds-check strong { color: #d4e4d8; font-size: 13px; font-weight: 500; }
+.ds-check small { display: block; color: #9fb6ab; font-size: 11px; line-height: 1.8; margin-top: 5px; }
+.ds-check > span { min-width: 0; overflow-wrap: anywhere; }
+.ds-publish-summary { position: sticky; top: 0; padding: 24px; background: #06202680; border: 1px solid #9dc3ac33; border-radius: 15px; }
+.ds-publish-summary .ds-eyebrow { margin-bottom: 14px; }
+.ds-publish-summary h3 { margin: 0; font-size: 18px; font-weight: 500; line-height: 1.5; }
+.ds-scope-count { color: #e8d1a0; font-size: 14px; margin: 24px 0 8px; }
+.ds-publish-summary hr { border: 0; border-top: 1px solid #7baca72b; margin: 24px 0; }
+.ds-summary-label { color: #c5decd; font-size: 12px; }
+.ds-publish-summary > .ds-button { width: 100%; margin-top: 16px; }
+.ds-notice { color: #e5d3a8; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.ds-notice:empty { display: none; }
+.ds-business-group { margin: 12px 0; border: 1px solid #7baca72d; border-radius: 10px; }
+.ds-business-group summary { cursor: pointer; padding: 15px; color: #cee0d2; font-size: 12px; }
+.ds-business-group .ds-check { padding-block: 12px; }
+.ds-business-group .ds-evidence-choice { padding-left: 44px; }
+.ds-evidence-choice strong { font-size: 11px; color: #afc4b8; }
+.ds-scope-item { padding: 18px 0; border-bottom: 1px solid #7baca72b; }
+.ds-scope-item h3 { margin: 0 0 8px; font-size: 15px; font-weight: 500; }
+.ds-scope-item p, .ds-relation { margin: 0; color: #aec5b9; font-size: 12px; line-height: 1.85; }
+.ds-dialog :is(button, input, textarea, summary):focus-visible { outline: 2px solid #a8e3d9; outline-offset: 3px; }
+@media (max-width: 1000px) {
+  .ds-hero { grid-template-columns: 1fr; gap: 0; }
+  .ds-hero-copy { max-width: 640px; }
+  .ds-flow { justify-content: start; padding: 20px 12px 5px; }
+  .ds-flow-core { width: 80px; height: 80px; }
+  .ds-flow-core strong { font-size: 20px; }
+  .ds-flow-line { max-width: 65px; }
+  .ds-workspace-grid { gap: 20px; grid-template-columns: minmax(200px, .75fr) minmax(0, 1.4fr); }
+  .ds-source { padding: 22px; }
+  .ds-list-head { align-items: flex-start; flex-wrap: wrap; }
+  .ds-steps > div { padding-inline: 14px; column-gap: 8px; }
+}
+@media (max-width: 640px) {
+  .canvas:has(> .dataset-workspace) { padding: 16px 20px 150px; }
+  .ds-hero { padding-top: 14px; }
+  .ds-hero h1 { font-size: 25px; }
+  .ds-flow { padding-top: 28px; }
+  .ds-steps { padding: 18px 0; gap: 16px; margin-bottom: 24px; }
+  .ds-steps > div { display: flex; flex-direction: column; padding: 0; border: 0; gap: 6px; }
+  .ds-steps small { display: none; } .ds-steps strong { font-size: 11px; }
+  .ds-workspace-grid { grid-template-columns: 1fr; }
+  .ds-source-notes { display: none; }
+  .ds-source { padding: 24px; }
+  .ds-list-head { padding-top: 10px; }
+  .ds-create-grid { grid-template-columns: 1fr; gap: 24px; }
+  .ds-publish-summary { position: static; }
+  dialog.ds-dialog, dialog.ds-dialog.ds-dialog-wide { width: calc(100vw - 24px); padding: 22px; }
+  .ds-dataset > header { flex-wrap: wrap; }
+  .ds-footer > span { flex-basis: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dataset-workspace *, dialog.ds-dialog, .ds-dialog * { animation: none !important; transition: none !important; }
+}
+/* Keep a stable close control while long permission lists scroll. */
+dialog.ds-dialog[open] { display: flex; flex-direction: column; overflow: hidden; }
+dialog.ds-dialog > h2 { flex-shrink: 0; }
+.ds-dialog-content { min-height: 0; overflow: auto; max-height: calc(85dvh - 112px); padding: 0 4px 4px; scrollbar-width: thin; }
+.ds-business-summary:not(:empty) { margin-top: 16px; border-top: 1px solid #7baca72b; padding-top: 8px; }

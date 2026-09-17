@@ -6,6 +6,7 @@
 
 | 需要查看 | 记录 |
 |---|---|
+| 本体子集发布与外部 MCP 数据集 | [本体数据集](ONTOLOGY_DATASETS.md) |
 | Swagger 导入与 MCP 便捷接入 | [HTTP API 导入](OPENAPI_IMPORT.md)、[MCP 接入](MCP_ONBOARDING.md) |
 | 自定义模型 URL、协议与凭据隔离 | [自定义 API](CUSTOM_MODEL_API.md) |
 | 三页整链、真实模型、双消费者及离线兼容 | [整链验收](FUSION_CHAIN.md) |

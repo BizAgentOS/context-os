@@ -1,6 +1,8 @@
 import {ConsumerMigrations} from "../live/consumer-migrations.ts";
 import { OpenApiImports } from "../live/openapi-import.ts";
 import {ConsumerViews} from "../live/consumer-views.ts";
+import { OntologyDatasets } from "../live/ontology-datasets.ts";
+import { testDatasetMcp } from "../live/dataset-mcp-test.ts";
 import { MappingChanges } from "../live/mapping-changes.ts";
 import { RelationCorrections } from "../live/relation-corrections.ts";
 import { EvidenceService } from "./evidence.ts";
@@ -20,6 +22,7 @@ import { ontologySceneAsset } from "./browser-assets.ts";
 
 const webRoot = fileURLToPath(new URL("../../web/agent/", import.meta.url));
 const staticFiles: Record<string, { file: string; type: string }> = {
+  "/dataset-workspace.js": { file: "dataset-workspace.js", type: "text/javascript; charset=utf-8" },
   "/ontology-space.js": { file: "ontology-space.js", type: "text/javascript; charset=utf-8" },
   "/ontology-space-model.js": { file: "ontology-space-model.js", type: "text/javascript; charset=utf-8" },
   "/ontology-space.css": { file: "ontology-space.css", type: "text/css; charset=utf-8" },
@@ -183,6 +186,11 @@ export async function createServer(
         return;
       }
       const url = new URL(request.url ?? "/", `http://${host}`);
+      if (url.pathname.startsWith("/v4/")) {
+        if (request.method !== "GET") { send(405, { error: "仅支持只读请求" }); return; }
+        const result = await new OntologyDatasets(app.memory, app.live).handle(url.pathname, url.searchParams, request.headers.authorization);
+        send(result.status, result.body); return;
+      }
       if (url.pathname.startsWith("/v3/")) {
         if(request.method!=="GET"){send(405,{error:"仅支持只读请求"});return;}
         const r=await new ConsumerViews(app.memory,app.live).handle(url.pathname,url.searchParams,request.headers.authorization,url.origin);send(r.status,r.body);return;
@@ -244,6 +252,12 @@ export async function createServer(
           );
       }
       if (request.method === "GET") {
+        if (url.pathname === "/api/datasets") {
+          send(200, new OntologyDatasets(app.memory, app.live).list()); return;
+        }
+        if (url.pathname === "/api/datasets/connection") {
+          send(200, new OntologyDatasets(app.memory, app.live).connection({ id: url.searchParams.get("id"), version: Number(url.searchParams.get("version")) }, url.origin)); return;
+        }
         if (url.pathname === "/api/canvas/bootstrap") {
           send(200, { token, ...app.canvasState() });
           return;
@@ -380,6 +394,15 @@ export async function createServer(
       const body = await readBody(request);
       let result: unknown;
       switch (url.pathname) {
+        case "/api/datasets/test":
+          result = await testDatasetMcp(new OntologyDatasets(app.memory, app.live), body, url.origin);
+          break;
+        case "/api/datasets/publish":
+          result = new OntologyDatasets(app.memory, app.live).publish(body);
+          break;
+        case "/api/datasets/revoke":
+          result = { dataset: new OntologyDatasets(app.memory, app.live).revoke(body) };
+          break;
         case "/api/connectors/feishu/start":
           result = app.capabilities.feishu.start();
           break;

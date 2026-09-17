@@ -21,7 +21,7 @@ Last Updated: 2026-09-17
 
 | Version | Status | Planned | InProgress | Completed | Progress |
 |---|---|---:|---:|---:|---:|
-| v0.1.0 | InProgress | 2 | 3 | 17 | 17/22 |
+| v0.1.0 | InProgress | 2 | 3 | 18 | 18/23 |
 
 ## Feature Index
 
@@ -51,10 +51,12 @@ Last Updated: 2026-09-17
 | 020 | Swagger/OpenAPI 来源导入 | Enhancement | High | Completed | v0.1.0 | 010、018 | [设计](features/v0.1.0.md#feature-020) |
 | 021 | MCP 便捷接入与统一连接入口 | Enhancement | High | Completed | v0.1.0 | 复用已实现的 011/019 | [设计](features/v0.1.0.md#feature-021) |
 | 022 | 动态三维本体空间与连续聚焦 | Enhancement | High | Completed | v0.1.0 | 012、015 | [设计](features/v0.1.0.md#feature-022) |
+| 023 | 本体数据集与 MCP 消费工作台 | Enhancement | High | Completed | v0.1.0 | 013、016 | [设计](features/v0.1.0.md#feature-023) |
 
 此表保留已有能力与票的实际完成记录，计数不代表新 MVP 体验的完成比例。本轮按 [MVP 完成条件](MVP.md)及 FEATURE_012—016 的任务依赖验收。006、远程 MCP 服务和旧票中尚未覆盖的完整回归/恢复保留为后续工作，不因范围调整标为完成。
 
 **2026-09-08 历史接入定义纠正：**第二页的产品方向是连接企业数据源的 API/MCP，按需读取保留在原系统的数据，不以本地复制为主路径。彼时来源端连接器待开发，FEATURE_009 的 Completed 仅指第四页对外 MCP/HTTP 读取与既有记录发布。后续 FEATURE_010 已实现声明式来源连接，当前范围见其条目与[在线运行说明](experiment/LIVE_MEMORY.md)。
+
 
 ## Feature Details
 
@@ -314,3 +316,13 @@ Last Updated: 2026-09-17
 - **Description:** 依据用户三张参考图，将本体页改为深色动态分子空间；点击自动进入全局、局部与具体内容，输入框随状态移动和变形，无三态切换按钮。
 - **Design:** [FEATURE_022](features/v0.1.0.md#feature-022)。
 - **验证:** 147 项 Node、类型检查、离线导出、桌面/窄屏交互及双轴复核通过；见[三维本体验收](experiment/ONTOLOGY_SPACE.md)及根目录视觉核对。
+
+### 023: 本体数据集与 MCP 消费工作台
+
+- **Status:** Completed
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.1.0 / —
+- **Created / Started / Completed:** 2026-09-17 / 2026-09-17 / 2026-09-17
+- **Description:** 将已采用本体的选定概念与关系及显式许可业务字段组织成可供其他 Agent 读取的数据集，重构第三页为 MCP 开放与管理工作台。
+- **Design:** [FEATURE_023](features/v0.1.0.md#feature-023)。
+- **验证:** 150 项 Node 测试、类型检查、离线构建通过；真实 MCP 客户端、页面创建/测试/停用、390px 窄屏及双轴评审见[数据集验收](experiment/ONTOLOGY_DATASETS.md)。

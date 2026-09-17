@@ -60,6 +60,35 @@ export function renderEnterpriseProfile(state, actions) {
       } else dialog.append(el("p", "", "此视图没有在线连接。"));
     });
   };
+  const showConnectionMethods = () => popup("三种接入方式", dialog => {
+    dialog.classList.add("enterprise-profile", "ed-methods-dialog");
+    dialog.append(el("p", "ed-methods-intro", "手头有文件，直接上传；系统有接口，通过 API 接入；服务支持 MCP，连接后选择可用能力。"));
+    const comparison = el("div", "ed-methods-comparison");
+    for (const method of [
+      { title: "文件上传", summary: "把已有资料带进来", details: [
+        ["适合", "企业介绍、知识文档、导出的业务表格。"],
+        ["接入", "上传 CSV、Markdown 或 TXT 文件。"],
+        ["更新", "使用上传时的内容，资料变化后需重新上传。"],
+      ] },
+      { title: "HTTP API", summary: "按接口读取业务数据", details: [
+        ["适合", "提供 HTTP 接口的业务系统或数据服务。"],
+        ["接入", "导入 Swagger / OpenAPI，选择接口并配置认证。"],
+        ["更新", "按需请求源系统，内容以接口实际返回为准。"],
+      ] },
+      { title: "MCP", summary: "使用服务开放的能力", details: [
+        ["适合", "提供 MCP 服务的文档、知识库或业务系统。"],
+        ["接入", "填写 MCP 服务地址，完成所需认证并选择开放给助手的能力。"],
+        ["更新", "按需调用已授权能力，内容以服务实际返回为准。"],
+      ] },
+    ]) {
+      const card = el("section", "ed-method-card");
+      card.append(el("h3", "", method.title), el("p", "ed-method-summary", method.summary));
+      const details = el("dl", "");
+      for (const [label, text] of method.details) details.append(el("dt", "", label), el("dd", "", text));
+      card.append(details); comparison.append(card);
+    }
+    dialog.append(comparison, el("p", "ed-methods-note", "三种方式可搭配使用。API 和 MCP 连接成功后，仍需按需读取内容；不会自动同步全部数据。"));
+  });
   const showFile = source => popup(source.title, dialog => {
     dialog.append(el("p", "source-meta", `${format(source)} · 文件上传 · 第 ${source.version} 版`));
     if (source.content.parseError) dialog.append(el("p", "", "内容需要修正"));
@@ -159,7 +188,7 @@ export function renderEnterpriseProfile(state, actions) {
   const methods = el("section", "ed-methods");
   methods.append(icon("plugs-connected"), el("h2", "", "多种来源，同一企业"), el("p", "", "从知识文档到业务数据，逐步构建企业的语义底座。"));
   const ways = el("p", "ed-method-types", "文件上传 / API / MCP");
-  methods.append(ways, button("ed-method-action", "查看接入方式", showConnections, "arrow-up-right"));
+  methods.append(ways, button("ed-method-action", "查看接入方式", showConnectionMethods, "arrow-up-right"));
 
   const data = el("section", "ed-data");
   data.setAttribute("aria-label", "企业数据接入统计");

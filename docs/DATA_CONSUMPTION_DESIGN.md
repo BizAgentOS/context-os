@@ -2,6 +2,25 @@
 
 2026-09-14。本文为三页产品的消费设计，归属 FEATURE_016；历史四页和 v1/v2 已交付范围单独保留。内容修订与采用由第二页负责，本页围绕同一变更处理消费、发布、权限和影响。
 
+## 当前主入口：本体 MCP 数据集（2026-09-17）
+
+FEATURE_023 将在线第三页改为本体数据集工作台。管理员选择已采用本体的概念及两端都已开放的关系，形成独立 `ontology_dataset`。定义按发布时版本固定，标记为已采用解释，不冒充业务事实；未映射概念仍可作为本体知识读取。原文、证据引用、来源连接信息不随定义导出。
+
+可选的业务字段复用 v3 许可视图，并固定对应本体、映射及视图版本。页面默认不授权任何业务类型，字段需明确勾选，属性依据另行许可；业务记录按需读取，保留冲突、缺失及读取覆盖，不提供原子快照。v1/v2/v3 原合同与存量管理保留。
+
+管理接口为 `GET /api/datasets`、`GET /api/datasets/connection?id=…&version=…`、`POST /api/datasets/publish`、`/revoke`、`/test`。发布请求包括 operationId、name、foundationRef、conceptIds、relationIds，以及可选 business.modelRef / grants；发布原子保存并签发一次性 `de_dataset_` 密钥，同一操作重试不再返回明文。密钥仅存摘要，列表包含完整管理范围及成功读取次数/最后时间，配置说明只放密钥占位符。停用同时撤销关联业务视图，在途业务返回前再次检查数据集状态。
+
+| MCP 只读工具 | v4 GET 接口 | 用途 |
+|---|---|---|
+| describe_dataset | /v4/dataset | 已开放概念、关系与业务类型目录 |
+| read_concept | /v4/concept?conceptId=… | 一个已开放概念的固定定义 |
+| query_relations | /v4/relations?conceptId=… | 该概念的已开放定义关系 |
+| describe_type | /v4/types?type=… | 已许可业务类型、字段及依据范围 |
+| query_objects | /v4/objects | 有界业务查询；type / id / relation / fields / offset / limit |
+| read_evidence | /v4/evidence?ref=… | 对查询返回的获准依据引用逐项读取 |
+
+外部 Agent 使用生成的本机 stdio 配置（实际 Node 路径、桥接脚本、服务 URL 和数据集密钥），DataEngine 服务需保持运行。当前不提供远程 MCP URL、公网托管、记录级或多租户权限。每次调用独立校验权限，数据集密钥不能用于管理或旧消费接口。页面“测试 MCP”执行真实握手、工具发现、目录及一个概念读取，不能代表外部 Agent 已配置，也不证明全部业务来源可用。验收见 [本体数据集](experiment/ONTOLOGY_DATASETS.md)。
+
 ## 消费视图
 
 用户根据用途选择已采用且可执行的本体子集，明确调用方、类型、字段、关系与可开放证据。Agent 可以解释并提出范围；真实启用与撤销由已授权管理入口执行。基础本体中的未映射概念可以治理，不能提供假实例或被当作可执行数据源。

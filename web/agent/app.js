@@ -1,4 +1,5 @@
 import { renderEnterpriseProfile } from "./enterprise-profile.js";
+import { renderDatasetWorkspace } from "./dataset-workspace.js";
 import { renderEvidenceWorkspace } from "./evidence.js";
 import { renderFoundationWorkspace } from "./foundation-workspace.js";
 import { renderOntologySpace } from "./ontology-space.js";
@@ -463,6 +464,31 @@ function renderCanvas(force = false) {
   }
   const canvas = $("#canvas");
   if (ui.page === "setup") canvas.replaceChildren(renderSetup());
+  else if (ui.page === "consumption" && !shareMode && !state.demo) canvas.replaceChildren(renderDatasetWorkspace(state, {
+    api,
+    ontology: () => navigate("ontology"),
+    onChanged: () => { if (ui.page === "consumption" && !ui.detail) renderCanvas(true); },
+    legacy: () => {
+      const d = document.createElement("dialog"); d.className = "live-dialog"; d.setAttribute("aria-label", "已有访问范围");
+      const content = node("div");
+      const renderExisting = () => content.replaceChildren(
+        renderLiveWorkspace("consumption", state.live, {
+          api, showCredential,
+          mutate: async (...args) => { const ok = await mutate(...args); if (d.isConnected) renderExisting(); return ok; },
+          onSaved: async () => {
+            try {
+              const snapshot = await api("/api/canvas?page=consumption");
+              if (!d.isConnected) return;
+              applySnapshot(snapshot); renderExisting();
+            } catch (error) { errorMessage(error.message); }
+          },
+        }),
+        ...(state.consumers.length ? [renderConsumption(consumer => { d.close(); openConsumer(consumer); })] : []),
+      );
+      renderExisting(); d.append(node("h2", "", "已有访问范围"), content);
+      d.addEventListener("close", () => d.remove(), { once: true }); document.body.append(d); d.showModal();
+    },
+  }));
   else if (!shareMode && !state.demo) {
     const livePage = ui.page;
     const live = renderLiveWorkspace(ui.page, state.live, {
@@ -1462,7 +1488,7 @@ function consumerDataLabel(consumer) {
   if (changed?.length) return `${changed.length} 份资料有更新，待发布`;
   return changed ? "已发布的数据与当前资料一致" : "可检查并发布数据更新";
 }
-function renderConsumption() {
+function renderConsumption(onOpen = openConsumer) {
   if (
     !state.consumers.length &&
     !state.ontologies.some((item) => item.status === "adopted")
@@ -1509,7 +1535,7 @@ function renderConsumption() {
     (a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3),
   );
   for (const consumer of ordered) {
-    const card = button("", "consumer-card", () => openConsumer(consumer));
+    const card = button("", "consumer-card", () => onOpen(consumer));
     card.dataset.consumerId = consumer.id;
     card.dataset.status = consumer.status;
     const title = node("div", "consumer-card-heading");

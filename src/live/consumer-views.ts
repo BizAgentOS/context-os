@@ -20,7 +20,7 @@ import { jsonData } from "./sources.ts";
 const name = z.string().trim().min(1).max(200),
   version = z.number().int().positive();
 const ref = z.object({ id: name, version }).strict();
-const grant = z
+export const consumerGrant = z
   .object({
     type: name,
     fields: z.array(name).min(1).max(100),
@@ -40,7 +40,7 @@ const proposal = z
     name,
     purpose: z.string().trim().min(1).max(2000),
     modelRef: ref,
-    grants: z.array(grant).min(1).max(20),
+    grants: z.array(consumerGrant).min(1).max(20),
     contextEvidence: z.array(contextScope).max(6).optional(),
   })
   .strict();
@@ -302,9 +302,20 @@ export class ConsumerViews {
       : undefined;
     if (!view)
       return { status: 403, body: { error: "凭据无效或消费视图已停用" } };
+    return this.readView(view, path, params, origin);
+  }
+  /** Internal composition only: the owner must authenticate and pin its linked view. */
+  async readLinkedView(viewRef: { id: string; version: number }, path: string, params: URLSearchParams, authorize: () => void) {
+    const view = this.view(viewRef.id);
+    if (view.status !== "active") return { status: 403, body: { error: "业务数据许可已停用" } as Data };
+    if (view.version !== viewRef.version) return { status: 409, body: { error: "业务数据许可已变化，请重新发布数据集" } as Data };
+    return this.readView(view, path, params, "http://localhost", authorize);
+  }
+  private async readView(view: Artifact, path: string, params: URLSearchParams, origin: string, authorizeOwner = () => {}): Promise<{ status: number; body: Data }> {
     let status = 200,
       body: Data;
     const authorized = () => {
+      authorizeOwner();
       const now = this.view(view.id);
       if (now.status !== "active") throw new Forbidden("消费许可已变化或停用");
       if(now.version!==view.version)throw new ViewVersionChanged("视图版本已变化");
@@ -316,7 +327,7 @@ export class ConsumerViews {
       params.delete('viewVersion');
       if((pinned!==undefined&&pinned!==view.version)||(view.content.requiresViewVersion&&pinned===undefined&&['/v3/types','/v3/objects','/v3/evidence'].includes(path)))throw new ViewVersionChanged('需要当前视图版本');
       const model = this.model(view),
-        grants = view.content.grants as z.infer<typeof grant>[];
+        grants = view.content.grants as z.infer<typeof consumerGrant>[];
       const valid = () => {
         authorized();
         this.model(view);
