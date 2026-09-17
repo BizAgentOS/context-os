@@ -1,3 +1,4 @@
+import { FoundationApi, locateApi } from "./foundation-api.ts";
 import {
   KnowledgeReader,
   locateKnowledge,
@@ -30,7 +31,7 @@ export const foundationEvidenceInput = z.union([
   z
     .object({
       id: evidenceId,
-      kind: z.enum(["document", "web", "knowledge"]),
+      kind: z.enum(["document", "web", "knowledge", "api"]),
       readId: identifier,
       quote: z.string().min(1).max(1500),
     })
@@ -39,7 +40,8 @@ export const foundationEvidenceInput = z.union([
 export type EvidenceInput = z.infer<typeof foundationEvidenceInput>;
 export interface FoundationEvidence {
   id: string;
-  kind: "user-statement" | "document" | "web" | "knowledge";
+  kind: "user-statement" | "document" | "web" | "knowledge" | "api";
+  apiSnapshot?: {text: string; coverage: unknown};
   knowledgeSnapshot?: KnowledgeSnapshot;
   connectionVersion?: number;
   capability?: string;
@@ -116,6 +118,7 @@ export class FoundationDocuments {
   private characters = 0;
   readonly web?: FoundationWeb;
   readonly knowledge?: KnowledgeReader;
+  readonly api?: FoundationApi;
   constructor(
     memory: MemoryStore,
     context?: WriteContext,
@@ -123,7 +126,7 @@ export class FoundationDocuments {
     sources?: SourceConnections,
   ) {
     this.memory = memory;
-    if (sources) this.knowledge = new KnowledgeReader(sources);
+    if (sources) { this.knowledge = new KnowledgeReader(sources); this.api = new FoundationApi(sources); }
     if (context) this.web = new FoundationWeb(memory, context, testOrigins);
   }
   read(args: unknown): ReadReceipt {
@@ -173,6 +176,10 @@ export class FoundationDocuments {
   }
   cite(input: EvidenceInput): FoundationEvidence {
     if (!("readId" in input)) throw new Error("需要文档读取引用");
+    if (input.kind === "api") {
+      if (!this.api) throw new Error("必须先实际读取 API 样本");
+      return this.api.cite(input);
+    }
     if (input.kind === "knowledge") {
       if (!this.knowledge) throw new Error("必须先实际读取知识片段");
       return this.knowledge.cite(input);
@@ -207,6 +214,10 @@ export class FoundationDocuments {
     };
   }
   locate(evidence: FoundationEvidence) {
+    if (evidence.kind === "api") {
+      const connection = this.memory.getArtifact(evidence.sourceId!);
+      return {...locateApi(evidence), connectionStatus: connection.status, currentConnectionVersion: connection.version};
+    }
     if (evidence.kind === "knowledge") {
       const connection = this.memory.getArtifact(evidence.sourceId!);
       return {

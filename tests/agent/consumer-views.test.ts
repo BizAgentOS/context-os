@@ -15,7 +15,7 @@ import {
 test("v3 views expose only allowed fusion values and status, isolate credentials, and stop an in-flight revoked response", async () => {
   const source = await createFusionSources(),
     directory = mkdtempSync(join(tmpdir(), "de-view-"));
-  const service = await createServer({
+  const service = await createServer({ automaticApi: false,
     directory,
     driver: {
       async run() {
@@ -216,7 +216,7 @@ test("relation permits require both endpoints, survive restart, and expose no da
     async stop() {},
     async close() {},
   };
-  let service = await createServer({ directory, driver });
+  let service = await createServer({ automaticApi: false, directory, driver });
   const listen = async () => {
     await new Promise<void>((r) => service.server.listen(0, "127.0.0.1", r));
   };
@@ -316,7 +316,7 @@ test("relation permits require both endpoints, survive restart, and expose no da
       403,
     );
     await service.close();
-    service = await createServer({ directory, driver });
+    service = await createServer({ automaticApi: false, directory, driver });
     await listen();
     source.setOutcome("已改善");
     const fresh = await read(path, active.key);

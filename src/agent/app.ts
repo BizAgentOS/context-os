@@ -9,6 +9,7 @@ import { EvidenceService, evidenceTools } from "./evidence.ts";
 import { MetricReader, metricTools } from "./metrics.ts";
 import { sourceCatalog } from "./knowledge.ts";
 import { FoundationDocuments } from "./foundation-evidence.ts";
+import { AutomaticApi } from "./automatic-api.ts";
 import { AutomaticFoundation } from "./automatic-foundation.ts";
 import {
   WorkContexts,
@@ -158,6 +159,8 @@ export class AgentApplication {
   private actualDriver?: KodaXDriver;
   private active?: { context: WriteContext; promise: Promise<void>; automatic?: boolean };
   readonly automaticBuild: AutomaticFoundation;
+  readonly automaticApiBuild: AutomaticApi;
+  private automaticApiEnabled: boolean;
   private closing = false;
   private stopping = false;
   private modelTest = false;
@@ -170,7 +173,9 @@ export class AgentApplication {
     directory: string,
     driver?: AgentDriver,
     researchTestOrigins: ReadonlySet<string> = new Set(),
+    automaticApi = true,
   ) {
+    this.automaticApiEnabled = automaticApi;
     if (researchTestOrigins.size && !driver)
       throw new Error("测试网页来源仅允许显式测试 driver");
     this.researchTestOrigins = researchTestOrigins;
@@ -198,6 +203,11 @@ export class AgentApplication {
       : new KodaXDriver(join(directory, "runtime"), this.settings);
     this.driver = driver ?? this.actualDriver!;
     this.automaticBuild = new AutomaticFoundation(this.memory, this.foundation, this.capabilities);
+    this.automaticApiBuild = new AutomaticApi(this.memory, this.foundation, this.live, this.capabilities);
+    if (automaticApi) {
+      this.live.sources.onSaved = source => { this.automaticApiBuild.enqueue(source); this.startAutomaticBuild(); };
+      for (const source of this.live.sources.list()) this.automaticApiBuild.enqueue(source);
+    }
     this.capabilities.feishuDocuments!.onSaved = source => { this.automaticBuild.enqueue(source); this.startAutomaticBuild(); };
     queueMicrotask(() => this.startAutomaticBuild());
   }
@@ -733,6 +743,7 @@ export class AgentApplication {
       ontologies,
       foundation: this.foundation.view(),
       automaticBuild: this.automaticBuild.view(this.model().configured),
+      automaticApiBuild: this.automaticApiBuild.view(this.model().configured),
       evidence: new EvidenceService(this.memory, this.live).list(),
       outlines: this.memory.listArtifacts("ontology_outline"),
       verifications: this.memory.listArtifacts("verification"),
@@ -1350,19 +1361,25 @@ export class AgentApplication {
 
   retryAutomaticBuild() {
     this.automaticBuild.retry();
+    this.automaticApiBuild.retry();
     this.startAutomaticBuild(true);
     return this.canvasState();
   }
+
+  get automaticRunning() { return this.active?.automatic === true; }
 
   startAutomaticBuild(includeExisting = false) {
     if (includeExisting) for (const source of this.memory.listArtifacts("source")) this.automaticBuild.enqueue(source);
     if (this.closing || this.stopping || this.active || this.modelTest || !this.model().configured) return;
     const jobs = this.automaticBuild.pending();
-    if (!jobs.length) return;
+    const apiJob = jobs.length || !this.automaticApiEnabled ? undefined : this.automaticApiBuild.pending();
+    if (!jobs.length && !apiJob) return;
     const task = this.canvasTask("ontology");
     this.memory.clearInvestigation(task.id, "按当前资料自动构建本体。");
     const context = this.memory.beginExecution(task.id);
-    const promise = Promise.resolve().then(() => this.automaticBuild.run(jobs, context, this.driver, error => this.safeError(error)));
+    const promise = Promise.resolve().then(() => apiJob
+      ? this.automaticApiBuild.run(apiJob, context, this.driver, error => this.safeError(error))
+      : this.automaticBuild.run(jobs, context, this.driver, error => this.safeError(error)));
     this.active = { context, promise, automatic: true };
     void promise.finally(() => {
       if (this.active?.context.executionId === context.executionId) this.active = undefined;

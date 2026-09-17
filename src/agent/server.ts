@@ -117,6 +117,8 @@ export async function createServer(
     directory?: string;
     driver?: AgentDriver;
     researchTestOrigins?: ReadonlySet<string>;
+    /** Manual-mapping integration hosts can opt out; the product defaults to automatic. */
+    automaticApi?: boolean;
     demo?: { name: string };
   } = {},
 ) {
@@ -125,6 +127,7 @@ export async function createServer(
     directory,
     options.driver,
     options.researchTestOrigins,
+    options.automaticApi,
   );
   const tokenFile = join(directory, "admin-token");
   try {
@@ -471,7 +474,7 @@ export async function createServer(
           break;
         case "/api/live/openapi/commit":
           result = await queue(async () => {
-            if (app.canvasState().busy) throw new Error("请先停止当前整理，再保存来源");
+            if (app.canvasState().busy && !app.automaticRunning) throw new Error("请先停止当前整理，再保存来源");
             const saved = await openApiImports.commit(body);
             return { ...app.canvasState(), saved };
           });
@@ -482,7 +485,7 @@ export async function createServer(
         case "/api/live/prepare":
         case "/api/live/activate":
           result = await queue(async () => {
-            if (app.canvasState().busy)
+            if (app.canvasState().busy && !(url.pathname === "/api/live/connect" && app.automaticRunning))
               throw new Error("请先停止当前整理，再修改连接或本体");
             let saved: unknown;
             switch (url.pathname) {

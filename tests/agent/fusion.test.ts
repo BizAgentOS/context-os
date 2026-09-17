@@ -16,7 +16,7 @@ test("one object resolves complementary values and preserves conflict, absent, a
   const upstream = await createFusionSources(),
     directory = mkdtempSync(join(tmpdir(), "de-fusion-"));
   let definition: any, candidate: any;
-  const service = await createServer({
+  const service = await createServer({ automaticApi: false,
     directory,
     driver: {
       async run(request) {
@@ -259,7 +259,7 @@ test("one object resolves complementary values and preserves conflict, absent, a
 test("fusion work is bounded and missing business keys never become wildcard matches", async () => {
   const upstream = await createFusionSources(),
     directory = mkdtempSync(join(tmpdir(), "de-fusion-bounds-"));
-  const service = await createServer({ directory });
+  const service = await createServer({ automaticApi: false, directory });
   try {
     const primary = await service.app.live.sources.connect({
       name: "投诉",
@@ -317,7 +317,7 @@ test("stopping context_read prevents queued supplemental requests through the ac
   const upstream = await createFusionSources(),
     directory = mkdtempSync(join(tmpdir(), "de-fusion-stop-"));
   let release!: () => void;
-  const service = await createServer({
+  const service = await createServer({ automaticApi: false,
     directory,
     driver: {
       async run(request) {

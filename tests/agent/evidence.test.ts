@@ -32,7 +32,7 @@ test("one business investigation keeps document excerpts, metric scope and confl
   records.primary.forEach((r, i) =>
     Object.assign(r, { station: i === 0 ? "清河站" : "育新站" }),
   );
-  const service = await createServer({
+  const service = await createServer({ automaticApi: false,
     directory,
     driver: {
       async run(r) {

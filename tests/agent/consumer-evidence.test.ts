@@ -18,7 +18,7 @@ import {
 test("permissioned evidence is bound to a view and reading, with explicit scope and revocation", async () => {
   const source = await createFusionSources(),
     directory = mkdtempSync(join(tmpdir(), "de-view-"));
-  const service = await createServer({
+  const service = await createServer({ automaticApi: false,
     directory,
     driver: {
       async run() {

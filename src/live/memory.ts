@@ -392,6 +392,7 @@ export class LiveMemory {
     id: string,
     version: number,
     commit: (save: () => Artifact) => Artifact = (save) => save(),
+    inspectFusion?: (type: string, evidence: ObjectEvidence[]) => void,
   ) {
     const a = this.model(id);
     if (a.status !== "candidate" || a.version !== version)
@@ -433,6 +434,7 @@ export class LiveMemory {
           )
         )
           throw new Error("附来源检查失败，未采用");
+        inspectFusion?.(t.name, fusion.evidence);
       }
     }
     this.checkConnections(d);

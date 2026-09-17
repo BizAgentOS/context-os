@@ -11,7 +11,7 @@ import { createFusionSources, primaryCapability, supplementCapability, fusionDef
 
 test("published ontology subsets are consumable by independent MCP clients, pinned, isolated and revocable", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-datasets-"));
-  let service = await createServer({ directory });
+  let service = await createServer({ automaticApi: false, directory });
   const clients: Client[] = [];
   async function listen() {
     await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));
@@ -87,7 +87,7 @@ test("published ontology subsets are consumable by independent MCP clients, pinn
     assert.equal((await b.callTool({ name: "describe_dataset", arguments: {} })).isError, undefined);
     await Promise.all(clients.map(c => c.close())); clients.length = 0;
     await service.close();
-    service = await createServer({ directory }); origin = await listen();
+    service = await createServer({ automaticApi: false, directory }); origin = await listen();
     assert.equal((await request("/v4/dataset", undefined, key)).status, 403);
     assert.equal((await request("/v4/dataset", undefined, second.key)).status, 200);
     assert.equal((await request("/api/datasets/publish", { ...input, operationId: "invalid-relation", conceptIds: ["product"] })).status, 400);
@@ -110,7 +110,7 @@ test("published ontology subsets are consumable by independent MCP clients, pinn
 test("dataset business reads reuse explicit fusion grants and reject revoked in-flight reads", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-dataset-business-"));
   const source = await createFusionSources();
-  const service = await createServer({ directory });
+  const service = await createServer({ automaticApi: false, directory });
   await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));
   const origin = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
   const admin = async (path: string, body: unknown) => {

@@ -15,10 +15,10 @@ const button = (label, action, symbol, cls = "os-button") => {
   if (symbol) node.append(icon(symbol)); else node.textContent = label;
   node.onclick = action; return node;
 };
-const kindLabel = kind => ({web: "公开网页", document: "企业资料", user: "用户陈述"}[kind] || "定义依据");
+const kindLabel = kind => ({web: "公开网页", document: "企业资料", api: "API 样本", user: "用户陈述"}[kind] || "定义依据");
 const mappingLabel = item => item.mappingStatus === "bound" ? "已映射" : "未映射";
 
-export function renderOntologySpace(value, {selections, read, select, management, objects, evidence, onLayout, automaticBuild, connectModel, retryBuild}) {
+export function renderOntologySpace(value, {selections, read, select, management, objects, evidence, onLayout, automaticBuild, automaticApiBuild, connectModel, retryBuild}) {
   const root = el("section", "ontology-space"); root.setAttribute("aria-label", "三维本体空间");
   const versions = [value?.current, value?.adopted].filter((item, i, all) => item && all.findIndex(other => other?.version === item.version) === i);
   const saved = selections.get("ontology-space");
@@ -35,11 +35,12 @@ export function renderOntologySpace(value, {selections, read, select, management
   for (const item of versions) {const option = el("option", "", `v${item.version} · ${item.status === "adopted" ? "已采用" : "候选待核对"}`); option.value = item.version; version.append(option);}
   version.value = artifact?.version || ""; version.hidden = !artifact;
   identity.append(eyebrow, title, version);
-  const build = automaticBuild;
-  if (build && build.status !== "idle") {
+  for (const [build, isApi] of [[automaticBuild, false], [automaticApiBuild, true]]) {
+    if (!build || build.status === "idle") continue;
     const progress = el("div", "os-build-status"); progress.setAttribute("role", "status");
     const labels = {running: "正在读取资料并构建本体…", queued: "资料已加入自动构建队列", waiting_model: "资料已保存，连接模型后自动构建", completed: "本体已自动构建并生效", failed: "部分资料构建失败"};
-    progress.append(el("span", "", `${labels[build.status]} · ${build.completed}/${build.total} 份资料`));
+    const apiLabels = {running: "正在读取 API 并构建映射…", queued: "API 已加入自动构建队列", waiting_model: "API 已连接，连接模型后自动构建", completed: "API 已本体化并可查询", failed: "部分 API 本体化未完成"};
+    progress.append(el("span", "", `${(isApi ? apiLabels : labels)[build.status]} · ${build.completed}/${build.total} ${isApi ? "个 API 来源" : "份资料"}`));
     if (build.status === "waiting_model") progress.append(button("连接模型", connectModel));
     if (build.errors?.length) {
       const errors = el("details"); errors.append(el("summary", "", `查看 ${build.errors.length} 项原因`));

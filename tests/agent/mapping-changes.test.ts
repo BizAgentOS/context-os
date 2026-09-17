@@ -15,7 +15,7 @@ import {
 test("global field revision retains shared impact, sample evidence and checked decision; retry, drift and competing adoption cannot overwrite", async () => {
   const upstream = await createFusionSources(),
     directory = mkdtempSync(join(tmpdir(), "de-mapping-"));
-  const service = await createServer({
+  const service = await createServer({ automaticApi: false,
     directory,
     driver: {
       async run() {
@@ -302,7 +302,7 @@ test("relation revision groups saved corrections, supports agent inspection and 
   let draft: any,
     agent: any,
     stopping = false;
-  const service = await createServer({
+  const service = await createServer({ automaticApi: false,
     directory,
     driver: {
       async run(request) {

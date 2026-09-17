@@ -133,6 +133,7 @@ export class FoundationService {
     for (const entry of content(result).evidence) {
       delete entry.webSnapshot;
       delete entry.knowledgeSnapshot;
+      delete entry.apiSnapshot;
     }
     const bindings =
       this.live?.bindings({ id: artifact.id, version: artifact.version }) ?? [];
@@ -321,7 +322,7 @@ export class FoundationService {
                   (allowDocument &&
                     (entry?.kind === "document" ||
                       entry?.kind === "web" ||
-                      entry?.kind === "knowledge") &&
+                      entry?.kind === "knowledge" || entry?.kind === "api") &&
                     input.evidence.some((e) => e.id === ref))) &&
                 !previous?.evidence.some((e) => e.id === ref)
               );
@@ -385,7 +386,7 @@ export class FoundationService {
               e.id === ref &&
               (e.kind === "document" ||
                 e.kind === "web" ||
-                e.kind === "knowledge"),
+                e.kind === "knowledge" || e.kind === "api"),
           ),
         )
       )
@@ -557,7 +558,7 @@ export class FoundationService {
       ),
     ]);
     for (const e of draft.evidence.filter(
-      (e) => e.kind === "knowledge" && activeRefs.has(e.id),
+      (e) => (e.kind === "knowledge" || e.kind === "api") && activeRefs.has(e.id),
     )) {
       const source = this.memory.getArtifact(e.sourceId!);
       if (source.status !== "ready" || source.version !== e.connectionVersion)

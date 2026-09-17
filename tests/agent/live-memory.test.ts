@@ -110,7 +110,7 @@ test("HTTP and third-party MCP traverse two sources; changes remain visible afte
     await import("@modelcontextprotocol/client/stdio");
   const upstream = await createHeatingSources();
   const dir = mkdtempSync(join(tmpdir(), "live-http-"));
-  let service = await appServer({ directory: dir });
+  let service = await appServer({ directory: dir, automaticApi: false });
   let client: InstanceType<typeof Client> | undefined;
   const listen = async () => {
     await new Promise<void>((r) => service.server.listen(0, "127.0.0.1", r));
@@ -188,7 +188,7 @@ test("HTTP and third-party MCP traverse two sources; changes remain visible afte
     await client.close();
     client = undefined;
     await service.close();
-    service = await appServer({ directory: dir });
+    service = await appServer({ directory: dir, automaticApi: false });
     origin = await listen();
     const response = await fetch(
       origin + "/v2/objects?type=" + encodeURIComponent("回访"),

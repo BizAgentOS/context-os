@@ -14,6 +14,7 @@
 | 系统由谁负责什么 | [总体架构（HLD）](DATA_ENGINE_DESIGN.md) | KodaX、应用宿主、领域服务、来源、前端与消费边界 |
 | 内部 Agent 如何工作和完成任务 | [Agent 设计](AGENT_DESIGN.md) | 身份、工作方式、运行装配、能力使用、状态、停止和恢复 |
 | KodaX 哪些能力真的接入了 | [KodaX 能力接入记录](KODAX_CAPABILITY_LEDGER.md) | 当前 SDK 依据、本产品调用路径、证据和缺口 |
+| API 接入后怎样自动成为可查询本体 | [API 自动本体化](experiment/AUTOMATIC_API.md) | 连接排队、真实样本、基础概念与自动映射、状态和失败重试 |
 | 怎样用接口文档接入 HTTP API | [Swagger/OpenAPI 导入](experiment/OPENAPI_IMPORT.md) | 文档导入、接口选择、认证、样本测试、保存与当前限制 |
 | 服务登录与 MCP 接入如何处理 | [连接向导设计](CONNECTOR_ONBOARDING_DESIGN.md)、[便捷接入验收](experiment/MCP_ONBOARDING.md) | 飞书官方 CLI、账号复用、URL 发现与能力选择；已验证 wiki Markdown 读取、保存与本体候选入口；真实 docx 仍待验收 |
 | 产品 Skill 如何组织和维护 | [内置 Skill](BUILTIN_SKILLS.md) | 目录、发现、加载、依赖、方法与工具的分工 |

@@ -18,7 +18,7 @@ import {
 test("a checked migration switches only its selected view, keeps permissions and pins subsequent requests", async () => {
   const source = await createFusionSources(),
     directory = mkdtempSync(join(tmpdir(), "de-view-"));
-  const service = await createServer({
+  const service = await createServer({ automaticApi: false,
     directory,
     driver: {
       async run() {

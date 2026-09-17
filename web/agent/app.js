@@ -139,6 +139,7 @@ const state = {
   ontologies: [],
   foundation: null,
   automaticBuild: null,
+  automaticApiBuild: null,
   evidence: [],
   outlines: [],
   verifications: [],
@@ -407,6 +408,7 @@ function canvasFingerprint() {
     ontologies: refs(state.ontologies),
     foundation: state.foundation,
     automaticBuild: state.automaticBuild,
+    automaticApiBuild: state.automaticApiBuild,
     evidence: refs(state.evidence),
     outlines: refs(state.outlines),
     verifications: refs(state.verifications),
@@ -586,6 +588,7 @@ function renderOntologyBoard(workspace, full, operations, actions) {
   return renderOntologySpace(state.foundation, {
     ...actions,
     automaticBuild: state.automaticBuild,
+    automaticApiBuild: state.automaticApiBuild,
     connectModel: openSettings,
     retryBuild: () => mutate("/api/canvas/foundation/automatic", {}),
     management,

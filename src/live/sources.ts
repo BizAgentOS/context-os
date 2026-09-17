@@ -13,7 +13,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import type { Data, Repository } from "../agent/contracts.ts";
+import type { Artifact, Data, Repository } from "../agent/contracts.ts";
 
 const name = z.string().trim().min(1).max(200);
 const capabilitySchema = z
@@ -84,6 +84,7 @@ const at = (value: unknown, path: string): unknown =>
     : value;
 
 export class SourceConnections {
+  onSaved?: (source: Artifact) => void;
   private repo: Repository;
   private file: string;
   private secrets: Record<string, string>;
@@ -288,6 +289,7 @@ export class SourceConnections {
       this.secrets[artifact.id] = token;
       this.persist();
     }
+    this.onSaved?.(artifact);
     return artifact;
   }
   disable(id: string, version: number) {

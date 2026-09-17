@@ -19,7 +19,7 @@ test("a selected live relation binds the same validated target to the browser an
   const upstream = await createHeatingSources();
   let runs = 0;
   let seen: ResolvedWorkContext | undefined;
-  const service = await createServer({
+  const service = await createServer({ automaticApi: false,
     directory,
     driver: {
       async run(request) {
@@ -118,7 +118,7 @@ test("a selected live relation binds the same validated target to the browser an
 test("object relation context reads current source facts in its fixed range and rejects stale references", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-context-read-"));
   const upstream = await createHeatingSources();
-  const service = await createServer({ directory });
+  const service = await createServer({ automaticApi: false, directory });
   try {
     const { api, mcp } = await connectHeatingSources(
       service.app.live.sources,
@@ -236,7 +236,7 @@ test("stopping a bound run rejects its late write and reopening never replays th
     },
     async close() {},
   };
-  let service = await createServer({ directory, driver });
+  let service = await createServer({ automaticApi: false, directory, driver });
   try {
     const { api, mcp } = await connectHeatingSources(
       service.app.live.sources,
@@ -275,7 +275,7 @@ test("stopping a bound run rejects its late write and reopening never replays th
     assert.equal(state.live.models.length, 1);
     assert.doesNotMatch(JSON.stringify(state.messages), /迟到结果/);
     await service.close();
-    service = await createServer({ directory, driver });
+    service = await createServer({ automaticApi: false, directory, driver });
     const restored = await service.app.canvasMessage(body);
     assert.equal(runs, 1);
     assert.deepEqual(
@@ -303,7 +303,7 @@ test("stopping a bound run rejects its late write and reopening never replays th
 test("a bound profile edit can retry its own saved operation and ask a follow-up", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-context-own-write-"));
   let finished = false;
-  const service = await createServer({
+  const service = await createServer({ automaticApi: false,
     directory,
     driver: {
       async run(request) {
@@ -378,7 +378,7 @@ test("a bound profile edit can retry its own saved operation and ask a follow-up
 test("legacy pending requests can check their original receipt without launching another run", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-context-legacy-"));
   let runs = 0;
-  const service = await createServer({
+  const service = await createServer({ automaticApi: false,
     directory,
     driver: {
       async run() {
