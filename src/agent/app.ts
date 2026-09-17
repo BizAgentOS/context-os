@@ -174,7 +174,7 @@ export class AgentApplication {
     this.live = new LiveMemory(directory, this.memory);
     this.foundation = new FoundationService(this.memory, this.live);
     this.contexts = new WorkContexts(this.memory, this.live);
-    this.capabilities = new AgentCapabilities(directory);
+    this.capabilities = new AgentCapabilities(directory, this.memory);
     this.consumption = new ConsumptionService(directory, this.memory);
     const saved = this.memory.getSettings();
     const provider = (
@@ -990,6 +990,27 @@ export class AgentApplication {
     return this.canvasState(page);
   }
 
+  async prepareFeishuFoundation(body: Record<string, unknown>) {
+    const sourceId = string(body.sourceId, "飞书资料");
+    const messageId = string(body.messageId, "消息标识", 150);
+    if (!Number.isSafeInteger(body.version) || Number(body.version) < 1) throw new Error("请选择有效的资料版本");
+    const source = this.capabilities.feishuDocuments!.source(sourceId, Number(body.version));
+    const text = `请根据这份飞书资料《${source.title}》（本地快照 v${source.version}）补充当前企业的基础本体。先按所需范围实际读取正文，再提取有原文依据的概念和关系，保存候选供我核对。保留现有定义；资料与当前企业不一致时明确提出冲突。不要自动采用。`;
+    const taskId = this.canvasProgress().taskIds.ontology;
+    if (this.memory.hasMessageReceipt(messageId, taskId ? [taskId] : [], "user", text, {
+      workContext: null, focusId: source.id, focusVersion: source.version, refreshSources: false,
+    })) return this.canvasState();
+    if (this.memory.getArtifact(source.id).version !== source.version) throw new Error("资料版本已变化，请重新查看正文后再本体化");
+    if (source.status !== "ready") throw new Error("这份资料的正文无效，无法用于本体化");
+    if (!this.model().configured) throw new Error("资料已保存；请先连接模型，再生成本体候选");
+    if (this.modelTest) throw new Error("正在测试模型连接，请稍后继续");
+    await this.canvasNavigate({ page: "ontology" });
+    return this.canvasMessage({ page: "ontology", messageId,
+      focusId: source.id, focusVersion: source.version,
+      text,
+    });
+  }
+
   async canvasUpload(body: Record<string, unknown>) {
     if (this.modelTest) throw new Error("正在测试连接，请稍后上传");
     const page = this.canvasPage(body.page);
@@ -1640,6 +1661,7 @@ export class AgentApplication {
               this.capabilities,
               name,
               args,
+              context,
             );
             this.memory.assertWritable(context);
             if (

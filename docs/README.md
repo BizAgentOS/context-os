@@ -15,7 +15,7 @@
 | 内部 Agent 如何工作和完成任务 | [Agent 设计](AGENT_DESIGN.md) | 身份、工作方式、运行装配、能力使用、状态、停止和恢复 |
 | KodaX 哪些能力真的接入了 | [KodaX 能力接入记录](KODAX_CAPABILITY_LEDGER.md) | 当前 SDK 依据、本产品调用路径、证据和缺口 |
 | 怎样用接口文档接入 HTTP API | [Swagger/OpenAPI 导入](experiment/OPENAPI_IMPORT.md) | 文档导入、接口选择、认证、样本测试、保存与当前限制 |
-| 服务登录与 MCP 接入如何处理 | [连接向导设计](CONNECTOR_ONBOARDING_DESIGN.md)、[便捷接入验收](experiment/MCP_ONBOARDING.md) | 飞书官方 CLI、账号复用、URL 发现与能力选择；通用 OAuth 尚未接入，真实飞书文档读取待验收 |
+| 服务登录与 MCP 接入如何处理 | [连接向导设计](CONNECTOR_ONBOARDING_DESIGN.md)、[便捷接入验收](experiment/MCP_ONBOARDING.md) | 飞书官方 CLI、账号复用、URL 发现与能力选择；已验证 wiki Markdown 读取、保存与本体候选入口；真实 docx 仍待验收 |
 | 产品 Skill 如何组织和维护 | [内置 Skill](BUILTIN_SKILLS.md) | 目录、发现、加载、依赖、方法与工具的分工 |
 | 基础本体 Skill 具体怎么做 | [企业基础本体 Skill](COMPANY_FOUNDATION_SKILL.md) | 对话、资料、公开研究三路径的输入、依据和交付 |
 | 对象、证据、方法和权限如何定义 | [语义与操作契约](SEMANTIC_CONTRACTS.md) | 领域身份、断言、版本、操作、查询和提交回执 |

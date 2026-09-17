@@ -352,7 +352,7 @@ export class Workspace {
     const format = name.toLowerCase().endsWith(".csv") ? "csv" : "text";
     const prior = this.repo
       .listArtifacts("source")
-      .find((a) => a.title === name);
+      .find((a) => a.title === name && a.content.origin !== "feishu");
     let parsed: { columns: string[]; rows: Data[] } = { columns: [], rows: [] };
     let parseError: string | undefined;
     try {

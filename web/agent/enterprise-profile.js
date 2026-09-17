@@ -35,7 +35,7 @@ export function renderEnterpriseProfile(state, actions) {
   const name = rows.find(row => /^(company\.name|company_name|companyName|name)$/.test(row.key) && row.origin !== "suggestion");
   const title = name?.text || state.foundation?.current?.content?.enterprise?.name || "企业主体";
   const business = rows.find(row => /^(company\.business|business|business_description|description)$/.test(row.key));
-  const files = state.sources || [];
+  const files = (state.sources || []).filter(source => source.content.origin !== "feishu");
   const connections = state.live?.connections || [];
   const sources = el("section", "setup-sources"); sources.id = "setup-sources"; sources.hidden = true;
   const factLabel = row => `${actions.label(row.key)}${row.origin === "suggestion" ? " · 待核实" : ""}`;
@@ -134,7 +134,7 @@ export function renderEnterpriseProfile(state, actions) {
 
   const knowledge = el("section", "ed-knowledge");
   const openService = (options = {}) => actions.api
-    ? openConnections(actions.api, undefined, { ...options, onChanged: refreshConnections }) : showConnections();
+    ? openConnections(actions.api, undefined, { ...options, onChanged: refreshConnections, onPrepared: actions.onImportSaved }) : showConnections();
   knowledge.append(panelHead("MCP 接入", "添加 / 管理", () => openService()));
   const services = el("div", "ed-services");
   let feishuStatus;
@@ -158,7 +158,8 @@ export function renderEnterpriseProfile(state, actions) {
   for (const source of connections.filter(item => item.content.protocol === "mcp")) {
     mcpList.append(button("ed-connection", source.title + (source.status === "ready" ? " · 按需读取" : " · 已停用"), showConnections, "caret-right"));
   }
-  mcpList.append(services);
+  const feishuDocuments = el("div", "ed-feishu-documents");
+  mcpList.append(services, feishuDocuments);
   knowledge.append(mcpList);
 
   const uploads = el("section", "ed-uploads");
@@ -228,8 +229,15 @@ export function renderEnterpriseProfile(state, actions) {
     const [feishu, mcp] = await Promise.allSettled([actions.api("/api/connectors/feishu"), actions.api("/api/capabilities/mcp")]);
     if (request !== connectionGeneration || !root.isConnected) return;
     if (feishu.status === "fulfilled") {
-      feishuStatus.textContent = feishu.value.account ? "CLI 已授权 · 点击读取文档" : "点击登录 · 文档只读";
+      feishuStatus.textContent = feishu.value.account ? `已授权 · 已读取 ${feishu.value.documents.length} 份资料` : `未连接 · 已保存 ${feishu.value.documents.length} 份资料`;
       feishuStatus.classList.toggle("is-connected", !!feishu.value.account);
+      feishuDocuments.replaceChildren();
+      for (const doc of feishu.value.documents || []) {
+        const entry = button("ed-file", "", () => openService({ service: "feishu", sourceId: doc.sourceId }));
+        const copy = el("span", "ed-file-copy");
+        copy.append(el("strong", "", doc.title), el("small", "", `${doc.characters} 字符 · ${doc.usage.length ? "已有本体引用" : "尚未用于本体"}`));
+        entry.replaceChildren(icon("files"), copy, icon("caret-right")); feishuDocuments.append(entry);
+      }
     } else feishuStatus.textContent = "状态暂不可用";
     if (mcp.status === "fulfilled") {
       savedMcps.replaceChildren();

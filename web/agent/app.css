@@ -3099,6 +3099,22 @@ tr.highlight td {
 .service-connections label { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
 .service-connections input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; }
 .service-connections .service-document { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow: auto; font-size: 12px; }
+.feishu-library { margin-top: 24px; border-top: 1px solid #72958e44; padding-top: 20px; }
+.connection-body > .feishu-library:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
+.service-connections .settings-status { color: inherit; background: #88bda31a; }
+.feishu-document-list { display: grid; gap: 8px; max-height: 200px; overflow: auto; }
+.feishu-document-entry { display: grid; gap: 6px; text-align: left; width: 100%; padding: 12px 14px; border: 1px solid #72958e44; border-radius: 12px; color: inherit; background: transparent; overflow-wrap: anywhere; }
+.feishu-document-entry[aria-pressed="true"] { border-color: #7cad9c; background: #88bda31a; }
+.feishu-document-entry small, .feishu-document-meta small { opacity: .72; font-weight: 400; }
+.feishu-document-detail { margin-top: 20px; }
+.feishu-document-detail h3 { overflow-wrap: anywhere; }
+.feishu-document-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 20px 0; }
+.feishu-document-meta > div { display: grid; gap: 6px; font-size: 12px; }
+.feishu-document-progress { display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; }
+.feishu-document-progress span { padding: 5px 9px; border-radius: 6px; background: #88bda31a; }
+.service-connections .feishu-document-detail .service-document { border: 1px solid #72958e44; border-radius: 12px; padding: 16px; line-height: 1.7; min-height: 100px; max-height: 380px; }
+.ed-feishu-documents:not(:empty) { margin-top: 12px; border-top: 1px solid var(--ed-line); padding-top: 8px; }
+@media (max-width: 480px) { .feishu-document-meta { grid-template-columns: 1fr; } }
 
 /* Data-led enterprise page: scope all changes to its middle content. */
 .enterprise-profile .ep-header { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 8px 0 22px; gap: 16px; }

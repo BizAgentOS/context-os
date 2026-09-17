@@ -3,23 +3,30 @@ import { AgentMcp } from "./mcp.ts";
 import { BusinessSdkRegistry } from "./sdk.ts";
 import { FeishuConnector } from "../connectors/feishu.ts";
 import { z } from "zod";
-import type { DomainTool, Json } from "../agent/contracts.ts";
+import type { DomainTool, Json, WriteContext } from "../agent/contracts.ts";
+import { FeishuDocuments } from "../agent/feishu-documents.ts";
+import type { MemoryStore } from "../agent/memory.ts";
 
 export class AgentCapabilities {
   readonly skills: AgentSkills;
   readonly mcp: AgentMcp;
   readonly feishu: FeishuConnector;
+  readonly feishuDocuments?: FeishuDocuments;
   readonly sdk = new BusinessSdkRegistry();
-  constructor(directory: string) {
+  constructor(directory: string, memory?: MemoryStore) {
     this.skills = new AgentSkills(directory);
     this.mcp = new AgentMcp(directory);
     this.feishu = new FeishuConnector(directory);
+    if (memory) this.feishuDocuments = new FeishuDocuments(memory, this.feishu);
     this.sdk.register({
       id: "feishu.document.read",
-      description: "通过已登录飞书账号，只读获取指定 docx 文档或 wiki 页面中的 docx / Markdown / TXT / CSV 内容。在线文档返回版本，文本附件返回本次内容摘要与读取时间；不递归读取目录、不创建或修改远端文件。需先在企业与数据连接飞书。",
+      description: "通过已登录飞书账号读取指定 docx 或 wiki 中的 docx / Markdown / TXT / CSV，将实际正文保存为本地资料快照。返回 sourceId/sourceVersion，可用 foundation_document_read 分段取证并提出本体候选；不会自动采用。不递归目录、不修改飞书。",
       schema: z.object({ url: z.string().url().max(2048) }).strict(),
-      execute: async (args) => this.feishu.readDocument((args as { url: string }).url),
+      execute: async (args, context) => this.readFeishu((args as { url: string }).url, context),
     });
+  }
+  readFeishu(url: string, context?: WriteContext) {
+    return this.feishuDocuments ? this.feishuDocuments.read(url, context) : this.feishu.readDocument(url);
   }
   async search(query = "") {
     const skills = (await this.skills.list()).map((s) => ({
@@ -106,6 +113,7 @@ export async function executeCapability(
   hub: AgentCapabilities,
   name: string,
   args: Record<string, unknown>,
+  context?: WriteContext,
 ): Promise<Json> {
   let result: unknown;
   switch (name) {
@@ -120,7 +128,7 @@ export async function executeCapability(
       break;
     case "sdk_call":
       try {
-        result = await hub.sdk.call(String(args.id), args.args);
+        result = await hub.sdk.call(String(args.id), args.args, context);
       } catch {
         throw new Error("SDK 调用失败，请核对方法名称、参数和外部服务状态");
       }

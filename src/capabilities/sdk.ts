@@ -1,10 +1,11 @@
 import { Octokit } from "@octokit/rest";
 import { z } from "zod";
+import type { WriteContext } from "../agent/contracts.ts";
 export interface SdkMethod {
   id: string;
   description: string;
   schema: z.ZodType;
-  execute: (args: unknown) => Promise<unknown>;
+  execute: (args: unknown, context?: WriteContext) => Promise<unknown>;
 }
 export class BusinessSdkRegistry {
   private methods = new Map<string, SdkMethod>();
@@ -46,9 +47,9 @@ export class BusinessSdkRegistry {
       inputSchema: z.toJSONSchema(m.schema),
     }));
   }
-  async call(id: string, args: unknown) {
+  async call(id: string, args: unknown, context?: WriteContext) {
     const method = this.methods.get(id);
     if (!method) throw new Error("未注册的 SDK 方法");
-    return method.execute(method.schema.parse(args));
+    return method.execute(method.schema.parse(args), context);
   }
 }

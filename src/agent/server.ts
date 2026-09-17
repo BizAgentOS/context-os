@@ -294,7 +294,11 @@ export async function createServer(
           return;
         }
         if (url.pathname === "/api/connectors/feishu") {
-          send(200, app.capabilities.feishu.status());
+          send(200, { ...app.capabilities.feishu.status(), documents: app.capabilities.feishuDocuments!.list(), modelConfigured: app.model().configured });
+          return;
+        }
+        if (url.pathname === "/api/connectors/feishu/document") {
+          send(200, app.capabilities.feishuDocuments!.get(url.searchParams.get("sourceId") || ""));
           return;
         }
         if (url.pathname === "/api/capabilities/mcp") {
@@ -413,7 +417,10 @@ export async function createServer(
           result = await app.capabilities.feishu.disconnect();
           break;
         case "/api/connectors/feishu/read":
-          result = await app.capabilities.feishu.readDocument(String(body.url));
+          result = await app.capabilities.readFeishu(String(body.url));
+          break;
+        case "/api/connectors/feishu/prepare":
+          result = await queue(() => app.prepareFeishuFoundation(body));
           break;
         case "/api/capabilities/mcp/disconnect":
           await app.capabilities.mcp.disconnect(String(body.name));

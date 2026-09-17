@@ -15,9 +15,9 @@ description: 从用户对话、已上传企业文档和确认企业后的公开�
 
 来源接入是下一步：按业务问题建议最少的知识库、BI 或业务系统及用途。调用 live_overview/live_read 检查获准来源。基础定义保存时不携带执行映射；foundation_read 动态返回各概念 bindings 与 mappingStatus，已采用有效绑定可按 conceptId 查询。Skill 只提供方法，工具、权限和来源真实性由宿主与领域服务执行。
 
-## 上传企业资料路径
+## 已保存企业资料路径
 
-- 用户上传 Markdown/TXT 企业说明或要求用资料补充定义时，先 foundation_read，再 foundation_document_read {sourceId,version?,offset?,limit?}。sourceId/version 从 focus 或来源目录取得；不要把文件名、结构或未读正文当作事实。CSV 沿原有记录源建模方法，PDF/DOCX 当前不支持。
+- 用户上传 Markdown/TXT 企业说明或要求用资料补充定义时，先 foundation_read，再 foundation_document_read {sourceId,version?,offset?,limit?}。sourceId/version 从 focus 或来源目录取得；不要把文件名、结构或未读正文当作事实。本地上传 CSV 沿原有记录源建模方法，PDF/DOCX 上传当前不支持。飞书在线 docx 和 wiki 文本附件经 feishu.document.read 读取后保存为文本快照；用返回的 sourceId/sourceVersion 再调用 foundation_document_read 取得本轮可引用片段。飞书 CSV 快照仅作为原文资料理解，不表示已建立业务记录映射。来源元数据中的远端读取时间与本轮片段读取时间分别保留；快照不代表远端实时状态。
 - 默认读取 4000、每次最多 6000 UTF-16 字符，按 coverage.nextOffset 继续；部分读取不代表整份资料已审查。只取完成当前任务所需的段落，失败、空文档和截断如实说明。
 - 文档新增证据参数是 {id,kind:"document",readId,quote}，readId 必须从本轮实际读取结果复制，quote 必须完整落在那次读取片段中。宿主保存文件版本、原文位置和读取时间；不需要模型计算字符偏移。重复短句无法唯一定位时重新读取更窄范围或引用更完整句子。既有证据通过旧 evidenceRefs 复用，不把保存后的元数据全复制进新证据输入。
 - 看清材料对应的企业、时期与范围；纯文档且身份明确时可先形成待采用定义。资料企业名与已确认企业不同则保留现有 enterprise，登记有 evidenceRefs 的冲突，先问清主体，不能使用文档做 identityCorrection 绕过用户决定。

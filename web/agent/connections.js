@@ -3,8 +3,8 @@ import { openMcpConnection } from "./mcp-connection.js";
 import { element as el, action, connectionDialog } from "./connection-ui.js";
 
 export function openConnections(api, custom, options = {}) {
-  const back = () => openConnections(api, custom, { onChanged: options.onChanged });
-  const childOptions = { onChanged: options.onChanged, onBack: back };
+  const back = () => openConnections(api, custom, { onChanged: options.onChanged, onPrepared: options.onPrepared });
+  const childOptions = { onChanged: options.onChanged, onPrepared: options.onPrepared, sourceId: options.sourceId, onBack: back };
   if (options.service === "feishu") return openFeishuConnection(api, childOptions);
   if (options.service === "custom" || options.name)
     return openMcpConnection(api, { ...childOptions, name: options.name });

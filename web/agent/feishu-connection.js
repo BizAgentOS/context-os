@@ -1,10 +1,11 @@
 import { element as el, action, field, connectionDialog } from "./connection-ui.js";
 
 export function openFeishuConnection(api, options = {}) {
-  const shell = connectionDialog("连接飞书", "在飞书官方页面授权；已有账号可直接按链接读取文档。");
+  const shell = connectionDialog("飞书资料", "按链接读取正文，保存为资料，再生成有原文依据的本体候选。");
   shell.dialog.classList.add("service-connections");
   let state, timer, pending, reading = false, exiting = false, generation = 0;
-  let documentUrl = "", documentResult;
+  let documentUrl = "", documentResult, selectedId = options.sourceId, detailRequest = 0, adding = false;
+  const prepareRequests = new Map();
   const active = () => state?.job && !["connected", "cancelled", "failed"].includes(state.job.phase);
   const alive = () => shell.dialog.isConnected && !exiting;
   const back = action("← 所有连接", async () => {
@@ -28,7 +29,7 @@ export function openFeishuConnection(api, options = {}) {
   shell.onClose = () => { exiting = true; generation++; clearTimeout(timer); };
   function update(next) {
     const changed = JSON.stringify(state?.account) !== JSON.stringify(next.account);
-    state = next;
+    state = { ...state, ...next };
     if (changed) options.onChanged?.();
   }
   function freeze(value) {
@@ -44,7 +45,7 @@ export function openFeishuConnection(api, options = {}) {
         if (!alive()) return;
         shell.message(""); render(); schedule();
       } catch (error) { if (alive()) shell.message(error.message); }
-      finally { pending = undefined; freeze(false); }
+      finally { pending = undefined; freeze(false); if (alive()) render(); }
     })();
     await pending;
   }
@@ -53,43 +54,121 @@ export function openFeishuConnection(api, options = {}) {
     if (!active() || !alive()) return;
     timer = setTimeout(() => void refresh(), 1200);
   }
+  async function selectDocument(id) {
+    selectedId = id;
+    const request = ++detailRequest;
+    shell.message("正在打开已保存正文…");
+    try {
+      const doc = await api(`/api/connectors/feishu/document?${new URLSearchParams({ sourceId: id })}`);
+      if (!alive() || request !== detailRequest) return;
+      documentResult = doc; shell.message(""); render(); shell.body.scrollTop = 0;
+    } catch (error) { if (alive() && request === detailRequest) shell.message(error.message); }
+  }
   function showDocument(target) {
     if (!documentResult) return;
-    const version = documentResult.revision == null ? "文本文件 · 本次读取内容" : `版本 ${documentResult.revision}`;
-    target.replaceChildren(
-      ...(documentResult.title ? [el("h3", documentResult.title)] : []),
-      el("p", `已读取 · ${version} · ${new Date(documentResult.readAt).toLocaleString("zh-CN")}`),
-      el("pre", documentResult.content, "service-document"),
-    );
+    const doc = documentResult;
+    const version = doc.revision == null ? "附件文本" : `在线文档 · 飞书版本 ${doc.revision}`;
+    const summary = el("div", null, "feishu-document-meta");
+    for (const [label, value] of [["读取内容", `${doc.characters} 字符`], ["来源类型", version], ["快照读取时间", new Date(doc.readAt).toLocaleString("zh-CN")], ["保存结果", `本地快照 v${doc.sourceVersion}`]]) {
+      const item = el("div"); item.append(el("small", label), el("strong", value)); summary.append(item);
+    }
+    const status = el("div", null, "feishu-document-progress");
+    status.append(el("span", "✓ 正文已读取"), el("span", "✓ 资料已保存"), el("span", doc.usage.length ? "已有本体引用 ↓" : "尚未用于本体"));
+    const heading = el("h3", doc.title);
+    const preview = el("pre", doc.content || "这份文档没有可读取的正文。", "service-document");
+    const link = el("a", "在飞书打开原文 ↗", "connection-note"); link.href = doc.url; link.target = "_blank"; link.rel = "noopener noreferrer";
+    const uses = el("div", null, "feishu-document-uses");
+    for (const usage of doc.usage) {
+      const item = el("section", null, "connection-summary");
+      item.append(el("strong", `${usage.status === "adopted" ? "已采用引用" : "候选引用 · 待核对"} · 本体 v${usage.foundationVersion}`),
+        el("p", `${usage.concepts.length} 个概念 · ${usage.relations.length} 个关系 · 引用快照 ${usage.sourceVersions.map(v => `v${v}`).join("、")}`),
+        el("p", [...usage.concepts, ...usage.relations].map(x => x.name).join(" / ") || "用于企业说明或待核实项", "connection-note"));
+      if (!usage.sourceVersions.includes(doc.sourceVersion)) item.append(el("p", "此本体仍引用旧快照，当前正文尚未用于该版本。", "connection-note"));
+      item.append(action("前往本体工作区", async () => {
+        if (pending || reading) return;
+        reading = true; freeze(true);
+        try {
+          const snapshot = await api("/api/canvas/navigate", { page: "ontology" });
+          if (!alive()) return;
+          options.onPrepared?.(snapshot); await shell.close();
+        } catch (error) { if (alive()) shell.message(error.message); }
+        finally { reading = false; freeze(false); if (alive()) render(); }
+      }), el("p", `在工作区的版本菜单中查看本体 v${usage.foundationVersion}，核对定义和原文依据。`, "connection-note"));
+      uses.append(item);
+    }
+    const actions = el("div", null, "connection-actions");
+    const prepare = action("用于本体化", async () => {
+      if (pending || reading) return;
+      reading = true; freeze(true); shell.message("正在提交这份资料到本体工作区…");
+      try {
+        const key = `${doc.sourceId}:${doc.sourceVersion}`;
+        if (!prepareRequests.has(key)) prepareRequests.set(key, crypto.randomUUID());
+        const snapshot = await api("/api/connectors/feishu/prepare", { sourceId: doc.sourceId, version: doc.sourceVersion, messageId: prepareRequests.get(key) });
+        if (!alive()) return;
+        options.onPrepared?.(snapshot); options.onChanged?.();
+        await shell.close();
+      } catch (error) { if (alive()) shell.message(error.message); }
+      finally { reading = false; freeze(false); if (alive()) render(); }
+    }, "primary-button");
+    prepare.disabled = !state.modelConfigured || doc.status !== "ready";
+    actions.append(prepare);
+    if (state.account) actions.append(action("重新读取原文", () => { documentUrl = doc.url; adding = true; render(); shell.body.querySelector("form").requestSubmit(); }));
+    target.replaceChildren(heading, status, summary, actions,
+      el("p", state.modelConfigured ? "本体化会读取资料并提取概念、关系和原文依据，先保存候选，由你核对采用。" : "正文已保存。请先在页面右上角连接模型，再点击“用于本体化”生成候选。", "connection-note"), link, preview, uses);
+  }
+  function documentLibrary() {
+    const docs = state.documents || [];
+    const library = el("section", null, "feishu-library");
+    library.append(el("h3", `已读取资料 · ${docs.length} 份`));
+    if (!docs.length) library.append(el("p", "还没有保存的正文。粘贴具体文档链接并读取后，会在这里看到内容和本体引用。", "connection-note"));
+    const list = el("div", null, "feishu-document-list");
+    for (const doc of docs) {
+      const button = action("", () => selectDocument(doc.sourceId), "feishu-document-entry");
+      button.setAttribute("aria-pressed", String(doc.sourceId === selectedId));
+      button.append(el("strong", doc.title), el("small", `${doc.characters} 字符 · 快照 v${doc.sourceVersion} · ${doc.usage.length ? "已有本体引用" : "尚未用于本体"}`));
+      list.append(button);
+    }
+    library.append(list);
+    const detail = el("section", null, "feishu-document-detail"); showDocument(detail); library.append(detail);
+    return library;
   }
   function render() {
     shell.body.replaceChildren();
+    if (state.documents?.length) shell.body.append(documentLibrary());
     if (state.account) {
       const account = el("section", null, "connection-summary");
       account.append(el("strong", state.account.label), el("p", "已保存飞书账号 · 文档只读", "connection-note"));
       const form = el("form"), url = field("飞书文档链接", "url");
       url.input.required = true; url.input.placeholder = "https://企业.feishu.cn/wiki/… 或 /docx/…"; url.input.value = documentUrl;
       url.input.addEventListener("input", () => { documentUrl = url.input.value; });
-      const read = el("button", "读取文档", "primary-button"); read.type = "submit";
-      const result = el("div"); result.setAttribute("aria-live", "polite"); showDocument(result);
+      const read = el("button", "读取并保存资料", "primary-button"); read.type = "submit";
+      const result = el("div"); result.setAttribute("aria-live", "polite");
       form.append(url.label, read, result);
       form.addEventListener("submit", async event => {
         event.preventDefault();
         if (pending || reading || !alive()) return;
-        reading = true; freeze(true); documentResult = undefined; result.textContent = "正在读取…";
+        reading = true; generation++; detailRequest++; freeze(true); result.textContent = "正在读取并保存正文…";
         try {
           const doc = await api("/api/connectors/feishu/read", { url: url.input.value.trim() });
           if (!alive()) return;
-          documentResult = doc; showDocument(result);
-        } catch (error) { if (alive()) result.textContent = error.message; }
-        finally { reading = false; freeze(false); }
+          documentResult = doc; selectedId = doc.sourceId; adding = false;
+          update(await api("/api/connectors/feishu"));
+          if (!alive()) return;
+          render(); shell.body.scrollTop = 0; options.onChanged?.();
+          shell.message(doc.changed ? "正文已读取并保存，可在下方查看。" : "已重新读取，内容未变，继续使用已有快照。");
+        } catch (error) { if (alive()) shell.message(error.message); }
+        finally { reading = false; freeze(false); if (alive()) render(); }
       });
       const manage = el("details", null, "connection-advanced");
       manage.append(el("summary", "账号管理"), el("p", `上次核验：${new Date(state.account.verifiedAt).toLocaleString("zh-CN")}。读取时会再次验证账号和权限。`, "connection-note"), action("断开本地连接", () => {
-        documentResult = undefined;
         return perform("/api/connectors/feishu/disconnect", {});
       }), el("p", "飞书侧应用授权需在飞书中管理。", "connection-note"));
-      shell.body.append(account, form, el("p", "支持 docx 在线文档，以及 wiki 页面中的在线文档或 Markdown、TXT、CSV 文件。请使用具体内容页的链接；目录不会批量导入。文本附件限 250 KB、60000 字符，需为 UTF-8 编码。读取内容不会自动保存为上传资料。", "connection-note"), manage);
+      const readPanel = el("details", null, "connection-advanced feishu-read-panel");
+      readPanel.open = adding || !state.documents?.length;
+      readPanel.addEventListener("toggle", () => { if (readPanel.isConnected) adding = readPanel.open; });
+      readPanel.append(el("summary", "读取其他文档 · 管理账号"), account, form,
+        el("p", "支持 docx 在线文档，以及 wiki 中的 Markdown、TXT、CSV 附件。请使用具体内容页链接；只保存明确读取的正文。附件限 250 KB、60000 字符（UTF-8）。", "connection-note"), manage);
+      shell.body.append(readPanel);
     } else if (active()) {
       const steps = [["preparing", "准备组件"], ["waiting_app", "创建应用"], ["waiting_authorization", "授权文档"], ["verifying", "验证账号"]];
       const progress = el("ol", null, "connection-progress");
@@ -113,6 +192,7 @@ export function openFeishuConnection(api, options = {}) {
       if (state.job?.phase === "cancelled") shell.body.append(el("p", "已取消，可以重新连接。", "connection-note"));
       shell.body.append(card, action("登录并连接飞书", () => perform("/api/connectors/feishu/start", {}), "primary-button"), el("p", `首次使用会准备官方 lark-cli ${state.version}；企业可能需要管理员批准。`, "connection-note"));
     }
+    if (!state.documents?.length) shell.body.append(documentLibrary());
     shell.body.append(action("刷新状态", refresh));
   }
   async function refresh() {
@@ -121,7 +201,17 @@ export function openFeishuConnection(api, options = {}) {
     try {
       const next = await api("/api/connectors/feishu");
       if (!alive() || request !== generation) return;
-      if (JSON.stringify(next) !== JSON.stringify(state)) { update(next); render(); }
+      if (JSON.stringify(next) !== JSON.stringify(state)) {
+        update(next);
+        if (documentResult) {
+          const summary = state.documents?.find(doc => doc.sourceId === documentResult.sourceId);
+          if (summary?.sourceVersion === documentResult.sourceVersion) documentResult = { ...documentResult, ...summary };
+          else documentResult = undefined;
+        }
+        render();
+        const selected = state.documents?.find(doc => doc.sourceId === selectedId) || state.documents?.[0];
+        if (selected && !documentResult) void selectDocument(selected.sourceId);
+      }
       shell.message(""); schedule();
     } catch (error) {
       if (!alive() || request !== generation) return;

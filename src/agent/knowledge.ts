@@ -54,7 +54,7 @@ export function sourceCatalog(repo: Repository, args: unknown) {
         title,
         status,
         contentKind: content.format === "text" ? "knowledge" : "records",
-        protocol: "upload",
+        protocol: content.origin === "feishu" ? "feishu" : "upload",
         format: content.format,
       })),
     connections: page.filter((a) => a.kind === "source_connection"),
