@@ -9,6 +9,7 @@ import { EvidenceService, evidenceTools } from "./evidence.ts";
 import { MetricReader, metricTools } from "./metrics.ts";
 import { sourceCatalog } from "./knowledge.ts";
 import { FoundationDocuments } from "./foundation-evidence.ts";
+import { AutomaticFoundation } from "./automatic-foundation.ts";
 import {
   WorkContexts,
   parseWorkContext,
@@ -155,7 +156,10 @@ export class AgentApplication {
   readonly consumption: ConsumptionService;
   readonly driver: AgentDriver;
   private actualDriver?: KodaXDriver;
-  private active?: { context: WriteContext; promise: Promise<void> };
+  private active?: { context: WriteContext; promise: Promise<void>; automatic?: boolean };
+  readonly automaticBuild: AutomaticFoundation;
+  private closing = false;
+  private stopping = false;
   private modelTest = false;
   private streaming = "";
   private settings: ModelSettings;
@@ -193,6 +197,9 @@ export class AgentApplication {
       ? undefined
       : new KodaXDriver(join(directory, "runtime"), this.settings);
     this.driver = driver ?? this.actualDriver!;
+    this.automaticBuild = new AutomaticFoundation(this.memory, this.foundation, this.capabilities);
+    this.capabilities.feishuDocuments!.onSaved = source => { this.automaticBuild.enqueue(source); this.startAutomaticBuild(); };
+    queueMicrotask(() => this.startAutomaticBuild());
   }
 
   model() {
@@ -725,6 +732,7 @@ export class AgentApplication {
       sources,
       ontologies,
       foundation: this.foundation.view(),
+      automaticBuild: this.automaticBuild.view(this.model().configured),
       evidence: new EvidenceService(this.memory, this.live).list(),
       outlines: this.memory.listArtifacts("ontology_outline"),
       verifications: this.memory.listArtifacts("verification"),
@@ -761,7 +769,7 @@ export class AgentApplication {
     if (body.section !== undefined && !setupSection(body.section))
       throw new Error("无效的企业与数据分区");
     const progress = this.canvasProgress();
-    if (page !== progress.currentPage || body.section === undefined)
+    if (!this.active?.automatic && (page !== progress.currentPage || body.section === undefined))
       await this.stopActive("已切换页面，保存的内容保留。");
     progress.currentPage = page;
     if (page === "setup")
@@ -776,6 +784,7 @@ export class AgentApplication {
   }
 
   async canvasStop(body: Record<string, unknown>) {
+    if (this.active?.automatic) { await this.stopActive(); return this.canvasState(); }
     const page = this.canvasPage(body.page);
     const taskId = this.canvasProgress().taskIds[page];
     if (taskId) await this.stop(taskId);
@@ -1027,13 +1036,13 @@ export class AgentApplication {
     if (page === "consumption") throw new Error("请在企业与数据页接入资料。");
     if (page !== this.canvasProgress().currentPage)
       throw new Error("页面已变化，请回到当前页面后继续");
-    await this.stopActive("正在接入资料。");
+    if (!this.active?.automatic) await this.stopActive("正在接入资料。");
     const artifact = new Workspace(this.memory).upload(
       string(body.name, "文件名", 180),
       typeof body.content === "string" ? body.content : "",
     );
     const task = this.canvasTask(page);
-    this.memory.clearInvestigation(task.id, "已接入新资料。");
+    if (!task.executionId) this.memory.clearInvestigation(task.id, "已接入新资料。");
     this.memory.attachArtifact(task.id, artifact);
     this.memory.addMessage(
       task.id,
@@ -1041,13 +1050,8 @@ export class AgentApplication {
       `我上传了 ${artifact.title}，请查看资料并继续当前页。`,
     );
     this.memory.trimMessages(task.id);
-    if (this.model().configured)
-      this.launch(
-        task.id,
-        "请检查最新上传的资料并继续当前页。",
-        artifact,
-        page,
-      );
+    this.automaticBuild.enqueue(artifact);
+    this.startAutomaticBuild();
     return this.canvasState(page);
   }
 
@@ -1341,16 +1345,39 @@ export class AgentApplication {
   }
 
   async idle() {
-    await this.active?.promise;
+    do { this.startAutomaticBuild(); await this.active?.promise; } while (this.active);
+  }
+
+  retryAutomaticBuild() {
+    this.automaticBuild.retry();
+    this.startAutomaticBuild(true);
+    return this.canvasState();
+  }
+
+  startAutomaticBuild(includeExisting = false) {
+    if (includeExisting) for (const source of this.memory.listArtifacts("source")) this.automaticBuild.enqueue(source);
+    if (this.closing || this.stopping || this.active || this.modelTest || !this.model().configured) return;
+    const jobs = this.automaticBuild.pending();
+    if (!jobs.length) return;
+    const task = this.canvasTask("ontology");
+    this.memory.clearInvestigation(task.id, "按当前资料自动构建本体。");
+    const context = this.memory.beginExecution(task.id);
+    const promise = Promise.resolve().then(() => this.automaticBuild.run(jobs, context, this.driver, error => this.safeError(error)));
+    this.active = { context, promise, automatic: true };
+    void promise.finally(() => {
+      if (this.active?.context.executionId === context.executionId) this.active = undefined;
+      this.startAutomaticBuild();
+    }).catch(() => {});
   }
 
   private async stopActive(reason = "已暂停，已保存成果保留。") {
     if (!this.active) return;
     const active = this.active;
+    this.stopping = true;
     this.memory.pauseTask(active.context.taskId, reason);
-    await this.driver.stop();
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
+      await this.driver.stop();
       await Promise.race([
         active.promise,
         new Promise<never>((_, reject) => {
@@ -1362,6 +1389,7 @@ export class AgentApplication {
       ]);
     } finally {
       if (timer) clearTimeout(timer);
+      this.stopping = false;
     }
   }
 
@@ -1466,6 +1494,7 @@ export class AgentApplication {
       .finally(() => {
         if (this.active?.context.executionId === context.executionId)
           this.active = undefined;
+        this.startAutomaticBuild();
       })
       .catch(() => {});
   }
@@ -2208,7 +2237,9 @@ export class AgentApplication {
     this.settings = settings;
     this.memory.saveSettings({ ...this.settings });
     if (this.actualDriver) this.actualDriver.settings = this.settings;
-    return { model: this.model() };
+    const connection = body.testConnection === true ? await this.testConnection() : undefined;
+    this.startAutomaticBuild();
+    return { model: this.model(), ...(connection ? { connection } : {}) };
   }
 
   objectDetails(query: URLSearchParams) {
@@ -2321,6 +2352,7 @@ export class AgentApplication {
   }
 
   async close() {
+    this.closing = true;
     await this.stopActive();
     await this.driver.close();
     await this.capabilities.close();

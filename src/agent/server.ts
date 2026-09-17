@@ -670,6 +670,9 @@ export async function createServer(
         case "/api/canvas/upload":
           result = await queue(() => app.canvasUpload(body));
           break;
+        case "/api/canvas/foundation/automatic":
+          result = await queue(async () => app.retryAutomaticBuild());
+          break;
         case "/api/canvas/upload/remove":
           result = await queue(() => app.removeUpload(body));
           break;

@@ -243,3 +243,8 @@
   .os-node-evidence { display:none; }
   .os-node-label:not(.is-focused) span { display:none; }
 }
+
+.os-build-status { max-width:min(520px,72vw); margin-top:12px; color:var(--os-aqua); font-size:12px; line-height:1.6; pointer-events:auto; }
+.os-build-status button { display:inline-flex; width:auto; min-height:28px; padding:3px 10px; margin:6px 8px 0 0; font-size:12px; }
+.os-build-status details { color:var(--os-muted); max-height:140px; overflow:auto; }
+.os-build-status p { margin:6px 0; }

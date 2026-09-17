@@ -16,8 +16,8 @@ test("uploaded enterprise text is read before citation and its versioned excerpt
   const driver: AgentDriver = {
     async run(request) {
       const input = JSON.parse(request.input);
-      sourceId = input.focus.id;
-      await request.onTool("skill_use", {
+      sourceId = input.sources[0].id;
+      if (input.mode !== "automatic-document-ontology") await request.onTool("skill_use", {
         name: "company-foundation-ontology",
       });
       const excerpt = (await request.onTool("foundation_document_read", {
@@ -69,12 +69,6 @@ test("uploaded enterprise text is read before citation and its versioned excerpt
       )) as any;
       assert.equal(candidate.content.evidence[0].sourceVersion, 1);
       assert.equal(candidate.content.evidence[0].kind, "document");
-      await request.onTool("task_ask", {
-        question: "请核对文档定义。",
-        reason: "含义待采用",
-        foundationId: candidate.id,
-        version: candidate.version,
-      });
       saved = true;
       return { text: "资料候选已保存。", sessionId: "docs", runId: "docs" };
     },
@@ -110,11 +104,8 @@ test("uploaded enterprise text is read before citation and its versioned excerpt
     await service.app.idle();
     assert(saved, JSON.stringify((await api("/api/canvas")).messages));
     const current = (await api("/api/canvas")).foundation.current;
-    await api("/api/canvas/foundation/adopt", {
-      page: "setup",
-      id: current.id,
-      version: current.version,
-    });
+    assert.equal(current.status, "adopted");
+    assert.equal((await api("/api/canvas")).pending, null);
     await service.close();
     const idle: AgentDriver = {
       async run() {
@@ -157,10 +148,10 @@ test("document changes retain prior meaning as a conflict; fresh user choice res
     async run(request) {
       const input = JSON.parse(request.input);
       const before = (await request.onTool("foundation_read", {})) as any;
-      await request.onTool("skill_use", {
+      if (input.mode !== "automatic-document-ontology") await request.onTool("skill_use", {
         name: "company-foundation-ontology",
       });
-      const user = input.recentMessages
+      const user = (input.recentMessages ?? [])
         .filter((m: any) => m.role === "user")
         .at(-1);
       const draft: any = {
@@ -186,7 +177,7 @@ test("document changes retain prior meaning as a conflict; fresh user choice res
         ];
         draft.unknowns = [{ id: "area", description: "服务区域未知" }];
       } else if (checked === 1) {
-        sourceId = input.focus.id;
+        sourceId = input.sources[0].id;
         const part = (await request.onTool("foundation_document_read", {
           sourceId,
         })) as any;
@@ -230,6 +221,7 @@ test("document changes retain prior meaning as a conflict; fresh user choice res
         draft.evidence = [
           { id: "choice", messageId: user.id, quote: user.content },
         ];
+        draft.concepts = [{ id: "customer", name: "客户", description: "接受供热服务的工业企业", evidenceRefs: ["choice"] }];
         draft.conflicts = [
           {
             id: conflict.id,
@@ -279,7 +271,8 @@ test("document changes retain prior meaning as a conflict; fresh user choice res
       2,
       JSON.stringify(service.app.canvasState().messages),
     );
-    assert.equal(service.app.canvasState().foundation.adopted!.version, 2);
+    assert.equal(service.app.canvasState().foundation.adopted!.version, 4);
+    assert.equal((service.app.canvasState().foundation.adopted!.content.concepts as any[])[0].description, "接受供热服务的居民");
     const selected = service.app.canvasContext({
       page: "ontology",
       context: {
@@ -290,7 +283,7 @@ test("document changes retain prior meaning as a conflict; fresh user choice res
             spaceId: service.app.canvasState().workspaceId,
             kind: "foundation_concept",
             id: foundation.id,
-            version: 3,
+            version: 4,
             member: "customer",
           },
         ],
@@ -308,14 +301,7 @@ test("document changes retain prior meaning as a conflict; fresh user choice res
     );
     assert(selected.evidence.some((e: any) => e.kind === "document"));
     assert.equal(selected.unresolvedConflictCount, 1);
-    await assert.rejects(
-      service.app.canvasFoundationAdopt({
-        page: "setup",
-        id: foundation.id,
-        version: 3,
-      }),
-      /冲突/,
-    );
+    assert.equal(service.app.canvasState().automaticBuild.status, "completed");
     await service.app.canvasMessage({
       page: "setup",
       text: "确认采用文档中的工业企业客户含义，原居民范围不再适用。",
@@ -330,7 +316,7 @@ test("document changes retain prior meaning as a conflict; fresh user choice res
     const accepted = await service.app.canvasFoundationAdopt({
       page: "setup",
       id: foundation.id,
-      version: 4,
+      version: 5,
     });
     assert.equal(
       (accepted.foundation.adopted!.content.concepts as any[])[0].id,
@@ -347,7 +333,7 @@ test("document changes retain prior meaning as a conflict; fresh user choice res
     await service.app.canvasFoundationAdopt({
       page: "setup",
       id: foundation.id,
-      version: 6,
+      version: 7,
     });
     await service.app.canvasMessage({
       page: "setup",
@@ -360,7 +346,7 @@ test("document changes retain prior meaning as a conflict; fresh user choice res
       service.app.canvasFoundationAdopt({
         page: "setup",
         id: foundation.id,
-        version: 8,
+        version: 9,
       }),
       /冲突/,
     );
@@ -413,20 +399,10 @@ test("bad text fails explicitly and bounded document reads cannot cite unread ta
       if (replacement)
         return { text: "新资料待检查。", sessionId: "new", runId: "new" };
       const input = JSON.parse(request.input);
-      const sourceId = input.focus.id;
-      await request.onTool("skill_use", {
+      const sourceId = input.sources[0].id;
+      if (input.mode !== "automatic-document-ontology") await request.onTool("skill_use", {
         name: "company-foundation-ontology",
       });
-      const overview = (await request.onTool("workspace_overview", {})) as any;
-      assert(overview);
-      if (checked < 2) {
-        await assert.rejects(
-          request.onTool("foundation_document_read", { sourceId }),
-          /有效文本|为空/,
-        );
-        checked++;
-        return { text: "文件无有效正文。", sessionId: "bad", runId: "bad" };
-      }
       validSourceId = sourceId;
       const part = (await request.onTool("foundation_document_read", {
         sourceId,
@@ -509,8 +485,8 @@ test("bad text fails explicitly and bounded document reads cannot cite unread ta
     await service.app.idle();
     assert.equal(
       checked,
-      3,
-      JSON.stringify(service.app.canvasState().messages),
+      1,
+      JSON.stringify(service.app.canvasState().automaticBuild),
     );
     const candidate = service.app.canvasState().foundation.current!;
     replacement = true;
@@ -526,7 +502,7 @@ test("bad text fails explicitly and bounded document reads cannot cite unread ta
         id: candidate.id,
         version: candidate.version,
       }),
-      /资料已更新/,
+      /候选版本已变化/,
     );
     resave = true;
     await service.app.canvasMessage({
@@ -535,7 +511,7 @@ test("bad text fails explicitly and bounded document reads cannot cite unread ta
       messageId: "resave-old-evidence",
     });
     await service.app.idle();
-    assert.equal(checked, 4);
+    assert.equal(checked, 2);
     await assert.rejects(
       service.app.canvasFoundationAdopt({
         page: "setup",
@@ -544,7 +520,7 @@ test("bad text fails explicitly and bounded document reads cannot cite unread ta
       }),
       /资料已更新/,
     );
-    assert.equal(service.app.canvasState().foundation.adopted, null);
+    assert.equal(service.app.canvasState().foundation.adopted?.version, 2);
     reread = true;
     await service.app.canvasMessage({
       page: "setup",
@@ -552,7 +528,7 @@ test("bad text fails explicitly and bounded document reads cannot cite unread ta
       messageId: "read-new-evidence",
     });
     await service.app.idle();
-    assert.equal(checked, 5);
+    assert.equal(checked, 3);
     const reviewed = service.app.canvasState().foundation.current!;
     assert.equal((reviewed.content.documentVersions as any)[validSourceId], 2);
     await service.app.canvasFoundationAdopt({

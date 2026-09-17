@@ -175,7 +175,7 @@ test("inspected nonempty documents can start conceptual modeling, but empty or u
         errors.push((error as Error).message);
       }
       const source = await request.onTool("memory_read", {
-        id: input.focus.id,
+        id: app.memory.listArtifacts("source")[0].id,
       });
       if ((source as { content: { raw: string } }).content.raw.trim()) {
         await request.onTool("page_complete", {});
@@ -197,22 +197,16 @@ test("inspected nonempty documents can start conceptual modeling, but empty or u
     workspace.editProfile("company.name", "澄川热力");
     workspace.editProfile("company.business", "居民供热");
     await app.canvasNavigate({ page: "sources" });
-    await app.canvasUpload({
-      page: "sources",
-      name: "empty.md",
-      content: "  \n",
-    });
+    workspace.upload("empty.md", "  \n");
+    await app.canvasMessage({ page: "sources", text: "检查当前资料" });
     await app.idle();
     assert.equal(app.canvasState().currentPage, "setup");
     assert.equal(
       app.canvasState().pages.find((page) => page.id === "setup")?.ready,
       false,
     );
-    await app.canvasUpload({
-      page: "sources",
-      name: "业务规则.txt",
-      content: "工单办结表示客服流程完成，供暖恢复需要回访证据。",
-    });
+    workspace.upload("业务规则.txt", "工单办结表示客服流程完成，供暖恢复需要回访证据。");
+    await app.canvasMessage({ page: "sources", text: "检查当前资料" });
     await app.idle();
     const state = app.canvasState();
     assert.equal(state.currentPage, "setup");
@@ -225,11 +219,8 @@ test("inspected nonempty documents can start conceptual modeling, but empty or u
     assert.deepEqual(state.consumers, []);
     assert.equal(errors.length, 2);
     await app.canvasNavigate({ page: "sources" });
-    await app.canvasUpload({
-      page: "sources",
-      name: "更新.md",
-      content: "小区由指定换热站供热。",
-    });
+    workspace.upload("更新.md", "小区由指定换热站供热。");
+    await app.canvasMessage({ page: "sources", text: "检查当前资料" });
     await app.idle();
     assert.equal(
       app.canvasState().currentPage,

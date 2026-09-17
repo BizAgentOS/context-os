@@ -14,8 +14,9 @@ export interface FeishuSourceOrigin {
 const origin = (source: Artifact) => source.content.feishu as unknown as FeishuSourceOrigin;
 const remoteKey = (url: string, coverage: string, id: string) => `${new URL(url).hostname}/${coverage}/${id}`;
 
-/** Explicit remote reads become local evidence snapshots, never automatic ontology adoption. */
+/** Explicit remote reads become versioned local evidence; the host schedules ontology construction. */
 export class FeishuDocuments {
+  onSaved?: (source: Artifact) => void;
   private memory: MemoryStore;
   private reader: Pick<FeishuConnector, "readDocument">;
   constructor(memory: MemoryStore, reader: Pick<FeishuConnector, "readDocument">) {
@@ -41,6 +42,7 @@ export class FeishuDocuments {
         ...(parseError ? { parseError } : {}),
       },
     }, context) : prior;
+    this.onSaved?.(source);
     return { ...this.get(source.id), lastReadAt: doc.readAt, changed };
   }
   source(id: string, version?: number) {

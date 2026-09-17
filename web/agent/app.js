@@ -138,6 +138,7 @@ const state = {
   sources: [],
   ontologies: [],
   foundation: null,
+  automaticBuild: null,
   evidence: [],
   outlines: [],
   verifications: [],
@@ -405,6 +406,7 @@ function canvasFingerprint() {
     live: state.live,
     ontologies: refs(state.ontologies),
     foundation: state.foundation,
+    automaticBuild: state.automaticBuild,
     evidence: refs(state.evidence),
     outlines: refs(state.outlines),
     verifications: refs(state.verifications),
@@ -583,6 +585,9 @@ function renderOntologyBoard(workspace, full, operations, actions) {
   };
   return renderOntologySpace(state.foundation, {
     ...actions,
+    automaticBuild: state.automaticBuild,
+    connectModel: openSettings,
+    retryBuild: () => mutate("/api/canvas/foundation/automatic", {}),
     management,
     objects: () => {loadObjects(); return objects;},
     evidence: renderEvidenceWorkspace(state, {api, mutate}),
@@ -3403,6 +3408,7 @@ async function saveSettings(test = false) {
       provider: $("#provider-input").value,
       model,
       apiKey: $("#api-key-input").value,
+      testConnection: test,
       ...($("#provider-input").value === "custom" ? {
         baseUrl: $("#base-url-input").value.trim(),
         protocol: $("#protocol-input").value,
@@ -3412,8 +3418,7 @@ async function saveSettings(test = false) {
     $("#api-key-input").value = "";
     if (test) {
       settingsStatus("正在测试连接…");
-      const checked = await api("/api/settings/test", {});
-      settingsStatus(checked.message || "连接成功。");
+      settingsStatus(result.connection?.message || "连接成功。");
     } else {
       $("#settings-dialog").close();
       openComposer();

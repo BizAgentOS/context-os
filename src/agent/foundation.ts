@@ -521,8 +521,8 @@ export class FoundationService {
     return current;
   }
 
-  adopt(id: string, version: number): Artifact {
-    const { current } = this.read();
+  adopt(id: string, version: number, options: { automatic?: boolean } = {}): Artifact {
+    const { current, adopted } = this.read();
     if (
       current?.id === id &&
       current.status === "adopted" &&
@@ -540,7 +540,11 @@ export class FoundationService {
     for (const [sourceId, version] of Object.entries(
       candidate.content.documentVersions ?? {},
     )) {
-      if (this.memory.getArtifact(sourceId).version !== version)
+      const source = this.memory.getArtifact(sourceId);
+      // Deleted inputs keep already adopted historical citations, but never justify new reads.
+      const retainedHistory = options.automatic && source.status === "removed" &&
+        (adopted?.content.documentVersions as Data | undefined)?.[sourceId] === version;
+      if (source.version !== version && !retainedHistory)
         throw new Error("候选引用的资料已更新，请重新读取并检查后再采用");
     }
     const activeRefs = new Set([
@@ -559,8 +563,13 @@ export class FoundationService {
       if (source.status !== "ready" || source.version !== e.connectionVersion)
         throw new Error("候选引用的知识来源已停用或契约变化，请重新核对");
     }
-    if (draft.conflicts.some((item) => !item.resolvedBy))
+    if (!options.automatic && draft.conflicts.some((item) => !item.resolvedBy))
       throw new Error("请先解决候选中的冲突，再采用基础定义");
+    const retained = new Map<string, Concept | Relation>();
+    if (options.automatic) for (const conflict of draft.conflicts) {
+      if (!conflict.resolvedBy && conflict.retained && !retained.has(conflict.retained.id))
+        retained.set(conflict.retained.id, conflict.retained);
+    }
     return this.memory.putArtifact({
       id,
       expectedVersion: version,
@@ -569,8 +578,11 @@ export class FoundationService {
       status: "adopted",
       content: {
         ...candidate.content,
+        concepts: draft.concepts.map(item => retained.get(item.id) ?? item),
+        relations: draft.relations.map(item => retained.get(item.id) ?? item),
         adoptedFrom: version,
         adoptedAt: new Date().toISOString(),
+        ...(options.automatic ? { automatic: true } : {}),
       },
     });
   }

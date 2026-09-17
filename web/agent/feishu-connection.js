@@ -2,11 +2,10 @@ import { element as el, action, field, connectionDialog } from "./connection-ui.
 import { renderFeishuDirectory } from "./feishu-directory.js";
 
 export function openFeishuConnection(api, options = {}) {
-  const shell = connectionDialog("飞书资料", "按链接读取正文，保存为资料，再生成有原文依据的本体候选。");
+  const shell = connectionDialog("飞书资料", "按链接读取正文，保存资料后自动构建有原文依据的本体。");
   shell.dialog.classList.add("service-connections");
   let state, timer, pending, reading = false, exiting = false, generation = 0;
   let documentUrl = "", documentResult, selectedId = options.sourceId, detailRequest = 0, adding = false;
-  const prepareRequests = new Map();
   let directoryListing, directorySelection = new Set(), directoryResults = new Map();
   const active = () => state?.job && !["connected", "cancelled", "failed"].includes(state.job.phase);
   const alive = () => shell.dialog.isConnected && !exiting;
@@ -113,7 +112,7 @@ export function openFeishuConnection(api, options = {}) {
       const item = el("div"); item.append(el("small", label), el("strong", value)); summary.append(item);
     }
     const status = el("div", null, "feishu-document-progress");
-    status.append(el("span", "✓ 正文已读取"), el("span", "✓ 资料已保存"), el("span", doc.usage.length ? "已有本体引用 ↓" : "尚未用于本体"));
+    status.append(el("span", "✓ 正文已读取"), el("span", "✓ 资料已保存"), el("span", doc.usage.length ? "已有本体引用 ↓" : "已进入自动构建流程"));
     const heading = el("h3", doc.title);
     const preview = el("pre", doc.content || "这份文档没有可读取的正文。", "service-document");
     const link = el("a", "在飞书打开原文 ↗", "connection-note"); link.href = doc.url; link.target = "_blank"; link.rel = "noopener noreferrer";
@@ -137,25 +136,22 @@ export function openFeishuConnection(api, options = {}) {
       uses.append(item);
     }
     const actions = el("div", null, "connection-actions");
-    const prepare = action("用于本体化", async () => {
+    const prepare = action("查看本体构建", async () => {
       if (pending || reading) return;
-      reading = true; freeze(true); shell.message("正在提交这份资料到本体工作区…");
+      reading = true; freeze(true); shell.message("正在打开本体工作区…");
       try {
-        const key = `${doc.sourceId}:${doc.sourceVersion}`;
-        if (!prepareRequests.has(key)) prepareRequests.set(key, crypto.randomUUID());
-        const snapshot = await api("/api/connectors/feishu/prepare", { sourceId: doc.sourceId, version: doc.sourceVersion, messageId: prepareRequests.get(key) });
+        const snapshot = await api("/api/canvas/navigate", { page: "ontology" });
         if (!alive()) return;
         options.onPrepared?.(snapshot); options.onChanged?.();
         await shell.close();
       } catch (error) { if (alive()) shell.message(error.message); }
       finally { reading = false; freeze(false); if (alive()) render(); }
     }, "primary-button");
-    prepare.disabled = !state.modelConfigured || doc.status !== "ready";
     actions.append(prepare);
     if (state.account) actions.append(action("重新读取原文", () => { documentUrl = doc.url; adding = true; render(); shell.body.querySelector("form").requestSubmit(); }));
     if (state.account && new URL(doc.url).pathname.startsWith("/wiki/")) actions.append(action("查看所在目录", () => browseDirectory(doc.url, true)));
     target.replaceChildren(heading, status, summary, actions,
-      el("p", state.modelConfigured ? "本体化会读取资料并提取概念、关系和原文依据，先保存候选，由你核对采用。" : "正文已保存。请先在页面右上角连接模型，再点击“用于本体化”生成候选。", "connection-note"), link, preview, uses);
+      el("p", state.modelConfigured ? "资料保存后会自动提取概念、关系和原文依据，并直接生效。可前往本体工作区查看进度和结果。" : "正文已保存并加入队列。连接模型后会自动构建本体，无需再次提交。", "connection-note"), link, preview, uses);
   }
   function documentLibrary() {
     const docs = state.documents || [];
@@ -166,7 +162,7 @@ export function openFeishuConnection(api, options = {}) {
     for (const doc of docs) {
       const button = action("", () => selectDocument(doc.sourceId), "feishu-document-entry");
       button.setAttribute("aria-pressed", String(doc.sourceId === selectedId));
-      button.append(el("strong", doc.title), el("small", `${doc.characters} 字符 · 快照 v${doc.sourceVersion} · ${doc.usage.length ? "已有本体引用" : "尚未用于本体"}`));
+      button.append(el("strong", doc.title), el("small", `${doc.characters} 字符 · 快照 v${doc.sourceVersion} · ${doc.usage.length ? "已有本体引用" : "已进入自动构建流程"}`));
       list.append(button);
     }
     library.append(list);

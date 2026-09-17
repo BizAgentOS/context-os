@@ -131,17 +131,17 @@ export class FoundationDocuments {
     const source = this.memory.getArtifact(input.sourceId, input.version);
     if (
       source.kind !== "source" ||
-      source.content.format !== "text" ||
+      !["text", "csv"].includes(String(source.content.format)) ||
       source.status !== "ready"
     )
       throw new Error(
-        "请选择可读取的 Markdown/TXT 企业资料；当前来源不是有效文本",
+        "请选择可读取的 Markdown/TXT/CSV 企业资料；当前来源不是有效文本",
       );
     const raw = source.content.raw;
     if (typeof raw !== "string" || !raw.trim())
       throw new Error("资料正文为空，无法提取基础定义");
     if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffd]/.test(raw))
-      throw new Error("当前资料不是有效文本，请重新上传 UTF-8 Markdown/TXT");
+      throw new Error("当前资料不是有效文本，请重新上传 UTF-8 Markdown/TXT/CSV");
     if (input.offset >= raw.length) throw new Error("读取位置超出正文范围");
     const text = raw.slice(input.offset, input.offset + input.limit);
     if (this.characters + text.length > 40000)

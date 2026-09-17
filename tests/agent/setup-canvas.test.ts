@@ -15,10 +15,10 @@ test("one setup page saves company facts, reads a source and stays open after co
     async run(request) {
       runs++;
       const input = JSON.parse(request.input);
-      assert.equal(input.page, "setup");
-      assert(request.tools.some((t) => t.name === "live_read"));
       assert(!request.tools.some((t) => t.name === "live_consumer_propose"));
       if (runs === 1) {
+        assert.equal(input.page, "setup");
+        assert(request.tools.some((t) => t.name === "live_read"));
         const message = input.recentMessages.at(-1);
         await request.onTool("profile_update", {
           statements: [
@@ -45,8 +45,13 @@ test("one setup page saves company facts, reads a source and stays open after co
           runId: "one",
         };
       }
-      await request.onTool("memory_read", { id: input.focus.id });
-      await request.onTool("page_complete", {});
+      assert.equal(input.mode, "automatic-document-ontology");
+      const part = await request.onTool("foundation_document_read", { sourceId: input.sources[0].id }) as any;
+      await request.onTool("foundation_propose", {
+        baseVersion: 0, enterprise: {name: "澄川热力", evidenceRefs: ["doc"]},
+        concepts: [{id: "resident", name: "居民", description: "供热客户", evidenceRefs: ["doc"]}], relations: [],
+        evidence: [{id: "doc", kind: "document", readId: part.readId, quote: part.text}], unknowns: [], conflicts: []
+      });
       return {
         text: "已检查资料，可以查看本体。",
         sessionId: "two",
@@ -97,16 +102,14 @@ test("one setup page saves company facts, reads a source and stays open after co
     await post("/api/canvas/upload", {
       page: "setup",
       name: "业务.md",
-      content: "我们为居民提供供热服务。",
+      content: "澄川热力为居民提供供热服务。",
     });
     await service.app.idle();
     const final = await read();
     assert.equal(final.currentPage, "setup");
     assert.equal(final.sources.length, 1);
-    assert.equal(
-      final.pages.find((p: { id: string }) => p.id === "setup").ready,
-      true,
-    );
+    assert.equal(final.foundation.current.status, "adopted");
+    assert.equal(final.automaticBuild.status, "completed");
     assert.equal(
       final.messages.filter((m: { role: string }) => m.role === "user").length,
       2,

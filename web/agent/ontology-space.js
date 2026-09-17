@@ -18,7 +18,7 @@ const button = (label, action, symbol, cls = "os-button") => {
 const kindLabel = kind => ({web: "公开网页", document: "企业资料", user: "用户陈述"}[kind] || "定义依据");
 const mappingLabel = item => item.mappingStatus === "bound" ? "已映射" : "未映射";
 
-export function renderOntologySpace(value, {selections, read, select, management, objects, evidence, onLayout}) {
+export function renderOntologySpace(value, {selections, read, select, management, objects, evidence, onLayout, automaticBuild, connectModel, retryBuild}) {
   const root = el("section", "ontology-space"); root.setAttribute("aria-label", "三维本体空间");
   const versions = [value?.current, value?.adopted].filter((item, i, all) => item && all.findIndex(other => other?.version === item.version) === i);
   const saved = selections.get("ontology-space");
@@ -35,6 +35,20 @@ export function renderOntologySpace(value, {selections, read, select, management
   for (const item of versions) {const option = el("option", "", `v${item.version} · ${item.status === "adopted" ? "已采用" : "候选待核对"}`); option.value = item.version; version.append(option);}
   version.value = artifact?.version || ""; version.hidden = !artifact;
   identity.append(eyebrow, title, version);
+  const build = automaticBuild;
+  if (build && build.status !== "idle") {
+    const progress = el("div", "os-build-status"); progress.setAttribute("role", "status");
+    const labels = {running: "正在读取资料并构建本体…", queued: "资料已加入自动构建队列", waiting_model: "资料已保存，连接模型后自动构建", completed: "本体已自动构建并生效", failed: "部分资料构建失败"};
+    progress.append(el("span", "", `${labels[build.status]} · ${build.completed}/${build.total} 份资料`));
+    if (build.status === "waiting_model") progress.append(button("连接模型", connectModel));
+    if (build.errors?.length) {
+      const errors = el("details"); errors.append(el("summary", "", `查看 ${build.errors.length} 项原因`));
+      for (const item of build.errors) errors.append(el("p", "", `${item.title}：${item.message}`));
+      progress.append(errors);
+    }
+    if (build.status === "failed") progress.append(button("重试构建", retryBuild));
+    identity.append(progress);
+  }
   const toolbar = el("div", "os-toolbar"); toolbar.setAttribute("aria-label", "图谱工具");
   const back = button("返回上一层", () => {nav.back(); renderView();}, "back");
   const reset = button("复位视角", () => scene?.resetCamera(), "settings");
@@ -289,7 +303,7 @@ export function renderOntologySpace(value, {selections, read, select, management
   }
   document.addEventListener("keydown", onKeyDown);
   if (!graph.concepts.length) {
-    const empty = el("div", "os-empty"); empty.append(el("h2", "", "从第一个业务概念开始"), el("p", "", "在下方描述企业的业务对象，逐步构建本体与关系。")); root.append(empty);
+    const empty = el("div", "os-empty"); empty.append(el("h2", "", "从第一个业务概念开始"), el("p", "", "上传或接入文档后，本体会自动构建，概念与关系将在这里出现。")); root.append(empty);
   }
   root.dispose = () => {disposed = true; generation++; document.removeEventListener("keydown", onKeyDown); cancelAnimationFrame(fanFrame); fanResize.disconnect(); scene?.dispose();};
   renderDirectory(); renderView(); queueMicrotask(mountScene);

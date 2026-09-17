@@ -546,9 +546,8 @@ test("leaving a page invalidates its pending write, and cancelled or failed comp
           lateRejected = true;
         }
       } else {
-        const source = input.enterprise.sources[0];
-        await request.onTool("memory_read", { id: source.id });
-        await request.onTool("page_complete", {});
+        const source = input.sources[0];
+        await request.onTool("foundation_document_read", { sourceId: source.id });
         return {
           text: "已完成",
           error: "provider interrupted",
@@ -595,7 +594,8 @@ test("leaving a page invalidates its pending write, and cancelled or failed comp
     assert.equal(app.canvasState().pages[2].available, true);
     assert.equal(app.canvasState().pages[1].ready, false);
     assert.equal(app.canvasState().sources.length, 1);
-    assert.match(app.canvasState().messages.at(-1)!.content, /未完成/);
+    assert.equal(app.canvasState().automaticBuild.status, "failed");
+    assert.match(app.canvasState().automaticBuild.errors[0].message, /provider interrupted/);
   } finally {
     await app.close();
     rmSync(directory, { recursive: true, force: true });
