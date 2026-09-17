@@ -1,6 +1,7 @@
 import { renderEnterpriseProfile } from "./enterprise-profile.js";
 import { renderEvidenceWorkspace } from "./evidence.js";
 import { renderFoundationWorkspace } from "./foundation-workspace.js";
+import { renderOntologySpace } from "./ontology-space.js";
 import { renderLiveObjects } from "./live-objects.js";
 import { renderFoundation } from "./foundation.js";
 import { createCapabilitiesPanel } from "./capabilities.js";
@@ -425,6 +426,11 @@ function renderCanvas(force = false) {
   const fingerprint = canvasFingerprint();
   if (!force && fingerprint === ui.canvasKey) return;
   ui.canvasKey = fingerprint;
+  const spatial = ui.page === "ontology" && !ui.detail && !shareMode && !state.demo;
+  $(".canvas-app").classList.toggle("is-ontology-space", spatial);
+  for (const element of $$(".os-chat-metrics,.os-chat-footer")) element.hidden = !spatial;
+  $("#canvas").firstElementChild?.dispose?.();
+  if (spatial && ["compact", "collapsed"].includes(ui.chatMode)) setChatMode("composer");
   if (ui.detail) {
     if (ui.detail.kind === "consumer") {
       const consumer = state.consumers.find(
@@ -480,7 +486,7 @@ function renderCanvas(force = false) {
       live.append(details);
     }
     if (ui.page === "ontology") {
-      const workspace = renderFoundationWorkspace(state.foundation, {
+      const foundationActions = {
         selections: ui.graphSelections,
         select: (model, target, isCurrent, focusComposer = false) =>
           selectLiveContext(model, target, undefined, focusComposer, isCurrent),
@@ -501,45 +507,27 @@ function renderCanvas(force = false) {
               scope: { where: {}, offset: 0, limit: 20 },
             },
           }),
-      });
+      };
+      const workspace = renderFoundationWorkspace(state.foundation, foundationActions);
       const full = node("details", "live-legacy");
       full.append(
         node("summary", "", "完整基础定义与采用操作"),
         foundationPanel(),
       );
-      canvas.replaceChildren(renderOntologyBoard(workspace, full, live));
+      canvas.replaceChildren(renderOntologyBoard(workspace, full, live, foundationActions));
     } else canvas.replaceChildren(live);
   } else if (ui.page === "ontology") canvas.replaceChildren(renderOntology());
   else canvas.replaceChildren(renderConsumption());
 
   renderAttention(canvas);
 }
-function renderOntologyBoard(workspace, full, operations) {
-  const board = node("section", "ontology-board");
-  board.setAttribute("aria-label", "企业本体画布");
-  const header = node("header", "ontology-board-header");
-  const title = node("div");
-  title.append(node("p", "source-meta", state.foundation?.current?.content.enterprise?.name || "企业语义底座"), node("h1", "", "企业本体"));
-  const actions = node("div", "ontology-board-actions");
-  function panel(label, contents) {
-    const dialog = node("dialog", "live-dialog ontology-panel");
-    dialog.setAttribute("aria-label", label);
-    dialog.append(node("h2", "", label), button("关闭", "quiet-button", () => dialog.close()), contents);
-    board.append(dialog);
-    return button(label, "quiet-button", () => dialog.showModal());
-  }
+function renderOntologyBoard(workspace, full, operations, actions) {
   const management = node("div");
-  management.append(full, operations);
-  actions.append(panel("定义与映射", management), panel("共同取证", renderEvidenceWorkspace(state, { api, mutate })));
-  header.append(title, actions);
-  const tabs = node("div", "ontology-board-tabs");
-  tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "本体视角");
-  const definitions = node("div", "ontology-board-definitions");
-  definitions.id = "ontology-definitions";
-  definitions.append(workspace);
-  const objects = node("div", "ontology-board-objects"); objects.id = "ontology-objects";
+  const directory = node("details", "live-legacy");
+  directory.append(node("summary", "", "定义与映射目录"), workspace);
+  management.append(directory, full, operations);
+  const objects = node("div", "ontology-board-objects");
   let loaded = false;
-  const modes = [["definitions", "概念与关系", definitions], ["objects", "实际对象", objects]];
   const loadObjects = () => {
     if (loaded) return;
     loaded = true;
@@ -563,35 +551,39 @@ function renderOntologyBoard(workspace, full, operations) {
       host.replaceChildren();
       if (model.status !== "adopted") host.append(node("p", "source-meta", "候选映射下的对象预览，尚未采用。"));
       host.append(renderLiveObjects(model, {api, selections: ui.graphSelections,
-        select: (m, t, scope, guard) => selectLiveContext(m, t, scope, false, () => !objects.hidden && (!guard || guard()))}));
+        select: (m, t, scope, guard) => selectLiveContext(m, t, scope, false, () => objects.closest("dialog")?.open && (!guard || guard()))}));
     };
     picker.onchange = show; show();
   };
-  const choose = (mode) => {
-    ui.graphSelections.set("ontology-board-mode", mode);
-    for (const [id, , pane] of modes) {
-      pane.hidden = id !== mode;
-      tabs.querySelector(`[data-mode="${id}"]`).setAttribute("aria-selected", String(id === mode));
-    }
-    if (mode === "objects") loadObjects();
-  };
-  for (const [id, label, pane] of modes) {
-    const control = button(label, "quiet-button", () => choose(id));
-    control.dataset.mode = id; control.id = `ontology-tab-${id}`;
-    control.setAttribute("role", "tab"); control.setAttribute("aria-controls", pane.id);
-    pane.setAttribute("role", "tabpanel"); pane.setAttribute("aria-labelledby", control.id);
-    control.addEventListener("keydown", (event) => {
-      if (["ArrowLeft", "ArrowRight"].includes(event.key)) {
-        event.preventDefault();
-        const next = id === "definitions" ? "objects" : "definitions";
-        choose(next); tabs.querySelector(`[data-mode="${next}"]`).focus();
-      }
-    });
-    tabs.append(control);
+  return renderOntologySpace(state.foundation, {
+    ...actions,
+    management,
+    objects: () => {loadObjects(); return objects;},
+    evidence: renderEvidenceWorkspace(state, {api, mutate}),
+    onLayout: updateOntologyComposer,
+  });
+}
+function updateOntologyComposer({stage, stats}) {
+  $(".canvas-app").dataset.ontologyStage = stage;
+  let metrics = $(".os-chat-metrics");
+  if (!metrics) {
+    metrics = node("div", "os-chat-metrics");
+    $("#chat-surface .composer-wrap").prepend(metrics);
+    const footer = node("div", "os-chat-footer");
+    footer.append(node("span", "", "DataEngine Agent"),
+      button("对话记录", "", () => setChatMode(ui.chatMode === "history" ? "composer" : "history")),
+      button("继续提问", "os-chat-discuss", openComposer));
+    $("#chat-surface").append(footer);
   }
-  board.prepend(header, tabs, definitions, objects);
-  choose(ui.graphSelections.get("ontology-board-mode") || "definitions");
-  return board;
+  metrics.replaceChildren();
+  for (const [name, count] of [["业务概念", stats.concepts], ["业务关系", stats.relations], ["已映射", stats.mapped], ["定义依据", stats.evidence]]) {
+    const item = node("div"); item.append(node("span", "", name), node("strong", "", String(count))); metrics.append(item);
+  }
+  metrics.hidden = false;
+  $(".os-chat-footer").hidden = false;
+  $(".interaction").setAttribute("aria-label", "本体助手");
+  $("#message-input").dataset.spatialPlaceholder = stage === "global" ? "向企业本体提问…" : "输入问题，或先引用本体内容…";
+  updateComposer();
 }
 function foundationPanel() {
   return renderFoundation(state.foundation, {
@@ -2268,6 +2260,9 @@ function closeDetail() {
 function showDetail(detail, content) {
   ui.detailRequest += 1;
   ui.detail = detail;
+  $("#canvas").firstElementChild?.dispose?.();
+  $(".canvas-app").classList.remove("is-ontology-space");
+  for (const element of $$(".os-chat-metrics,.os-chat-footer")) element.hidden = true;
   $("#canvas").replaceChildren(content);
   $("#canvas").scrollTop = 0;
 }
@@ -3103,6 +3098,8 @@ function setChatMode(mode) {
   if (mode === "history") $("#dialogue").scrollTop = $("#dialogue").scrollHeight;
 }
 function openComposer() {
+  // A discussion action inside a management dialog must release its modal focus trap.
+  for (const dialog of $$(".os-management[open]")) dialog.close();
   if (ui.chatMode === "collapsed" || ui.chatMode === "compact") setChatMode("composer");
   updateComposer();
   $("#message-input").focus();
@@ -3121,7 +3118,7 @@ function updateComposer() {
   const busy = state.busy;
   const blocked =
     ui.requesting || ui.uploading || ui.contextResolving || !ui.initialized;
-  input.placeholder = ui.chatMode === "compact" ? "随心输入" : shareMode
+  input.placeholder = $(".canvas-app").classList.contains("is-ontology-space") ? input.dataset.spatialPlaceholder || "向企业本体提问…" : ui.chatMode === "compact" ? "随心输入" : shareMode
     ? "选择下方示例问题，了解这一页…"
     : placeholders[ui.page];
   $("#demo-question").hidden = !state.demo || busy || !!input.value.trim();
@@ -3184,6 +3181,17 @@ function resizeInput() {
   input.style.height = `${Math.min(100, Math.max(20, input.scrollHeight))}px`;
 }
 window.addEventListener("resize", resizeInput);
+// A spatial transition changes the input width after the window resize event.
+// Re-measure wrapped text at its final width, without reacting to height-only changes.
+let measuredInputWidth = 0;
+new ResizeObserver(([entry]) => {
+  if (Math.abs(entry.contentRect.width - measuredInputWidth) < .5) return;
+  measuredInputWidth = entry.contentRect.width;
+  resizeInput();
+}).observe($("#message-input"));
+new ResizeObserver(([entry]) => {
+  $(".canvas-app").style.setProperty("--os-composer-height", `${Math.min(entry.contentRect.height, 280)}px`);
+}).observe($(".interaction"));
 async function sendMessage() {
   const input = $("#message-input");
   const text = input.value.trim();
@@ -3410,7 +3418,7 @@ $("#message-input").addEventListener("focus", () => {
   if (ui.chatMode === "compact") setChatMode("composer");
 });
 $("#canvas").addEventListener("pointerdown", () => {
-  if (ui.chatMode === "composer" && !$("#message-input").value && !ui.focus && !state.busy && !$("#request-error").textContent)
+  if (ui.page !== "ontology" && ui.chatMode === "composer" && !$("#message-input").value && !ui.focus && !state.busy && !$("#request-error").textContent)
     setChatMode("compact");
 });
 $("#toggle-history").addEventListener("click", () => {
@@ -3426,7 +3434,7 @@ $(".interaction").addEventListener("keydown", (event) => {
   if (ui.chatMode === "history") {
     setChatMode("composer");
     $("#toggle-history").focus();
-  } else if (ui.chatMode === "composer" || ui.chatMode === "compact") {
+  } else if (ui.page !== "ontology" && (ui.chatMode === "composer" || ui.chatMode === "compact")) {
     setChatMode("collapsed");
     $("#open-composer").focus();
   }

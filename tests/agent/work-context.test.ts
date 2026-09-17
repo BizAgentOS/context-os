@@ -197,7 +197,7 @@ test("object relation context reads current source facts in its fixed range and 
     };
     const propertyRead = await (await post(property)).json();
     assert.equal(propertyRead.target.definition.sourceField, "id");
-    service.app.live.adopt(model.id, model.version);
+    await service.app.live.adopt(model.id, model.version);
     assert.equal((await post(context)).status, 400);
   } finally {
     await service.close();

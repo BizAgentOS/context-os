@@ -21,6 +21,7 @@
 | 对象、证据、方法和权限如何定义 | [语义与操作契约](SEMANTIC_CONTRACTS.md) | 领域身份、断言、版本、操作、查询和提交回执 |
 | 人和 Agent 如何对准同一内容 | [人机协作契约](AGENT_UI_DESIGN.md) | 固定到消息的工作上下文、展示意图、草稿与回执投影 |
 | 企业档案内容区后续如何扩展 | [排版开发 Skill](../.agents/skills/enterprise-profile-layout/SKILL.md) | 已确认的内容结构、页面边界、真实数据与响应式规则 |
+| 三维本体空间怎样探索 | [三维本体验收](experiment/ONTOLOGY_SPACE.md) | 点击聚焦、关联扇区、深色详情与随状态移动的共享输入框 |
 | 用户看见什么、怎样查看和修改 | [画布与可视化](CANVAS_DESIGN.md) | 三页交互、图表详情、差异、键盘和窄屏 |
 | 其他 Agent 怎样独立使用数据 | [消费与治理](DATA_CONSUMPTION_DESIGN.md) | 消费视图、API/MCP、说明生成、发布迁移与撤销 |
 | 为什么这样划分职责 | [架构决策 ADR](ADR/README.md) | 稳定决定、替代方案、代价与重新讨论条件 |

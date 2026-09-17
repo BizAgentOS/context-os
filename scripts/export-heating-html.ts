@@ -14,7 +14,7 @@ export async function exportHeatingHtml(
   const [template, styles, compiled] = await Promise.all([
     readFile(resolve(root, "web/agent/index.html"), "utf8"),
     Promise.all(
-      ["app.css", "memory-graph.css", "share.css"].map((name) =>
+      ["app.css", "memory-graph.css", "ontology-space.css", "share.css"].map((name) =>
         readFile(resolve(root, "web/agent", name), "utf8"),
       ),
     ),

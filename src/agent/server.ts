@@ -16,9 +16,14 @@ import { AgentApplication } from "./app.ts";
 import { SourcePolicyService } from "./source-policy.ts";
 import { reviewVerification } from "./maintenance.ts";
 import type { AgentDriver } from "./runtime.ts";
+import { ontologySceneAsset } from "./browser-assets.ts";
 
 const webRoot = fileURLToPath(new URL("../../web/agent/", import.meta.url));
 const staticFiles: Record<string, { file: string; type: string }> = {
+  "/ontology-space.js": { file: "ontology-space.js", type: "text/javascript; charset=utf-8" },
+  "/ontology-space-model.js": { file: "ontology-space-model.js", type: "text/javascript; charset=utf-8" },
+  "/ontology-space.css": { file: "ontology-space.css", type: "text/css; charset=utf-8" },
+  "/ontology-scene.js": { file: "ontology-scene.js", type: "text/javascript; charset=utf-8" },
   "/connection-ui.js": { file: "connection-ui.js", type: "text/javascript; charset=utf-8" },
   "/feishu-connection.js": { file: "feishu-connection.js", type: "text/javascript; charset=utf-8" },
   "/mcp-connection.js": { file: "mcp-connection.js", type: "text/javascript; charset=utf-8" },
@@ -357,7 +362,9 @@ export async function createServer(
           send(404, { error: "页面不存在" });
           return;
         }
-        const contents = await readFile(join(webRoot, entry.file));
+        const contents = normalized === "/ontology-scene.js"
+          ? await ontologySceneAsset()
+          : await readFile(join(webRoot, entry.file));
         response.writeHead(200, { "Content-Type": entry.type });
         response.end(contents);
         return;
