@@ -245,7 +245,6 @@ export function renderOnboarding(initial, actions) {
     if(rendered!==key){
       const previous=rendered, stepChanged=renderedStep!==setup.step;rendered=key;renderedStep=setup.step;
       root.replaceChildren();
-      const top=el("div",null,"ob-topline");top.append(el("span","建立你的企业数据基础"),action("稍后继续 · 返回企业页",()=>run(()=>save("suspend")),"ob-back"),el("span",`${setup.step} / 5`));root.append(top);
       const nav=el("nav",null,"ob-progress");nav.setAttribute("aria-label","初始化步骤");
       titles.forEach((title,i)=>{
         const button=action(`${i+1}  ${title}`,()=>step(i+1));

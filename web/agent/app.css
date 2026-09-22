@@ -4075,10 +4075,11 @@ dialog.ds-dialog > h2 { flex-shrink: 0; }
 .enterprise-dashboard .ed-upload-delete:hover { color: #ffcec1; }
 
 /* First-run enterprise setup. Existing dashboard remains the destination. */
-.canvas-app.is-onboarding .canvas { padding: 30px 28px 150px; display: block; overflow-y: auto; }
-.canvas-app.is-onboarding .interaction { display: none; }
-.onboarding { width: min(100%, 780px); margin: 12px auto 60px; color: #202422; font-size: 14px; line-height: 1.65; }
-.ob-topline { display:flex;justify-content:space-between;color:#69716e;font-size:12px;letter-spacing:.04em; }
+.canvas-app.is-onboarding { --topbar-height: 0px; --interaction-height: 0px; grid-template-rows: minmax(0, 1fr); }
+.canvas-app.is-onboarding > .topbar, .canvas-app.is-onboarding .interaction { display: none; }
+.canvas-app.is-onboarding .canvas { padding: 48px 28px; display: flex; overflow-y: auto; }
+.canvas-app.is-onboarding .canvas::after { display: none; }
+.onboarding { flex: none; width: min(100%, 780px); margin: auto; color: #202422; font-size: 14px; line-height: 1.65; }
 .ob-progress { display:flex;gap:4px;margin:20px 0 42px;border-bottom:1px solid #d7dcd8; }
 .ob-progress button { flex:1;padding:12px 4px 15px;color:#7a827e;background:transparent;border:0;border-bottom:2px solid transparent;border-radius:0;font-size:12px;white-space:nowrap; }
 .ob-progress button[aria-current] { border-color:#252c28;color:#1c241f;font-weight:600; }
@@ -4137,8 +4138,7 @@ dialog.ds-dialog > h2 { flex-shrink: 0; }
 .ob-research-text {white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow-y:auto;font-size:13px;margin-top:12px;}
 .ob-reopen {font-size:12px;color:#5e7466;align-self:flex-end;padding:0 0 12px;}
 @media (max-width:700px) {
-  .canvas-app.is-onboarding .canvas {padding:22px 16px 150px;}
-  .onboarding {margin-top:8px;}
+  .canvas-app.is-onboarding .canvas {padding:28px 16px;}
   .ob-progress {gap:0;margin-bottom:28px;overflow-x:auto;}
   .ob-progress button {font-size:10px;min-width:70px;}
   .ob-heading h1 {font-size:29px;}
