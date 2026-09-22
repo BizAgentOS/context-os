@@ -6,6 +6,7 @@
 
 | 需要查看 | 记录 |
 |---|---|
+| 企业初始化与金融行业模板 | [企业冷启动](ENTERPRISE_ONBOARDING.md) |
 | 本体子集发布与外部 MCP 数据集 | [本体数据集](ONTOLOGY_DATASETS.md) |
 | 飞书 wiki Markdown / TXT / CSV 读取 | [知识库附件修复](FEISHU_WIKI_FILES.md) |
 | Swagger 导入与 MCP 便捷接入 | [HTTP API 导入](OPENAPI_IMPORT.md)、[MCP 接入](MCP_ONBOARDING.md) |

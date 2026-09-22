@@ -611,8 +611,17 @@ export class MemoryStore implements Repository {
     return row ? parse<Data>(row) : {};
   }
 
+  getOnboarding(): Data | null {
+    const row = this.db.prepare("SELECT body FROM settings WHERE id=?").get("onboarding");
+    return row ? parse<Data>(row) : null;
+  }
+  saveOnboarding(state: Data) {
+    this.db.prepare("INSERT INTO settings VALUES (?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body")
+      .run("onboarding", JSON.stringify(state));
+  }
+
   saveSettings(settings: Data) {
-    // Persist connection metadata only; credential values are never persisted.
+    // Metadata only; credentials live in the separate restricted credential store.
     const safe = { provider: settings.provider, model: settings.model,
       ...(settings.provider === "custom" ? {baseUrl: settings.baseUrl, protocol: settings.protocol} : {}),
     };

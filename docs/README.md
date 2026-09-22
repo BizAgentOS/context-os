@@ -1,6 +1,6 @@
 # Data Engine 文档中心
 
-更新：2026-09-17。文档按基于 KodaX 的领域 Agent 产品组织：产品目标 → 系统职责 → Agent 方法与运行 → 共同语义契约 → 人类交互和外部消费 → 实施与验证。
+更新：2026-09-22。文档按基于 KodaX 的领域 Agent 产品组织：产品目标 → 系统职责 → Agent 方法与运行 → 共同语义契约 → 人类交互和外部消费 → 实施与验证。
 
 **产品核心：本体驱动异构多源数据融合与语义打通。** 内部 Agent 协助构建和治理；人类用户与外部 Agent 消费同一企业语义层。三个页面是工作入口，内部保持一个 Agent，不为每页创建独立 Agent 或事实库。
 
@@ -14,6 +14,7 @@
 | 系统由谁负责什么 | [总体架构（HLD）](DATA_ENGINE_DESIGN.md) | KodaX、应用宿主、领域服务、来源、前端与消费边界 |
 | 内部 Agent 如何工作和完成任务 | [Agent 设计](AGENT_DESIGN.md) | 身份、工作方式、运行装配、能力使用、状态、停止和恢复 |
 | KodaX 哪些能力真的接入了 | [KodaX 能力接入记录](KODAX_CAPABILITY_LEDGER.md) | 当前 SDK 依据、本产品调用路径、证据和缺口 |
+| 首次怎样建立企业、行业定义和来源 | [企业冷启动](experiment/ENTERPRISE_ONBOARDING.md) | 五步向导、金融优先模板、密钥保存、恢复及实际接入范围 |
 | API 接入后怎样自动成为可查询本体 | [API 自动本体化](experiment/AUTOMATIC_API.md) | 连接排队、真实样本、基础概念与自动映射、状态和失败重试 |
 | 怎样用接口文档接入 HTTP API | [Swagger/OpenAPI 导入](experiment/OPENAPI_IMPORT.md) | 文档导入、接口选择、认证、样本测试、保存与当前限制 |
 | 服务登录与 MCP 接入如何处理 | [连接向导设计](CONNECTOR_ONBOARDING_DESIGN.md)、[便捷接入验收](experiment/MCP_ONBOARDING.md) | 飞书官方 CLI、账号复用、URL 发现与能力选择；已验证 wiki Markdown 读取、保存与本体候选入口；真实 docx 仍待验收 |

@@ -392,6 +392,19 @@ export class Workspace {
       true,
     );
   }
+  clearOptionalProfile(key: string): void {
+    if (!["company.business", "business", "company.location", "company.website", "company.goal"].includes(key))
+      throw new Error("该企业字段不能清空");
+    const prior = this.repo.listArtifacts("profile")[0];
+    if (!prior) return;
+    const statements = (prior.content.statements ?? []) as Data[];
+    if (!statements.some(item => item.key === key)) return;
+    const conflicts = structuredClone((prior.content.conflicts ?? []) as Data[]);
+    for (const conflict of conflicts) if (conflict.key === key && !conflict.resolved)
+      conflict.resolved = { origin: "user", at: new Date().toISOString(), value: "", removed: true };
+    this.repo.putArtifact({ ...prior, expectedVersion: prior.version,
+      content: { ...prior.content, statements: statements.filter(item => item.key !== key), conflicts } });
+  }
   adopt(id: string, version: number): Artifact {
     const model = this.repo.getArtifact(id);
     if (model.kind !== "ontology" || model.version !== version)

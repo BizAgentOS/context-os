@@ -61,11 +61,23 @@ test("GLM providers keep distinct credentials and persist model selection across
       400,
     );
     await service.close();
+    for (const [, env] of variants) delete process.env[env];
     service = await createServer({ directory });
     origin = await start();
     const state = await request("/api/canvas");
     assert.equal(state.body.model.provider, "zai-coding");
     assert.equal(state.body.model.model, "glm-4.7");
+    assert.equal(state.body.model.configured, true, "saved API key survives a fresh process environment");
+    assert.equal(state.body.model.keySaved, true);
+    const deleted = await request("/api/settings/key/delete", {});
+    assert.equal(deleted.status, 200);
+    assert.equal(deleted.body.model.configured, false);
+    await service.close();
+    service = await createServer({ directory });
+    origin = await start();
+    assert.equal((await request("/api/canvas")).body.model.configured, false);
+    assert.equal((await request("/api/settings", { provider: "zhipu", model: "glm-4.7" })).body.model.configured, true,
+      "deleting one service key retains other service keys");
   } finally {
     await service.close();
     variants.forEach(([, env], i) => {

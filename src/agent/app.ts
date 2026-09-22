@@ -11,6 +11,8 @@ import { sourceCatalog } from "./knowledge.ts";
 import { FoundationDocuments } from "./foundation-evidence.ts";
 import { AutomaticApi } from "./automatic-api.ts";
 import { AutomaticFoundation } from "./automatic-foundation.ts";
+import { ModelCredentials } from "./model-credentials.ts";
+import { Onboarding } from "./onboarding.ts";
 import {
   WorkContexts,
   parseWorkContext,
@@ -153,6 +155,7 @@ export class AgentApplication {
   readonly live: LiveMemory;
   readonly contexts: WorkContexts;
   readonly foundation: FoundationService;
+  readonly onboarding: Onboarding;
   readonly capabilities: AgentCapabilities;
   readonly consumption: ConsumptionService;
   readonly driver: AgentDriver;
@@ -166,6 +169,7 @@ export class AgentApplication {
   private modelTest = false;
   private streaming = "";
   private settings: ModelSettings;
+  private credentials: ModelCredentials;
   private injected: boolean;
 
   private researchTestOrigins: ReadonlySet<string>;
@@ -182,6 +186,7 @@ export class AgentApplication {
     this.memory = new MemoryStore(directory);
     this.live = new LiveMemory(directory, this.memory);
     this.foundation = new FoundationService(this.memory, this.live);
+    this.onboarding = new Onboarding(this.memory, this.foundation, () => this.canvasTask("setup").id);
     this.contexts = new WorkContexts(this.memory, this.live);
     this.capabilities = new AgentCapabilities(directory, this.memory);
     this.consumption = new ConsumptionService(directory, this.memory);
@@ -197,6 +202,8 @@ export class AgentApplication {
         typeof saved.model === "string" ? saved.model : "deepseek-v4-flash",
     };
     if (provider === "custom") Object.assign(this.settings, customEndpoint(saved));
+    this.credentials = new ModelCredentials(directory);
+    this.credentials.restore(this.settings);
     this.injected = !!driver;
     this.actualDriver = driver
       ? undefined
@@ -215,6 +222,7 @@ export class AgentApplication {
   model() {
     return {
       ...this.settings,
+      keySaved: this.credentials.saved(this.settings),
       configured:
         this.injected || !!process.env[modelKeyEnvironment(this.settings)],
       sdkVersion: "0.7.96-beta.2",
@@ -710,6 +718,7 @@ export class AgentApplication {
     return {
       layoutVersion: 2,
       workspaceId: this.memory.workspaceId(),
+      onboarding: this.onboarding.view(),
       legacyHistory: page === "setup" ? this.legacyHistory() : [],
       setupSection: setupSection(value) ?? progress.setupSection ?? "company",
       currentPage: progress.currentPage,
@@ -2249,14 +2258,40 @@ export class AgentApplication {
     const settings: ModelSettings = { provider, model,
       ...(provider === "custom" ? customEndpoint(body) : {}),
     };
-    if (typeof body.apiKey === "string" && body.apiKey.trim())
-      process.env[modelKeyEnvironment(settings)] = body.apiKey.trim();
+    if (typeof body.apiKey === "string" && body.apiKey.trim()) {
+      if (body.apiKey.length > 16000 || /[\r\n\x00]/.test(body.apiKey)) throw new Error("API Key 格式不正确");
+      this.credentials.save(settings, body.apiKey.trim());
+    } else this.credentials.restore(settings);
     this.settings = settings;
     this.memory.saveSettings({ ...this.settings });
     if (this.actualDriver) this.actualDriver.settings = this.settings;
     const connection = body.testConnection === true ? await this.testConnection() : undefined;
     this.startAutomaticBuild();
     return { model: this.model(), ...(connection ? { connection } : {}) };
+  }
+
+  async updateOnboarding(action: string, body: Record<string, unknown>) {
+    if (this.active || this.modelTest) throw new Error("请等待当前运行结束，或先停止运行");
+    if (action === "start") this.onboarding.start(body);
+    else if (action === "suspend") this.onboarding.suspend(body);
+    else if (action === "company") this.onboarding.company(body);
+    else if (action === "step") this.onboarding.step(body, this.model().configured);
+    else if (action === "pack") this.onboarding.applyPack(body);
+    else if (action === "complete") this.onboarding.complete(body, this.model().configured);
+    else throw new Error("无效的初始化操作");
+    await this.canvasNavigate({page:"setup"});
+    return this.canvasState("setup");
+  }
+
+  async researchOnboarding(body: Record<string, unknown>) {
+    if (!this.model().configured) throw new Error("请先连接模型，再研究公开信息");
+    return this.canvasMessage({page:"setup",messageId:body.messageId,text:this.onboarding.researchText()});
+  }
+
+  deleteModelKey() {
+    if (this.active || this.modelTest) throw new Error("请先停止当前运行再删除模型密钥");
+    this.credentials.save(this.settings, null);
+    return { model: this.model() };
   }
 
   objectDetails(query: URLSearchParams) {

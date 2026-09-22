@@ -1,6 +1,6 @@
 # DataEngine Feature List
 
-Last Updated: 2026-09-17
+Last Updated: 2026-09-22
 
 **2026-09-10 文档整理：**新增[产品与架构](DATA_ENGINE_DESIGN.md)、[语义契约](SEMANTIC_CONTRACTS.md)、[Agent 与前端协作](AGENT_UI_DESIGN.md)，并更新 `AGENTS.md` 阅读入口。只沉淀设计与纠正历史描述，未新增实现票、改变功能状态或运行产品验收。
 
@@ -21,7 +21,7 @@ Last Updated: 2026-09-17
 
 | Version | Status | Planned | InProgress | Completed | Progress |
 |---|---|---:|---:|---:|---:|
-| v0.1.0 | InProgress | 2 | 3 | 18 | 18/23 |
+| v0.1.0 | InProgress | 2 | 3 | 19 | 19/24 |
 
 ## Feature Index
 
@@ -52,6 +52,8 @@ Last Updated: 2026-09-17
 | 021 | MCP 便捷接入与统一连接入口 | Enhancement | High | Completed | v0.1.0 | 复用已实现的 011/019 | [设计](features/v0.1.0.md#feature-021) |
 | 022 | 动态三维本体空间与连续聚焦 | Enhancement | High | Completed | v0.1.0 | 012、015 | [设计](features/v0.1.0.md#feature-022) |
 | 023 | 本体数据集与 MCP 消费工作台 | Enhancement | High | Completed | v0.1.0 | 013、016 | [设计](features/v0.1.0.md#feature-023) |
+
+| 024 | 企业冷启动向导与金融行业本体包 | Enhancement | High | Completed | v0.1.0 | 013、017、020、021 | [设计](features/v0.1.0.md#feature-024) |
 
 此表保留已有能力与票的实际完成记录，计数不代表新 MVP 体验的完成比例。本轮按 [MVP 完成条件](MVP.md)及 FEATURE_012—016 的任务依赖验收。006、远程 MCP 服务和旧票中尚未覆盖的完整回归/恢复保留为后续工作，不因范围调整标为完成。
 
@@ -327,3 +329,13 @@ Last Updated: 2026-09-17
 - **Description:** 将已采用本体的选定概念与关系及显式许可业务字段组织成可供其他 Agent 读取的数据集，重构第三页为 MCP 开放与管理工作台。
 - **Design:** [FEATURE_023](features/v0.1.0.md#feature-023)。
 - **验证:** 150 项 Node 测试、类型检查、离线构建通过；真实 MCP 客户端、页面创建/测试/停用、390px 窄屏及双轴评审见[数据集验收](experiment/ONTOLOGY_DATASETS.md)。
+
+### 024: 企业冷启动向导与金融行业本体包
+
+- **Status:** Completed
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.1.0 / —
+- **Created / Started / Completed:** 2026-09-22 / 2026-09-22 / 2026-09-22
+- **Description:** 居中五步冷启动：模型密钥持久保存、企业及行业研究、金融优先的行业定义模板、来源连接、结果与缺口；可恢复，完成进入原企业页。
+- **Design:** [FEATURE_024](features/v0.1.0.md#feature-024)。
+- **验证:** 类型检查、176 项 Node 测试、离线导出及 390px/1280px 浏览器验收通过；[冷启动验收](experiment/ENTERPRISE_ONBOARDING.md)记录真实范围与双轴复核。

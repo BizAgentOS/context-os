@@ -33,6 +33,7 @@ const staticFiles: Record<string, { file: string; type: string }> = {
   "/mcp-connection.js": { file: "mcp-connection.js", type: "text/javascript; charset=utf-8" },
   "/openapi-import.js": { file: "openapi-import.js", type: "text/javascript; charset=utf-8" },
   "/connections.js": { file: "connections.js", type: "text/javascript; charset=utf-8" },
+  "/onboarding.js": { file: "onboarding.js", type: "text/javascript; charset=utf-8" },
   "/enterprise-profile.js": { file: "enterprise-profile.js", type: "text/javascript; charset=utf-8" },
   "/": { file: "index.html", type: "text/html; charset=utf-8" },
   "/index.html": { file: "index.html", type: "text/html; charset=utf-8" },
@@ -256,6 +257,7 @@ export async function createServer(
           );
       }
       if (request.method === "GET") {
+        if (url.pathname === "/api/onboarding") { send(200, app.onboarding.view()); return; }
         if (url.pathname === "/api/datasets") {
           send(200, new OntologyDatasets(app.memory, app.live).list()); return;
         }
@@ -714,8 +716,22 @@ export async function createServer(
         case "/api/refresh":
           result = await queue(() => app.refresh(body));
           break;
+        case "/api/onboarding/start":
+        case "/api/onboarding/suspend":
+        case "/api/onboarding/company":
+        case "/api/onboarding/step":
+        case "/api/onboarding/pack":
+        case "/api/onboarding/complete":
+          result = await queue(() => app.updateOnboarding(url.pathname.split("/").at(-1)!, body));
+          break;
+        case "/api/onboarding/research":
+          result = await queue(() => app.researchOnboarding(body));
+          break;
         case "/api/settings":
           result = await queue(() => app.configure(body));
+          break;
+        case "/api/settings/key/delete":
+          result = await queue(async () => app.deleteModelKey());
           break;
         case "/api/settings/test":
           result = await app.testConnection();

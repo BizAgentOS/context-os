@@ -1,3 +1,4 @@
+import { renderOnboarding } from "./onboarding.js";
 import { renderEnterpriseProfile } from "./enterprise-profile.js";
 import { renderDatasetWorkspace } from "./dataset-workspace.js";
 import { renderEvidenceWorkspace } from "./evidence.js";
@@ -124,6 +125,7 @@ if (accessFragment.has("access")) {
 const state = {
   token: initialAccess,
   workspaceId: null,
+  onboarding: null,
   setupSection: "company",
   legacyHistory: [],
   currentPage: "setup",
@@ -215,6 +217,7 @@ function label(key) {
   return fieldLabels[key] || key.replace(/^company\./, "");
 }
 function errorMessage(message = "") {
+  document.querySelector(".onboarding")?.showError?.(message);
   if (message && ui.chatMode === "collapsed") setChatMode("composer");
   $("#request-error").textContent = message;
   $("#request-error").hidden = !message;
@@ -402,6 +405,9 @@ function canvasFingerprint() {
     items.map((item) => `${item.id}:${item.version}:${item.status}`);
   return JSON.stringify({
     page: ui.page,
+    onboarding: state.onboarding,
+    model: state.model,
+    onboardingMessages: state.onboarding?.active ? [state.messages.at(-1), state.streaming] : null,
     profile: state.profile && `${state.profile.id}:${state.profile.version}`,
     sources: refs(state.sources),
     live: state.live,
@@ -431,6 +437,12 @@ function renderCanvas(force = false) {
   const fingerprint = canvasFingerprint();
   if (!force && fingerprint === ui.canvasKey) return;
   ui.canvasKey = fingerprint;
+  const onboarding = ui.page === "setup" && state.onboarding?.active && !shareMode && !state.demo && !ui.detail;
+  $(".canvas-app").classList.toggle("is-onboarding", !!onboarding);
+  if (onboarding && $("#canvas").firstElementChild?.classList.contains("onboarding")) {
+    $("#canvas").firstElementChild.update(state);
+    return;
+  }
   const spatial = ui.page === "ontology" && !ui.detail && !shareMode && !state.demo;
   $(".canvas-app").classList.toggle("is-ontology-space", spatial);
   for (const element of $$(".os-chat-metrics,.os-chat-footer")) element.hidden = !spatial;
@@ -633,6 +645,9 @@ function foundationPanel() {
   });
 }
 function renderSetup() {
+  if (state.onboarding?.active && !shareMode && !state.demo) return renderOnboarding(state, {
+    api, apply: applySnapshot, upload: () => $("#file-input").click(),
+  });
   const changeTab = async (tab) => {
     ui.enterpriseTab = tab;
     renderCanvas(true);
@@ -660,6 +675,7 @@ function renderSetup() {
     foundation: !shareMode && !state.demo ? foundationPanel : null,
   });
   if (!shareMode && !state.demo) {
+    section.prepend(button("完善初始化 →", "ob-reopen", () => mutate("/api/onboarding/start", {expectedVersion:state.onboarding?.version ?? 0})));
     sources.append(
       renderLiveWorkspace("sources", state.live, {
         api,
@@ -3384,7 +3400,8 @@ function openSettings() {
   $("#api-key-input").placeholder = model.configured
     ? "已配置；留空继续使用"
     : "填写密钥";
-  $("#key-note").textContent = "密钥仅用于当前服务进程。";
+  $("#key-note").textContent = "密钥保存在本机服务端，刷新或重启后保留，直到主动删除。";
+  $("#delete-model-key").hidden = !model.configured;
   $("#settings-status").hidden = true;
   $("#settings-dialog").showModal();
 }
@@ -3550,6 +3567,12 @@ $("#copy-credential").addEventListener("click", async () => {
 $("#settings-form").addEventListener("submit", (event) => {
   event.preventDefault();
   saveSettings();
+});
+$("#delete-model-key").addEventListener("click", async () => {
+  if(ui.settingsBusy)return;
+  setModelSettingsBusy(true);
+  try { const result=await api("/api/settings/key/delete",{});state.model=result.model;$("#api-key-input").value="";$("#api-key-input").placeholder="填写密钥";$("#delete-model-key").hidden=true;settingsStatus("当前模型密钥已删除。");await refresh(); }
+  catch(error){settingsStatus(error.message);}finally{setModelSettingsBusy(false);}
 });
 $("#test-connection").addEventListener("click", () => saveSettings(true));
 $("#provider-input").addEventListener("change", () => {
