@@ -1,16 +1,14 @@
-# DataEngine
+# ADE · Agent Data Engine
 
-一个通过本体统一多源数据的概念、身份和关系，由 Agent 协助构建与治理的本地 MVP 项目。
+本体驱动的通用多源数据底座。程序构建结构，KodaX Agent 协助接入、解释与修订，人类与外部 Agent 使用同一语义服务。投研作为后续验证场景。
 
-**设计起点：**先建立 AI 可理解、可操作的企业本体与对象契约，再提供人类查看、查询和治理的前端。人类前端、内部治理 Agent 与外部消费 Agent 使用同源语义和操作服务，各自按身份取得能力。当前系统分工见[总体架构](docs/DATA_ENGINE_DESIGN.md)；这是后续设计基线，不代表所有契约已实现。
+**当前开发版本：`0.2.0-dev`，未正式发布。** 三个页面是 **数据 · 本体 · 发布与接入**。功能与验收见 [0.2.0 设计](docs/features/v0.2.0.md)、[功能台账](docs/FEATURE_LIST.md)和[整体验收](docs/experiment/ENGINE_WORKBENCH.md)。
 
-**2026-09-11 开发目标：**本体驱动的数据融合与语义打通，页面调整为“企业与数据 · 本体工作区 · 消费与治理”。第一页面向基础本体 Skill 和来源接入，第二页可视化理解融合并修订，第三页提供受控 API/MCP 与消费治理。沿用原样式，计划与十八张任务见[三页产品计划](docs/THREE_PAGE_PLAN.md)；FEATURE_012 已实现三页、存量迁移与在线本体工作上下文，基础本体 Skill 和融合继续按票开发。
+首次配置模型并选择来源，可稍后接入。数据页管理文件/API/MCP及实际存取策略；结构化首轮构建不需要模型。第二页查看本体、真实对象和依据，处理程序候选或让 Agent 修复。第三页检查并发布不可变定义版本，为接入方选择范围、签发配置、显式升级或撤销；可以单独开启受限的 ADE Agent 委托。
 
-**数据接入原则：**来源侧通过 API 或 MCP 连接企业原系统，数据按授权按需读取；DataEngine 保存企业理解、本体、映射与引用。消费侧向第三方提供本体数据接口，两者方向和权限分别管理。已实现 HTTP GET / MCP Streamable HTTP 记录源和按需对象查询；文档/BI 语义、同实体多源融合与细粒度证据列入新计划，旧文件链保留。
+HTTP/MCP 按需读取，CSV 使用上传快照。移植的是 Helix 确定性发现与构建方法，许可与修改记录见 [第三方说明](third_party/helix-foundry/MODIFICATIONS.md)；没有复制其全部存储、连接器或模型循环。样本检查不证明业务语义或全量质量，发布定义不冻结远端事实。
 
-**Swagger / OpenAPI 接入：**企业与数据 → HTTP API 接入 → 添加接入。支持 URL、JSON/YAML 粘贴与文件导入，选择只读接口、配置认证、读取真实样本后保存。使用方式、支持范围与验收见[导入说明](docs/experiment/OPENAPI_IMPORT.md)。
-
-**当前可运行基线：**三个页面，复用已有企业、来源、本体和消费能力。采用纯黑白画布、前景对话与输入浮层，不提供任务或历史会话管理。下方运行命令启动三页；完整融合范围以[当前 MVP](docs/MVP.md)与功能台账为准。
+运行空工作台：`npm ci` 后 `npm start`，按终端输出的本机入口打开。默认保持本地单企业实验范围。真实业务源与真实模型质量留待后续场景验证。
 
 ## 连接源系统的实际版本
 
@@ -22,23 +20,23 @@
 - [产品需求](docs/PRODUCT.md)与[总体架构](docs/DATA_ENGINE_DESIGN.md)：本体融合价值、用户与系统分工。
 - [内部 Agent](docs/AGENT_DESIGN.md)、[KodaX 接入记录](docs/KODAX_CAPABILITY_LEDGER.md)和[运行 Skill](docs/BUILTIN_SKILLS.md)：方法、能力与运行边界。
 - [语义契约](docs/SEMANTIC_CONTRACTS.md)、[人机协作](docs/AGENT_UI_DESIGN.md)、[画布](docs/CANVAS_DESIGN.md)、[消费](docs/DATA_CONSUMPTION_DESIGN.md)：同一对象与操作如何服务人和其他 Agent。
-- [三页实施计划](docs/THREE_PAGE_PLAN.md)、[MVP](docs/MVP.md)与[开发任务](docs/features/v0.1.0.md#feature-012)：范围、迁移、18 张票和验收。
+- [当前开发任务](docs/features/v0.2.0.md)：六项整体功能及交付；[原三页实施计划](docs/THREE_PAGE_PLAN.md)保留历史迁移依据。
 - [功能台账](docs/FEATURE_LIST.md)、[开发流程](docs/DEVELOPMENT.md)、[Agent 工作约定](AGENTS.md)：实际状态与开发规则。
 - [当前在线运行](docs/experiment/LIVE_MEMORY.md)、[通用能力](docs/experiment/AGENT_CAPABILITIES.md)、[历史设计](docs/archive/README.md)：现有命令、验证与参考。
 
-## 当前状态
+## 既有能力与历史验收
 
 升级前仍打开旧页面的用户，先导出未发送草稿，再重启并导入；方法与边界见[三页迁移说明](docs/experiment/THREE_PAGE_MIGRATION.md)。
 
-**本轮十八张票已完成，未发布。** T016-04 真实模型、双消费者、浏览器治理与离线兼容见[整链验收](docs/experiment/FUSION_CHAIN.md)。可用 `npm run verify:chain -- --real` 在独立临时工作区复跑（调用已配置模型，会产生费用）。 T016-03 已交付指定消费者迁移、版本校验与原许可保护，见[验收](docs/experiment/CONSUMER_MIGRATIONS.md)。 T016-02 已交付属性/关系/文档/BI证据与HTTP/MCP说明，见[验收](docs/experiment/CONSUMER_EVIDENCE.md)。 T016-01 已完成 v3 许可融合查询，见[验收](docs/experiment/CONSUMER_VIEWS.md)。 T015-04 已完成全局规则修订与样本影响，见[验收](docs/experiment/MAPPING_CHANGES.md)。 T015-03 已完成局部关系候选、检查与人工采用，见[验收](docs/experiment/RELATION_CORRECTIONS.md)。 T015-02 已接入页内在线对象/关系探索与属性取证，见[验收](docs/experiment/LIVE_OBJECTS.md)。 T015-01 已支持基础定义图/列表、同引用说明与映射展开，见[可视化验收](docs/experiment/FOUNDATION_VISUALIZATION.md)。 T014-05 已支持三类证据共同取证、历史查看与范围解释，见[共同取证验收](docs/experiment/EVIDENCE.md)。 T014-04 已接入主/附来源融合、逐属性依据及冲突状态，见[融合验收](docs/experiment/FUSION.md)。 已接通基础概念与真实业务映射，支持检查、预览和采用执行子集，见[绑定验收](docs/experiment/FOUNDATION_BINDINGS.md)。 T014-01/02 已接入统一来源目录、知识片段取证及 HTTP/MCP 指标定义与观测；指标保留单位、维度、期间、粒度和覆盖，见[指标验收](docs/experiment/METRICS.md)。以下保留旧四页与样本能力的实际档案，不作为新任务优先级。
+**此前三页融合的十八张票已完成，未发布。** T016-04 真实模型、双消费者、浏览器治理与离线兼容见[整链验收](docs/experiment/FUSION_CHAIN.md)。可用 `npm run verify:chain -- --real` 在独立临时工作区复跑（调用已配置模型，会产生费用）。 T016-03 已交付指定消费者迁移、版本校验与原许可保护，见[验收](docs/experiment/CONSUMER_MIGRATIONS.md)。 T016-02 已交付属性/关系/文档/BI证据与HTTP/MCP说明，见[验收](docs/experiment/CONSUMER_EVIDENCE.md)。 T016-01 已完成 v3 许可融合查询，见[验收](docs/experiment/CONSUMER_VIEWS.md)。 T015-04 已完成全局规则修订与样本影响，见[验收](docs/experiment/MAPPING_CHANGES.md)。 T015-03 已完成局部关系候选、检查与人工采用，见[验收](docs/experiment/RELATION_CORRECTIONS.md)。 T015-02 已接入页内在线对象/关系探索与属性取证，见[验收](docs/experiment/LIVE_OBJECTS.md)。 T015-01 已支持基础定义图/列表、同引用说明与映射展开，见[可视化验收](docs/experiment/FOUNDATION_VISUALIZATION.md)。 T014-05 已支持三类证据共同取证、历史查看与范围解释，见[共同取证验收](docs/experiment/EVIDENCE.md)。 T014-04 已接入主/附来源融合、逐属性依据及冲突状态，见[融合验收](docs/experiment/FUSION.md)。 已接通基础概念与真实业务映射，支持检查、预览和采用执行子集，见[绑定验收](docs/experiment/FOUNDATION_BINDINGS.md)。 T014-01/02 已接入统一来源目录、知识片段取证及 HTTP/MCP 指标定义与观测；指标保留单位、维度、期间、粒度和覆盖，见[指标验收](docs/experiment/METRICS.md)。以下保留旧四页与样本能力的实际档案，不作为新任务优先级。
 
-**目标版本 v0.1.0，开发中，尚未发布。** 已构建澄川热力的企业设定和第一批固定来源样本：1 个热源接入点、2 座换热站、4 个小区、12 栋楼、两周记录。17 份来源文件包含 738 条 CSV 记录及 8 份业务文档。
+**当前开发版本 0.2.0-dev，目标 v0.2.0，尚未发布。** 新一轮整体功能见 [0.2.0 设计与任务](docs/features/v0.2.0.md)。以下为既有实验能力。 已构建澄川热力的企业设定和第一批固定来源样本：1 个热源接入点、2 座换热站、4 个小区、12 栋楼、两周记录。17 份来源文件包含 738 条 CSV 记录及 8 份业务文档。
 
 FEATURE_001 已完成企业样本、可重复生成与历史回放，以及10题原始资料基线。操作见 [生成说明](docs/experiment/GENERATOR.md)和 [基线说明](docs/experiment/BASELINE.md)，实际表现与限制见 [首跑结果](docs/experiment/BASELINE_RESULT.md)。T002-01 的早期建模方案见 [流程设计草案](docs/experiment/ONTOLOGY_MODELING.md)，当前任务顺序以三页实施计划为准。此前9类对象及738个实例保留为技术试样，其导入与追溯可运行，业务模型尚未定稿；见 [试样说明](docs/experiment/ONTOLOGY_REVIEW.md)。本地实验室前端与建模同步建设，见[工作台使用说明](docs/experiment/LAB.md)。维护 Agent 和方法对照继续按 [功能台账](docs/FEATURE_LIST.md)推进。
 
 ## 工作方式
 
-底层已接通真实 KodaX SDK、资料保存、本体候选/采用和对象关系查证；当前前端按企业与数据、本体工作区、消费与治理三个画布组织。三页可随时查看和往返；采用本体后才能启用连接。用户在具体授权范围上启用访问，接口按保存的本体与来源版本读取。用户通过对话创建内容，Agent 运行和任务状态留在内部。
+底层接通 KodaX SDK、资料保存、本体构建/采用和对象查证。三页可随时往返，Agent 保留原任务范围；来源权限、语义工作版、对外发布和接入升级分别管理。以下热力演示是既有固定样本，和空工作台及本轮隔离验收分开。
 
 先看填好内容的热力公司演示，无需模型 API Key：
 

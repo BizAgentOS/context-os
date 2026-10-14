@@ -108,7 +108,7 @@ test("adopted foundation concepts bind a checked execution subset, retain unboun
     async stop() {},
     async close() {},
   };
-  let service = await createServer({ directory, driver });
+  let service = await createServer({ directory, driver, automaticApi: false });
   const start = async () => {
     await new Promise<void>((r) => service.server.listen(0, "127.0.0.1", r));
     const url = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
@@ -441,7 +441,7 @@ test("adopted foundation concepts bind a checked execution subset, retain unboun
     );
     await assert.rejects(api("/api/live/query", query), /基础|版本/);
     await service.close();
-    service = await createServer({ directory, driver });
+    service = await createServer({ directory, driver, automaticApi: false });
     api = await start();
     const reopened = await api();
     assert.equal(reopened.foundation.current.content.concepts.length, 3);

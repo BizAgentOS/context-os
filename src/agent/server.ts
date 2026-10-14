@@ -16,12 +16,18 @@ import { join, resolve } from "node:path";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { AgentApplication } from "./app.ts";
 import { SourcePolicyService } from "./source-policy.ts";
+import { Releases } from "../engine/releases.ts";
+import { DelegationDenied } from "../engine/delegations.ts";
 import { reviewVerification } from "./maintenance.ts";
 import type { AgentDriver } from "./runtime.ts";
 import { ontologySceneAsset } from "./browser-assets.ts";
 
 const webRoot = fileURLToPath(new URL("../../web/agent/", import.meta.url));
 const staticFiles: Record<string, { file: string; type: string }> = {
+  "/engine.css": {file:"engine.css",type:"text/css; charset=utf-8"},
+  "/engine-ui.js": {file:"engine-ui.js",type:"text/javascript; charset=utf-8"},
+  "/engine-workspace.js": {file:"engine-workspace.js",type:"text/javascript; charset=utf-8"},
+  "/release-workspace.js": {file:"release-workspace.js",type:"text/javascript; charset=utf-8"},
   "/dataset-workspace.js": { file: "dataset-workspace.js", type: "text/javascript; charset=utf-8" },
   "/ontology-space.js": { file: "ontology-space.js", type: "text/javascript; charset=utf-8" },
   "/ontology-space-model.js": { file: "ontology-space-model.js", type: "text/javascript; charset=utf-8" },
@@ -191,6 +197,16 @@ export async function createServer(
         return;
       }
       const url = new URL(request.url ?? "/", `http://${host}`);
+      if (url.pathname === "/v4/agent/tasks" || url.pathname.startsWith("/v4/agent/tasks/")) {
+        const key = request.headers.authorization?.startsWith("Bearer ") ? request.headers.authorization.slice(7) : "";
+        if (url.pathname === "/v4/agent/tasks" && request.method === "POST") {
+          send(202, app.delegations.submit(await readBody(request), key)); return;
+        }
+        const match = /^\/v4\/agent\/tasks\/([^/]+)(\/cancel)?$/.exec(url.pathname);
+        if (match && !match[2] && request.method === "GET") { send(200, app.delegations.read(decodeURIComponent(match[1]), key)); return; }
+        if (match?.[2] && request.method === "POST") { await readBody(request); send(200, await app.delegations.cancel(decodeURIComponent(match[1]), key)); return; }
+        send(405, {error:"不支持的委托操作"}); return;
+      }
       if (url.pathname.startsWith("/v4/")) {
         if (request.method !== "GET") { send(405, { error: "仅支持只读请求" }); return; }
         const result = await new OntologyDatasets(app.memory, app.live).handle(url.pathname, url.searchParams, request.headers.authorization);
@@ -257,6 +273,18 @@ export async function createServer(
           );
       }
       if (request.method === "GET") {
+        if (url.pathname === "/api/engine") { send(200, app.programBuilds.overview()); return; }
+        if (url.pathname === "/api/releases") { send(200, {...new Releases(app.memory, app.live).overview(), delegations: app.delegations.list()}); return; }
+        if (url.pathname === "/api/releases/compare") {
+          send(200, new Releases(app.memory, app.live).compare({
+            from: { id: url.searchParams.get("fromId"), version: Number(url.searchParams.get("fromVersion")) },
+            to: { id: url.searchParams.get("toId"), version: Number(url.searchParams.get("toVersion")) },
+          })); return;
+        }
+        if (url.pathname === "/api/releases/read" || url.pathname === "/api/releases/connection") {
+          const releases = new Releases(app.memory, app.live), ref = {id:url.searchParams.get("id"), version:Number(url.searchParams.get("version"))};
+          send(200, url.pathname.endsWith("/read") ? releases.read(ref) : releases.connection(ref,url.origin)); return;
+        }
         if (url.pathname === "/api/onboarding") { send(200, app.onboarding.view()); return; }
         if (url.pathname === "/api/datasets") {
           send(200, new OntologyDatasets(app.memory, app.live).list()); return;
@@ -404,6 +432,24 @@ export async function createServer(
       const body = await readBody(request);
       let result: unknown;
       switch (url.pathname) {
+        case "/api/engine/build":
+          send(202, {job:app.programBuilds.start(body)}); return;
+        case "/api/engine/check":
+          result = await app.programBuilds.check(body); break;
+        case "/api/engine/adopt":
+          result = await app.programBuilds.adopt(body); break;
+        case "/api/engine/cancel":
+          result = app.programBuilds.cancel(body); break;
+        case "/api/releases/check":
+          result = await new Releases(app.memory, app.live).check(body); break;
+        case "/api/releases/publish":
+          result = new Releases(app.memory, app.live).publish(body); break;
+        case "/api/releases/connect":
+          result = new Releases(app.memory, app.live).connect(body); break;
+        case "/api/releases/upgrade":
+          result = new Releases(app.memory, app.live).upgrade(body); break;
+        case "/api/releases/revoke":
+          result = new Releases(app.memory, app.live).revoke(body); break;
         case "/api/datasets/test":
           result = await testDatasetMcp(new OntologyDatasets(app.memory, app.live), body, url.origin);
           break;
@@ -744,7 +790,7 @@ export async function createServer(
     } catch (error) {
       const message = app.safeError(error);
       // Never include request bodies, provider credentials or raw SDK objects in HTTP errors.
-      send(/不存在/.test(message) ? 404 : 400, {
+      send(error instanceof DelegationDenied ? 403 : /不存在/.test(message) ? 404 : 400, {
         error: message.slice(0, 600),
       });
     }

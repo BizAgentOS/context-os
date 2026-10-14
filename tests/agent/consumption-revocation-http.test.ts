@@ -9,7 +9,7 @@ import { Workspace } from "../../src/agent/workspace.ts";
 import type { Artifact } from "../../src/agent/contracts.ts";
 
 test(
-  "HTTP revocation bypasses a navigation waiting for the model to stop",
+  "HTTP revocation bypasses an explicit stop waiting for the model",
   { timeout: 3000 },
   async () => {
     const directory = mkdtempSync(join(tmpdir(), "de-revoke-http-"));
@@ -105,7 +105,7 @@ test(
         202,
       );
 
-      navigation = post("/api/canvas/navigate", { page: "ontology" });
+      navigation = post("/api/canvas/stop", { page: "consumption" });
       await stopping;
       revocation = post("/api/consumers/revoke", {
         id: active.consumer.id,

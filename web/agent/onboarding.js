@@ -2,6 +2,8 @@ import { element as el, action } from "./connection-ui.js";
 import { openConnections } from "./connections.js";
 import { openApiImport } from "./openapi-import.js";
 
+const engineTitles = ["连接模型", "选择数据来源"];
+const engineDescriptions = ["配置模型 API，让 ADE 助手协助数据接入、本体修复和发布检查。", "先选择接入方式，进入数据页配置与检查。也可以稍后接入来源。"];
 const titles = ["连接模型", "认识你的企业", "选择行业本体", "连接资料与系统", "准备开始"];
 const descriptions = [
   "连接一个模型，让助手帮你理解企业、整理资料与建立本体。",
@@ -27,7 +29,7 @@ function selectField(parent, title, values, value) {
 }
 export function renderOnboarding(initial, actions) {
   let state=initial, working=false, rendered="", renderedStep=null, packSelection=null, researchId=null;
-  const root=el("section",null,"onboarding"); root.setAttribute("aria-label","企业初始化");
+  const root=el("section",null,"onboarding"); root.setAttribute("aria-label","ADE 初始化");
   const draftKey=initial.workspaceId;
   let draft=drafts.get(draftKey);
   if (!draft) {
@@ -95,6 +97,18 @@ export function renderOnboarding(initial, actions) {
         (provider.value==="custom"&&(url.value.trim()!==state.model.baseUrl||protocol.value!==state.model.protocol));
       if(changed||!state.model.configured){if(!await submit(true)||!state.model.configured)return;}
       await save("step",{step:2});
+    });
+  }
+  function engineSources(body) {
+    const list=el("div",null,"engine-source-choices");body.append(list);
+    let selected=draft.sourceKind||state.onboarding.sourceKind||"later";
+    for(const [id,title,description] of [["mcp","MCP 服务","连接已有工具服务，选择可读取的能力"],["api","HTTP API","导入接口文档、配置认证并测试数据"],["file","上传文件","CSV 数据或 Markdown / TXT 资料"],["later","稍后接入","先进入空工作区，随时添加来源"]]){
+      const choice=action(title,()=>{selected=id;draft.sourceKind=id;keep();for(const b of list.children)b.setAttribute("aria-pressed",String(b.dataset.kind===id));},"engine-choice");
+      choice.dataset.kind=id;choice.setAttribute("aria-pressed",String(selected===id));choice.append(el("small",description));list.append(choice);
+    }
+    footer(1,"进入数据工作区 →",async()=>{
+      const kind=selected;await save("complete",{sourceKind:kind});drafts.delete(draftKey);try{localStorage.removeItem(`de-onboarding:${draftKey}`);}catch{}
+      if(kind!=="later")actions.connect?.(kind);
     });
   }
   function company(body) {
@@ -241,21 +255,22 @@ export function renderOnboarding(initial, actions) {
   }
   function render() {
     const setup=state.onboarding;
-    const key=`${setup.version}:${setup.currentProfileVersion}:${setup.step}:${JSON.stringify(state.model)}`;
+    const engine=setup.flow==="engine", activeTitles=engine?engineTitles:titles, activeDescriptions=engine?engineDescriptions:descriptions;
+    const key=`${setup.flow}:${setup.version}:${setup.currentProfileVersion}:${setup.step}:${JSON.stringify(state.model)}`;
     if(rendered!==key){
       const previous=rendered, stepChanged=renderedStep!==setup.step;rendered=key;renderedStep=setup.step;
       root.replaceChildren();
       const nav=el("nav",null,"ob-progress");nav.setAttribute("aria-label","初始化步骤");
-      titles.forEach((title,i)=>{
+      activeTitles.forEach((title,i)=>{
         const button=action(`${i+1}  ${title}`,()=>step(i+1));
         if(i+1===setup.step)button.setAttribute("aria-current","step");
         if(i+1>setup.step)button.dataset.unavailable="true";
         nav.append(button);
       });root.append(nav);
-      const heading=el("header",null,"ob-heading");const h1=el("h1",titles[setup.step-1]);h1.tabIndex=-1;
-      heading.append(h1,el("p",descriptions[setup.step-1]));root.append(heading,status);
+      const heading=el("header",null,"ob-heading");const h1=el("h1",activeTitles[setup.step-1]);h1.tabIndex=-1;
+      heading.append(h1,el("p",activeDescriptions[setup.step-1]));root.append(heading,status);
       const body=el("div",null,"ob-body");root.append(body);
-      [model,company,packages,connections,summary][setup.step-1](body);
+      (engine?[model,engineSources]:[model,company,packages,connections,summary])[setup.step-1](body);
       if(previous)queueMicrotask(()=>{if(root.isConnected){h1.focus({preventScroll:true});if(stepChanged)root.closest(".canvas")?.scrollTo({top:0});}});
     }
     live();lock();

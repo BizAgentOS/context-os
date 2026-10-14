@@ -1,3 +1,6 @@
+import { renderEngineWorkspace, openSource as openEngineSource, showEngineBuilds } from "./engine-workspace.js";
+import { renderReleaseWorkspace } from "./release-workspace.js";
+import { dialog as engineDialog } from "./engine-ui.js";
 import { renderOnboarding } from "./onboarding.js";
 import { renderEnterpriseProfile } from "./enterprise-profile.js";
 import { renderDatasetWorkspace } from "./dataset-workspace.js";
@@ -60,14 +63,14 @@ new MutationObserver(records => {
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const pageLabels = {
-  setup: "企业与数据",
-  ontology: "本体工作区",
-  consumption: "消费与治理",
+  setup: "数据",
+  ontology: "本体",
+  consumption: "发布与接入",
 };
 const placeholders = {
-  setup: "介绍你的企业，或告诉我需要接入哪些数据…",
+  setup: "需要接入什么数据？我可以协助配置与检查…",
   ontology: "我们需要理解哪些业务对象？",
-  consumption: "哪些应用需要使用这些企业记忆？",
+  consumption: "检查这次发布，或分析接入方的升级影响…",
 };
 const demoQuestions = {
   setup: "这家企业是什么样的？",
@@ -142,6 +145,8 @@ const state = {
   foundation: null,
   automaticBuild: null,
   automaticApiBuild: null,
+  engine: null,
+  agentTask: null,
   evidence: [],
   outlines: [],
   verifications: [],
@@ -392,12 +397,14 @@ function render() {
     control.disabled =
       ui.requesting ||
       (page !== "setup" && !entry?.available && page !== ui.page);
+    control.textContent = pageLabels[page];
     if (page === ui.page) control.setAttribute("aria-current", "page");
     else control.removeAttribute("aria-current");
   }
   document.title = `${state.profile ? companyName() : "DataEngine"} · ${pageLabels[ui.page]}`;
   renderCanvas();
   renderDialogue();
+  renderAgentTask();
   updateComposer();
 }
 function canvasFingerprint() {
@@ -415,6 +422,7 @@ function canvasFingerprint() {
     foundation: state.foundation,
     automaticBuild: state.automaticBuild,
     automaticApiBuild: state.automaticApiBuild,
+    engine: state.engine,
     evidence: refs(state.evidence),
     outlines: refs(state.outlines),
     verifications: refs(state.verifications),
@@ -480,7 +488,12 @@ function renderCanvas(force = false) {
   }
   const canvas = $("#canvas");
   if (ui.page === "setup") canvas.replaceChildren(renderSetup());
-  else if (ui.page === "consumption" && !shareMode && !state.demo) canvas.replaceChildren(renderDatasetWorkspace(state, {
+  else if (ui.page === "consumption" && !shareMode && !state.demo) canvas.replaceChildren(renderReleaseWorkspace(state, {
+    api, ontology: () => navigate("ontology"), ask: askAssistant,
+    onChanged: () => { if(ui.page === "consumption") renderCanvas(true); },
+    legacy: () => {
+      const legacyDialog = engineDialog("旧版 MCP 数据集与访问范围", true);
+    const oldWorkspace = renderDatasetWorkspace(state, {
     api,
     ontology: () => navigate("ontology"),
     onChanged: () => { if (ui.page === "consumption" && !ui.detail) renderCanvas(true); },
@@ -503,6 +516,10 @@ function renderCanvas(force = false) {
       );
       renderExisting(); d.append(node("h2", "", "已有访问范围"), content);
       d.addEventListener("close", () => d.remove(), { once: true }); document.body.append(d); d.showModal();
+    },
+  });
+      legacyDialog.body.append(oldWorkspace);
+      legacyDialog.addEventListener("close", () => oldWorkspace.dispose?.());
     },
   }));
   else if (!shareMode && !state.demo) {
@@ -603,6 +620,8 @@ function renderOntologyBoard(workspace, full, operations, actions) {
     automaticApiBuild: state.automaticApiBuild,
     connectModel: openSettings,
     retryBuild: () => mutate("/api/canvas/foundation/automatic", {}),
+    engine: state.engine,
+    programBuild: () => showEngineBuilds(state, {...dataActions(),management:()=>document.querySelector(".os-definition-entry")?.click()}),
     management,
     objects: () => {loadObjects(); return objects;},
     evidence: renderEvidenceWorkspace(state, {api, mutate}),
@@ -644,7 +663,20 @@ function foundationPanel() {
       api(`/api/foundation/evidence?${new URLSearchParams(args)}`),
   });
 }
+function askAssistant(text) {
+  const input=$("#message-input");input.value=input.value.trim()?`${input.value}\n${text}`:text;
+  rememberDraft();resizeInput();openComposer();
+}
+function dataActions() {return {api,apply:applySnapshot,upload:()=>$("#file-input").click(),refresh,ask:askAssistant,ontology:()=>navigate("ontology")};}
 function renderSetup() {
+  if(shareMode||state.demo)return renderLegacySetup();
+  if(state.onboarding?.active)return renderOnboarding(state,{...dataActions(),connect:kind=>openEngineSource(kind,dataActions())});
+  return renderEngineWorkspace(state,{...dataActions(),advanced:()=>{
+    const d=engineDialog("企业资料与已有连接",true),legacy=renderLegacySetup();d.body.append(legacy);
+    d.addEventListener("close",()=>legacy.dispose?.());
+  }});
+}
+function renderLegacySetup() {
   if (state.onboarding?.active && !shareMode && !state.demo) return renderOnboarding(state, {
     api, apply: applySnapshot, upload: () => $("#file-input").click(),
   });
@@ -3135,9 +3167,26 @@ function renderDialogue() {
   });
   container.scrollTop = followLatest ? container.scrollHeight : previousScroll;
 }
+function renderAgentTask() {
+  let host=$("#agent-task-status");
+  if(!host){host=node("aside","agent-task-status");host.id="agent-task-status";host.setAttribute("aria-label","ADE 助手任务");$(".canvas-app").append(host);}
+  const task=state.agentTask;host.hidden=!task||!!state.onboarding?.active||!!state.demo;
+  if(host.hidden)return;
+  const key=JSON.stringify(task);if(host.dataset.key===key)return;host.dataset.key=key;host.replaceChildren();
+  const labels={queued:"等待执行",waiting:"等待输入",paused:"已暂停",running:"处理中",completed:"已完成",failed:"失败",stopped:"已停止",cancelled:"已取消",interrupted:"已中断"};
+  host.append(node("span","",`${labels[task.status]||task.status} · ${task.title||"ADE 助手"}`));
+  if(task.stage)host.append(node("small","",task.stage));
+  host.append(button("查看任务", "quiet-button",()=>{
+    const d=engineDialog(task.title||"ADE 助手任务");d.body.append(node("p","",`${labels[task.status]||task.status}${task.stage?` · ${task.stage}`:""}`));
+    if(task.error)d.body.append(node("p","request-error",typeof task.error==="string"?task.error:task.error.message));
+    for(const result of task.resultRefs||[]){d.body.append(button(result.title||`${result.kind} · v${result.version}`,"quiet-button",async()=>{d.close();if(result.kind==="data_release"||result.kind?.startsWith("release"))await navigate("consumption");else{await navigate("ontology");if(result.kind?.startsWith("engine"))showEngineBuilds(state,dataActions());else document.querySelector(".os-definition-entry")?.click();}}));}
+    d.body.append(button("查看对话", "quiet-button",async()=>{d.close();if(task.page&&task.page!==ui.page)await navigate(task.page);setChatMode("history");}));
+  }));
+}
 function setChatMode(mode) {
   ui.chatMode = mode;
   $(".interaction").dataset.mode = mode;
+  $(".canvas-app").dataset.chatMode = mode;
   $("#open-composer").hidden = mode !== "collapsed";
   $("#open-composer").setAttribute("aria-expanded", String(mode !== "collapsed"));
   $("#chat-surface").hidden = mode === "collapsed";

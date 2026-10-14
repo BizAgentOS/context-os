@@ -65,6 +65,8 @@ const connectionSchema = z
 export type Capability = z.infer<typeof capabilitySchema>;
 export type Connection = z.infer<typeof connectionSchema> & {
   toolSchemas?: Record<string, string>;
+  /** Host-created adapter; never accepted from connection JSON or a tool input. */
+  localSource?: { id: string; version: number };
 };
 export const jsonData = (value: unknown): Data =>
   JSON.parse(JSON.stringify(value));
@@ -115,7 +117,7 @@ export class SourceConnections {
   ): Promise<T> {
     const client = new Client({
       name: "dataengine-source",
-      version: "0.1.0-dev",
+      version: "0.2.0-dev",
     });
     const transport = new StreamableHTTPClientTransport(new URL(config.url), {
       requestInit: {
@@ -304,6 +306,27 @@ export class SourceConnections {
     this.persist();
     return result;
   }
+  /** Bind an uploaded CSV to the same record contract used by HTTP and MCP. */
+  connectUpload(sourceId: string, sourceVersion: number, idField: string): Artifact {
+    const source = this.repo.getArtifact(sourceId);
+    if (source.kind !== "source" || source.status !== "ready" || source.content.format !== "csv" || source.version !== sourceVersion)
+      throw new Error("CSV 来源已更新或不可用，请重新读取");
+    const fields = source.content.columns as string[], rows = source.content.rows as Data[];
+    if (!Array.isArray(fields) || !Array.isArray(rows) || !fields.includes(idField)) throw new Error("CSV 身份字段不存在");
+    const cap = capabilitySchema.parse({name: "records", fields, idField, idType: "string", totalPath: "total",
+      limitParam: "__ade_limit", offsetParam: "__ade_offset", filters: Object.fromEntries(fields.map((field, index) => [field, `__ade_filter_${index}`]))});
+    const ids = new Set<string>();
+    for (const row of rows) {
+      const value = row[idField];
+      if (typeof value !== "string" || !value.trim() || ids.has(value)) throw new Error("CSV 对象身份为空或重复，不能建立执行来源");
+      ids.add(value);
+    }
+    const prior = this.list().find(item => (item.content.localSource as Data | undefined)?.id === sourceId);
+    if (prior?.status === "disabled") throw new Error("CSV 执行来源已停用，请明确恢复来源后重试");
+    if (prior && (prior.content.localSource as Data).version === sourceVersion && hash((prior.content.capabilities as Data[])[0]) === hash(cap)) return prior;
+    return this.repo.putArtifact({ ...(prior ? {id: prior.id, expectedVersion: prior.version} : {}), kind: "source_connection", title: source.title, status: "ready",
+      content: jsonData({name: source.title, protocol: "http", url: "http://localhost/", adapter: "uploaded_csv", localSource: {id: sourceId, version: sourceVersion}, capabilities: [cap]}) });
+  }
   capability(id: string, capability: string, version?: number) {
     const a = this.repo.getArtifact(id);
     if (a.kind !== "source_connection" || a.status !== "ready")
@@ -311,6 +334,11 @@ export class SourceConnections {
     if (version !== undefined && a.version !== version)
       throw new Error("来源契约版本已变化，需要重新检查本体");
     const config = a.content as unknown as Connection;
+    if (config.localSource) {
+      const source = this.repo.getArtifact(config.localSource.id);
+      if (source.kind !== "source" || source.status !== "ready" || source.version !== config.localSource.version)
+        throw new Error("CSV 来源版本已更新或已移除，需要重新构建并检查映射");
+    }
     const savedCap = config.capabilities.find((c) => c.name === capability);
     const cap = savedCap ? capabilitySchema.parse(savedCap) : undefined;
     if (!cap) throw new Error("来源能力不存在");
@@ -326,7 +354,15 @@ export class SourceConnections {
     const { artifact, config, cap } = this.capability(id, capability, version);
     let raw: unknown;
     try {
-      if (config.protocol === "http") {
+      if (config.localSource) {
+        const source = this.repo.getArtifact(config.localSource.id, config.localSource.version);
+        const offset = Number(args[cap.offsetParam] ?? 0), limit = Number(args[cap.limitParam] ?? 20);
+        if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100)
+          throw new Error("CSV 读取范围无效");
+        const filters = Object.entries(cap.filters).filter(([, parameter]) => Object.hasOwn(args, parameter));
+        const rows = (source.content.rows as Data[]).filter(row => filters.every(([field, parameter]) => row[field] === args[parameter]));
+        raw = {items: rows.slice(offset, offset + limit), total: rows.length};
+      } else if (config.protocol === "http") {
         raw = await this.http(config, cap, args, this.secrets[id]);
       } else
         raw = await this.mcp(config, this.secrets[id], async (client) => {

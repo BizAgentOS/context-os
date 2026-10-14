@@ -57,7 +57,7 @@ const buildDriver = (after?: () => Promise<void>): AgentDriver => ({
   }, async stop() {}, async close() {},
 });
 
-test("uploads and Feishu snapshots queue without a model, survive restart, and build every document including CSV", async () => {
+test("text and Feishu documents wait for a model across restart while CSV identity issues stay in the program queue", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-auto-queue-"));
   const key = process.env.DEEPSEEK_API_KEY;
   delete process.env.DEEPSEEK_API_KEY;
@@ -68,15 +68,19 @@ test("uploads and Feishu snapshots queue without a model, survive restart, and b
     app.capabilities.feishu.readDocument = async (url: string) => ({provider: "feishu", documentId: "auto-doc", title: "补货.md", url, revision: null, contentHash: undefined, format: "markdown", content: "澄川仓配的仓库负责补货。", readAt: new Date().toISOString(), coverage: "file"});
     await app.capabilities.feishuDocuments!.read("https://example.feishu.cn/wiki/example");
     assert.equal(app.canvasState().automaticBuild.status, "waiting_model");
-    assert.equal(app.canvasState().automaticBuild.pending, 3);
+    assert.equal(app.canvasState().automaticBuild.pending, 2);
+    await app.idle();
+    assert.equal(app.canvasState().automaticApiBuild.status, "failed");
+    assert.match(app.canvasState().automaticApiBuild.errors[0].message, /身份键/);
     assert.equal(app.canvasState().foundation.current, null);
     await app.close();
     app = new AgentApplication(directory, buildDriver());
     await app.idle();
     const state = app.canvasState("ontology");
-    assert.equal(state.automaticBuild.completed, 3);
+    assert.equal(state.automaticBuild.completed, 2);
     assert.equal(state.automaticBuild.status, "completed", JSON.stringify(state.automaticBuild));
-    assert.equal(Object.keys(state.foundation.current!.content.documentVersions as object).length, 3);
+    assert.equal(Object.keys(state.foundation.current!.content.documentVersions as object).length, 2);
+    assert.equal(state.automaticApiBuild.status, "failed", "model document work does not fabricate a CSV identity");
     assert.equal(state.foundation.current!.status, "adopted");
     assert.equal(state.pending, null);
   } finally { await app.close(); if (key === undefined) delete process.env.DEEPSEEK_API_KEY; else process.env.DEEPSEEK_API_KEY = key; rmSync(directory, {recursive: true, force: true}); }

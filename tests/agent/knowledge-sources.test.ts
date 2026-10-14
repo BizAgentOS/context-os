@@ -118,7 +118,7 @@ test("authorized knowledge directory, bounded read and cited foundation survive 
     async stop() {},
     async close() {},
   };
-  let service = await createServer({ directory, driver });
+  let service = await createServer({ directory, driver, automaticApi: false });
   await new Promise<void>((r) => service.server.listen(0, "127.0.0.1", r));
   let base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
   const api = async (path: string, body?: unknown) => {
@@ -216,7 +216,7 @@ test("MCP knowledge contract rejects filtering, unknown identity coverage, schem
     async stop() {},
     async close() {},
   };
-  const service = await createServer({ directory, driver });
+  const service = await createServer({ directory, driver, automaticApi: false });
   await new Promise<void>((r) => service.server.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
   const api = async (path: string, body: unknown) => {
@@ -429,7 +429,7 @@ test("resolved historical knowledge conflict does not lock a foundation after us
     async stop() {},
     async close() {},
   };
-  const service = await createServer({ directory, driver });
+  const service = await createServer({ directory, driver, automaticApi: false });
   try {
     source = await service.app.live.sources.connect({
       name: "知识",

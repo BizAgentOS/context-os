@@ -13,6 +13,10 @@ import { AutomaticApi } from "./automatic-api.ts";
 import { AutomaticFoundation } from "./automatic-foundation.ts";
 import { ModelCredentials } from "./model-credentials.ts";
 import { Onboarding } from "./onboarding.ts";
+import { AgentDelegations } from "../engine/delegations.ts";
+import { ProgramBuilds } from "../engine/program-builds.ts";
+import { Releases } from "../engine/releases.ts";
+import { engineTools, engineOverviewForAgent, releaseOverviewForAgent } from "../engine/tools.ts";
 import {
   WorkContexts,
   parseWorkContext,
@@ -156,6 +160,8 @@ export class AgentApplication {
   readonly contexts: WorkContexts;
   readonly foundation: FoundationService;
   readonly onboarding: Onboarding;
+  readonly delegations: AgentDelegations;
+  readonly programBuilds: ProgramBuilds;
   readonly capabilities: AgentCapabilities;
   readonly consumption: ConsumptionService;
   readonly driver: AgentDriver;
@@ -186,6 +192,7 @@ export class AgentApplication {
     this.memory = new MemoryStore(directory);
     this.live = new LiveMemory(directory, this.memory);
     this.foundation = new FoundationService(this.memory, this.live);
+    this.programBuilds = new ProgramBuilds(this.memory, this.foundation, this.live);
     this.onboarding = new Onboarding(this.memory, this.foundation, () => this.canvasTask("setup").id);
     this.contexts = new WorkContexts(this.memory, this.live);
     this.capabilities = new AgentCapabilities(directory, this.memory);
@@ -210,7 +217,13 @@ export class AgentApplication {
       : new KodaXDriver(join(directory, "runtime"), this.settings);
     this.driver = driver ?? this.actualDriver!;
     this.automaticBuild = new AutomaticFoundation(this.memory, this.foundation, this.capabilities);
-    this.automaticApiBuild = new AutomaticApi(this.memory, this.foundation, this.live, this.capabilities);
+    this.automaticApiBuild = new AutomaticApi(this.memory, this.foundation, this.live, this.capabilities, this.programBuilds);
+    this.delegations = new AgentDelegations(this.memory, this.live, this.driver, {
+      configured: () => this.model().configured,
+      start: (taskId, run) => this.startDelegatedRun(taskId, run),
+      stop: taskId => this.stop(taskId),
+      safeError: error => this.safeError(error),
+    });
     if (automaticApi) {
       this.live.sources.onSaved = source => { this.automaticApiBuild.enqueue(source); this.startAutomaticBuild(); };
       for (const source of this.live.sources.list()) this.automaticApiBuild.enqueue(source);
@@ -730,6 +743,7 @@ export class AgentApplication {
       })),
       model: this.model(),
       busy: !!this.active || this.modelTest,
+      agentTask: this.agentTaskView(),
       streaming: task?.id === this.active?.context.taskId ? this.streaming : "",
       messages: task
         ? this.memory
@@ -751,6 +765,7 @@ export class AgentApplication {
       sources,
       ontologies,
       foundation: this.foundation.view(),
+      engine: this.programBuilds.overview(),
       automaticBuild: this.automaticBuild.view(this.model().configured),
       automaticApiBuild: this.automaticApiBuild.view(this.model().configured),
       evidence: new EvidenceService(this.memory, this.live).list(),
@@ -789,8 +804,7 @@ export class AgentApplication {
     if (body.section !== undefined && !setupSection(body.section))
       throw new Error("无效的企业与数据分区");
     const progress = this.canvasProgress();
-    if (!this.active?.automatic && (page !== progress.currentPage || body.section === undefined))
-      await this.stopActive("已切换页面，保存的内容保留。");
+    // Navigation only changes the view; an in-flight message retains its original context.
     progress.currentPage = page;
     if (page === "setup")
       progress.setupSection =
@@ -804,7 +818,7 @@ export class AgentApplication {
   }
 
   async canvasStop(body: Record<string, unknown>) {
-    if (this.active?.automatic) { await this.stopActive(); return this.canvasState(); }
+    if (this.active) { await this.stopActive(); return this.canvasState(body.page); }
     const page = this.canvasPage(body.page);
     const taskId = this.canvasProgress().taskIds[page];
     if (taskId) await this.stop(taskId);
@@ -1070,7 +1084,8 @@ export class AgentApplication {
       `我上传了 ${artifact.title}，请查看资料并继续当前页。`,
     );
     this.memory.trimMessages(task.id);
-    this.automaticBuild.enqueue(artifact);
+    if (artifact.content.format === "csv") this.automaticApiBuild.enqueueUpload(artifact);
+    else this.automaticBuild.enqueue(artifact);
     this.startAutomaticBuild();
     return this.canvasState(page);
   }
@@ -1365,7 +1380,37 @@ export class AgentApplication {
   }
 
   async idle() {
-    do { this.startAutomaticBuild(); await this.active?.promise; } while (this.active);
+    do {
+      this.startAutomaticBuild();
+      await this.active?.promise;
+      await this.programBuilds.idle();
+    } while (this.active);
+  }
+
+  private agentTaskView() {
+    const progress = this.canvasProgress();
+    const task = this.active ? this.memory.getTask(this.active.context.taskId) :
+      this.memory.listTasks().find(t => Object.values(progress.taskIds).includes(t.id));
+    if (!task) return null;
+    const page = Object.entries(progress.taskIds).find(([,id]) => id === task.id)?.[0] ?? "consumption";
+    return { id: task.id, title: task.goal, status: task.status, page,
+      stage: task.nextStep, resultRefs: task.artifactRefs.map(ref => {
+        const artifact = this.memory.getArtifact(ref.id, ref.version);
+        return { ...ref, kind: artifact.kind, title: artifact.title };
+      }) };
+  }
+
+  private startDelegatedRun(taskId: string, run: (context: WriteContext) => Promise<void>) {
+    if (this.active || this.closing || this.stopping || this.modelTest || !this.model().configured) return false;
+    const context = this.memory.beginExecution(taskId);
+    const promise = Promise.resolve().then(() => run(context));
+    this.active = { context, promise };
+    void promise.finally(() => {
+      this.memory.endExecution(context);
+      if (this.active?.context.executionId === context.executionId) this.active = undefined;
+      this.startAutomaticBuild();
+    }).catch(() => {});
+    return true;
   }
 
   retryAutomaticBuild() {
@@ -1378,9 +1423,13 @@ export class AgentApplication {
   get automaticRunning() { return this.active?.automatic === true; }
 
   startAutomaticBuild(includeExisting = false) {
-    if (includeExisting) for (const source of this.memory.listArtifacts("source")) this.automaticBuild.enqueue(source);
-    if (this.closing || this.stopping || this.active || this.modelTest || !this.model().configured) return;
-    const jobs = this.automaticBuild.pending();
+    if (includeExisting) for (const source of this.memory.listArtifacts("source")) {
+      if (source.content.format === "csv") this.automaticApiBuild.enqueueUpload(source);
+      else this.automaticBuild.enqueue(source);
+    }
+    if (this.closing || this.stopping || this.active || this.modelTest) return;
+    if (this.delegations?.pump()) return;
+    const jobs = this.model().configured ? this.automaticBuild.pending() : [];
     const apiJob = jobs.length || !this.automaticApiEnabled ? undefined : this.automaticApiBuild.pending();
     if (!jobs.length && !apiJob) return;
     const task = this.canvasTask("ontology");
@@ -1570,6 +1619,9 @@ export class AgentApplication {
             ? [...foundationTools, ...metricTools, ...evidenceTools]
             : []),
           ...(page === "ontology" ? [...correctionTools, ...mappingChangeTools] : []),
+          ...engineTools.filter(tool => page === "consumption"
+            ? tool.name === "release_overview"
+            : tool.name !== "release_overview"),
           ...capabilityTools,
           ...controlTools.filter((tool) => tool.name === "task_ask"),
           ...(page === "consumption" ? consumptionTools : [pageCompleteTool]),
@@ -1903,6 +1955,7 @@ export class AgentApplication {
             ...liveTools,
             ...consumerViewTools,
             ...consumerMigrationTools,
+            ...engineTools,
           ].find((tool) => tool.name === name)?.mutates;
           if (mutates && executionWorkContext)
             this.contexts.assertCurrent(executionWorkContext);
@@ -1911,6 +1964,17 @@ export class AgentApplication {
               ? lastWrite.operationId
               : `write-${++writeSequence}`
             : undefined;
+          if (name === "engine_overview") return serializable(engineOverviewForAgent(this.programBuilds));
+          if (name === "release_overview") return serializable(releaseOverviewForAgent(new Releases(this.memory, this.live)));
+          if (name === "engine_build" || name === "engine_check") {
+            const assertActive = () => this.memory.assertWritable(context);
+            const result = name === "engine_build"
+              ? await this.programBuilds.build({ ...args, autoAdopt: false }, assertActive)
+              : await this.programBuilds.check(args, assertActive);
+            assertActive();
+            this.memory.attachArtifact(context.taskId, result);
+            return serializable(result);
+          }
           if (name === "metric_describe" || name === "metric_query") {
             const result = await (name === "metric_describe"
               ? metricReader.describe(args)
@@ -2406,6 +2470,7 @@ export class AgentApplication {
   async close() {
     this.closing = true;
     await this.stopActive();
+    await this.programBuilds.close();
     await this.driver.close();
     await this.capabilities.close();
     this.consumption.close();

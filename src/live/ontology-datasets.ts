@@ -84,7 +84,7 @@ export class OntologyDatasets {
       relations: data.relations.filter(r => relationIds.includes(String(r.id))).map(r => ({ id: r.id, name: r.name, description: r.description, from: r.from, to: r.to, origin: "adopted_interpretation" })),
     };
   }
-  publish(input: unknown) {
+  publish(input: unknown, options: { fixedSemantic?: boolean } = {}) {
     const args = publishInput.parse(input);
     const signature = digest(JSON.stringify(args));
     return this.memory.atomic(() => {
@@ -97,7 +97,7 @@ export class OntologyDatasets {
       const selection = this.select(foundation, args.conceptIds, args.relationIds);
       let business: Data | null = null;
       if (args.business) {
-        const model = this.live.assertModel(args.business.modelRef.id, args.business.modelRef.version);
+        const model = this.live.assertModel(args.business.modelRef.id, args.business.modelRef.version, options.fixedSemantic);
         const f = model.content.foundationRef as Data | undefined;
         if (model.status !== "adopted" || f?.id !== foundation.id || f.version !== foundation.version) throw new Error("业务映射必须属于同一已采用本体版本");
         for (const grant of args.business.grants) {
@@ -109,7 +109,7 @@ export class OntologyDatasets {
           }
         }
         const views = new ConsumerViews(this.memory, this.live);
-        const draft = views.propose({ ...args.business, operationId: "dataset:" + args.operationId, name: args.name, purpose: "MCP 本体数据集" });
+        const draft = views.propose({ ...args.business, operationId: "dataset:" + args.operationId, name: args.name, purpose: "MCP 本体数据集" }, undefined, options);
         const { view } = views.activate({ id: draft.id, version: draft.version });
         business = jsonData({ viewRef: { id: view.id, version: view.version }, ...args.business });
       }
@@ -155,6 +155,14 @@ export class OntologyDatasets {
   authenticate(key: string) {
     if (!/^de_dataset_[A-Za-z0-9_-]+$/.test(key)) return undefined;
     return this.memory.listArtifacts("ontology_dataset").find(a => a.status === "active" && a.content.keyHash === digest(key));
+  }
+  /** Revalidate current source authority before returning saved delegated results. */
+  assertReadable(key: string) {
+    const dataset = this.authenticate(key);
+    if (!dataset) throw new Error("数据集密钥无效或已停用");
+    const business = dataset.content.business as Data | null;
+    if (business) new ConsumerViews(this.memory, this.live).assertLinkedReadable(business.viewRef as { id: string; version: number });
+    return dataset;
   }
   private recordRead(a: Artifact, path: string) {
     const prior = this.memory.listArtifacts("dataset_access").find(r => r.content.datasetId === a.id);

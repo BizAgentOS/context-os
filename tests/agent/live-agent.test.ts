@@ -45,7 +45,7 @@ test("page Agent uses approved live capabilities to create a candidate but canno
     },
     async stop() {},
     async close() {},
-  });
+  }, new Set(), false);
   try {
     await connectHeatingSources(app.live.sources, upstream);
     await app.canvasNavigate({ page: "ontology" });

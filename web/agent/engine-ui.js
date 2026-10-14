@@ -1,0 +1,52 @@
+import { element as el, action } from "./connection-ui.js";
+export { el, action };
+export const ref = value => ({id:value.id, version:value.version});
+export const when = value => value ? new Date(value).toLocaleString("zh-CN", {hour12:false}) : "尚未读取";
+export const statusLabels = {queued:"等待执行", running:"正在执行", completed:"已完成", failed:"失败", cancelled:"已取消", interrupted:"执行中断", candidate:"待检查", checked:"已检查", adopted:"已采用", ready:"通过", blocked:"需修复", active:"已启用", revoked:"已撤销", stopped:"已停止"};
+export function dialog(title, wide=false) {
+  const root=el("dialog",null,`engine-dialog live-dialog ${wide?"engine-dialog-wide":""}`);
+  root.setAttribute("aria-label",title);
+  const close=action("关闭",()=>{if(root.dataset.busy!=="true")root.close();});
+  const head=el("header",null,"engine-dialog-head");head.append(el("h2",title),close);
+  const body=el("div",null,"engine-dialog-body");root.append(head,body);root.body=body;
+  root.addEventListener("cancel",event=>{if(root.dataset.busy==="true")event.preventDefault();});
+  root.addEventListener("close",()=>root.remove(),{once:true});
+  document.body.append(root);root.showModal();return root;
+}
+export function message(parent) {const n=el("p",null,"engine-message");n.setAttribute("role","status");parent.append(n);return n;}
+export async function transact(root, output, task) {
+  if(root.dataset.busy==="true")return;
+  root.dataset.busy="true";root.setAttribute("aria-busy","true");
+  const controls=[...root.querySelectorAll("button,input,textarea,select")];const states=controls.map(c=>c.disabled);controls.forEach(c=>c.disabled=true);
+  output.textContent="正在处理…";
+  try {await task();}catch(error){if(root.isConnected)output.textContent=error.message;}
+  finally {root.dataset.busy="false";root.setAttribute("aria-busy","false");controls.forEach((c,i)=>c.disabled=states[i]);root.dispatchEvent(new Event("transactionend"));}
+}
+export function field(parent,title,value="",multiline=false) {
+  const row=el("label",null,"engine-field"), input=el(multiline?"textarea":"input");
+  input.value=value;input.autocomplete="off";row.append(el("span",title),input);parent.append(row);return input;
+}
+export function check(parent,title,description="",checked=false) {
+  const row=el("label",null,"engine-check"),input=el("input");input.type="checkbox";input.checked=checked;
+  const copy=el("span");copy.append(el("strong",title));if(description)copy.append(el("small",description));row.append(input,copy);parent.append(row);return input;
+}
+export function table(rows, columns) {
+  const wrap=el("div",null,"engine-table"),t=el("table"),head=el("thead"),hr=el("tr");
+  for(const [label] of columns)hr.append(el("th",label));head.append(hr);t.append(head);
+  const body=el("tbody");for(const item of rows){const row=el("tr");for(const [,read] of columns){const value=read(item);row.append(el("td",value==null?"—":typeof value==="object"?JSON.stringify(value):String(value)));}body.append(row);}t.append(body);wrap.append(t);
+  if(!rows.length)wrap.append(el("p","当前范围没有记录","engine-muted"));return wrap;
+}
+export function issues(parent,items=[],ask) {
+  const list=el("div",null,"engine-issues");
+  for(const item of items){const row=el("article",null,`engine-issue engine-issue-${item.severity||"warning"}`);row.append(el("span",item.severity==="error"?"需处理":item.severity==="info"?"说明":"需核对","engine-badge"),el("p",item.message));if(item.sourceId)row.append(el("small",`来源 ${item.sourceId}${item.capability?` · ${item.capability}`:""}`,"engine-muted"));if(ask)row.append(action("让助手分析",()=>{for(const d of document.querySelectorAll("dialog[open]"))d.close();ask(`请分析并协助修复这个问题：${item.message}${item.sourceId?`\n来源：${item.sourceId}`:""}`);}));list.append(row);}parent.append(list);return list;
+}
+export function diffTable(items=[],afterLabel="工作版本") {
+  const labels={concepts:"概念",relations:"关系",sourceAccess:"来源存取策略",sourcePolicies:"来源范围",accessPolicy:"读取约定",enterprise:"企业信息",model:"执行映射",types:"对象类型",fields:"字段",name:"名称",description:"定义",sourceId:"数据来源",strategy:"存取方式",on_demand:"按需读取",uploaded_snapshot:"上传快照",facts:"业务数据",per_source_strategy:"按来源策略读取",consistency:"一致性",not_atomic:"不同来源分别读取",historicalReplay:"历史重放"};
+  const value=v=>v==null?"—":Array.isArray(v)?v.length?v.map(value).join("；"):"无":typeof v==="object"?v.name?`${v.name}${v.description?`：${v.description}`:""}`:Object.entries(v).map(([k,x])=>`${labels[k]||k}：${value(x)}`).join("；"):typeof v==="boolean"?v?"支持":"不支持":labels[v]||String(v);
+  const wrap=el("div");wrap.append(table(items,[["内容",i=>i.path.split("/").filter(Boolean).map(p=>labels[p]||p).join(" / ")],["变化",i=>({added:"新增",removed:"删除",changed:"修改"}[i.kind]||i.kind)],["原版本",i=>value(i.before)],[afterLabel,i=>value(i.after)]]));
+  if(items.length){const raw=el("details");raw.append(el("summary","完整变更记录"),el("pre",JSON.stringify(items,null,2),"engine-raw-diff"));wrap.append(raw);}return wrap;
+}
+export function downloadConfig(parent,config,key="") {
+  const area=el("textarea",null,"engine-config");area.readOnly=true;area.spellcheck=false;area.setAttribute("aria-label","接入配置");area.value=typeof config==="string"?config:JSON.stringify(config,null,2);parent.append(area);
+  const notice=message(parent);parent.append(action("复制配置",async()=>{try{await navigator.clipboard.writeText(area.value);notice.textContent="已复制配置。";}catch{area.focus();area.select();notice.textContent="请复制已选中的配置。";}}));return area;
+}

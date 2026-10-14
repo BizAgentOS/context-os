@@ -433,7 +433,7 @@ test("sources require inspected records, and ontology adoption remains bound to 
     async stop() {},
     async close() {},
   };
-  const app = new AgentApplication(directory, driver);
+  const app = new AgentApplication(directory, driver, new Set(), false);
   try {
     await app.canvasMessage({
       page: "company",
@@ -494,7 +494,7 @@ test("sources require inspected records, and ontology adoption remains bound to 
   }
 });
 
-test("leaving a page invalidates its pending write, and cancelled or failed completion cannot advance the canvas", async () => {
+test("explicit cancellation after navigation invalidates pending writes, and failed completion cannot advance the canvas", async () => {
   const directory = mkdtempSync(join(tmpdir(), "dataengine-canvas-stop-"));
   let release!: () => void;
   let entered!: () => void;
@@ -570,6 +570,8 @@ test("leaving a page invalidates its pending write, and cancelled or failed comp
     await app.canvasMessage({ page: "sources", text: "查看已有资料" });
     await enteredPromise;
     await app.canvasNavigate({ page: "company" });
+    assert.equal(app.canvasState().busy, true);
+    await app.canvasStop({ page: "company" });
     assert.equal(lateRejected, true);
     assert.equal(app.canvasState().currentPage, "setup");
     assert.doesNotMatch(JSON.stringify(app.canvasState().profile), /迟到内容/);
@@ -586,8 +588,8 @@ test("leaving a page invalidates its pending write, and cancelled or failed comp
     mode = "failed";
     await app.canvasUpload({
       page: "sources",
-      name: "tickets.csv",
-      content: "id,status\nT1,closed\n",
+      name: "company.md",
+      content: "企业主营供热服务。",
     });
     await app.idle();
     assert.equal(app.canvasState().currentPage, "setup");

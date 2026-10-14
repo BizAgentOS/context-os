@@ -13,6 +13,8 @@ const companySchema = z.object({
 });
 type Company = z.infer<typeof companySchema>;
 interface SetupState {
+  flow?: "engine" | "legacy";
+  sourceKind?: "mcp" | "api" | "file" | "later";
   version: number; active: boolean; step: number; completedAt?: string;
   company: Company; packId?: string; foundationRef?: {id:string;version:number};
   lastOperation?: {id:string;hash:string};
@@ -31,7 +33,7 @@ export class Onboarding {
     const profile = this.memory.listArtifacts("profile")[0];
     const current = this.foundation.read().current;
     return { version: 0, active: !profile && !current && !this.memory.listArtifacts("source").length && !this.memory.listArtifacts("ontology").length,
-      step: 1, company: this.currentCompany() };
+      flow: "engine", step: 1, company: this.currentCompany() };
   }
   private currentCompany(): Company {
     const statements = (this.memory.listArtifacts("profile")[0]?.content.statements ?? []) as Data[];
@@ -49,11 +51,16 @@ export class Onboarding {
     return state;
   }
   private save(state: SetupState) { this.memory.saveOnboarding(data({ ...state, version: state.version + 1 })); }
-  start(body: Record<string, unknown>) { const state = this.expected(body); this.save({ ...state, company: this.currentCompany(), active: true, step: state.completedAt ? 1 : state.step }); }
+  start(body: Record<string, unknown>) {
+    const state = this.expected(body);
+    if (body.flow !== undefined && body.flow !== "engine" && body.flow !== "legacy") throw new Error("无效的初始化流程");
+    const flow = body.flow === "legacy" ? "legacy" : "engine";
+    this.save({ ...state, flow, company: this.currentCompany(), active: true, step: flow !== state.flow || state.completedAt ? 1 : state.step });
+  }
   suspend(body: Record<string, unknown>) { const state = this.expected(body); this.save({ ...state, active: false }); }
   step(body: Record<string, unknown>, configured: boolean) {
     const state = this.expected(body), step = Number(body.step);
-    if (!Number.isInteger(step) || step < 1 || step > 5) throw new Error("无效的初始化步骤");
+    if (!Number.isInteger(step) || step < 1 || step > (state.flow === "engine" ? 2 : 5)) throw new Error("无效的初始化步骤");
     if (step > 1 && !configured) throw new Error("请先连接模型");
     if (step > 2 && (!state.company.name || !industryPacks.some(pack => pack.id === state.company.industry))) throw new Error("请先保存企业名称和所属行业");
     if (step > 3 && !this.foundation.read().adopted) throw new Error("请先选择并采用基础定义");
@@ -81,7 +88,7 @@ export class Onboarding {
         if (value && existing?.text !== value) workspace.editProfile(key,value);
         else if (!value && existing) workspace.clearOptionalProfile(key);
       }
-      this.save({ ...state, company, active: true, step: body.stay === true ? 2 : 3 });
+      this.save({ ...state, flow: "legacy", company, active: true, step: body.stay === true ? 2 : 3 });
     });
   }
   researchText() {
@@ -137,6 +144,12 @@ export class Onboarding {
   }
   complete(body: Record<string, unknown>, configured: boolean) {
     const state = this.expected(body);
+    if (state.flow === "engine") {
+      if (!configured) throw new Error("请先连接模型；数据来源可以稍后接入");
+      const sourceKind = z.enum(["mcp", "api", "file", "later"]).parse(body.sourceKind ?? "later");
+      this.save({...state, sourceKind, active:false, step:2, completedAt:new Date().toISOString()});
+      return;
+    }
     if (!configured || !state.company.name || !industryPacks.some(p=>p.id===state.company.industry) || !this.foundation.read().adopted)
       throw new Error("请先完成模型、企业与基础定义；来源可以稍后接入");
     this.save({...state,active:false,step:5,completedAt:new Date().toISOString()});

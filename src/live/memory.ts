@@ -112,11 +112,11 @@ export class LiveMemory {
       audit: this.repo.listArtifacts("live_access").slice(0, 40),
     };
   }
-  assertModel(id: string, version: number) {
+  assertModel(id: string, version: number, fixedSemantic = false) {
     const model = this.model(id);
     if (model.version !== version)
       throw new Error("本体版本已变化，请重新读取");
-    this.checkConnections(this.definition(model));
+    this.checkConnections(this.definition(model), undefined, fixedSemantic);
     return model;
   }
   private model(id: string, adopted = false) {
@@ -144,7 +144,7 @@ export class LiveMemory {
           )
         : null;
   }
-  private checkFoundation(d: z.infer<typeof modelSchema>) {
+  private checkFoundation(d: z.infer<typeof modelSchema>, preparedFoundation?: Artifact, fixedSemantic = false) {
     if (!d.foundationRef) {
       if (
         d.types.some((t) => t.conceptId) ||
@@ -153,9 +153,13 @@ export class LiveMemory {
         throw new Error("概念绑定需要明确基础本体引用");
       return;
     }
-    const foundation = this.adoptedFoundation();
+    const foundation = preparedFoundation ?? (fixedSemantic
+      ? this.repo.getArtifact(d.foundationRef.id, d.foundationRef.version)
+      : this.adoptedFoundation());
     if (
       !foundation ||
+      foundation.kind !== "foundation" ||
+      foundation.status !== "adopted" ||
       foundation.id !== d.foundationRef.id ||
       foundation.version !== d.foundationRef.version
     )
@@ -251,8 +255,8 @@ export class LiveMemory {
     this.checkExecutionBase(candidate.content.base);
     return candidate;
   }
-  private checkConnections(d: Definition) {
-    this.checkFoundation(d);
+  private checkConnections(d: Definition, preparedFoundation?: Artifact, fixedSemantic = false) {
+    this.checkFoundation(d, preparedFoundation, fixedSemantic);
     for (const t of d.types)
       for (const binding of [t, ...(t.supplements ?? [])])
         this.sources.capability(
@@ -272,13 +276,22 @@ export class LiveMemory {
   }
   /** Validate and read bounded samples without persisting a candidate. */
   async prepareDefinition(input: unknown, assertActive: () => void = () => {}) {
+    return this.prepareDefinitionWithFoundation(input, assertActive);
+  }
+  /** Trusted composition seam for an atomic foundation + mapping adoption. */
+  async prepareDefinitionAgainst(input: unknown, foundation: Artifact, assertActive: () => void = () => {}) {
+    if (foundation.kind !== "foundation" || foundation.status !== "adopted")
+      throw new Error("预备基础定义必须是将采用的本体版本");
+    return this.prepareDefinitionWithFoundation(input, assertActive, foundation);
+  }
+  private async prepareDefinitionWithFoundation(input: unknown, assertActive: () => void, preparedFoundation?: Artifact) {
     const d = modelSchema.parse(input);
     const base = this.active();
     if (this.repo.listArtifacts("foundation").length && !d.foundationRef)
       throw new Error(
         "已有基础本体，请采用后以 foundationRef 和 conceptId 绑定执行子集",
       );
-    this.checkFoundation(d);
+    this.checkFoundation(d, preparedFoundation);
     if (d.foundationRef) this.checkExecutionBase(d.baseModelRef);
     const connections: Record<string, number> = {};
     if (new Set(d.types.map((t) => t.name)).size !== d.types.length)
@@ -331,7 +344,7 @@ export class LiveMemory {
     const checks = [];
     const assertValid = () => {
       assertActive();
-      this.checkConnections({ ...d, connections });
+      this.checkConnections({ ...d, connections }, preparedFoundation);
       if (d.foundationRef) this.checkExecutionBase(d.baseModelRef);
     };
     for (const t of d.types) {
@@ -382,7 +395,7 @@ export class LiveMemory {
         coverage: sample.coverage,
       });
     }
-    this.checkConnections({ ...d, connections });
+    this.checkConnections({ ...d, connections }, preparedFoundation);
     if (d.foundationRef) this.checkExecutionBase(d.baseModelRef);
     assertActive();
     return jsonData({...d,connections,checks,base:base ? {id:base.id,version:base.version} : null});
@@ -456,6 +469,7 @@ export class LiveMemory {
     assertActive: () => void = () => {},
     applyCorrections = true,
     previewDefinition?: Data,
+    fixedSemantic = false,
   ): Promise<{
     model: { id: string; version: number };
     type: string;
@@ -491,7 +505,7 @@ export class LiveMemory {
     const d = this.definition(model);
     const assertValid = () => {
       assertActive();
-      this.checkConnections(d);
+      this.checkConnections(d, undefined, fixedSemantic);
       if (this.repo.getArtifact(model.id).version !== model.version)
         throw new Error("本体版本已变化，请重新读取目标");
     };
@@ -629,8 +643,9 @@ export class LiveMemory {
         assertActive,
         applyCorrections,
         previewDefinition,
+        fixedSemantic,
       );
-      this.checkConnections(d);
+      this.checkConnections(d, undefined, fixedSemantic);
       if (this.repo.getArtifact(model.id).version !== model.version)
         throw new Error("本体版本已变化，请重新读取目标");
       return { ...result, relationOrigin:{type:type.name,id:String(origin.items[0][cap.idField])}, reads: [origin.provenance, ...result.reads] };
@@ -684,11 +699,11 @@ export class LiveMemory {
       consistency: "on_demand_not_atomic",
     };
   }
-  validateConsumerScope(input: unknown) {
+  validateConsumerScope(input: unknown, fixedSemantic = false) {
     const args = prepareSchema.parse(input);
     const model = this.model(args.modelId, true);
     const d = this.definition(model);
-    this.checkConnections(d);
+    this.checkConnections(d, undefined, fixedSemantic);
     if (new Set(args.grants.map((g) => g.type)).size !== args.grants.length)
       throw new Error("重复类型授权");
     for (const g of args.grants) {

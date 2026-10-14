@@ -83,7 +83,7 @@ export class ConsumerViews {
       .slice(0, 40)
       .map(publicView);
   }
-  propose(input: unknown, context?: WriteContext) {
+  propose(input: unknown, context?: WriteContext, options: { fixedSemantic?: boolean } = {}) {
     const a = proposal.parse(input),
       actor = context ? `agent:${context.taskId}` : "local-admin";
     if (context) this.memory.assertWritable(context);
@@ -106,13 +106,13 @@ export class ConsumerViews {
           ),
         );
       }
-      this.live.assertModel(a.modelRef.id, a.modelRef.version);
+      this.live.assertModel(a.modelRef.id, a.modelRef.version, options.fixedSemantic);
       const { model } = this.live.validateConsumerScope({
         name: a.name,
         purpose: a.purpose,
         modelId: a.modelRef.id,
         grants: a.grants.map(({ evidence, ...g }) => g),
-      });
+      }, options.fixedSemantic);
       if (
         a.grants.some(
           (g) =>
@@ -172,6 +172,7 @@ export class ConsumerViews {
             contextEvidence,
             relationPolicy: "source_mapping_only",
             responsible: actor,
+            ...(options.fixedSemantic ? { fixedSemantic: true } : {}),
           }),
         },
         context,
@@ -229,7 +230,7 @@ export class ConsumerViews {
   }
   private model(a: Artifact) {
     const r = a.content.modelRef as { id: string; version: number };
-    const m = this.live.assertModel(r.id, r.version);
+    const m = this.live.assertModel(r.id, r.version, a.content.fixedSemantic === true);
     if (m.status !== "adopted") throw new Error("需要已采用映射");
     return m;
   }
@@ -304,6 +305,14 @@ export class ConsumerViews {
       return { status: 403, body: { error: "凭据无效或消费视图已停用" } };
     return this.readView(view, path, params, origin);
   }
+  /** Internal composition only: the owner must authenticate and pin its linked view. */
+  assertLinkedReadable(viewRef: { id: string; version: number }) {
+    const view = this.view(viewRef.id);
+    if (view.status !== "active" || view.version !== viewRef.version) throw new Error("业务数据许可已停用或变化");
+    this.model(view);
+    return view;
+  }
+
   /** Internal composition only: the owner must authenticate and pin its linked view. */
   async readLinkedView(viewRef: { id: string; version: number }, path: string, params: URLSearchParams, authorize: () => void) {
     const view = this.view(viewRef.id);
@@ -488,6 +497,8 @@ export class ConsumerViews {
           { ...args, modelId: model.id, modelVersion: model.version, fields },
           valid,
           false,
+          undefined,
+          view.content.fixedSemantic === true,
         );
         valid();
         const pendingEvidence: Array<{

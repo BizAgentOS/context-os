@@ -18,7 +18,7 @@ const button = (label, action, symbol, cls = "os-button") => {
 const kindLabel = kind => ({web: "公开网页", document: "企业资料", api: "API 样本", user: "用户陈述"}[kind] || "定义依据");
 const mappingLabel = item => item.mappingStatus === "bound" ? "已映射" : "未映射";
 
-export function renderOntologySpace(value, {selections, read, select, management, objects, evidence, onLayout, automaticBuild, automaticApiBuild, connectModel, retryBuild}) {
+export function renderOntologySpace(value, {selections, read, select, management, objects, evidence, onLayout, automaticBuild, automaticApiBuild, connectModel, retryBuild, engine, programBuild}) {
   const root = el("section", "ontology-space"); root.setAttribute("aria-label", "三维本体空间");
   const versions = [value?.current, value?.adopted].filter((item, i, all) => item && all.findIndex(other => other?.version === item.version) === i);
   const saved = selections.get("ontology-space");
@@ -71,10 +71,18 @@ export function renderOntologySpace(value, {selections, read, select, management
     dialog.append(el("h2", "", label), button("关闭", () => dialog.close(), "close"));
     if (typeof contents !== "function") dialog.append(contents);
     root.append(dialog);
-    return button(label, () => {menu.open = false; if (typeof contents === "function") dialog.append(contents()); dialog.showModal();});
+    return button(label, () => {menu.open = false; if (typeof contents === "function" && !dialog.dataset.loaded) { dialog.append(contents()); dialog.dataset.loaded="true"; } dialog.showModal();});
   }
-  menuBody.append(panel("定义与映射", management), panel("实际对象", objects), panel("共同取证", evidence));
-  menu.append(menuBody); utilities.append(directoryButton, menu); top.append(identity, toolbar, utilities);
+  const definitionEntry = panel("本体定义", management);definitionEntry.classList.add("os-definition-entry");
+  const objectEntry = panel("实际对象", objects);objectEntry.classList.add("os-object-entry");
+  const workEntries = el("nav", "os-work-entries");workEntries.setAttribute("aria-label","本体工作入口");
+  workEntries.append(definitionEntry,objectEntry);
+  if(programBuild) {
+    const taskCount=(engine?.jobs||[]).filter(j=>["queued","running"].includes(j.status)).length;
+    workEntries.append(button(taskCount?`构建任务 · ${taskCount} 进行中`:"构建与修订",programBuild));
+  }
+  menuBody.append(panel("共同取证", evidence));
+  menu.append(menuBody); utilities.append(directoryButton, menu); top.append(identity, toolbar, utilities);root.append(workEntries);
   const directory = el("section", "os-directory"); directory.hidden = true; directory.setAttribute("aria-label", "本体查找目录");
   const search = el("input"); search.type = "search"; search.placeholder = "查找概念或关系…"; search.setAttribute("aria-label", "查找概念或关系");
   const entries = el("div", "os-directory-entries");
@@ -305,7 +313,7 @@ export function renderOntologySpace(value, {selections, read, select, management
   }
   document.addEventListener("keydown", onKeyDown);
   if (!graph.concepts.length) {
-    const empty = el("div", "os-empty"); empty.append(el("h2", "", "从第一个业务概念开始"), el("p", "", "上传或接入文档后，本体会自动构建，概念与关系将在这里出现。")); root.append(empty);
+    const empty = el("div", "os-empty"); empty.append(el("h2", "", "从第一个业务概念开始"), el("p", "", "接入数据后构建本体。检查候选并采用，随后可通过助手继续修订。")); root.append(empty);
   }
   root.dispose = () => {disposed = true; generation++; document.removeEventListener("keydown", onKeyDown); cancelAnimationFrame(fanFrame); fanResize.disconnect(); scene?.dispose();};
   renderDirectory(); renderView(); queueMicrotask(mountScene);

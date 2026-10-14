@@ -31,6 +31,7 @@ test("local relation correction preserves source baseline, requires checked deci
     stopPhase = false;
   const service = await createServer({
     directory,
+    automaticApi: false,
     driver: {
       async run(request) {
         const call = request.onTool("relation_correction_propose", {
@@ -278,6 +279,7 @@ test("numeric source aliases cannot fork corrections or duplicate targets; corre
   await new Promise<void>((r) => sourceServer.listen(0, "127.0.0.1", r));
   const service = await createServer({
     directory,
+    automaticApi: false,
     driver: {
       async run() {
         return { text: "idle", sessionId: "s", runId: "r" };

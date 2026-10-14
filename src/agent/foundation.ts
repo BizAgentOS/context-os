@@ -36,7 +36,7 @@ const proposal = z
       .strict()
       .optional(),
     enterprise: z
-      .object({ name: z.string().trim().min(2).max(200), evidenceRefs: refs })
+      .object({ name: z.string().trim().min(2).max(200), evidenceRefs: z.array(id).max(20) })
       .strict(),
     concepts: z.array(concept).max(30),
     relations: z.array(relation).max(60),
@@ -234,7 +234,12 @@ export class FoundationService {
         throw new Error("依据引用不存在；没有依据的内容请保留为未知");
     };
     checkRefs(input.enterprise.evidenceRefs);
+    // Program discovery may begin without an enterprise profile. Retaining that
+    // explicitly unknown identity must not block an unrelated concept repair.
+    const previousUnknown = previous?.enterprise.name === "未设置企业" && previous.enterprise.evidenceRefs.length === 0;
+    const retainsUnknown = previousUnknown && input.enterprise.name === previous.enterprise.name && input.enterprise.evidenceRefs.length === 0;
     if (
+      !retainsUnknown &&
       !input.enterprise.evidenceRefs.some((ref) =>
         evidence
           .find((entry) => entry.id === ref)!
@@ -242,7 +247,7 @@ export class FoundationService {
       )
     )
       throw new Error("企业名称必须出现在引用的用户原话或文档片段中");
-    if (previous && previous.enterprise.name !== input.enterprise.name) {
+    if (previous && !previousUnknown && previous.enterprise.name !== input.enterprise.name) {
       const correction = input.identityCorrection;
       const latestUser = this.memory
         .messages(context.taskId)

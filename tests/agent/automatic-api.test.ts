@@ -6,182 +6,178 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgentApplication } from "../../src/agent/app.ts";
 import type { AgentDriver } from "../../src/agent/runtime.ts";
+import { providers } from "../../src/agent/runtime.ts";
+import { createServer as createAppServer } from "../../src/agent/server.ts";
 
-const outcome = { text: "完成", sessionId: "automatic-api", runId: "automatic-api" };
-const mappingDriver = (after?: () => Promise<void>): AgentDriver => ({
-  async run(request) {
-    const input = JSON.parse(request.input);
-    assert.equal(input.mode, "automatic-api-ontology");
-    assert(!request.tools.some(t => t.name === "task_ask"));
-    const source = input.source;
-    const receipt = await request.onTool("foundation_api_read", { sourceId: source.id, capability: "stores" }) as any;
-    let foundation = (await request.onTool("foundation_read", {}) as any).adopted;
-    if (!foundation) {
-      foundation = await request.onTool("foundation_propose", {
-        baseVersion: 0, enterprise: { name: "澄川仓配", evidenceRefs: ["api-store"] },
-        concepts: [{id: "store", name: "门店", description: "收货地点", evidenceRefs: ["api-store"]}], relations: [],
-        evidence: [{id: "api-store", kind: "api", readId: receipt.readId, quote: '"company":"澄川仓配"'}], unknowns: [], conflicts: [],
-      });
-    }
-    const live = await request.onTool("live_overview", {}) as any;
-    const base = live.models.find((m: any) => m.status === "adopted");
-    const concept = foundation.content.concepts.find((c: any) => c.id === "store");
-    await request.onTool("live_propose", {
-      foundationRef: {id: foundation.id, version: foundation.version}, baseModelRef: base ? {id: base.id, version: base.version} : null,
-      purpose: "门店 API 自动本体化", types: [{conceptId: concept.id, name: concept.name, description: concept.description, sourceId: source.id, capability: "stores", fields: {名称: "name"}}],
-      relations: [], rationale: "使用真实门店记录和稳定 ID 对应门店概念。",
-    });
-    await after?.();
-    return outcome;
-  }, async stop() {}, async close() {},
-});
-
-async function fixture(driver: AgentDriver = mappingDriver()) {
-  let broken = false, supplementChanged = false;
-  const server = createServer((req, res) => {
+async function fixture() {
+  let broken = false, emptySales = false, block: Promise<void> | undefined, entered: (() => void) | undefined, modelCalls = 0;
+  const server = createServer(async (req, res) => {
+    entered?.(); if (block) await block;
     res.setHeader("content-type", "application/json");
-    if (broken) { res.writeHead(503).end(); return; }
+    if (broken) {res.writeHead(503).end(); return;}
     const url = new URL(req.url!, "http://localhost");
-    const id = (url.pathname === "/different" || (url.pathname === "/supplement" && supplementChanged)) ? "S02" : "S01";
-    const items = !url.searchParams.has("id") || url.searchParams.get("id") === id ? [{id, name: "东城店", company: "澄川仓配"}] : [];
-    res.end(JSON.stringify({items, total: items.length}));
+    const rows = url.pathname === "/sales" ? (emptySales ? [] : [{id: "SALE1", name: "销售记录", company: "测试企业"}]) : [{id: "STORE1", name: "东城店", company: "测试企业"}];
+    const filtered = rows.filter(row => !url.searchParams.has("id") || row.id === url.searchParams.get("id"));
+    const offset = Number(url.searchParams.get("offset") ?? 0), limit = Number(url.searchParams.get("limit") ?? 20);
+    res.end(JSON.stringify({items: filtered.slice(offset, offset + limit), total: filtered.length}));
   });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
-  const directory = mkdtempSync(join(tmpdir(), "de-automatic-api-"));
+  const directory = mkdtempSync(join(tmpdir(), "ade-auto-api-program-"));
+  const driver: AgentDriver = {async run() {modelCalls++; throw new Error("程序构建不应调用模型");}, async stop() {}, async close() {}};
   const app = new AgentApplication(directory, driver);
-  const config = {name: "门店 API", protocol: "http", url: `http://127.0.0.1:${(server.address() as {port: number}).port}`, capabilities: [{name: "stores", path: "/stores", fields: ["id", "name", "company"], idField: "id", filters: {id: "id"}, totalPath: "total"}]};
-  return {app, config, directory, changeSupplement: () => {supplementChanged = true;}, breakSource: () => {broken = true;}, restoreSource: () => {broken = false;}, async close() {try {await app.close();} catch {} await new Promise<void>(resolve => server.close(() => resolve())); rmSync(directory, {recursive: true, force: true});}};
+  const config = {name: "门店 API", protocol: "http", url: `http://127.0.0.1:${(server.address() as {port:number}).port}`,
+    capabilities: [{name: "stores", path: "/stores", fields: ["id", "name", "company"], idField: "id", filters: {id: "id"}, totalPath: "total"}]};
+  return {app, config, directory, driver, calls: () => modelCalls, breakSource: () => {broken = true;}, restoreSource: () => {broken = false;}, emptySales: () => {emptySales = true;},
+    pause() {let release!: () => void; const started = new Promise<void>(resolve => {entered = resolve;}); block = new Promise<void>(resolve => {release = resolve;}); return {started, release: () => {block = undefined; entered = undefined; release();}};},
+    async close() {await app.close(); await new Promise<void>(resolve => server.close(() => resolve())); rmSync(directory, {recursive: true, force: true});} };
 }
 
-test("connecting an API automatically builds grounded concepts and queryable mappings without confirmation", async () => {
+test("API connection automatically builds queryable objects without a model loop or publication", async () => {
   const f = await fixture();
   try {
-    await f.app.live.sources.connect(f.config);
-    await f.app.idle();
-    const state = f.app.canvasState("ontology");
-    assert.equal(state.foundation.adopted?.status, "adopted");
-    assert.equal((state.foundation.adopted?.content.concepts as any[])[0].mappingStatus, "bound");
-    const model = state.live.models.find(m => m.status === "adopted")!;
-    const result = await f.app.live.query({modelId: model.id, conceptId: "store"});
-    assert.equal(result.items[0].名称, "东城店");
-    assert.equal(state.pending, null);
-    assert.equal((state as any).automaticApiBuild.status, "completed");
-    assert.equal(state.automaticBuild.total, 0);
-    const evidence = (state.foundation.adopted!.content.evidence as any[])[0];
-    const located = f.app.foundation.evidence(state.foundation.adopted!.id, state.foundation.adopted!.version, evidence.id);
-    assert.match(JSON.stringify(located), /澄川仓配/);
-    assert.equal(state.live.consumers.length, 0);
-  } finally {await f.close();}
-});
-
-test("unavailable API reports failure without adoption, then explicit retry builds it", async () => {
-  const f = await fixture();
-  try {
-    f.breakSource();
     await f.app.live.sources.connect(f.config); await f.app.idle();
-    assert.equal(f.app.canvasState().automaticApiBuild.status, "failed");
-    assert.equal(f.app.canvasState().live.models.filter(m => m.status === "adopted").length, 0);
-    assert.match(f.app.canvasState().automaticApiBuild.errors[0].message, /来源读取失败/);
-    f.restoreSource(); f.app.retryAutomaticBuild(); await f.app.idle();
-    assert.equal(f.app.canvasState().automaticApiBuild.status, "completed");
+    const state = f.app.canvasState("ontology");
+    assert.equal(state.automaticApiBuild.status, "completed", JSON.stringify(state.automaticApiBuild));
+    assert.equal(f.calls(), 0);
+    const model = state.live.models.find(item => item.status === "adopted")!;
+    const type = (model.content.types as any[])[0];
+    const query = await f.app.live.query({modelId: model.id, conceptId: type.conceptId});
+    assert.equal(query.items[0].name, "东城店");
+    assert.equal((state.foundation.adopted!.content.concepts as any[])[0].mappingStatus, "bound");
+    assert.equal(state.live.consumers.length, 0);
+    assert.equal(f.app.memory.listArtifacts("ontology_dataset").length, 0);
   } finally {await f.close();}
 });
 
-test("disabling an API during a run rejects late mapping adoption", async () => {
-  let entered!: () => void, release!: () => void;
-  const started = new Promise<void>(resolve => {entered = resolve;});
-  const f = await fixture(mappingDriver(async () => {entered(); await new Promise<void>(resolve => {release = resolve;});}));
-  try {
-    const source = await f.app.live.sources.connect(f.config); await started;
-    f.app.live.sources.disable(source.id, source.version); release(); await f.app.idle();
-    assert.equal(f.app.canvasState().live.models.filter(m => m.status === "adopted").length, 0);
-    assert.equal(f.app.canvasState().automaticApiBuild.total, 0);
-  } finally {release?.(); await f.close();}
-});
-
-test("a connection with an unprocessed capability cannot be marked completed", async () => {
+test("a multi-capability connection reads all capabilities and never adopts a partially empty source", async () => {
   const f = await fixture();
   try {
+    f.emptySales();
     await f.app.live.sources.connect({...f.config, capabilities: [...f.config.capabilities, {...f.config.capabilities[0], name: "sales", path: "/sales"}]});
     await f.app.idle();
     assert.equal(f.app.canvasState().automaticApiBuild.status, "failed");
-    assert.match(f.app.canvasState().automaticApiBuild.errors[0].message, /每个记录能力/);
-    assert.equal(f.app.canvasState().live.models.filter(m => m.status === "adopted").length, 0);
+    assert.equal(f.app.canvasState().live.models.filter(model => model.status === "adopted").length, 0);
+    assert.equal(f.app.foundation.read().adopted, null);
+    assert.equal(f.calls(), 0);
   } finally {await f.close();}
 });
 
-test("a later document rebuild refreshes the API mapping onto the new foundation version", async () => {
-  const api = mappingDriver();
-  const f = await fixture({...api, async run(request) {
-    if (JSON.parse(request.input).mode !== "automatic-document-ontology") return api.run(request);
-    const source = JSON.parse(request.input).sources[0];
-    const receipt = await request.onTool("foundation_document_read", {sourceId: source.id}) as any;
-    const prior = await request.onTool("foundation_read", {}) as any;
-    await request.onTool("foundation_propose", {baseVersion: prior.current.version, enterprise: prior.current.content.enterprise,
-      concepts: [{id: "warehouse", name: "仓库", description: "储存货物的地点", evidenceRefs: ["new-doc"]}], relations: [],
-      evidence: [{id: "new-doc", kind: "document", readId: receipt.readId, quote: receipt.text}], unknowns: [], conflicts: []});
-    return outcome;
-  }});
+test("unavailable sources fail honestly and an explicit retry re-reads them without a model", async () => {
+  const f = await fixture();
+  try {
+    f.breakSource(); await f.app.live.sources.connect(f.config); await f.app.idle();
+    assert.equal(f.app.canvasState().automaticApiBuild.status, "failed");
+    assert.equal(f.app.foundation.read().adopted, null);
+    assert.match(f.app.canvasState().automaticApiBuild.errors[0].message, /来源读取失败/);
+    f.restoreSource(); f.app.retryAutomaticBuild(); await f.app.idle();
+    assert.equal(f.app.canvasState().automaticApiBuild.status, "completed");
+    assert.equal(f.calls(), 0);
+  } finally {await f.close();}
+});
+
+test("revoking a connection during its actual read prevents late adoption", async () => {
+  const f = await fixture(), paused = f.pause();
+  try {
+    const source = await f.app.live.sources.connect(f.config); await paused.started;
+    f.app.live.sources.disable(source.id, source.version); paused.release(); await f.app.idle();
+    assert.equal(f.app.foundation.read().adopted, null);
+    assert.equal(f.app.canvasState().live.models.filter(model => model.status === "adopted").length, 0);
+    assert.equal(f.app.canvasState().automaticApiBuild.total, 0);
+  } finally {paused.release(); await f.close();}
+});
+
+test("stopping the host execution rejects the late result even when the source stays authorized", async () => {
+  const f = await fixture(), paused = f.pause();
+  try {
+    await f.app.live.sources.connect(f.config); await paused.started;
+    const stopping = f.app.canvasStop({page: "ontology"}); paused.release(); await stopping; await f.app.idle();
+    assert.equal(f.app.foundation.read().adopted, null);
+    assert.equal(f.app.canvasState().live.models.filter(model => model.status === "adopted").length, 0);
+  } finally {paused.release(); await f.close();}
+});
+
+test("all nonempty capabilities are mapped and later sources preserve the earlier mapping", async () => {
+  const f = await fixture();
+  try {
+    const first = await f.app.live.sources.connect({...f.config, capabilities: [...f.config.capabilities, {...f.config.capabilities[0], name: "sales", path: "/sales"}]});
+    await f.app.idle();
+    let current = f.app.canvasState().live.models.find(model => model.status === "adopted")!;
+    assert.equal((current.content.types as any[]).length, 2);
+    const original = (current.content.types as any[]).find(type => type.sourceId === first.id && type.capability === "stores");
+    const foundation = f.app.foundation.read().adopted!;
+    const candidate = await f.app.live.propose({foundationRef: {id: foundation.id, version: foundation.version}, baseModelRef: {id: current.id, version: current.version},
+      purpose: "保留人工映射", rationale: "业务字段用人工名称", types: (current.content.types as any[]).map(type => type === original ? {...type, fields: {门店名称: "name"}} : type), relations: []});
+    await f.app.live.adopt(candidate.id, candidate.version);
+    await f.app.live.sources.connect({...f.config, name: "第二个来源"}); await f.app.idle();
+    current = f.app.canvasState().live.models.find(model => model.status === "adopted")!;
+    const preserved = (current.content.types as any[]).find(type => type.conceptId === original.conceptId);
+    assert.deepEqual(preserved.fields, {门店名称: "name"});
+    assert.equal((current.content.types as any[]).length, 3);
+    assert.equal(f.app.canvasState().automaticApiBuild.completed, 2);
+    assert.equal(f.calls(), 0);
+  } finally {await f.close();}
+});
+
+test("source queue reports pending foundation review without automatically adopting an Agent proposal", async () => {
+  const f = await fixture();
   try {
     await f.app.live.sources.connect(f.config); await f.app.idle();
-    const priorVersion = f.app.canvasState().foundation.adopted!.version;
-    await f.app.canvasUpload({page: "setup", name: "仓库.md", content: "澄川仓配的仓库存储货物。"}); await f.app.idle();
+    const adopted = f.app.foundation.read().adopted!;
+    const task = f.app.memory.createTask("待审核修订"), message = f.app.memory.addMessage(task.id, "user", "增加联系人概念，表示门店联系人，先保存候选。");
+    const context = f.app.memory.beginExecution(task.id);
+    const repair = f.app.foundation.propose({baseVersion: adopted.version, enterprise: adopted.content.enterprise,
+      concepts: [{id: "contact", name: "联系人", description: "门店联系人", evidenceRefs: ["repair"]}], relations: [],
+      evidence: [{id: "repair", messageId: message.id, quote: message.content}], unknowns: [], conflicts: []}, context, "repair", "fixture-skill");
+    f.app.memory.endExecution(context);
+    await f.app.live.sources.connect({...f.config, name: "补充来源"}); await f.app.idle();
+    assert.deepEqual(f.app.foundation.read().current, repair);
+    assert.deepEqual(f.app.foundation.read().adopted, adopted);
     const state = f.app.canvasState();
-    assert(state.foundation.adopted!.version > priorVersion);
-    assert.equal(state.automaticApiBuild.status, "completed", JSON.stringify(state.automaticApiBuild));
-    assert.equal((state.foundation.adopted!.content.concepts as any[]).find(c => c.id === "store").mappingStatus, "bound");
-    assert.equal((state.foundation.adopted!.content.concepts as any[]).find(c => c.id === "warehouse").mappingStatus, "unbound");
-    const model = state.live.models.find(m => m.status === "adopted")!;
-    assert.equal((await f.app.live.query({modelId: model.id, conceptId: "store"})).items[0].名称, "东城店");
+    assert.equal(state.automaticApiBuild.status, "failed");
+    assert.match(state.automaticApiBuild.errors[0].message, /尚未采用.*用户明确采用/);
+    assert.equal(f.app.programBuilds.overview().candidate!.status, "checked");
+    assert.equal(f.calls(), 0);
   } finally {await f.close();}
 });
 
-test("API jobs wait for a model and resume after restarting, without reconnecting sources", async () => {
-  const key = process.env.DEEPSEEK_API_KEY; delete process.env.DEEPSEEK_API_KEY;
-  const f = await fixture();
-  let queued: AgentApplication | undefined, resumed: AgentApplication | undefined;
+test("HTTP and CSV management endpoints construct without model credentials and preserve results across restart", async () => {
+  const variables = Object.values(providers), saved = new Map(variables.map(key => [key, process.env[key]]));
+  for (const key of variables) delete process.env[key];
+  const directory = mkdtempSync(join(tmpdir(), "ade-no-model-build-"));
+  const upstream = createServer((_req, res) => {res.setHeader("content-type", "application/json"); res.end(JSON.stringify({items: [{id: "API1", name: "接口对象"}], total: 1}));});
+  await new Promise<void>(resolve => upstream.listen(0, "127.0.0.1", resolve));
+  let service = await createAppServer({directory});
+  const listen = async () => {
+    await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));
+    const url = `http://127.0.0.1:${(service.server.address() as {port:number}).port}`;
+    return async (path: string, body: unknown) => {
+      const response = await fetch(url + path, {method: "POST", headers: {"content-type": "application/json", "x-dataengine-token": service.adminToken}, body: JSON.stringify(body)});
+      const result = await response.json(); assert(response.ok, JSON.stringify(result)); return result;
+    };
+  };
   try {
-    await f.app.close();
-    queued = new AgentApplication(f.directory);
-    await queued.live.sources.connect(f.config);
-    assert.equal(queued.canvasState().automaticApiBuild.status, "waiting_model");
-    await queued.close(); queued = undefined;
-    resumed = new AgentApplication(f.directory, mappingDriver()); await resumed.idle();
-    assert.equal(resumed.canvasState().automaticApiBuild.status, "completed");
-    assert.equal(resumed.canvasState().live.connections.length, 1);
+    let post = await listen();
+    assert.equal(service.app.model().configured, false);
+    await post("/api/live/connect", {name: "无模型 API", protocol: "http", url: `http://127.0.0.1:${(upstream.address() as {port:number}).port}`,
+      capabilities: [{name: "records", path: "/records", fields: ["id", "name"], idField: "id", filters: {id: "id"}, totalPath: "total"}]});
+    await service.app.idle();
+    assert.equal(service.app.canvasState().automaticApiBuild.status, "completed");
+    await post("/api/canvas/upload", {page: "setup", name: "供应商.csv", content: "编号,名称\nSUP1,上传对象\n"});
+    await service.app.idle();
+    const state = service.app.canvasState();
+    assert.equal(state.automaticApiBuild.completed, 2);
+    assert.equal(state.automaticBuild.total, 0, "CSV no longer queues model construction");
+    const model = state.live.models.find(item => item.status === "adopted")!;
+    assert.equal((model.content.types as any[]).length, 2);
+    const stableId = model.id;
+    await service.close();
+    service = await createAppServer({directory}); post = await listen(); await service.app.idle();
+    assert.equal(service.app.model().configured, false);
+    assert.equal(service.app.canvasState().live.models.find(item => item.status === "adopted")!.id, stableId);
+    assert.equal(service.app.canvasState().automaticApiBuild.completed, 2);
   } finally {
-    await queued?.close(); await resumed?.close(); await f.close();
-    if (key === undefined) delete process.env.DEEPSEEK_API_KEY; else process.env.DEEPSEEK_API_KEY = key;
+    await service.close(); await new Promise<void>(resolve => upstream.close(() => resolve()));
+    rmSync(directory, {recursive: true, force: true});
+    for (const [key, value] of saved) if (value === undefined) delete process.env[key]; else process.env[key] = value;
   }
-});
-
-for (const mode of ["unique", "missing", "drift"]) test(`another API supplement validates ${mode} matches before completion`, async () => {
-  const initial = mappingDriver();
-  const f = await fixture({...initial, async run(request) {
-    const input = JSON.parse(request.input);
-    if (input.source.title !== "补充 API") return initial.run(request);
-    await request.onTool("foundation_api_read", {sourceId: input.source.id, capability: "stores"});
-    const foundation = (await request.onTool("foundation_read", {}) as any).adopted;
-    const base = (await request.onTool("live_overview", {}) as any).models.find((m: any) => m.status === "adopted");
-    await request.onTool("live_propose", {foundationRef: {id: foundation.id, version: foundation.version}, baseModelRef: {id: base.id, version: base.version}, purpose: "补充门店资料", rationale: "按相同门店身份键匹配名称", types: [{...base.content.types[0], supplements: [{name: "secondary", sourceId: input.source.id, capability: "stores", match: {primaryField: "$id", sourceField: "id"}, fields: {补充名称: "name"}, rationale: "同一门店 ID 精确匹配"}]}], relations: []});
-    if (mode === "drift") f.changeSupplement();
-    return outcome;
-  }});
-  try {
-    const primary = await f.app.live.sources.connect(f.config); await f.app.idle();
-    await f.app.live.sources.connect({...f.config, name: "补充 API", capabilities: f.config.capabilities.map(cap => ({...cap, path: mode === "missing" ? "/different" : "/supplement"}))}); await f.app.idle();
-    const state = f.app.canvasState();
-    if (mode !== "unique") {
-      assert.equal(state.automaticApiBuild.status, "failed");
-      assert.equal(state.automaticApiBuild.completed, 1);
-      assert.match(state.automaticApiBuild.errors[0].message, /唯一匹配/);
-      return;
-    }
-    assert.equal(state.automaticApiBuild.completed, 2, JSON.stringify(state.automaticApiBuild));
-    const model = state.live.models.find(m => m.status === "adopted")!;
-    assert.equal((model.content.types as any[])[0].sourceId, primary.id);
-    const result = await f.app.live.query({modelId: model.id, conceptId: "store"});
-    assert.equal(result.items[0].名称, "东城店");
-    assert.equal(result.items[0].补充名称, "东城店");
-  } finally {await f.close();}
 });

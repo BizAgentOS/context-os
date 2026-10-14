@@ -1,6 +1,8 @@
 # DataEngine Feature List
 
-Last Updated: 2026-09-22
+Last Updated: 2026-10-14
+
+**2026-10-14 开发交付：**v0.2.0 的 FEATURE_025—030 已完成整体前后端、199 项测试和浏览器验收。吸收 Helix 程序构建方法，统一数据、本体、发布与接入；未连接用户业务数据、未正式发布，真实场景验证另行进行。证据见[工作台验收](experiment/ENGINE_WORKBENCH.md)。
 
 **2026-09-10 文档整理：**新增[产品与架构](DATA_ENGINE_DESIGN.md)、[语义契约](SEMANTIC_CONTRACTS.md)、[Agent 与前端协作](AGENT_UI_DESIGN.md)，并更新 `AGENTS.md` 阅读入口。只沉淀设计与纠正历史描述，未新增实现票、改变功能状态或运行产品验收。
 
@@ -11,10 +13,10 @@ Last Updated: 2026-09-22
 ## Version Info
 
 - **Current Release:** 无，尚未发布产品版本。
-- **Planned Version:** v0.1.0 开发档案 — 当前目标为三页数据融合闭环，保留历史能力档案。
-- **版本状态:** InProgress；首个实验版本开发中，尚未发布。
+- **Planned Version:** v0.2.0；开发版本 `0.2.0-dev`。v0.1.0 保留历史功能与验收记录。
+- **版本状态:** v0.2.0 开发验收完成，尚未正式发布；旧 v0.1.0 的未完成历史继续保留。
 - **状态规则:** `Planned → InProgress → Completed`；`Released` 仅填写实际发布版本。
-- **设计:** [v0.1.0 设计与开发步骤](features/v0.1.0.md)。
+- **设计:** [v0.2.0 设计与开发步骤](features/v0.2.0.md)；[v0.1.0 历史](features/v0.1.0.md)。
 - **范围:** [产品目标](PRODUCT.md)与 [MVP 目标](MVP.md)。
 
 ## Version Summary
@@ -22,6 +24,7 @@ Last Updated: 2026-09-22
 | Version | Status | Planned | InProgress | Completed | Progress |
 |---|---|---:|---:|---:|---:|
 | v0.1.0 | InProgress | 2 | 3 | 19 | 19/24 |
+| v0.2.0 | Completed (Unreleased) | 0 | 0 | 6 | 6/6 |
 
 ## Feature Index
 
@@ -54,6 +57,13 @@ Last Updated: 2026-09-22
 | 023 | 本体数据集与 MCP 消费工作台 | Enhancement | High | Completed | v0.1.0 | 013、016 | [设计](features/v0.1.0.md#feature-023) |
 
 | 024 | 企业冷启动向导与金融行业本体包 | Enhancement | High | Completed | v0.1.0 | 013、017、020、021 | [设计](features/v0.1.0.md#feature-024) |
+
+| 025 | 模型优先初始化与数据工作台 | Enhancement | High | Completed | v0.2.0 | 复用 017、020、021、024 | [设计](features/v0.2.0.md#feature-025) |
+| 026 | Helix 程序化本体构建与数据运行 | Enhancement | High | Completed | v0.2.0 | 复用 010、013、014 | [设计](features/v0.2.0.md#feature-026) |
+| 027 | 本体工作区与跨页 Agent 任务 | Enhancement | High | Completed | v0.2.0 | 复用 015、022；联调依赖 026 | [设计](features/v0.2.0.md#feature-027) |
+| 028 | 数据底座版本发布与接入管理 | Enhancement | High | Completed | v0.2.0 | 复用 016、023；整链依赖 026、027 | [设计](features/v0.2.0.md#feature-028) |
+| 029 | 外部 Agent 受限委托与插件能力 | Enhancement | High | Completed | v0.2.0 | 028 | [设计](features/v0.2.0.md#feature-029) |
+| 030 | 0.2.0 整链验收与开发交付 | Enhancement | High | Completed | v0.2.0 | 025—029 | [设计](features/v0.2.0.md#feature-030) |
 
 此表保留已有能力与票的实际完成记录，计数不代表新 MVP 体验的完成比例。本轮按 [MVP 完成条件](MVP.md)及 FEATURE_012—016 的任务依赖验收。006、远程 MCP 服务和旧票中尚未覆盖的完整回归/恢复保留为后续工作，不因范围调整标为完成。
 
@@ -339,3 +349,63 @@ Last Updated: 2026-09-22
 - **Description:** 居中五步冷启动：模型密钥持久保存、企业及行业研究、金融优先的行业定义模板、来源连接、结果与缺口；可恢复，完成进入原企业页。
 - **Design:** [FEATURE_024](features/v0.1.0.md#feature-024)。
 - **验证:** 类型检查、176 项 Node 测试、离线导出及 390px/1280px 浏览器验收通过；[冷启动验收](experiment/ENTERPRISE_ONBOARDING.md)记录真实范围与双轴复核。
+
+### 025: 模型优先初始化与数据工作台
+
+- **Status:** Completed
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.2.0 / —
+- **Created / Started / Completed:** 2026-10-14 / 2026-10-14 / 2026-10-14
+- **Description:** 先配置模型，再选择 MCP/API/文件并进入数据页。无需企业问卷或预置数据；现有来源、样本、更新与错误成为第一页主体。
+- **Blocked by:** 复用 017、020、021、024
+- **Design:** [FEATURE_025](features/v0.2.0.md#feature-025)。
+
+### 026: Helix 程序化本体构建与数据运行
+
+- **Status:** Completed
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.2.0 / —
+- **Created / Started / Completed:** 2026-10-14 / 2026-10-14 / 2026-10-14
+- **Description:** 移植 Helix 确定性发现与构建，将授权结构化来源形成可维护本体候选；程序处理确定部分，AI 辅助未决语义。
+- **Blocked by:** 复用 010、013、014
+- **Design:** [FEATURE_026](features/v0.2.0.md#feature-026)。
+
+### 027: 本体工作区与跨页 Agent 任务
+
+- **Status:** Completed
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.2.0 / —
+- **Created / Started / Completed:** 2026-10-14 / 2026-10-14 / 2026-10-14
+- **Description:** 保留现有三维本体与共享助手，明确本体定义/实际对象入口、问题定位、差异和任务状态。
+- **Blocked by:** 复用 015、022；联调依赖 026
+- **Design:** [FEATURE_027](features/v0.2.0.md#feature-027)。
+
+### 028: 数据底座版本发布与接入管理
+
+- **Status:** Completed
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.2.0 / —
+- **Created / Started / Completed:** 2026-10-14 / 2026-10-14 / 2026-10-14
+- **Description:** 第三页管理工作版差异、检查、发布版本与接入方；工作修改不影响既有外部消费者。
+- **Blocked by:** 复用 016、023；整链依赖 026、027
+- **Design:** [FEATURE_028](features/v0.2.0.md#feature-028)。
+
+### 029: 外部 Agent 受限委托与插件能力
+
+- **Status:** Completed
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.2.0 / —
+- **Created / Started / Completed:** 2026-10-14 / 2026-10-14 / 2026-10-14
+- **Description:** 第三方除了直接查询，还能委托 ADE Agent 调查、解释获准数据，获取进度、结果与依据。
+- **Blocked by:** 028
+- **Design:** [FEATURE_029](features/v0.2.0.md#feature-029)。
+
+### 030: 0.2.0 整链验收与开发交付
+
+- **Status:** Completed
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.2.0 / —
+- **Created / Started / Completed:** 2026-10-14 / 2026-10-14 / 2026-10-14
+- **Description:** 完成空状态、隔离端到端、浏览器、双轴评审和开发文档，为下一轮真实场景验证准备产品。
+- **Blocked by:** 025—029
+- **Design:** [FEATURE_030](features/v0.2.0.md#feature-030)。
