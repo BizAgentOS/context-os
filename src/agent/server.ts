@@ -286,6 +286,10 @@ export async function createServer(
             to: { id: url.searchParams.get("toId"), version: Number(url.searchParams.get("toVersion")) },
           })); return;
         }
+        if (url.pathname === "/api/releases/data-diff") {
+          const param = (prefix: string) => url.searchParams.get(prefix + "Id") ? { [prefix]: { id: url.searchParams.get(prefix + "Id"), version: Number(url.searchParams.get(prefix + "Version")) } } : {};
+          send(200, await new Releases(app.memory, app.live).dataDiff({ ...param("from"), ...param("to") })); return;
+        }
         if (url.pathname === "/api/releases/read" || url.pathname === "/api/releases/connection") {
           const releases = new Releases(app.memory, app.live), ref = {id:url.searchParams.get("id"), version:Number(url.searchParams.get("version"))};
           send(200, url.pathname.endsWith("/read") ? releases.read(ref) : releases.connection(ref,url.origin)); return;

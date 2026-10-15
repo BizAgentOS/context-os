@@ -1,3 +1,4 @@
+import type { SnapshotPins } from "./memory.ts";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { LiveMemory } from "./memory.ts";
@@ -83,7 +84,7 @@ export class ConsumerViews {
       .slice(0, 40)
       .map(publicView);
   }
-  propose(input: unknown, context?: WriteContext, options: { fixedSemantic?: boolean } = {}) {
+  propose(input: unknown, context?: WriteContext, options: { fixedSemantic?: boolean; snapshotPins?: SnapshotPins } = {}) {
     const a = proposal.parse(input),
       actor = context ? `agent:${context.taskId}` : "local-admin";
     if (context) this.memory.assertWritable(context);
@@ -173,6 +174,7 @@ export class ConsumerViews {
             relationPolicy: "source_mapping_only",
             responsible: actor,
             ...(options.fixedSemantic ? { fixedSemantic: true } : {}),
+            ...(options.snapshotPins && Object.keys(options.snapshotPins).length ? { snapshotPins: options.snapshotPins } : {}),
           }),
         },
         context,
@@ -230,7 +232,7 @@ export class ConsumerViews {
   }
   private model(a: Artifact) {
     const r = a.content.modelRef as { id: string; version: number };
-    const m = this.live.assertModel(r.id, r.version, a.content.fixedSemantic === true);
+    const m = this.live.assertModel(r.id, r.version, a.content.fixedSemantic === true, a.content.snapshotPins as SnapshotPins | undefined);
     if (m.status !== "adopted") throw new Error("需要已采用映射");
     return m;
   }
@@ -383,7 +385,7 @@ export class ConsumerViews {
             )
             .map((r) => ({ name: r.name, to: r.to })),
           limits: { maxObjects: 20 },
-          consistency: "on_demand_not_atomic",
+          consistency: view.content.snapshotPins ? "pinned_snapshot" : "on_demand_not_atomic",
         });
       } else if (path === "/v3/connection") {
         if (keys.length) throw new z.ZodError([]);
@@ -499,6 +501,7 @@ export class ConsumerViews {
           false,
           undefined,
           view.content.fixedSemantic === true,
+          view.content.snapshotPins as SnapshotPins | undefined,
         );
         valid();
         const pendingEvidence: Array<{
@@ -644,7 +647,7 @@ export class ConsumerViews {
             readAt: r.readAt,
             historicalReplay: r.historicalReplay,
           })),
-          consistency: "on_demand_not_atomic",
+          consistency: result.consistency,
         });
         valid();
         this.memory.saveConsumerEvidence(pendingEvidence);

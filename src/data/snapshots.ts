@@ -10,7 +10,7 @@ import type { LiveMemory } from "../live/memory.ts";
 import type { Capability } from "../live/sources.ts";
 import { jsonData } from "../live/sources.ts";
 import { fingerprint } from "../engine/release-diff.ts";
-import type { ColumnProfile, ExecutionInput, SnapshotProfile } from "./executor/engine.ts";
+import { execute, lit, quote, type ColumnProfile, type ExecutionInput, type SnapshotProfile } from "./executor/engine.ts";
 import { Executor } from "./executor/jobs.ts";
 import { incomingDir, snapshotFile } from "./executor/paths.ts";
 
@@ -44,6 +44,7 @@ export class Snapshots {
   constructor(memory: MemoryStore, live: LiveMemory, stateDir: string) {
     this.memory = memory; this.live = live; this.root = join(stateDir, "data");
     this.executor = new Executor(this.root);
+    live.snapshots = this;
     for (const job of this.memory.listArtifacts("data_sync")) {
       if (["queued", "running"].includes(job.status)) this.memory.putArtifact({ ...job, expectedVersion: job.version, status: "interrupted", content: { ...job.content, finishedAt: now(), outcome: "interrupted",
         issues: [...(job.content.issues as Data[] ?? []), { code: "restart", severity: "warning", message: "服务重启中断同步。已完成的快照保留；重新同步会重新读取来源。" }] } });
@@ -135,6 +136,36 @@ export class Snapshots {
   /** Runs over explicit snapshot versions, such as derived pipeline outputs that are not datasets of their own. */
   async run(inputs: ExecutionInput[], sql: string, options: { limit?: number; persist?: string } = {}) {
     return this.executor.run({ mode: "query", scope: SCOPE, inputs, sql, limit: options.limit, ...(options.persist ? { persist: true, version: options.persist } : {}) });
+  }
+
+  /**
+   * Records of a locked snapshot with a source read's contract: exact filters, id order, paging and coverage.
+   * The SQL is generated here with escaped values, so it runs in-process rather than in a disposable child.
+   */
+  async readPinned(snapshotId: string, cap: Capability, binding: { sourceId: string; connectionVersion: number }, where: Data, offset: number, limit: number) {
+    const snapshot = this.memory.getArtifact(snapshotId);
+    if (snapshot.kind !== "data_snapshot") throw new Error("锁定的数据快照不存在");
+    const profile = snapshot.content.profile as unknown as SnapshotProfile, types = new Map(profile.columns.map(c => [c.name, c.type]));
+    const numeric = (name: string) => /INT|DOUBLE|FLOAT|DECIMAL|REAL|NUMERIC/.test(types.get(name) ?? "");
+    const conditions = Object.entries(where).map(([field, value]) => {
+      if (!types.has(field)) return "FALSE";
+      if (value === null) return `${quote(field)} IS NULL`;
+      if (typeof value === "number") return numeric(field) ? `${quote(field)} = ${value}` : `CAST(${quote(field)} AS VARCHAR) = ${lit(String(value))}`;
+      if (typeof value === "boolean") return `CAST(${quote(field)} AS VARCHAR) = ${lit(String(value))}`;
+      return `CAST(${quote(field)} AS VARCHAR) = ${lit(String(value))}`;
+    });
+    const select = cap.fields.map(f => types.has(f) ? quote(f) : `NULL AS ${quote(f)}`).join(", ");
+    const order = types.has(cap.idField) ? ` ORDER BY ${quote(cap.idField)}` : "";
+    const result = await execute({ mode: "query", scope: SCOPE, inputs: [{ table: "t", version: snapshotId }], limit, offset,
+      sql: `SELECT ${select} FROM t${conditions.length ? " WHERE " + conditions.join(" AND ") : ""}${order}` }, this.root);
+    // DuckDB returns BIGINT and DECIMAL as text; restore numbers so identity types match the source contract.
+    const items = result.rows.map(row => Object.fromEntries(cap.fields.map(f => {
+      const v = row[f] as unknown;
+      return [f, v !== null && v !== undefined && numeric(f) && Number.isFinite(Number(v)) ? Number(v) : v ?? null];
+    }))) as Data[];
+    const total = result.profile.rows;
+    return { items, coverage: { offset, shown: items.length, total, complete: offset === 0 && items.length === total },
+      provenance: { sourceId: binding.sourceId, connectionVersion: binding.connectionVersion, capability: cap.name, readAt: String(snapshot.content.syncedAt), historicalReplay: true, snapshotId } };
   }
 
   /** The snapshot dataset an execution binding reads: a connection itself, or the CSV a connection serves. */

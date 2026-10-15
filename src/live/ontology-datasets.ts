@@ -1,3 +1,4 @@
+import type { SnapshotPins } from "./memory.ts";
 import { createHash, randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
@@ -84,7 +85,7 @@ export class OntologyDatasets {
       relations: data.relations.filter(r => relationIds.includes(String(r.id))).map(r => ({ id: r.id, name: r.name, description: r.description, from: r.from, to: r.to, origin: "adopted_interpretation" })),
     };
   }
-  publish(input: unknown, options: { fixedSemantic?: boolean } = {}) {
+  publish(input: unknown, options: { fixedSemantic?: boolean; snapshotPins?: SnapshotPins } = {}) {
     const args = publishInput.parse(input);
     const signature = digest(JSON.stringify(args));
     return this.memory.atomic(() => {

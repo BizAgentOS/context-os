@@ -9,7 +9,7 @@ import {
 } from "./fusion.ts";
 import { z } from "zod";
 import { createHash, randomBytes } from "node:crypto";
-import { SourceConnections, jsonData } from "./sources.ts";
+import { SourceConnections, jsonData, type Capability } from "./sources.ts";
 import type {
   Artifact,
   Data,
@@ -91,8 +91,19 @@ const querySchema = z
 export { querySchema as liveQuerySchema };
 const digest = (key: string) => createHash("sha256").update(key).digest("hex");
 class Denied extends Error {}
+/** Snapshot versions a release locks, keyed by pinKey(connectionId, capability). */
+export type SnapshotPins = Record<string, string>;
+export const pinKey = (sourceId: string, capability: string) => `${sourceId}\u0000${capability}`;
+const pinnedConsistency = (d: Definition, pins: SnapshotPins) =>
+  d.types.every(t => [t, ...(t.supplements ?? [])].every(b => pins[pinKey(b.sourceId, b.capability)])) ? "pinned_snapshot" : "pinned_snapshot_with_on_demand";
+export interface PinnedReader {
+  readPinned(snapshotId: string, cap: Capability, binding: { sourceId: string; connectionVersion: number }, where: Data, offset: number, limit: number):
+    ReturnType<SourceConnections["readRecords"]>;
+}
 export class LiveMemory {
   readonly sources: SourceConnections;
+  /** Set by the host once its snapshot service exists; release consumers read pinned bindings through it. */
+  snapshots?: PinnedReader;
   private repo: Repository;
   constructor(directory: string, repo: Repository) {
     this.repo = repo;
@@ -112,11 +123,11 @@ export class LiveMemory {
       audit: this.repo.listArtifacts("live_access").slice(0, 40),
     };
   }
-  assertModel(id: string, version: number, fixedSemantic = false) {
+  assertModel(id: string, version: number, fixedSemantic = false, pins?: SnapshotPins) {
     const model = this.model(id);
     if (model.version !== version)
       throw new Error("本体版本已变化，请重新读取");
-    this.checkConnections(this.definition(model), undefined, fixedSemantic);
+    this.checkConnections(this.definition(model), undefined, fixedSemantic, this.sourcesFor(pins));
     return model;
   }
   private model(id: string, adopted = false) {
@@ -255,11 +266,11 @@ export class LiveMemory {
     this.checkExecutionBase(candidate.content.base);
     return candidate;
   }
-  private checkConnections(d: Definition, preparedFoundation?: Artifact, fixedSemantic = false) {
+  private checkConnections(d: Definition, preparedFoundation?: Artifact, fixedSemantic = false, src: Pick<SourceConnections, "capability"> = this.sources) {
     this.checkFoundation(d, preparedFoundation, fixedSemantic);
     for (const t of d.types)
       for (const binding of [t, ...(t.supplements ?? [])])
-        this.sources.capability(
+        src.capability(
           binding.sourceId,
           binding.capability,
           d.connections[binding.sourceId],
@@ -470,6 +481,7 @@ export class LiveMemory {
     applyCorrections = true,
     previewDefinition?: Data,
     fixedSemantic = false,
+    pins?: SnapshotPins,
   ): Promise<{
     model: { id: string; version: number };
     type: string;
@@ -503,9 +515,10 @@ export class LiveMemory {
     if (args.modelVersion !== undefined && args.modelVersion !== model.version)
       throw new Error("本体版本已变化，请重新读取目标");
     const d = this.definition(model);
+    const src = this.sourcesFor(pins);
     const assertValid = () => {
       assertActive();
-      this.checkConnections(d, undefined, fixedSemantic);
+      this.checkConnections(d, undefined, fixedSemantic, src);
       if (this.repo.getArtifact(model.id).version !== model.version)
         throw new Error("本体版本已变化，请重新读取目标");
     };
@@ -518,7 +531,7 @@ export class LiveMemory {
     if (type && args.type && type.name !== args.type)
       throw new Error("类型与概念引用不一致");
     if (!type) throw new Error("业务类型不存在或概念未绑定");
-    const { cap } = this.sources.capability(
+    const { cap } = src.capability(
       type.sourceId,
       type.capability,
       d.connections[type.sourceId],
@@ -544,7 +557,7 @@ export class LiveMemory {
         (r) => r.from === type.name && r.name === args.relation,
       );
       if (!rel) throw new Error("关系不存在");
-      const origin = await this.sources.readRecords(
+      const origin = await src.readRecords(
         type.sourceId,
         type.capability,
         where,
@@ -644,8 +657,9 @@ export class LiveMemory {
         applyCorrections,
         previewDefinition,
         fixedSemantic,
+        pins,
       );
-      this.checkConnections(d, undefined, fixedSemantic);
+      this.checkConnections(d, undefined, fixedSemantic, src);
       if (this.repo.getArtifact(model.id).version !== model.version)
         throw new Error("本体版本已变化，请重新读取目标");
       return { ...result, relationOrigin:{type:type.name,id:String(origin.items[0][cap.idField])}, reads: [origin.provenance, ...result.reads] };
@@ -657,7 +671,7 @@ export class LiveMemory {
     if (type.supplements?.length && args.limit > 20)
       throw new Error("融合查询每页最多20个主对象");
     assertValid();
-    const result = await this.sources.readRecords(
+    const result = await src.readRecords(
       type.sourceId,
       type.capability,
       where,
@@ -671,7 +685,7 @@ export class LiveMemory {
           type,
           result,
           fields,
-          this.sources,
+          src as SourceConnections,
           d.connections,
           assertValid,
         )
@@ -696,8 +710,24 @@ export class LiveMemory {
         ),
       coverage: result.coverage,
       reads: fusion?.reads ?? [result.provenance],
-      consistency: "on_demand_not_atomic",
+      consistency: pins ? pinnedConsistency(d, pins) : "on_demand_not_atomic",
     };
+  }
+  /** Source access for one read: pinned bindings come from their locked snapshot, others from the live source. */
+  private sourcesFor(pins?: SnapshotPins): Pick<SourceConnections, "capability" | "readRecords"> {
+    const reader = this.snapshots;
+    if (!pins || !reader || !Object.keys(pins).length) return this.sources;
+    const sources = this.sources;
+    return {
+      capability: (id: string, capability: string, version?: number) => pins[pinKey(id, capability)] && version !== undefined
+        ? sources.pinnedCapability(id, capability, version) : sources.capability(id, capability, version),
+      readRecords: async (id: string, capability: string, where: Data = {}, offset = 0, limit = 20, version?: number) => {
+        const snapshotId = pins[pinKey(id, capability)];
+        if (!snapshotId || version === undefined) return sources.readRecords(id, capability, where, offset, limit, version);
+        const { cap } = sources.pinnedCapability(id, capability, version);
+        return reader.readPinned(snapshotId, cap, { sourceId: id, connectionVersion: version }, where, offset, limit);
+      },
+    } as Pick<SourceConnections, "capability" | "readRecords">;
   }
   validateConsumerScope(input: unknown, fixedSemantic = false) {
     const args = prepareSchema.parse(input);

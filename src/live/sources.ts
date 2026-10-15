@@ -403,6 +403,16 @@ export class SourceConnections {
       },
     };
   }
+  /** The record contract at a pinned connection version, for reads served from a locked snapshot. Only revocation is checked. */
+  pinnedCapability(id: string, capability: string, version: number) {
+    if (this.repo.getArtifact(id).status === "disabled") throw new Error("来源已停用或不存在");
+    const a = this.repo.getArtifact(id, version);
+    if (a.kind !== "source_connection") throw new Error("来源已停用或不存在");
+    const config = a.content as unknown as Connection;
+    const savedCap = config.capabilities.find((c) => c.name === capability);
+    if (!savedCap) throw new Error("来源能力不存在");
+    return { artifact: a, config, cap: capabilitySchema.parse(savedCap) };
+  }
   async readRecords(
     id: string,
     capability: string,

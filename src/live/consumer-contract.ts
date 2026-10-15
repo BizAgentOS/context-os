@@ -115,7 +115,7 @@ export function consumerConnection(
       items: { type: "array", maxItems: 20, items: { oneOf: objectVariants } },
       coverage,
       relationEvidenceRef: reference,
-      consistency: { const: "on_demand_not_atomic" },
+      consistency: { enum: ["on_demand_not_atomic", "pinned_snapshot", "pinned_snapshot_with_on_demand"] },
       reads: {
         type: "array",
         items: {

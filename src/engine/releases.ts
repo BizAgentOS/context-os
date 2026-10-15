@@ -2,11 +2,13 @@ import { z } from "zod";
 import type { Artifact, Data } from "../agent/contracts.ts";
 import type { MemoryStore } from "../agent/memory.ts";
 import { FoundationService } from "../agent/foundation.ts";
-import type { LiveMemory } from "../live/memory.ts";
+import { pinKey, type LiveMemory, type SnapshotPins } from "../live/memory.ts";
+import type { DatasetContent, Snapshots } from "../data/snapshots.ts";
 import { OntologyDatasets } from "../live/ontology-datasets.ts";
 import { consumerGrant } from "../live/consumer-views.ts";
 import { jsonData } from "../live/sources.ts";
 import { fingerprint, releaseDiff } from "./release-diff.ts";
+import { quote as quoteId } from "../data/executor/engine.ts";
 
 const name = z.string().trim().min(1).max(200);
 const ref = z.object({ id: name, version: z.number().int().positive() }).strict();
@@ -17,6 +19,10 @@ const connectSchema = z.object({ operationId: name, name, releaseRef: ref, conce
 const upgradeSchema = z.object({ operationId: name, connectionRef: ref, releaseRef: ref }).strict();
 const revokeSchema = z.object({ operationId: name, connectionRef: ref }).strict();
 interface Issue { code: string; severity: "error" | "warning"; message: string }
+export interface ReleaseSnapshot { sourceId: string; capability: string; datasetId: string; snapshotId: string; fingerprint: string; rows: number; syncedAt: string }
+/** The pins a release's consumers read through. */
+export const releasePins = (definition: Data | undefined): SnapshotPins =>
+  Object.fromEntries((((definition?.snapshots ?? []) as unknown) as ReleaseSnapshot[]).map(s => [pinKey(s.sourceId, s.capability), s.snapshotId]));
 
 /** Publication owns version/connection lifecycle; existing v4 services own all external reads. */
 export class Releases {
@@ -67,6 +73,20 @@ export class Releases {
       try { const a = this.memory.getArtifact(id); sourceState.push({ id, version: a.version, status: a.status }); }
       catch { sourceState.push({ id, version: null, status: "missing" }); }
     }
+    // Bindings with an active snapshot are pinned to it; others stay on demand and are labelled so.
+    const store = this.live.snapshots as Snapshots | undefined, snapshots: ReleaseSnapshot[] = [];
+    const bindings = ((model?.content.types ?? []) as Data[]).flatMap(t => [t, ...((t.supplements ?? []) as Data[])]);
+    for (const b of bindings) {
+      const sourceId = String(b.sourceId), capability = String(b.capability);
+      if (snapshots.some(s => s.sourceId === sourceId && s.capability === capability)) continue;
+      const dataset = store?.bindingDataset(sourceId, capability), c = dataset?.content as unknown as DatasetContent | undefined;
+      if (!dataset || !c?.activeVersion || c.materialization === "live") continue;
+      if (c.pendingVersion) issues.push({ code: "pending_schema", severity: "error", message: `「${c.name}」有待确认的结构变化，请先在数据页确认或改为实时读取。` });
+      const snapshot = this.memory.getArtifact(c.activeVersion);
+      snapshots.push({ sourceId, capability, datasetId: dataset.id, snapshotId: c.activeVersion, fingerprint: String(c.profile?.fingerprint ?? ""), rows: c.profile?.rows ?? 0, syncedAt: String(snapshot.content.syncedAt) });
+    }
+    const allPinned = bindings.length > 0 && bindings.every(b => snapshots.some(s => s.sourceId === b.sourceId && s.capability === b.capability));
+    for (const access of sourceAccess) if (snapshots.some(s => s.sourceId === access.sourceId)) access.strategy = bindings.filter(b => b.sourceId === access.sourceId).every(b => snapshots.some(s => s.sourceId === b.sourceId && s.capability === b.capability)) ? "snapshot" : "snapshot_and_on_demand";
     const policySources = new Set([...sourceIds, ...sourceAccess.flatMap(s => s.uploadRef ? [String(s.uploadRef.id)] : [])]);
     const policies = this.memory.listArtifacts("source_policy").filter(a => policySources.has(String(a.content.sourceId)));
     const concepts = (adopted?.content.concepts ?? []) as Data[];
@@ -79,7 +99,8 @@ export class Releases {
       model: model ? { purpose: model.content.purpose, types: model.content.types, relations: model.content.relations, connections: model.content.connections } : null,
       sourcePolicies: policies.sort((a, b) => String(a.content.sourceId).localeCompare(String(b.content.sourceId))).map(a => ({ ...a.content, policyRef: reference(a) })),
       sourceAccess,
-      accessPolicy: { facts: "per_source_strategy", consistency: "not_atomic", historicalReplay: false },
+      snapshots,
+      accessPolicy: { facts: "per_source_strategy", snapshot: snapshots.length ? "pinned" : "none", consistency: allPinned ? "pinned_snapshot" : "not_atomic", historicalReplay: allPinned },
     });
     const currentRelease = this.memory.listArtifacts("data_release")[0] ?? null;
     const refs = { foundationRef: adopted ? reference(adopted) : null, modelRef: model ? reference(model) : null };
@@ -87,7 +108,7 @@ export class Releases {
     return {
       ...refs, definition, pending: pendingRefs, issues,
       inputHash: fingerprint({ ...refs, definition, pending: pendingRefs, sourceState, baseReleaseRef: currentRelease ? reference(currentRelease) : null }),
-      summary: { concepts: concepts.length, relations: relations.length, types: ((model?.content.types ?? []) as Data[]).length, sources: sourceIds.length },
+      summary: { concepts: concepts.length, relations: relations.length, types: ((model?.content.types ?? []) as Data[]).length, sources: sourceIds.length, snapshots: snapshots.length, rows: snapshots.reduce((n, s) => n + s.rows, 0) },
       diff: releaseDiff(currentRelease?.content.definition ?? {}, definition),
       baseReleaseRef: currentRelease ? reference(currentRelease) : null,
     };
@@ -111,6 +132,40 @@ export class Releases {
     return { from: { ...reference(from), name: from.title }, to: { ...reference(to), name: to.title },
       diff: releaseDiff(from.content.definition, to.content.definition) };
   }
+  /** Row-level differences of each pinned dataset between a release and another release or the working version. */
+  async dataDiff(input: unknown) {
+    const args = z.object({ from: ref.optional(), to: ref.optional() }).strict().parse(input);
+    const store = this.live.snapshots as Snapshots | undefined;
+    const fromRelease = args.from ? this.read(args.from) : this.memory.listArtifacts("data_release")[0] ?? null;
+    const target = args.to ? this.read(args.to).content : this.working();
+    const before = (((fromRelease?.content.definition as Data | undefined)?.snapshots ?? []) as unknown) as ReleaseSnapshot[];
+    const after = (((target.definition as Data).snapshots ?? []) as unknown) as ReleaseSnapshot[];
+    const connections = (((target.definition as Data).model as Data | null)?.connections ?? {}) as Record<string, number>;
+    const name = (datasetId: string) => { try { return String(this.memory.getArtifact(datasetId).content.name); } catch { return datasetId; } };
+    const datasets: Data[] = [];
+    for (const s of after) {
+      const prior = before.find(b => b.datasetId === s.datasetId);
+      const base = { datasetId: s.datasetId, name: name(s.datasetId), sourceId: s.sourceId, capability: s.capability, fromSnapshot: prior?.snapshotId ?? null, toSnapshot: s.snapshotId, rowsBefore: prior?.rows ?? null, rowsAfter: s.rows };
+      if (!prior) { datasets.push({ ...base, status: "added" }); continue; }
+      if (prior.snapshotId === s.snapshotId) { datasets.push({ ...base, status: "unchanged", added: 0, removed: 0, changed: 0, samples: [] }); continue; }
+      if (!store) continue;
+      const { cap } = this.live.sources.pinnedCapability(s.sourceId, s.capability, connections[s.sourceId]);
+      const key = (alias: string) => `SELECT CAST(${alias}.${quoteId(cap.idField)} AS VARCHAR) AS k, hash(${alias}) AS h FROM ${alias}`;
+      const joined = `(${key("a")}) x FULL OUTER JOIN (${key("b")}) y ON x.k = y.k`;
+      const inputs = [{ table: "a", version: prior.snapshotId }, { table: "b", version: s.snapshotId }];
+      try {
+        const counts = (await store.run(inputs, `SELECT count(*) FILTER (WHERE x.k IS NULL) AS added, count(*) FILTER (WHERE y.k IS NULL) AS removed, count(*) FILTER (WHERE x.k IS NOT NULL AND y.k IS NOT NULL AND x.h <> y.h) AS changed FROM ${joined}`, { limit: 1 })).rows[0];
+        const samples = (await store.run(inputs, `SELECT kind, k FROM (SELECT coalesce(y.k, x.k) AS k, CASE WHEN x.k IS NULL THEN 'added' WHEN y.k IS NULL THEN 'removed' ELSE 'changed' END AS kind,
+          row_number() OVER (PARTITION BY CASE WHEN x.k IS NULL THEN 'added' WHEN y.k IS NULL THEN 'removed' ELSE 'changed' END ORDER BY coalesce(y.k, x.k)) AS n
+          FROM ${joined} WHERE x.k IS NULL OR y.k IS NULL OR x.h <> y.h) WHERE n <= 5 ORDER BY kind, k`, { limit: 15 })).rows;
+        datasets.push({ ...base, status: "changed", added: Number(counts.added), removed: Number(counts.removed), changed: Number(counts.changed), samples: jsonData(samples) });
+      } catch (error) { datasets.push({ ...base, status: "unavailable", message: error instanceof Error ? error.message : "无法比较快照" }); }
+    }
+    for (const b of before) if (!after.some(s => s.datasetId === b.datasetId))
+      datasets.push({ datasetId: b.datasetId, name: name(b.datasetId), sourceId: b.sourceId, capability: b.capability, fromSnapshot: b.snapshotId, toSnapshot: null, rowsBefore: b.rows, rowsAfter: null, status: "removed" });
+    return { from: fromRelease ? { ...reference(fromRelease), name: fromRelease.title } : null, to: args.to ? args.to : "working", datasets: jsonData(datasets) };
+  }
+
   async check(input: unknown) {
     const args = z.object({ inputHash: z.string().length(64) }).strict().parse(input);
     const working = this.working();
@@ -123,7 +178,7 @@ export class Releases {
           const fields = [...new Set(["$id", ...Object.keys(t.fields as Data), ...((t.supplements ?? []) as Data[]).flatMap(s => Object.keys(s.fields as Data))])];
           const sample = await this.live.query({ modelId: working.modelRef.id, modelVersion: working.modelRef.version, type: t.name, fields, limit: 1 }, () => {
             if (this.working().inputHash !== working.inputHash) throw new Error("检查过程中工作版本已变化");
-          }, false);
+          }, false, undefined, false, releasePins(working.definition));
           if (sample.evidence?.some(o => o.matches.some(m => m.status === "unavailable"))) throw new Error("附来源读取失败，请恢复连接后重新检查");
           samples.push(jsonData({ type: t.name, coverage: sample.coverage, reads: sample.reads }));
         } catch (error) { issues.push({ code: "source_check_failed", severity: "error", message: `${String(t.name)}：${error instanceof Error ? error.message : "来源读取失败"}` }); }
@@ -131,7 +186,7 @@ export class Releases {
     }
     return this.memory.atomic(() => {
       if (this.working().inputHash !== working.inputHash) throw new Error("检查过程中工作版本已变化，请重新检查");
-      return this.memory.putArtifact({ kind: "release_check", title: "发布前检查", status: issues.some(i => i.severity === "error") ? "blocked" : "ready", content: jsonData({ ...working, issues, samples, checkedAt: new Date().toISOString(), checkScope: "definition_and_bounded_source_read_not_business_truth" }) });
+      return this.memory.putArtifact({ kind: "release_check", title: "发布前检查", status: issues.some(i => i.severity === "error") ? "blocked" : "ready", content: jsonData({ ...working, issues, samples, checkedAt: new Date().toISOString(), checkScope: "definition_pinned_snapshot_and_bounded_source_read_not_business_truth" }) });
     });
   }
 
@@ -175,7 +230,8 @@ export class Releases {
   private createDataset(args: z.infer<typeof connectSchema>, release: Artifact, operationId: string) {
     const foundationRef = ref.parse(release.content.foundationRef);
     const modelRef = args.business ? ref.parse(release.content.modelRef) : null;
-    return this.datasets.publish({ operationId, name: args.name, foundationRef, conceptIds: args.conceptIds, relationIds: args.relationIds, ...(args.business ? { business: { ...args.business, modelRef } } : {}) }, { fixedSemantic: true });
+    return this.datasets.publish({ operationId, name: args.name, foundationRef, conceptIds: args.conceptIds, relationIds: args.relationIds, ...(args.business ? { business: { ...args.business, modelRef } } : {}) },
+      { fixedSemantic: true, snapshotPins: releasePins(release.content.definition as Data) });
   }
   private replayConnection(result: Data) {
     const connection = this.memory.getArtifact(String((result.connectionRef as Data).id), Number((result.connectionRef as Data).version));
