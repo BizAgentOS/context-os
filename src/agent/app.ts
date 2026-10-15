@@ -17,6 +17,7 @@ import { AgentDelegations } from "../engine/delegations.ts";
 import { ProgramBuilds } from "../engine/program-builds.ts";
 import { Snapshots } from "../data/snapshots.ts";
 import { Releases } from "../engine/releases.ts";
+import { validateDefinition } from "../engine/validation.ts";
 import { engineTools, engineOverviewForAgent, releaseOverviewForAgent, dataOverviewForAgent, snapshotQueryForAgent, discoveryExplainForAgent, ontologySnapshotCheckForAgent } from "../engine/tools.ts";
 import {
   WorkContexts,
@@ -195,6 +196,7 @@ export class AgentApplication {
     this.live = new LiveMemory(directory, this.memory);
     this.foundation = new FoundationService(this.memory, this.live);
     this.snapshots = new Snapshots(this.memory, this.live, directory);
+    this.live.snapshotCheck = definition => validateDefinition(this.snapshots, this.live, definition) as never;
     this.programBuilds = new ProgramBuilds(this.memory, this.foundation, this.live, this.snapshots);
     this.onboarding = new Onboarding(this.memory, this.foundation, () => this.canvasTask("setup").id);
     this.contexts = new WorkContexts(this.memory, this.live);

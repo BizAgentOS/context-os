@@ -3,6 +3,14 @@ import type { DatasetContent, Snapshots } from "../data/snapshots.ts";
 import { suggestOntology, type Resource, type SourceInfo, type SuggestedOntology } from "./helix-discovery.ts";
 import { fingerprint } from "./release-diff.ts";
 
+// Helix names merged columns and disambiguates entities by the source system (workos_name); in ADE that is the
+// connection's own name, not its protocol. Names Helix treats specially fall back to the protocol.
+const reserved = new Set(["upload", "planetscale", "postgres", "postgresql", "mysql", "neon", "supabase"]);
+const systemName = (source: Artifact) => {
+  const title = String(source.title ?? "").trim();
+  return title && !reserved.has(title.toLowerCase()) ? title : String(source.content.protocol ?? "http");
+};
+
 /** Helix discovery input from ADE snapshot datasets: each source system is one connection or one upload. */
 export function discoveryInput(datasets: Artifact[], sources: (id: string) => Artifact | undefined) {
   const resources: Resource[] = [], infos = new Map<string, SourceInfo>();
@@ -11,7 +19,7 @@ export function discoveryInput(datasets: Artifact[], sources: (id: string) => Ar
     if (!c.activeVersion || !c.profile) continue;
     const source = sources(c.sourceId);
     const upload = source?.kind === "source";
-    if (!upload && source) infos.set(source.id, { id: source.id, name: c.capability, data: { kind: String(source.content.protocol ?? "http"),
+    if (!upload && source) infos.set(source.id, { id: source.id, name: c.capability, data: { kind: systemName(source),
       ...(source.content.discovery ? { discovery: source.content.discovery as SourceInfo["data"]["discovery"] } : {}) } });
     resources.push({ id: dataset.id, name: c.name, data: { activeVersion: c.activeVersion, profile: c.profile, ...(upload ? {} : { sourceId: c.sourceId }) } });
   }

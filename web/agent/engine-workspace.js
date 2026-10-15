@@ -28,7 +28,7 @@ function snapshotDetails(dataset, actions, changed) {
   const live=c.materialization==="live";
   d.body.append(el("p",live?"实时读取：不生成新快照，查询时读取来源。保留的历史快照仍可查看。":`已同步 ${rows(c.profile?.rows)} 行 · ${when(c.lastSync)} · 保留 ${c.versions.length} 个版本${c.coverage&&!c.coverage.complete?` · 达到行数上限，来源共 ${rows(c.coverage.total)} 行`:""}`,"engine-muted"));
   if(c.pendingVersion){
-    const panel=el("section",null,"engine-panel");panel.append(el("h3","字段结构有变化，待确认"),el("p","新版本的字段与当前版本不同。确认前，本体构建和已发布接入继续使用当前版本；待确认期间不能发布新版本。","engine-muted"));
+    const panel=el("section",null,"engine-panel");panel.append(el("h3","字段结构有变化，待确认"),el("p","新版本的字段与当前版本不同。确认前，本体构建和已发布接入继续使用当前版本；待确认期间不能发布新版本。","engine-muted"));if(c.pendingChanges?.length)panel.append(table(c.pendingChanges,[["字段",x=>x.column],["变化",x=>x.before==null?"新增":x.after==null?"删除":"类型变化"],["当前版本",x=>x.before??"—"],["新版本",x=>x.after??"—"]]));
     const preview=action("预览新版本",()=>transact(d,output,async()=>{const r=await actions.api(`/api/data/preview?datasetId=${encodeURIComponent(dataset.id)}&snapshotId=${encodeURIComponent(c.pendingVersion)}&limit=20`);if(!d.isConnected)return;panel.append(table(r.rows,r.rows.length?Object.keys(r.rows[0]).map(k=>[k,row=>row[k]]):[]));output.textContent=`新版本共 ${rows(r.total)} 行。`;}));
     const accept=action("确认并使用新结构",()=>transact(d,output,async()=>{await actions.api("/api/data/accept",{...ref(dataset),operationId:crypto.randomUUID()});d.close();changed();}),"engine-primary");
     const row=el("div",null,"engine-actions");row.append(preview,accept);panel.append(row);d.body.append(panel);

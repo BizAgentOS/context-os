@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { modelSchema, type LiveMemory } from "./memory.ts";
+import { assertSnapshotImpact, modelSchema, type LiveMemory } from "./memory.ts";
 import type { MemoryStore } from "../agent/memory.ts";
 import type {
   Artifact,
@@ -321,6 +321,7 @@ export class MappingChanges {
         changed: canonical(pageFacts(before)) !== canonical(pageFacts(after)),
       });
     }
+    const fullCheck = await this.live.snapshotImpact(base.content, definition);
     valid();
     this.base(draft.baseRef);
     const issues = this.issues(draft.baseRef);
@@ -352,6 +353,7 @@ export class MappingChanges {
         ],
       },
       samples,
+      snapshotCheck: fullCheck,
       summary: {
         sampleCount: samples.length,
         changedSamples: samples.filter((s) => s.changed).length,
@@ -455,6 +457,7 @@ export class MappingChanges {
             evidenceKind: "submitted_rationale",
           });
       delete (content.impact as Data).changeRef;
+      if (method === "check") assertSnapshotImpact((content.impact as Data).snapshotCheck as Data | undefined);
       if (method === "check")
         content.check = {
           ruleVersion: "mapping-change-v1",

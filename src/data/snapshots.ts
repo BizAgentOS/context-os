@@ -24,6 +24,8 @@ export interface DatasetContent {
   sourceId: string; sourceVersion: number; connectionId: string | null; capability: string; name: string; idField: string | null;
   materialization: "snapshot" | "live"; activeVersion: string | null; pendingVersion: string | null; versions: string[];
   profile: SnapshotProfile | null; coverage: { rows: number; total: number | null; complete: boolean } | null; lastSync: string | null;
+  /** Column differences of the pending version, shown to the user before confirming it. */
+  pendingChanges?: { column: string; before: string | null; after: string | null }[];
 }
 const SCOPE = "workspace";
 const PAGE = 100;
@@ -31,6 +33,10 @@ const RETAINED = 5;
 const now = () => new Date().toISOString();
 const maxRows = () => Math.max(1, Number(process.env.ADE_SNAPSHOT_MAX_ROWS) || 1_000_000);
 const shape = (p: SnapshotProfile | null) => JSON.stringify((p?.columns ?? []).map(c => [c.name, c.type]));
+const columnChanges = (before: SnapshotProfile, after: SnapshotProfile) => {
+  const a = new Map(before.columns.map(c => [c.name, c.type])), b = new Map(after.columns.map(c => [c.name, c.type]));
+  return [...new Set([...a.keys(), ...b.keys()])].filter(k => a.get(k) !== b.get(k)).map(column => ({ column, before: a.get(column) ?? null, after: b.get(column) ?? null }));
+};
 
 /** Snapshot sync owns materialized data versions; ontology, release and consumer services only pin and read them. */
 export class Snapshots {
@@ -94,7 +100,7 @@ export class Snapshots {
     const input = acceptInput.parse(args);
     const replay = this.memory.listArtifacts("data_dataset").find(a => a.id === input.id && (a.content.acceptedBy as string[] | undefined)?.includes(input.operationId));
     if (replay) return replay;
-    const current = this.versioned(input), c = current.content as unknown as DatasetContent;
+    const current = this.versioned(input), { pendingChanges: _, ...c } = current.content as unknown as DatasetContent;
     if (!c.pendingVersion) throw new Error("没有待确认的结构变化");
     const snapshot = this.memory.getArtifact(c.pendingVersion);
     return this.memory.putArtifact({ ...current, content: jsonData({ ...c, activeVersion: c.pendingVersion, pendingVersion: null, profile: snapshot.content.profile, coverage: snapshot.content.coverage,
@@ -286,7 +292,7 @@ export class Snapshots {
       const versions = [snapshotId, ...(c?.versions ?? [])];
       const content: DatasetContent = { ...base, materialization: c?.materialization ?? "snapshot", versions,
         activeVersion: drift ? c!.activeVersion : snapshotId, pendingVersion: drift ? snapshotId : null,
-        profile: drift ? c!.profile : profile, coverage: drift ? c!.coverage : coverage, lastSync: syncedAt };
+        profile: drift ? c!.profile : profile, coverage: drift ? c!.coverage : coverage, lastSync: syncedAt, ...(drift ? { pendingChanges: columnChanges(c!.profile!, profile) } : {}) };
       const dataset = this.memory.putArtifact({ ...(prior ? { id: prior.id, expectedVersion: prior.version } : {}), kind: "data_dataset", title: base.name, status: "ready", content: jsonData(content) });
       return { status: drift ? "pending" : "updated", rows: profile.rows, datasetId: dataset.id };
     });

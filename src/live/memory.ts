@@ -96,6 +96,12 @@ export type SnapshotPins = Record<string, string>;
 export const pinKey = (sourceId: string, capability: string) => `${sourceId}\u0000${capability}`;
 const pinnedConsistency = (d: Definition, pins: SnapshotPins) =>
   d.types.every(t => [t, ...(t.supplements ?? [])].every(b => pins[pinKey(b.sourceId, b.capability)])) ? "pinned_snapshot" : "pinned_snapshot_with_on_demand";
+/** Refuses a revision whose full-snapshot check could not run or newly fails; an unavailable check (no snapshot service) passes. */
+export function assertSnapshotImpact(impact: Data | undefined) {
+  if (impact?.status === "error") throw new Error(`全量快照检查未能完成（${impact.message}），未通过`);
+  const newErrors = (impact?.newErrors ?? []) as string[];
+  if (newErrors.length) throw new Error(`修订在全量快照上引入新的问题：${newErrors.join("、")}；请调整后重新提出`);
+}
 export interface PinnedReader {
   readPinned(snapshotId: string, cap: Capability, binding: { sourceId: string; connectionVersion: number }, where: Data, offset: number, limit: number):
     ReturnType<SourceConnections["readRecords"]>;
@@ -104,6 +110,8 @@ export class LiveMemory {
   readonly sources: SourceConnections;
   /** Set by the host once its snapshot service exists; release consumers read pinned bindings through it. */
   snapshots?: PinnedReader;
+  /** Set by the host: checks a mapping definition over full snapshots (identity, fields, merges, relation match rates). */
+  snapshotCheck?: (definition: { types: Data[]; relations: Data[] }) => Promise<{ valid: boolean; checks: Data[]; inputVersions: Record<string, string> }>;
   private repo: Repository;
   constructor(directory: string, repo: Repository) {
     this.repo = repo;
@@ -461,6 +469,7 @@ export class LiveMemory {
         inspectFusion?.(t.name, fusion.evidence);
       }
     }
+    assertSnapshotImpact(await this.snapshotImpact(base ? this.definition(base) : null, d));
     this.checkConnections(d);
     if (
       (this.active()?.id ?? null) !== (base?.id ?? null) ||
@@ -712,6 +721,22 @@ export class LiveMemory {
       reads: fusion?.reads ?? [result.provenance],
       consistency: pins ? pinnedConsistency(d, pins) : "on_demand_not_atomic",
     };
+  }
+  /** Full-snapshot checks of a base and a revised definition: what the revision changes across all records, not only samples. */
+  async snapshotImpact(base: { types?: unknown; relations?: unknown } | null, revised: { types: unknown; relations: unknown }): Promise<Data> {
+    if (!this.snapshotCheck) return { status: "not_available" };
+    const check = (d: { types?: unknown; relations?: unknown }) => this.snapshotCheck!({ types: (d.types ?? []) as Data[], relations: (d.relations ?? []) as Data[] });
+    let before, after;
+    try { [before, after] = [base ? await check(base) : { valid: true, checks: [], inputVersions: {} }, await check(revised)]; }
+    catch (error) { return { status: "error", message: (error as Error).message }; }
+    // Only deterministic fields, so a fingerprint over the impact changes exactly when the snapshots or the result change.
+    const strip = (c: Data) => ({ name: c.name, passed: c.passed, severity: c.severity, detail: c.detail, ...(c.metrics ? { metrics: c.metrics } : {}) });
+    const prior = new Map(before.checks.map(c => [String(c.name), strip(c)]));
+    const changes = after.checks.map(strip).filter(c => JSON.stringify(c) !== JSON.stringify(prior.get(String(c.name)) ?? null))
+      .map(c => ({ ...c, before: prior.get(String(c.name)) ?? null }));
+    const newErrors = changes.filter(c => !c.passed && (c.before === null || c.before.passed)).map(c => String(c.name));
+    return jsonData({ status: "checked", validBefore: before.valid, validAfter: after.valid, inputVersions: after.inputVersions,
+      failed: after.checks.filter(c => !c.passed).map(strip), changes, newErrors });
   }
   /** Source access for one read: pinned bindings come from their locked snapshot, others from the live source. */
   private sourcesFor(pins?: SnapshotPins): Pick<SourceConnections, "capability" | "readRecords" | "list"> {

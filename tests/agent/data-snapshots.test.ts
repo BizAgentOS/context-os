@@ -76,6 +76,7 @@ test("a schema change stays pending until accepted while the active version keep
     const drifted = f.snapshots.overview().datasets[0];
     assert.equal(drifted.content.activeVersion, before.content.activeVersion);
     assert.ok(drifted.content.pendingVersion);
+    assert.deepEqual(drifted.content.pendingChanges, [{ column: "amount", before: null, after: "VARCHAR" }], "the user sees which columns change before confirming");
     assert.ok((run.content.issues as any[]).some(issue => issue.code === "schema_drift"));
     const active = await f.snapshots.preview({ datasetId: drifted.id });
     assert.deepEqual(Object.keys(active.rows[0]).sort(), ["company_id", "id"]);
@@ -83,6 +84,7 @@ test("a schema change stays pending until accepted while the active version keep
     const accepted = f.snapshots.accept({ id: drifted.id, version: drifted.version, operationId: "accept" });
     assert.equal(accepted.content.activeVersion, drifted.content.pendingVersion);
     assert.equal(accepted.content.pendingVersion, null);
+    assert.equal(accepted.content.pendingChanges, undefined);
     assert.equal(f.snapshots.accept({ id: drifted.id, version: drifted.version, operationId: "accept" }).version, accepted.version);
   } finally { await f.close(); }
 });

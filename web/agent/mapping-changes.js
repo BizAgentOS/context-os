@@ -260,6 +260,29 @@ export function inspectChange(initial, api, saved) {
         `${c.diff.path.join(" / ")}\n原值：${JSON.stringify(c.diff.before)}\n新值：${JSON.stringify(c.diff.after)}`,
       ),
     );
+    const full = impact.snapshotCheck;
+    if (full?.status === "checked") {
+      const metrics = (m) => (m ? Object.entries(m).map(([k, v]) => `${k} ${v}`).join("，") : "");
+      content.append(
+        el("h3", "全量快照检查"),
+        el(
+          "p",
+          full.newErrors.length
+            ? `修订引入新的问题：${full.newErrors.join("、")}。检查不会通过，请调整后重新提出。`
+            : `修订前${full.validBefore ? "通过" : "未通过"}，修订后${full.validAfter ? "通过" : "未通过"}；${full.changes.length ? `${full.changes.length} 项检查结果变化。` : "检查结果没有变化。"}`,
+          full.newErrors.length ? "request-error" : "source-meta",
+        ),
+      );
+      for (const c of full.changes)
+        content.append(
+          el(
+            "p",
+            `${c.passed ? "✓" : "✗"} ${c.name}：${c.detail}${c.before ? `（原：${c.before.passed ? "通过" : "未通过"}${c.before.metrics ? `，${metrics(c.before.metrics)}` : ""}）` : "（新增检查）"}`,
+            "source-meta",
+          ),
+        );
+    } else if (full?.status === "error")
+      content.append(el("h3", "全量快照检查"), el("p", `未能完成：${full.message}`, "request-error"));
     const coverage = impact.scope.enumerationCoverage;
     content.append(
       el("h3", "代表性实例变化"),
