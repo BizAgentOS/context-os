@@ -19,6 +19,7 @@
     "verify:chain": "node scripts/verification/fusion-chain.ts"
   },
   "dependencies": {
+    "@duckdb/node-api": "1.5.5-r.1",
     "@kodax-ai/kodax": "0.7.96-beta.2",
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",

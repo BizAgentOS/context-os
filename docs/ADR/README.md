@@ -9,7 +9,8 @@ ADR 保存会影响后续功能设计的长期架构决定，并记录为什么�
 |---|---|---|---|
 | [ADR-001](ADR-001-kodax-runtime-boundary.md) | KodaX 单循环与产品宿主分工 | Accepted | 2026-09-11 |
 | [ADR-002](ADR-002-shared-ontology-operations.md) | 共同本体操作服务与多客户端 | Accepted | 2026-09-11 |
-| [ADR-003](ADR-003-state-and-source-separation.md) | 来源、语义与各类工作状态分离 | Accepted | 2026-09-11 |
+| [ADR-003](ADR-003-state-and-source-separation.md) | 来源、语义与各类工作状态分离 | Accepted（第 1、7 点结构化记录部分由 ADR-004 替代） | 2026-09-11 |
+| [ADR-004](ADR-004-managed-snapshots-and-pinned-releases.md) | 受管数据快照与发布锁定 | Accepted | 2026-10-15 |
 
 **Accepted 表示设计决定已接受，不表示相关功能已经实现或验证完成。**
 三条决定适用于当前本地实验，不自动引入生产平台、额外运行框架或新的开发票。

@@ -274,6 +274,11 @@ export async function createServer(
       }
       if (request.method === "GET") {
         if (url.pathname === "/api/engine") { send(200, app.programBuilds.overview()); return; }
+        if (url.pathname === "/api/data") { send(200, app.snapshots.overview()); return; }
+        if (url.pathname === "/api/data/preview") {
+          send(200, await app.snapshots.preview({ datasetId: url.searchParams.get("datasetId"), ...(url.searchParams.get("snapshotId") ? { snapshotId: url.searchParams.get("snapshotId") } : {}),
+            offset: Number(url.searchParams.get("offset") ?? 0), limit: Number(url.searchParams.get("limit") ?? 50) })); return;
+        }
         if (url.pathname === "/api/releases") { send(200, {...new Releases(app.memory, app.live).overview(), delegations: app.delegations.list()}); return; }
         if (url.pathname === "/api/releases/compare") {
           send(200, new Releases(app.memory, app.live).compare({
@@ -434,6 +439,12 @@ export async function createServer(
       switch (url.pathname) {
         case "/api/engine/build":
           send(202, {job:app.programBuilds.start(body)}); return;
+        case "/api/data/sync":
+          send(202, {job:app.snapshots.start(body)}); return;
+        case "/api/data/accept":
+          result = app.snapshots.accept(body); break;
+        case "/api/data/policy":
+          result = app.snapshots.setPolicy(body); break;
         case "/api/engine/check":
           result = await app.programBuilds.check(body); break;
         case "/api/engine/adopt":

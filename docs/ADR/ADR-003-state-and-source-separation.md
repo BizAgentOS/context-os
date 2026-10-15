@@ -2,6 +2,7 @@
 
 - 状态：Accepted（设计决定，非实现完成）
 - 日期：2026-09-11
+- 部分替代：结构化记录的复制与发布一致性由 [ADR-004](ADR-004-managed-snapshots-and-pinned-releases.md) 决定。
 
 ## 背景
 

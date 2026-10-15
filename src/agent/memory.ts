@@ -211,6 +211,16 @@ export class MemoryStore implements Repository {
     });
   }
 
+  /** Create version 1 under an id the caller owns, such as an immutable file's storage key. */
+  createArtifact(id: string, input: Omit<ArtifactInput, "id" | "expectedVersion">): Artifact {
+    return this.transaction(() => {
+      if (this.db.prepare("SELECT 1 FROM artifacts WHERE id=? LIMIT 1").get(id)) throw new Error("成果标识已存在");
+      const artifact: Artifact = { id, kind: input.kind, title: input.title, status: input.status, content: input.content, version: 1, createdAt: now() };
+      this.db.prepare("INSERT INTO artifacts VALUES (?,?,?,?)").run(artifact.id, artifact.version, artifact.kind, JSON.stringify(artifact));
+      return artifact;
+    });
+  }
+
   listTasks(): Task[] {
     return this.db
       .prepare("SELECT body FROM tasks ORDER BY rowid DESC")

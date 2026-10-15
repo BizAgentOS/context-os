@@ -15,6 +15,7 @@ import { ModelCredentials } from "./model-credentials.ts";
 import { Onboarding } from "./onboarding.ts";
 import { AgentDelegations } from "../engine/delegations.ts";
 import { ProgramBuilds } from "../engine/program-builds.ts";
+import { Snapshots } from "../data/snapshots.ts";
 import { Releases } from "../engine/releases.ts";
 import { engineTools, engineOverviewForAgent, releaseOverviewForAgent } from "../engine/tools.ts";
 import {
@@ -162,6 +163,7 @@ export class AgentApplication {
   readonly onboarding: Onboarding;
   readonly delegations: AgentDelegations;
   readonly programBuilds: ProgramBuilds;
+  readonly snapshots: Snapshots;
   readonly capabilities: AgentCapabilities;
   readonly consumption: ConsumptionService;
   readonly driver: AgentDriver;
@@ -192,6 +194,7 @@ export class AgentApplication {
     this.memory = new MemoryStore(directory);
     this.live = new LiveMemory(directory, this.memory);
     this.foundation = new FoundationService(this.memory, this.live);
+    this.snapshots = new Snapshots(this.memory, this.live, directory);
     this.programBuilds = new ProgramBuilds(this.memory, this.foundation, this.live);
     this.onboarding = new Onboarding(this.memory, this.foundation, () => this.canvasTask("setup").id);
     this.contexts = new WorkContexts(this.memory, this.live);
@@ -766,6 +769,7 @@ export class AgentApplication {
       ontologies,
       foundation: this.foundation.view(),
       engine: this.programBuilds.overview(),
+      data: this.snapshots.overview(),
       automaticBuild: this.automaticBuild.view(this.model().configured),
       automaticApiBuild: this.automaticApiBuild.view(this.model().configured),
       evidence: new EvidenceService(this.memory, this.live).list(),
@@ -2471,6 +2475,7 @@ export class AgentApplication {
     this.closing = true;
     await this.stopActive();
     await this.programBuilds.close();
+    await this.snapshots.close();
     await this.driver.close();
     await this.capabilities.close();
     this.consumption.close();
