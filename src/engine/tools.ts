@@ -110,7 +110,7 @@ export const engineTools: DomainTool[] = [
   { name: "engine_check", description: "重新检查指定程序候选及当前来源，返回真实问题；检查通过不表示业务含义已核实。用户在本体页采用。", mutates: true,
     inputSchema: { type: "object", properties: { id: { type: "string" }, version: { type: "integer", minimum: 1 } }, required: ["id", "version"], additionalProperties: false } },
   { name: "data_overview", description: "查看已同步的数据集、快照版本、字段画像、待确认结构变化与最近同步。不含记录内容。", mutates: false, inputSchema: empty },
-  { name: "data_sync", description: "按用户要求把已授权结构化来源同步为新快照；内容不变不新增版本，结构变化待用户确认。不构建或采用本体。operationId 在相同操作重试时保持不变。", mutates: true,
+  { name: "data_sync", description: "按用户要求把已授权结构化来源同步为新快照；内容与来源覆盖均不变时不新增版本，结构变化待用户确认。覆盖不完整时只能验证已保存范围。不构建或采用本体。operationId 在相同操作重试时保持不变。", mutates: true,
     inputSchema: { type: "object", properties: { operationId: { type: "string" }, sourceIds: { type: "array", items: { type: "string" } } }, required: ["operationId"], additionalProperties: false } },
   { name: "snapshot_query", description: "在快照上执行一条只读 SELECT 做统计核对（重复、空值、匹配率等）。表名用 data_overview 返回的 table，或带引号的数据集名称；最多返回 200 行。", mutates: false,
     inputSchema: { type: "object", properties: { datasetIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 8 }, sql: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 200 } }, required: ["datasetIds", "sql"], additionalProperties: false } },

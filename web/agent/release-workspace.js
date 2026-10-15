@@ -5,7 +5,7 @@ export function renderReleaseWorkspace(state, actions) {
   let data,disposed=false,generation=0;root.dispose=()=>{disposed=true;generation++;};
   const refresh=()=>{if(disposed)actions.onChanged?.();else void load();};
   const rows=n=>n==null?"—":Number(n).toLocaleString("zh-CN");
-  const snapshotTable=definition=>table(definition.snapshots||[],[["数据集",s=>data?.names?.[s.datasetId]||(s.capability==="records"?s.sourceId:`${s.sourceId} · ${s.capability}`)],["行数",s=>rows(s.rows)],["同步时间",s=>when(s.syncedAt)],["快照版本",s=>s.snapshotId.slice(0,8)]]);
+  const snapshotTable=definition=>table(definition.snapshots||[],[["数据集",s=>data?.names?.[s.datasetId]||(s.capability==="records"?s.sourceId:`${s.sourceId} · ${s.capability}`)],["行数",s=>rows(s.rows)],["来源覆盖",s=>s.coverage?.complete===true?"完整":s.coverage?`不完整：${rows(s.coverage.rows)} / ${rows(s.coverage.total)} 行`:"未记录"],["同步时间",s=>when(s.syncedAt)],["快照版本",s=>s.snapshotId.slice(0,8)]]);
   /** Loads row-level data changes into a container; query is the /api/releases/data-diff parameters. */
   async function showDataDiff(container,query=""){
     container.replaceChildren(el("p","正在比较数据快照…","engine-muted"));

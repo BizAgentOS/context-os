@@ -44,8 +44,9 @@ export function diffTable(items=[],afterLabel="工作版本",names={}) {
   const labels={concepts:"概念",relations:"关系",sourceAccess:"来源存取策略",sourcePolicies:"来源范围",accessPolicy:"读取约定",enterprise:"企业信息",model:"执行映射",types:"对象类型",fields:"字段",name:"名称",description:"定义",sourceId:"数据来源",strategy:"存取方式",on_demand:"按需读取",uploaded_snapshot:"上传快照",facts:"业务数据",per_source_strategy:"按来源策略读取",consistency:"一致性",not_atomic:"不同来源分别读取",historicalReplay:"历史重放",snapshots:"数据快照",snapshot:"快照",pinned:"锁定快照版本",none:"未锁定",pinned_snapshot:"全部来源锁定快照",snapshot_and_on_demand:"快照与按需读取",snapshotId:"快照版本",datasetId:"数据集",fingerprint:"内容指纹",rows:"行数",syncedAt:"同步时间",capability:"能力",purpose:"用途",connections:"执行来源"};
   // Internal ids and hashes stay in the full change record; the table shows names, counts and times.
   const hidden=new Set(["datasetId","snapshotId","fingerprint","uploadRef","inputHash"]),time=v=>/^\d{4}-\d\d-\d\dT/.test(v)?new Date(v).toLocaleString("zh-CN",{hour12:false}):null;
-  const value=v=>v==null?"—":Array.isArray(v)?v.length?v.map(value).join("；"):"无":typeof v==="object"?v.name?`${v.name}${v.description?`：${v.description}`:""}`:Object.entries(v).filter(([k])=>!hidden.has(k)).map(([k,x])=>`${names[k]||labels[k]||k}：${value(x)}`).join("；"):typeof v==="boolean"?v?"支持":"不支持":names[v]||labels[v]||time(String(v))||String(v);
-  const wrap=el("div");wrap.append(table(items.filter(i=>!hidden.has(i.path.split("/").filter(Boolean).at(-1))),[["内容",i=>i.path.split("/").filter(Boolean).map(p=>names[p]||labels[p]||p).join(" / ")],["变化",i=>({added:"新增",removed:"删除",changed:"修改"}[i.kind]||i.kind)],["原版本",i=>value(i.before)],[afterLabel,i=>value(i.after)]]));
+  Object.assign(labels,{coverage:"来源覆盖",total:"来源总行数",complete:"覆盖完整"});
+  const value=(v,key)=>v==null?"—":Array.isArray(v)?v.length?v.map(x=>value(x)).join("；"):"无":typeof v==="object"?v.name?`${v.name}${v.description?`：${v.description}`:""}`:Object.entries(v).filter(([k])=>!hidden.has(k)).map(([k,x])=>`${names[k]||labels[k]||k}：${value(x,k)}`).join("；"):typeof v==="boolean"?key==="complete"?(v?"是":"否"):v?"支持":"不支持":names[v]||labels[v]||time(String(v))||String(v);
+  const wrap=el("div");wrap.append(table(items.filter(i=>!hidden.has(i.path.split("/").filter(Boolean).at(-1))),[["内容",i=>i.path.split("/").filter(Boolean).map(p=>names[p]||labels[p]||p).join(" / ")],["变化",i=>({added:"新增",removed:"删除",changed:"修改"}[i.kind]||i.kind)],["原版本",i=>value(i.before,i.path.split("/").at(-1))],[afterLabel,i=>value(i.after,i.path.split("/").at(-1))]]));
   if(items.length){const raw=el("details");raw.append(el("summary","完整变更记录"),el("pre",JSON.stringify(items,null,2),"engine-raw-diff"));wrap.append(raw);}return wrap;
 }
 export const statusOf = {added:"新增",removed:"删除",changed:"有变化",unchanged:"未变化",unavailable:"无法比较"};
@@ -60,7 +61,7 @@ export function dataDiffTable(datasets=[]) {
 export function snapshotReport(parent,report) {
   if(!report?.checks?.length)return;
   const rows=[...report.checks].sort((a,b)=>Number(a.passed)-Number(b.passed)||(a.severity==="warning"?-1:1));
-  parent.append(el("h3","全量快照检查"),table(rows,[["检查",c=>c.name],["结果",c=>!c.passed?"未通过":c.severity==="warning"?"需留意":"通过"],["说明",c=>c.detail]]));
+  parent.append(el("h3",report.coverage?.complete===true?"全量快照检查":"快照检查（仅可用范围）"),table(rows,[["检查",c=>c.name],["结果",c=>!c.passed?"未通过":c.severity==="warning"?"需留意":"通过"],["说明",c=>c.detail]]));
 }
 export function downloadConfig(parent,config,key="") {
   const area=el("textarea",null,"engine-config");area.readOnly=true;area.spellcheck=false;area.setAttribute("aria-label","接入配置");area.value=typeof config==="string"?config:JSON.stringify(config,null,2);parent.append(area);

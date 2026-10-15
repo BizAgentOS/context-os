@@ -10,6 +10,7 @@ import { LiveMemory } from "../../src/live/memory.ts";
 import { Workspace } from "../../src/agent/workspace.ts";
 import { Snapshots } from "../../src/data/snapshots.ts";
 import { ProgramBuilds } from "../../src/engine/program-builds.ts";
+import { Releases } from "../../src/engine/releases.ts";
 
 function fixture() {
   const directory = mkdtempSync(join(tmpdir(), "ade-snapshot-build-"));
@@ -161,5 +162,96 @@ test("datasets without a usable identity are reported instead of guessed, and li
     assert.ok(issues.some(i => i.code === "identity_unknown"), JSON.stringify(issues));
     assert.ok(issues.some(i => i.code === "live_dataset"));
     assert.equal(run.content.outcome, "needs_attention");
+  } finally { await f.close(); }
+});
+
+test("a larger discovered anchor preserves both sources' same-named properties and their evidence on the adopted mapping", async () => {
+  const f = fixture();
+  try {
+    f.workspace.upload("customers.csv", "id,name\nC0,CRM0\nC1,CRM1\nC2,CRM2\nC3,CRM3\n");
+    const first = await f.engine.build({ operationId: "customers", autoAdopt: true });
+    assert.equal(first.content.outcome, "adopted", JSON.stringify(first.content.issues));
+    const original = f.live.overview().models.find(model => model.status === "adopted")!;
+    const originalType = (original.content.types as any[])[0];
+
+    f.workspace.upload("accounts.csv", "id,crm_customer_id,name\nE0,C0,ERP0\nE1,C1,ERP1\nE2,C2,ERP2\nE3,C3,ERP3\nE4,C4,ERP4\n");
+    const rebuilt = await f.engine.build({ operationId: "accounts", autoAdopt: true });
+    assert.equal(rebuilt.content.outcome, "adopted", JSON.stringify(rebuilt.content.issues));
+    const model = f.live.overview().models.find(model => model.status === "adopted")!;
+    const type = (model.content.types as any[])[0];
+    assert.equal((model.content.types as any[]).length, 1);
+    assert.equal(type.sourceId, originalType.sourceId);
+    assert.deepEqual(type.fields, originalType.fields, "the adopted primary properties keep their meaning");
+    const result = await f.live.query({ modelId: model.id, type: type.name, id: "C0" });
+    assert.equal(result.items[0].name, "CRM0");
+    assert.equal(result.items[0].account_id, "E0");
+    assert.equal(result.items[0].account_name, "ERP0");
+    const property = result.evidence![0].properties.account_name;
+    assert.equal(property.status, "resolved");
+    assert.equal(property.evidence[0].sourceTitle, "accounts.csv");
+    assert.equal(property.evidence[0].recordId, "E0");
+    assert.equal(property.evidence[0].field, "name");
+  } finally { await f.close(); }
+});
+
+test("new source properties avoid existing primary and supplement names without changing manual mappings", async () => {
+  const f = fixture();
+  try {
+    f.workspace.upload("customers.csv", "id,name\nC0,CRM0\nC1,CRM1\nC2,CRM2\nC3,CRM3\n");
+    await f.engine.build({ operationId: "customers", autoAdopt: true });
+    const original = f.live.overview().models.find(model => model.status === "adopted")!;
+    const foundation = f.foundation.read().adopted!;
+    const originalType = (original.content.types as any[])[0];
+    const file = f.workspace.upload("registry.csv", "id,name\nC0,REG0\nC1,REG1\nC2,REG2\nC3,REG3\n");
+    const connection = f.live.sources.connectUpload(file.id, file.version, "id");
+    const manualFields = { ...originalType.fields, account_name: "name" };
+    const manualSupplement = { name: "人工登记名称", sourceId: connection.id, capability: "records", match: { primaryField: "id", sourceField: "id" },
+      fields: { account_id: "name" }, rationale: "保留人工命名与已采用的来源" };
+    const edited = await f.live.propose({ foundationRef: { id: foundation.id, version: foundation.version }, baseModelRef: { id: original.id, version: original.version },
+      purpose: "人工命名", rationale: "保留既有业务属性", types: [{ ...originalType, fields: manualFields, supplements: [manualSupplement] }], relations: [] });
+    await f.live.adopt(edited.id, edited.version);
+
+    f.workspace.upload("accounts.csv", "id,crm_customer_id,name\nE0,C0,ERP0\nE1,C1,ERP1\nE2,C2,ERP2\nE3,C3,ERP3\nE4,C4,ERP4\n");
+    const rebuilt = await f.engine.build({ operationId: "accounts", autoAdopt: true });
+    assert.equal(rebuilt.content.outcome, "adopted", JSON.stringify(rebuilt.content.issues));
+    const model = f.live.overview().models.find(model => model.status === "adopted")!;
+    const type = (model.content.types as any[])[0];
+    assert.deepEqual(type.fields, manualFields);
+    assert.deepEqual(type.supplements[0], manualSupplement);
+    const result = await f.live.query({ modelId: model.id, type: type.name, id: "C0" });
+    assert.equal(result.items[0].account_name, "CRM0");
+    assert.equal(result.items[0].account_id, "REG0");
+    assert.equal(result.items[0].account_name_2, "ERP0");
+    assert.equal(result.items[0].account_id_2, "E0");
+    assert.equal(result.evidence![0].properties.account_name_2.evidence[0].sourceTitle, "accounts.csv");
+    assert.equal(result.evidence![0].properties.account_id_2.evidence[0].sourceTitle, "accounts.csv");
+  } finally { await f.close(); }
+});
+
+test("case-insensitive relationship discoveries stay candidates and disclose that published consumption cannot execute them", async () => {
+  const f = fixture();
+  try {
+    f.workspace.upload("customers.csv", "customer_id,name\nc0,Customer0\nc1,Customer1\n");
+    f.workspace.upload("orders.csv", "order_id,customer_id\nO0,C0\nO1,C1\nO2,C0\nO3,C1\n");
+    const run = await f.engine.build({ operationId: "case-insensitive" });
+    assert.equal(run.content.outcome, "candidate");
+    const candidate = f.engine.overview().candidate!;
+    const link = (candidate.content.discovery as any).links[0];
+    assert.equal(link.caseInsensitive, true);
+    assert.deepEqual(candidate.content.modelRelations, []);
+    const checked = await f.engine.check({ id: candidate.id, version: candidate.version });
+    assert.equal((checked.content.checks as any).valid, true);
+    const adopted = await f.engine.adopt({ id: checked.id, version: checked.version, operationId: "adopt-case-insensitive" });
+    assert.deepEqual(adopted.model.content.relations, []);
+    const releases = new Releases(f.memory, f.live);
+    const releaseCheck = await releases.check({ inputHash: releases.overview().working.inputHash });
+    assert.equal(releaseCheck.status, "ready");
+    const published = releases.publish({ operationId: "publish-case-insensitive", name: "候选关系边界", checkRef: { id: releaseCheck.id, version: releaseCheck.version } });
+    assert.deepEqual((releases.read({ id: published.release.id, version: published.release.version }).content.definition as any).model.relations, []);
+    const issue = (candidate.content.issues as any[]).find(issue => issue.code === "relationship_candidate");
+    assert.ok(issue);
+    assert.match(issue.message, /未加入执行映射/);
+    assert.match(issue.message, /未接入.*消费/);
+    assert.doesNotMatch(issue.message, /按快照执行时使用/);
   } finally { await f.close(); }
 });

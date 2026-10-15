@@ -386,9 +386,10 @@ export class ProgramBuilds {
       }
       const fields = existing ? existing.fields as Record<string, string> : Object.fromEntries((anchor.profile?.columns ?? []).map(c => [c.name, c.name]));
       const supplements = dataArray(existing?.supplements), added = supplements.length;
+      const usedProperties = new Set([Object.keys(fields), ...supplements.map(s => Object.keys(s.fields as Data))].flat().map(name => name.toLowerCase()));
       for (const m of e.members.filter(m => m.datasetId !== (pivot?.datasetId ?? e.anchorDatasetId))) {
         const member = byId.get(m.datasetId)!, why = (message: string) => issues.push({ code: "merge_not_expressible", severity: "info", sourceId: member.sourceId, capability: member.capability,
-          message: `「${m.datasetName}」与${e.name}的合并${message}；合并结果保留在候选中，按快照执行时使用。`, details: { entity: e.id, dataset: m.datasetId } });
+          message: `「${m.datasetName}」与${e.name}的合并${message}；本次未新增该合并的执行映射，候选计划尚未接入对象查询与发布消费。`, details: { entity: e.id, dataset: m.datasetId } });
         // The match is stated against the primary mapping: with a pivot, the anchor matches it in reverse and other members only through the anchor.
         const via = pivot ? (m.datasetId === e.anchorDatasetId ? { primary: pivot.via!.column, source: pivot.via!.targetColumn, rows: pivot.rows, matched: pivot.matched } : null)
           : m.via?.targetDatasetId === e.anchorDatasetId ? { primary: m.via.targetColumn, source: m.via.column, rows: m.rows, matched: m.matched } : null;
@@ -401,7 +402,15 @@ export class ProgramBuilds {
         try { memberSource = connection(member, m.key); } catch (error) { why(`无法建立执行来源（${(error as Error).message}）`); continue; }
         const { cap } = this.live.sources.capability(memberSource, member.capability);
         if (!Object.hasOwn(cap.filters, via.source)) { why(`需要附来源支持按 ${via.source} 精确过滤`); continue; }
-        const memberFields = Object.fromEntries(entityColumns(e, resources).filter(c => c.datasetId === m.datasetId && !Object.hasOwn(fields, c.as)).map(c => [c.as, c.column]));
+        // Name new fields relative to the retained primary, reserving all adopted property names.
+        // Limit column generation to this member so another dataset cannot silently hide a collision.
+        const columns = entityColumns({ ...e, anchorDatasetId: pivot?.datasetId ?? e.anchorDatasetId }, new Map([[m.datasetId, resources.get(m.datasetId)!]]));
+        const memberFields = Object.fromEntries(columns.map(c => {
+          let property = c.as;
+          for (let n = 2; usedProperties.has(property.toLowerCase()); n++) property = `${c.as}_${n}`;
+          usedProperties.add(property.toLowerCase());
+          return [property, c.column];
+        }));
         if (!Object.keys(memberFields).length) continue;
         supplements.push({ name: m.datasetName.slice(0, 200), sourceId: memberSource, capability: member.capability, match: { primaryField, sourceField: via.source },
           fields: memberFields, rationale: `程序发现：${via.rows} 条中 ${via.matched} 条按 ${via.source} = ${via.primary} 精确匹配。同名属性保留来源前缀，业务含义待核对。` });
@@ -420,7 +429,7 @@ export class ProgramBuilds {
       const skip = (message: string) => issues.push({ code: "relationship_candidate", severity: "warning", message: `${fromEntity.name}.${l.fromColumn} → ${toEntity.name}.${l.toColumn}（${l.matchedRows}/${l.totalRows} 条匹配）${message}`,
         details: { link: l.id, matchedRows: l.matchedRows, totalRows: l.totalRows, evidence: l.evidence } });
       if (!from || !to) { skip("：端点未形成对象映射，保留为待核对关联。"); continue; }
-      if (l.fromDatasetId !== fromEntity.anchorDatasetId || l.toDatasetId !== toEntity.anchorDatasetId || l.caseInsensitive) { skip("：需经合并数据或忽略大小写匹配，在线映射暂不表达，按快照执行时使用。"); continue; }
+      if (l.fromDatasetId !== fromEntity.anchorDatasetId || l.toDatasetId !== toEntity.anchorDatasetId || l.caseInsensitive) { skip("：需经合并数据或忽略大小写匹配，保留为待核对候选，本次未加入执行映射；候选计划尚未接入对象查询与发布消费。"); continue; }
       const prop = (type: Data, column: string) => Object.entries(type.fields as Record<string, string>).find(([, field]) => field === column)?.[0];
       const fromField = prop(from, l.fromColumn), toField = prop(to, l.toColumn);
       const { cap } = this.live.sources.capability(String(to.sourceId), String(to.capability));

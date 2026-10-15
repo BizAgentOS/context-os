@@ -110,6 +110,40 @@ test("an HTTP source is synced across all pages with explicit coverage, and uniq
   } finally { await api.close(); await f.close(); }
 });
 
+test("identical saved rows with changed source coverage create a new version, while identical coverage reuses it", async () => {
+  const f = fixture(), priorLimit = process.env.ADE_SNAPSHOT_MAX_ROWS;
+  const original = Array.from({ length: 10 }, (_, i) => ({ id: `C${i}`, name: `公司${i}` }));
+  let rows = original;
+  const api = await records(() => rows);
+  process.env.ADE_SNAPSHOT_MAX_ROWS = "10";
+  try {
+    const source = await f.live.sources.connect({ name: "企业目录", protocol: "http", url: api.url,
+      capabilities: [{ name: "companies", path: "/companies", fields: ["id", "name"], idField: "id", totalPath: "total" }] });
+    await f.snapshots.sync({ operationId: "complete", sourceIds: [source.id] });
+    const complete = f.snapshots.overview().datasets[0];
+    assert.deepEqual(complete.content.coverage, { rows: 10, total: 10, complete: true });
+
+    rows = [...original, { id: "C10", name: "公司10" }, { id: "C11", name: "公司11" }];
+    await f.snapshots.sync({ operationId: "partial", sourceIds: [source.id] });
+    const partial = f.snapshots.overview().datasets[0];
+    assert.deepEqual(partial.content.coverage, { rows: 10, total: 12, complete: false });
+    assert.notEqual(partial.content.activeVersion, complete.content.activeVersion, "coverage is an immutable part of a snapshot observation");
+
+    await f.snapshots.sync({ operationId: "same-partial", sourceIds: [source.id] });
+    assert.deepEqual(f.snapshots.overview().datasets[0].content.versions, partial.content.versions);
+
+    rows = original;
+    await f.snapshots.sync({ operationId: "complete-again", sourceIds: [source.id] });
+    const restored = f.snapshots.overview().datasets[0];
+    assert.deepEqual(restored.content.coverage, { rows: 10, total: 10, complete: true });
+    assert.notEqual(restored.content.activeVersion, partial.content.activeVersion);
+    assert.deepEqual((await f.snapshots.preview({ datasetId: restored.id, snapshotId: partial.content.activeVersion })).rows, original);
+  } finally {
+    if (priorLimit === undefined) delete process.env.ADE_SNAPSHOT_MAX_ROWS; else process.env.ADE_SNAPSHOT_MAX_ROWS = priorLimit;
+    await api.close(); await f.close();
+  }
+});
+
 test("snapshot queries run one read-only statement in an isolated process", async () => {
   const f = fixture();
   try {

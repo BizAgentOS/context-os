@@ -81,7 +81,25 @@ export async function execute(job: Execution, root: string, scratch?: string): P
         streamed = resolve(temp, "ingest.parquet");
         const json = fn === "read_json_auto";
         if (json) await c.run("SET threads = 1");
-        await c.run(`COPY (SELECT * FROM ${fn}(${lit(file)}${json ? ", sample_size = -1" : ""})) TO ${lit(streamed)} (FORMAT PARQUET, ROW_GROUP_SIZE ${await rowGroupSize(c, file, info.size, fn === "read_parquet")})`);
+        let input = file, projection = "*", options = "";
+        if (json) {
+          // Encode only keys so case-sensitive JSON names cannot collide in DuckDB's columns struct.
+          // Stream native JSON text without parsing values in JS (including integers beyond JS precision).
+          input = resolve(temp, "typed-input.jsonl");
+          const keys = (await c.runAndReadAll(`SELECT json_keys(json_group_structure(json)) AS keys FROM read_json_objects(${lit(file)})`)).getRowObjectsJson()[0].keys as string[];
+          const fields = keys.map(key => `${lit("ade_" + Buffer.from(key).toString("hex"))}, json_extract(json, ${lit("/" + key.replaceAll("~", "~0").replaceAll("/", "~1"))})`);
+          const records = await c.stream(`SELECT json_object(${fields.join(", ")}) AS encoded FROM read_json_objects(${lit(file)})`);
+          await pipeline(async function* () {
+            for await (const rows of records.yieldRowObjectJson()) yield rows.map(row => String(row.encoded) + "\n").join("");
+          }, createWriteStream(input));
+          const schema = (await c.runAndReadAll(`DESCRIBE SELECT * FROM read_json_auto(${lit(input)}, sample_size = -1)`)).getRowObjectsJson();
+          // JSON dates, times and UUIDs are strings. Keep their original spelling while retaining numeric and boolean types.
+          const columns = schema.map(col => `${lit(String(col.column_name))}: ${lit(String(col.column_type).replace(/^(DATE|TIME|TIMESTAMP(?: WITH TIME ZONE)?|UUID)((?:\[\])*)$/, "VARCHAR$2"))}`);
+          options = `, sample_size = -1, columns = {${columns.join(", ")}}`;
+          projection = schema.map(col => `${quote(String(col.column_name))} AS ${quote(Buffer.from(String(col.column_name).slice(4), "hex").toString("utf8"))}`).join(", ");
+        }
+        // The subquery applies DuckDB's usual name deduplication only after original JSON keys are restored.
+        await c.run(`COPY (SELECT * FROM (SELECT ${projection} FROM ${fn}(${lit(input)}${options}))) TO ${lit(streamed)} (FORMAT PARQUET, ROW_GROUP_SIZE ${await rowGroupSize(c, input, (await stat(input)).size, fn === "read_parquet")})`);
         if (json) await c.run("SET threads = 2");
         await c.run(`CREATE VIEW result AS SELECT * FROM read_parquet(${lit(streamed)})`);
       }

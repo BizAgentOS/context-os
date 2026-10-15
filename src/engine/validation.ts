@@ -15,6 +15,7 @@ export interface SnapshotCheck {
 export interface SnapshotReport {
   valid: boolean; checks: SnapshotCheck[]; validatedAt: string;
   inputVersions: Record<string, string>; previews: Record<string, { snapshotId: string; rows: number }>;
+  coverage: { complete: boolean; datasets: Record<string, DatasetContent["coverage"]> };
 }
 interface Definition { types: Data[]; relations: Data[] }
 const LOW_MATCH = 0.8;
@@ -24,12 +25,23 @@ const text = (alias: string, column: string) => `CAST(${alias}.${quote(column)} 
 /** Executes identity, field, merge and relation checks of a mapping definition over full snapshots. */
 export async function validateDefinition(snapshots: Snapshots, live: LiveMemory, definition: Definition, pipelines: Pipeline[] = []): Promise<SnapshotReport> {
   const checks: SnapshotCheck[] = [], inputVersions: Record<string, string> = {}, previews: SnapshotReport["previews"] = {};
+  const coverage: SnapshotReport["coverage"] = { complete: true, datasets: {} };
   const fail = (check: Omit<SnapshotCheck, "passed" | "severity">) => checks.push({ ...check, passed: false, severity: "error" });
   const pass = (check: Omit<SnapshotCheck, "passed" | "severity">, warning = false) => checks.push({ ...check, passed: true, severity: warning ? "warning" : "info" });
+  const recordCoverage = (id: string, c: DatasetContent) => {
+    if (Object.hasOwn(coverage.datasets, id)) return;
+    coverage.datasets[id] = c.coverage;
+    if (c.coverage?.complete !== true) {
+      coverage.complete = false;
+      pass({ kind: "definition", datasetId: id, name: `${c.name}：来源覆盖`,
+        detail: `来源覆盖不完整：已保存 ${c.coverage?.rows ?? c.profile?.rows ?? 0} / ${c.coverage?.total ?? "未知"} 行；本次仅检查已保存的数据，不能代表全量来源。` }, true);
+    }
+  };
   const bound = (binding: Data) => {
     const dataset = snapshots.bindingDataset(String(binding.sourceId), String(binding.capability));
     const c = dataset?.content as unknown as DatasetContent | undefined;
-    if (!dataset || !c?.activeVersion || c.materialization === "live") return null;
+    if (!dataset || !c?.activeVersion || c.materialization === "live") { coverage.complete = false; return null; }
+    recordCoverage(dataset.id, c);
     inputVersions[dataset.id] = c.activeVersion;
     const { cap } = live.sources.capability(String(binding.sourceId), String(binding.capability));
     return { id: dataset.id, c, table: snapshots.table(dataset.id), idField: cap.idField, columns: new Set((c.profile?.columns ?? []).map(col => col.name)) };
@@ -91,7 +103,10 @@ export async function validateDefinition(snapshots: Snapshots, live: LiveMemory,
   // Merge pipelines run over the same snapshots; their output is persisted as a derived snapshot for later pinning.
   for (const pipeline of pipelines) {
     const inputs = snapshots.inputs(pipeline.inputs);
-    for (const input of inputs) inputVersions[input.datasetId] = input.version;
+    for (const input of inputs) {
+      inputVersions[input.datasetId] = input.version;
+      recordCoverage(input.datasetId, snapshots.dataset(input.datasetId).content as unknown as DatasetContent);
+    }
     const snapshotId = randomUUID();
     try {
       const out = await snapshots.run(inputs.map(({ datasetId: _, ...input }) => input), pipeline.sql, { persist: snapshotId, limit: 20 });
@@ -104,11 +119,13 @@ export async function validateDefinition(snapshots: Snapshots, live: LiveMemory,
       }
     } catch (error) { fail({ kind: "pipeline", name: pipeline.name, detail: `合并计划执行失败：${(error as Error).message}` }); }
   }
-  return { valid: checks.every(c => c.passed), checks, validatedAt: new Date().toISOString(), inputVersions, previews };
+  coverage.complete &&= Object.keys(coverage.datasets).length > 0;
+  return { valid: checks.every(c => c.passed), checks, validatedAt: new Date().toISOString(), inputVersions, previews, coverage };
 }
 
 export function describeReport(report: SnapshotReport) {
   const failed = report.checks.filter(c => !c.passed), warnings = report.checks.filter(c => c.passed && c.severity === "warning");
   if (failed.length) return `快照检查未通过：${failed.slice(0, 3).map(c => `${c.name}（${c.detail}）`).join("；")}${failed.length > 3 ? ` 等 ${failed.length} 项` : ""}`;
-  return `全量快照检查通过 ${report.checks.length} 项${warnings.length ? `，其中 ${warnings.length} 项需要留意` : ""}；业务含义仍需核对。`;
+  const scope = report.coverage.complete ? "全量快照检查" : "快照检查（来源覆盖不完整，仅验证可用范围）";
+  return `${scope}通过 ${report.checks.length} 项${warnings.length ? `，其中 ${warnings.length} 项需要留意` : ""}；业务含义仍需核对。`;
 }

@@ -107,13 +107,13 @@ export class ConsumerViews {
           ),
         );
       }
-      this.live.assertModel(a.modelRef.id, a.modelRef.version, options.fixedSemantic);
+      this.live.assertModel(a.modelRef.id, a.modelRef.version, options.fixedSemantic, options.snapshotPins);
       const { model } = this.live.validateConsumerScope({
         name: a.name,
         purpose: a.purpose,
         modelId: a.modelRef.id,
         grants: a.grants.map(({ evidence, ...g }) => g),
-      }, options.fixedSemantic);
+      }, options.fixedSemantic, options.snapshotPins);
       if (
         a.grants.some(
           (g) =>

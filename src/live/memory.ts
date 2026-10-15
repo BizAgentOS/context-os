@@ -111,7 +111,7 @@ export class LiveMemory {
   /** Set by the host once its snapshot service exists; release consumers read pinned bindings through it. */
   snapshots?: PinnedReader;
   /** Set by the host: checks a mapping definition over full snapshots (identity, fields, merges, relation match rates). */
-  snapshotCheck?: (definition: { types: Data[]; relations: Data[] }) => Promise<{ valid: boolean; checks: Data[]; inputVersions: Record<string, string> }>;
+  snapshotCheck?: (definition: { types: Data[]; relations: Data[] }) => Promise<{ valid: boolean; checks: Data[]; inputVersions: Record<string, string>; coverage?: { complete: boolean } }>;
   private repo: Repository;
   constructor(directory: string, repo: Repository) {
     this.repo = repo;
@@ -501,6 +501,8 @@ export class LiveMemory {
       shown: number;
       total: number | null;
       complete: boolean;
+      sourceComplete?: boolean;
+      snapshotTotal?: number;
     };
     reads: {
       sourceId: string;
@@ -735,7 +737,7 @@ export class LiveMemory {
     const changes = after.checks.map(strip).filter(c => JSON.stringify(c) !== JSON.stringify(prior.get(String(c.name)) ?? null))
       .map(c => ({ ...c, before: prior.get(String(c.name)) ?? null }));
     const newErrors = changes.filter(c => !c.passed && (c.before === null || c.before.passed)).map(c => String(c.name));
-    return jsonData({ status: "checked", validBefore: before.valid, validAfter: after.valid, inputVersions: after.inputVersions,
+    return jsonData({ status: "checked", validBefore: before.valid, validAfter: after.valid, inputVersions: after.inputVersions, coverageAfter: after.coverage ?? null,
       failed: after.checks.filter(c => !c.passed).map(strip), changes, newErrors });
   }
   /** Source access for one read: pinned bindings come from their locked snapshot, others from the live source. */
@@ -755,11 +757,11 @@ export class LiveMemory {
       },
     } as Pick<SourceConnections, "capability" | "readRecords" | "list">;
   }
-  validateConsumerScope(input: unknown, fixedSemantic = false) {
+  validateConsumerScope(input: unknown, fixedSemantic = false, pins?: SnapshotPins) {
     const args = prepareSchema.parse(input);
     const model = this.model(args.modelId, true);
     const d = this.definition(model);
-    this.checkConnections(d, undefined, fixedSemantic);
+    this.checkConnections(d, undefined, fixedSemantic, this.sourcesFor(pins));
     if (new Set(args.grants.map((g) => g.type)).size !== args.grants.length)
       throw new Error("重复类型授权");
     for (const g of args.grants) {

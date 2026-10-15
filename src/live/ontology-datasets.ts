@@ -98,7 +98,7 @@ export class OntologyDatasets {
       const selection = this.select(foundation, args.conceptIds, args.relationIds);
       let business: Data | null = null;
       if (args.business) {
-        const model = this.live.assertModel(args.business.modelRef.id, args.business.modelRef.version, options.fixedSemantic);
+        const model = this.live.assertModel(args.business.modelRef.id, args.business.modelRef.version, options.fixedSemantic, options.snapshotPins);
         const f = model.content.foundationRef as Data | undefined;
         if (model.status !== "adopted" || f?.id !== foundation.id || f.version !== foundation.version) throw new Error("业务映射必须属于同一已采用本体版本");
         for (const grant of args.business.grants) {

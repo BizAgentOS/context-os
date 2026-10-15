@@ -144,3 +144,80 @@ test("a release whose object merges a second source can be checked and read thro
     assert.equal((read.body as any).consistency, "pinned_snapshot");
   } finally { await new Promise(resolve => server.close(resolve)); await f.close(); }
 });
+
+test("creating and switching release consumers after a CSV update uses the locked contract and still respects revocation", async () => {
+  const f = fixture();
+  try {
+    f.workspace.upload("产品.csv", "产品编号,名称,价格\nP1,甲,10\nP2,乙,20\n");
+    const adopted = await f.adoptBuild("original");
+    const type = (adopted.model.content.types as any[])[0];
+    const v1 = await f.publish("v1"), v2 = await f.publish("v2");
+    const selection = { releaseRef: ref(v1), conceptIds: [String(type.conceptId)], relationIds: [],
+      business: { grants: [{ type: type.name, fields: ["$id", "名称", "价格"], relations: [] }] } };
+    const first = f.releases.connect({ ...selection, operationId: "first", name: "更新前接入" });
+
+    f.workspace.upload("产品.csv", "产品编号,名称,价格\nP1,甲,99\nP2,乙,20\n");
+    await f.snapshots.sync({ operationId: "refresh" });
+    const added = f.releases.connect({ ...selection, operationId: "added", name: "更新后接入旧版" });
+    const oldValue = await f.read(added.key!, type.name, "P1");
+    assert.equal(oldValue.status, 200, JSON.stringify(oldValue.body));
+    assert.equal((oldValue.body as any).items[0].properties["价格"].value, "10");
+
+    const switched = f.releases.upgrade({ operationId: "switch", connectionRef: ref(first.connection), releaseRef: ref(v2) });
+    assert.equal((await f.read(first.key!, type.name, "P1")).status, 403);
+    assert.equal(((await f.read(switched.key!, type.name, "P1")).body as any).items[0].properties["价格"].value, "10");
+
+    const source = f.live.sources.list().find(s => s.id === type.sourceId)!;
+    f.live.sources.disable(source.id, source.version);
+    assert.throws(() => f.releases.connect({ ...selection, operationId: "denied", name: "已停用来源" }), /停用/);
+    assert.notEqual((await f.read(added.key!, type.name, "P1")).status, 200);
+    assert.notEqual((await f.read(switched.key!, type.name, "P1")).status, 200);
+  } finally { await f.close(); }
+});
+
+test("partial source snapshots keep their limited coverage through checks, publication and consumer reads", async () => {
+  const f = fixture(), previousLimit = process.env.ADE_SNAPSHOT_MAX_ROWS;
+  process.env.ADE_SNAPSHOT_MAX_ROWS = "3";
+  const rows = Array.from({ length: 5 }, (_, i) => ({ id: `C${i}`, name: `公司${i}` }));
+  const server = createServer((req, res) => {
+    const url = new URL(req.url!, "http://localhost");
+    const selected = rows.filter(r => !url.searchParams.has("id") || r.id === url.searchParams.get("id"));
+    const offset = Number(url.searchParams.get("offset") ?? 0), limit = Number(url.searchParams.get("limit") ?? 20);
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ items: selected.slice(offset, offset + limit), total: selected.length }));
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    await f.live.sources.connect({ name: "客户目录", protocol: "http", url: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
+      capabilities: [{ name: "customers", path: "/customers", fields: ["id", "name"], idField: "id", totalPath: "total", filters: { id: "id" } }] });
+    await f.engine.build({ operationId: "limited" });
+    const candidate = f.engine.overview().candidate!;
+    const checked = await f.engine.check(ref(candidate));
+    const checks = checked.content.checks as any;
+    assert.equal(checks.valid, true, checks.description);
+    assert.doesNotMatch(checks.description, /全量快照检查通过/);
+    assert.match(checks.description, /覆盖不完整/);
+    assert.equal(checks.snapshot.coverage.complete, false);
+    assert.ok(checks.snapshot.checks.some((c: any) => c.severity === "warning" && c.detail.includes("3 / 5")));
+    const adopted = await f.engine.adopt({ ...ref(checked), operationId: "adopt-limited" });
+    const type = (adopted.model.content.types as any[])[0];
+    const releaseCheck = await f.releases.check({ inputHash: f.releases.overview().working.inputHash });
+    assert.equal(releaseCheck.status, "ready", JSON.stringify(releaseCheck.content.issues));
+    assert.ok((releaseCheck.content.issues as any[]).some(i => i.code === "snapshot_incomplete" && i.severity === "warning"));
+    const release = f.releases.publish({ operationId: "publish-limited", checkRef: ref(releaseCheck), name: "有限覆盖版本" }).release;
+    assert.deepEqual((release.content.definition as any).snapshots[0].coverage, { rows: 3, total: 5, complete: false });
+    const connection = f.releases.connect({ operationId: "limited-consumer", name: "有限覆盖接入", releaseRef: ref(release),
+      conceptIds: [String(type.conceptId)], relationIds: [], business: { grants: [{ type: type.name, fields: ["$id", "name"], relations: [] }] } });
+    const result = await f.datasets.handle("/v4/objects", new URLSearchParams({ type: type.name }), "Bearer " + connection.key);
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    assert.deepEqual((result.body.items as any[]).map(i => i.objectRef.id), ["C0", "C1", "C2"]);
+    assert.deepEqual(result.body.coverage, { offset: 0, shown: 3, total: null, complete: false, sourceComplete: false, snapshotTotal: 3 });
+    const missing = await f.read(connection.key!, type.name, "C4");
+    assert.deepEqual(missing.body.items, []);
+    assert.equal((missing.body.coverage as any).complete, false, "not present in a partial snapshot does not prove absent at the source");
+  } finally {
+    if (previousLimit === undefined) delete process.env.ADE_SNAPSHOT_MAX_ROWS;
+    else process.env.ADE_SNAPSHOT_MAX_ROWS = previousLimit;
+    await new Promise(resolve => server.close(resolve)); await f.close();
+  }
+});

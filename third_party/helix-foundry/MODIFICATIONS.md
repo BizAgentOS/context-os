@@ -82,3 +82,17 @@ ADE changes (2026-10-14):
 - All capacity limits are reported, never silently slice entities/relationships.
 
 The Helix provider loop, UI, connectors and HelixDB storage backend are not included.
+
+## Snapshot correctness follow-up (2026-10-15, unreleased)
+
+ADE's JSON ingest streams native JSON with encoded top-level keys to a temporary JSONL file,
+preventing case-sensitive source keys from colliding in DuckDB's explicit schema. It inspects
+the inferred schema and reads date/time/timestamp/UUID scalar and array columns explicitly as
+VARCHAR, then restores the original names and DuckDB's normal output-name deduplication. Source
+strings retain their spelling without changing numeric or boolean inference. Nested STRUCT fields
+still follow DuckDB inference. Snapshot reuse requires
+both content and source coverage to match; release retention reads the immutable definition's
+snapshot manifest. Snapshot checks and consumer reads carry incomplete coverage instead of
+claiming full-source completeness. New merge properties are named relative to the retained ADE
+primary mapping and avoid existing property names. Unsupported candidates are reported as
+not included in object queries or release consumption.

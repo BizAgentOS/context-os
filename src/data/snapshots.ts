@@ -169,8 +169,9 @@ export class Snapshots {
       const v = row[f] as unknown;
       return [f, v !== null && v !== undefined && numeric(f) && Number.isFinite(Number(v)) ? Number(v) : v ?? null];
     }))) as Data[];
-    const total = result.profile.rows;
-    return { items, coverage: { offset, shown: items.length, total, complete: offset === 0 && items.length === total },
+    const snapshotTotal = result.profile.rows, sourceComplete = (snapshot.content.coverage as Data | undefined)?.complete === true;
+    return { items, coverage: { offset, shown: items.length, total: sourceComplete ? snapshotTotal : null,
+      complete: sourceComplete && offset === 0 && items.length === snapshotTotal, sourceComplete, snapshotTotal },
       provenance: { sourceId: binding.sourceId, connectionVersion: binding.connectionVersion, capability: cap.name, readAt: String(snapshot.content.syncedAt), historicalReplay: true, snapshotId } };
   }
 
@@ -277,7 +278,7 @@ export class Snapshots {
     const result = this.memory.atomic(() => {
       const prior = this.find(source.id, capability), c = prior?.content as unknown as DatasetContent | undefined;
       const base = { sourceId: source.id, sourceVersion: source.version, connectionId: connection, capability, name: cap ? `${source.title} · ${cap.name}` : source.title, idField: cap?.idField ?? null };
-      if (c?.profile && c.profile.fingerprint === profile.fingerprint && !c.pendingVersion) {
+      if (c?.profile && c.profile.fingerprint === profile.fingerprint && fingerprint(c.coverage) === fingerprint(coverage) && !c.pendingVersion) {
         discard = true;
         this.memory.putArtifact({ ...prior!, expectedVersion: prior!.version, content: jsonData({ ...c, ...base, lastSync: syncedAt }) });
         return { status: "unchanged", rows: profile.rows, datasetId: prior!.id };
@@ -304,7 +305,7 @@ export class Snapshots {
   /** Keeps the newest versions and every version a release pins; files of other versions are removed. */
   private async prune(datasetId: string) {
     const dataset = this.dataset(datasetId), c = dataset.content as unknown as DatasetContent;
-    const pinned = new Set(this.memory.listArtifacts("data_release").flatMap(r => ((r.content.snapshots as Data[] | undefined) ?? []).map(s => String(s.snapshotId))));
+    const pinned = new Set(this.memory.listArtifacts("data_release").flatMap(r => (((r.content.definition as Data | undefined)?.snapshots as Data[] | undefined) ?? []).map(s => String(s.snapshotId))));
     const keep = new Set([...c.versions.slice(0, RETAINED), c.activeVersion, c.pendingVersion].filter(Boolean) as string[]);
     const dropped = c.versions.filter(v => !keep.has(v) && !pinned.has(v));
     if (!dropped.length) return;

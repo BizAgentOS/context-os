@@ -26,14 +26,14 @@ const rows = n => n==null?"—":Number(n).toLocaleString("zh-CN");
 function snapshotDetails(dataset, actions, changed) {
   const c=dataset.content,d=dialog(`${c.name} · 数据快照`,true),output=message(d.body);
   const live=c.materialization==="live";
-  d.body.append(el("p",live?"实时读取：不生成新快照，查询时读取来源。保留的历史快照仍可查看。":`已同步 ${rows(c.profile?.rows)} 行 · ${when(c.lastSync)} · 保留 ${c.versions.length} 个版本${c.coverage&&!c.coverage.complete?` · 达到行数上限，来源共 ${rows(c.coverage.total)} 行`:""}`,"engine-muted"));
+  d.body.append(el("p",live?"实时读取：不生成新快照，查询时读取来源。保留的历史快照仍可查看。":`已同步 ${rows(c.profile?.rows)} 行 · ${when(c.lastSync)} · 保留 ${c.versions.length} 个版本${c.coverage?.complete!==true?` · 来源覆盖不完整，来源总量 ${rows(c.coverage?.total)} 行`:""}`,"engine-muted"));
   if(c.pendingVersion){
     const panel=el("section",null,"engine-panel");panel.append(el("h3","字段结构有变化，待确认"),el("p","新版本的字段与当前版本不同。确认前，本体构建和已发布接入继续使用当前版本；待确认期间不能发布新版本。","engine-muted"));if(c.pendingChanges?.length)panel.append(table(c.pendingChanges,[["字段",x=>x.column],["变化",x=>x.before==null?"新增":x.after==null?"删除":"类型变化"],["当前版本",x=>x.before??"—"],["新版本",x=>x.after??"—"]]));
     const preview=action("预览新版本",()=>transact(d,output,async()=>{const r=await actions.api(`/api/data/preview?datasetId=${encodeURIComponent(dataset.id)}&snapshotId=${encodeURIComponent(c.pendingVersion)}&limit=20`);if(!d.isConnected)return;panel.append(table(r.rows,r.rows.length?Object.keys(r.rows[0]).map(k=>[k,row=>row[k]]):[]));output.textContent=`新版本共 ${rows(r.total)} 行。`;}));
     const accept=action("确认并使用新结构",()=>transact(d,output,async()=>{await actions.api("/api/data/accept",{...ref(dataset),operationId:crypto.randomUUID()});d.close();changed();}),"engine-primary");
     const row=el("div",null,"engine-actions");row.append(preview,accept);panel.append(row);d.body.append(panel);
   }
-  d.body.append(el("h3","字段画像（全量）"),table(c.profile?.columns||[],[["字段",f=>f.name],["类型",f=>f.type],["不同值",f=>rows(f.distinct)],["空值",f=>rows(f.nulls)],["唯一非空",f=>f.primaryKey?"是":"否"],["可能敏感",f=>f.sensitive?"是":""]]));
+  d.body.append(el("h3",c.coverage?.complete===true?"字段画像（全量）":"字段画像（已保存范围）"),table(c.profile?.columns||[],[["字段",f=>f.name],["类型",f=>f.type],["不同值",f=>rows(f.distinct)],["空值",f=>rows(f.nulls)],["唯一非空",f=>f.primaryKey?"是":"否"],["可能敏感",f=>f.sensitive?"是":""]]));
   const controls=el("div",null,"engine-actions");
   if(c.activeVersion)controls.append(action("预览当前数据",()=>transact(d,output,async()=>{const r=await actions.api(`/api/data/preview?datasetId=${encodeURIComponent(dataset.id)}&limit=20`);if(!d.isConnected)return;d.body.append(el("h3",`当前版本前 ${r.rows.length} 行`),table(r.rows,r.rows.length?Object.keys(r.rows[0]).map(k=>[k,row=>row[k]]):[]));output.textContent=`当前版本共 ${rows(r.total)} 行。`;})));
   controls.append(action(live?"改为同步快照":"改为实时读取",()=>transact(d,output,async()=>{await actions.api("/api/data/policy",{...ref(dataset),materialization:live?"snapshot":"live"});d.close();changed();})));
@@ -43,14 +43,14 @@ export function renderEngineWorkspace(state, actions) {
   const root=el("section",null,"engine-workspace");root.setAttribute("aria-label","数据工作区");let disposed=false,data=state.engine||null,snap=state.data||null,request=0,timer;
   const snapshotsOf=sourceId=>(snap?.datasets||[]).filter(d=>d.content.sourceId===sourceId);
   async function sync(sourceId) {
-    const d=dialog("同步数据快照");d.body.append(el("p",sourceId?"完整读取此来源并保存为新的快照版本。内容未变时不新增版本；字段结构变化会等待你确认。":"完整读取全部结构化来源并保存为新的快照版本。已发布的接入继续使用它们锁定的版本。","engine-muted"));
+    const d=dialog("同步数据快照");d.body.append(el("p",sourceId?"读取此来源并保存快照；达到容量上限时标明不完整。内容和覆盖范围均未变时不新增版本；字段结构变化会等待你确认。":"读取全部结构化来源并保存快照；达到容量上限时标明不完整。已发布的接入继续使用它们锁定的版本。","engine-muted"));
     const output=message(d.body),id=crypto.randomUUID();
     d.body.append(action("开始同步",()=>transact(d,output,async()=>{await actions.api("/api/data/sync",{operationId:id,...(sourceId?{sourceIds:[sourceId]}:{})});d.close();await load();}),"engine-primary"));
   }
   root.dispose=()=>{disposed=true;request++;clearTimeout(timer);};
   const sourceActions={...actions,refresh:()=>actions.refresh()};
   async function build(sourceId) {
-    const d=dialog(sourceId?"读取来源并检查":"构建本体");d.body.append(el("p",sourceId?"先同步此来源的完整快照，再识别身份、合并与关联，形成本体候选。现有定义和映射保持可核对。":"先同步全部结构化来源的完整快照，再在全量数据上识别身份、跨来源合并与关联，生成本体候选；已有人工修订会保留。","engine-muted"));
+    const d=dialog(sourceId?"读取来源并检查":"构建本体");d.body.append(el("p",sourceId?"先同步此来源的快照，再在已保存范围识别身份、合并与关联，形成本体候选。覆盖不完整时会提示；现有定义和映射保持可核对。":"先同步全部结构化来源的快照，再在已保存范围识别身份、跨来源合并与关联，生成本体候选。覆盖不完整时会提示；已有人工修订会保留。","engine-muted"));
     const output=message(d.body),id=crypto.randomUUID();
     const run=action("同步并构建",()=>transact(d,output,async()=>{await actions.api("/api/engine/build",{operationId:id,...(sourceId?{sourceIds:[sourceId]}:{})});d.close();await actions.refresh();actions.ontology();}),"engine-primary");d.body.append(run);
   }
@@ -60,7 +60,7 @@ export function renderEngineWorkspace(state, actions) {
     d.body.append(el("p",`${isFile?"上传文件":c.protocol==="mcp"?"MCP":"HTTP API"} · 来源 v${source.version} · ${source.status==="ready"?"可读取":source.status} · ${snapshots.length?`${snapshots.length} 个数据集已同步快照`:"尚未同步快照"}`,"engine-muted"));
     if(c.parseError)d.body.append(el("p",c.parseError,"engine-message"));
     if(isFile)d.body.append(el("p","文件内容保存在 ADE。上传新版本后重新检查结构；Markdown / TXT 的业务含义可由助手辅助提取。","engine-muted"));
-    else d.body.append(el("p","记录能力会完整同步为 ADE 内的不可变快照，本体构建与发布基于快照；知识片段和指标仍按需读取。","engine-muted"));
+    else d.body.append(el("p","记录能力同步为 ADE 内的不可变快照，本体构建与发布基于已保存范围；来源覆盖不完整时会提示。知识片段和指标仍按需读取。","engine-muted"));
     if(snapshots.length){d.body.append(el("h3","数据快照"));for(const set of snapshots){const c2=set.content;d.body.append(action(`${c2.name} · ${c2.materialization==="live"?"实时读取":`${rows(c2.profile?.rows)} 行 · ${when(c2.lastSync)}`}${c2.pendingVersion?" · 结构变化待确认":""}`,()=>{d.close();snapshotDetails(set,actions,()=>void load());},"engine-dataset-link"));}}
     for(const cap of c.capabilities||[]){
       const panel=el("section",null,"engine-panel");panel.append(el("h3",cap.name),el("p",cap.fields?.join(" · ")||cap.metricId||cap.contentKind||"可用能力","engine-muted"));
@@ -106,7 +106,7 @@ export function showEngineBuilds(state, actions) {
   async function load(){clearTimeout(timer);const id=++generation;try{const next=await actions.api("/api/engine");if(closed||id!==generation)return;data=next;render();if(data.jobs.some(j=>["queued","running"].includes(j.status)))timer=setTimeout(load,1800);}catch(e){if(!closed)output.textContent=e.message;}}
   async function change(path,input){const result=await actions.api(`/api/engine/${path}`,input);await load();await actions.refresh();return result;}
   function render(){
-    host.replaceChildren();const controls=el("div",null,"engine-actions");const start=action("从数据构建本体",()=>transact(d,output,async()=>{await change("build",{operationId:buildId});buildId=crypto.randomUUID();output.textContent="任务已保存，可以关闭窗口或切换页面。";}),"engine-primary");start.disabled=data?.jobs?.some(j=>["queued","running"].includes(j.status));controls.append(start,action("刷新状态",()=>void load()));if(actions.management)controls.append(action("查看定义与映射",()=>{d.close();actions.management();}));host.append(el("p","程序同步完整快照，在全量数据上识别身份、跨来源合并与关联，生成候选并检查。已保存的定义与修订继续保留；检查通过后才可采用。","engine-muted"),controls);
+    host.replaceChildren();const controls=el("div",null,"engine-actions");const start=action("从数据构建本体",()=>transact(d,output,async()=>{await change("build",{operationId:buildId});buildId=crypto.randomUUID();output.textContent="任务已保存，可以关闭窗口或切换页面。";}),"engine-primary");start.disabled=data?.jobs?.some(j=>["queued","running"].includes(j.status));controls.append(start,action("刷新状态",()=>void load()));if(actions.management)controls.append(action("查看定义与映射",()=>{d.close();actions.management();}));host.append(el("p","程序同步快照，在已保存范围识别身份、跨来源合并与关联，生成候选并检查。来源覆盖不完整时会提示；已保存的定义与修订继续保留，检查通过后才可采用。","engine-muted"),controls);
     const candidate=data?.candidate;
     if(candidate){const c=candidate.content,panel=el("section",null,"engine-panel");panel.append(el("h3",`本体候选 · ${statusLabels[candidate.status]||candidate.status}`),el("p",`${c.concepts?.length||0} 个概念 · ${c.relations?.length||0} 条关系 · ${c.types?.length||0} 项执行映射`,"engine-muted"));
       const changeCounts=Object.entries(c.diff||{}).map(([k,v])=>`${({addedConcepts:"新增概念",preservedConcepts:"保留概念",addedMappings:"新增映射",preservedMappings:"保留映射",addedSupplements:"新增合并来源",addedRelations:"新增关系"})[k]||k} ${Array.isArray(v)?v.length:v}`).join(" · ");panel.append(el("p",changeCounts,"engine-muted"));

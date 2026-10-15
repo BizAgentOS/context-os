@@ -264,7 +264,7 @@ export function inspectChange(initial, api, saved) {
     if (full?.status === "checked") {
       const metrics = (m) => (m ? Object.entries(m).map(([k, v]) => `${k} ${v}`).join("，") : "");
       content.append(
-        el("h3", "全量快照检查"),
+        el("h3", full.coverageAfter?.complete === true ? "全量快照检查" : "快照检查（仅可用范围）"),
         el(
           "p",
           full.newErrors.length

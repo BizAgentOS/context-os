@@ -64,6 +64,8 @@ export function consumerConnection(
       shown: { type: "integer" },
       total: { type: ["integer", "null"] },
       complete: { type: "boolean" },
+      sourceComplete: { type: "boolean", description: "For pinned snapshots, whether synchronization covered the full source." },
+      snapshotTotal: { type: "integer", description: "Matching rows within the saved snapshot. If sourceComplete is false, total is unknown and complete remains false." },
     },
   };
   const common = {

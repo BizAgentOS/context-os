@@ -19,7 +19,7 @@ const connectSchema = z.object({ operationId: name, name, releaseRef: ref, conce
 const upgradeSchema = z.object({ operationId: name, connectionRef: ref, releaseRef: ref }).strict();
 const revokeSchema = z.object({ operationId: name, connectionRef: ref }).strict();
 interface Issue { code: string; severity: "error" | "warning"; message: string }
-export interface ReleaseSnapshot { sourceId: string; capability: string; datasetId: string; snapshotId: string; fingerprint: string; rows: number; syncedAt: string }
+export interface ReleaseSnapshot { sourceId: string; capability: string; datasetId: string; snapshotId: string; fingerprint: string; rows: number; syncedAt: string; coverage?: DatasetContent["coverage"] }
 /** The pins a release's consumers read through. */
 export const releasePins = (definition: Data | undefined): SnapshotPins =>
   Object.fromEntries((((definition?.snapshots ?? []) as unknown) as ReleaseSnapshot[]).map(s => [pinKey(s.sourceId, s.capability), s.snapshotId]));
@@ -83,7 +83,9 @@ export class Releases {
       if (!dataset || !c?.activeVersion || c.materialization === "live") continue;
       if (c.pendingVersion) issues.push({ code: "pending_schema", severity: "error", message: `「${c.name}」有待确认的结构变化，请先在数据页确认或改为实时读取。` });
       const snapshot = this.memory.getArtifact(c.activeVersion);
-      snapshots.push({ sourceId, capability, datasetId: dataset.id, snapshotId: c.activeVersion, fingerprint: String(c.profile?.fingerprint ?? ""), rows: c.profile?.rows ?? 0, syncedAt: String(snapshot.content.syncedAt) });
+      const coverage = snapshot.content.coverage as unknown as DatasetContent["coverage"];
+      if (coverage?.complete !== true) issues.push({ code: "snapshot_incomplete", severity: "warning", message: `「${c.name}」来源覆盖不完整：快照只保存 ${coverage?.rows ?? c.profile?.rows ?? 0} / ${coverage?.total ?? "未知"} 行；发布仅提供这部分数据，不能视为全量。` });
+      snapshots.push({ sourceId, capability, datasetId: dataset.id, snapshotId: c.activeVersion, fingerprint: String(c.profile?.fingerprint ?? ""), rows: c.profile?.rows ?? 0, syncedAt: String(snapshot.content.syncedAt), coverage: coverage ?? null });
     }
     const allPinned = bindings.length > 0 && bindings.every(b => snapshots.some(s => s.sourceId === b.sourceId && s.capability === b.capability));
     for (const access of sourceAccess) if (snapshots.some(s => s.sourceId === access.sourceId)) access.strategy = bindings.filter(b => b.sourceId === access.sourceId).every(b => snapshots.some(s => s.sourceId === b.sourceId && s.capability === b.capability)) ? "snapshot" : "snapshot_and_on_demand";
