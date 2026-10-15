@@ -25,6 +25,31 @@ ADE changes:
 uniqueness-lost and null-rate issues) on ADE's `MemoryStore`. CSV cells are ingested as text so
 identities keep their form; HTTP/MCP records are read through ADE source contracts.
 
+## Full ontology discovery (2026-10-15, FEATURE_032)
+
+Original file: `apps/api/src/discovery.ts` (`suggestOntology`, `confirmOntology`, `ontologyBundle`,
+`entityColumns`, `entityColumn` and their helpers). ADE file: `src/engine/helix-discovery.ts`; the algorithm
+and upstream formatting are kept so the file can be compared with upstream.
+
+ADE changes:
+- An injected `query(datasetIds, sql, options)` over ADE snapshots replaces the Helix store and
+  `queryDatasets`; types are declared locally instead of importing `packages/shared`.
+- Names split on Unicode letters and digits; Chinese key suffixes (编号, 编码, 代码, 标识, 号 …) count as key
+  and id names, and 邮箱 as e-mail. `tableName` accepts non-Latin table names.
+- `ownKey` no longer falls back to an arbitrary unique column (a name, timestamp or free text); such a
+  dataset stays unplaced and is reported.
+- Descriptions, notes, summaries, link names, pipeline and check names, and confirmation errors are Chinese.
+- Pipelines are keyed by the entity's id (`pipelineId(entity.id)`) and carry `entityId`/`datasetId`;
+  object types and relationships carry `entityId`/`linkId` so ADE can map them back.
+- The 20 entity / 10 pipeline / 30 relationship caps are unchanged, but `ontologyBundle` returns the cut
+  entities and links in `capacity` so ADE reports them. `overviewDashboard` and `ontologyGoal` are not ported.
+
+`src/engine/snapshot-discovery.ts` builds the discovery input from ADE snapshot datasets (one system per
+connection or upload). `ProgramBuilds` maps entities to ADE concepts and mapping types under the existing
+source-based concept identity; direct merges become ADE supplements and anchor links become foundation
+and mapping relations when ADE's live mapping can express them, otherwise they are reported and kept in
+the candidate.
+
 ## Discovery heuristics (2026-10-14, FEATURE_026)
 
 Original file: `apps/api/src/discovery.ts`.

@@ -6,6 +6,9 @@ import type { LiveMemory } from "../live/memory.ts";
 import type { Capability } from "../live/sources.ts";
 import { jsonData } from "../live/sources.ts";
 import { discoverLinks, entityName, fingerprint, ownKey, profileColumns, type BuildIssue, type DatasetProfile } from "./discovery.ts";
+import type { DatasetContent, Snapshots } from "../data/snapshots.ts";
+import { entityColumns, ontologyBundle, type Bundle, type Resource, type SuggestedOntology } from "./helix-discovery.ts";
+import { discoverFromSnapshots } from "./snapshot-discovery.ts";
 
 const identifier = z.string().trim().min(1).max(200);
 const buildInput = z.object({ operationId: identifier, sourceIds: z.array(identifier).max(100).optional(), expectedFoundationVersion: z.number().int().nonnegative().optional(), autoAdopt: z.boolean().default(false) }).strict();
@@ -23,6 +26,7 @@ interface CandidateContent {
   jobId: string; baseFoundationRef: Ref | null; baseModelRef: Ref | null; sourceVersions: Record<string, number>;
   foundation: Data; concepts: Data[]; relations: Data[]; types: Data[]; modelRelations: Data[];
   issues: BuildIssue[]; coverage: Data[]; diff: Data; checks: Data;
+  discovery?: Data; bundle?: Data; snapshotInputs?: Record<string, string>;
   adoption?: { operationId: string; inputVersion: number; foundationRef: Ref; modelRef: Ref };
 }
 const ref = (artifact: Artifact | null | undefined): Ref | null => artifact ? { id: artifact.id, version: artifact.version } : null;
@@ -39,12 +43,13 @@ export class ProgramBuilds {
   private memory: MemoryStore;
   private foundation: FoundationService;
   private live: LiveMemory;
+  private snapshots?: Snapshots;
   private running = new Map<string, Promise<Artifact>>();
   private guards = new Map<string, () => void>();
   private closing = false;
 
-  constructor(memory: MemoryStore, foundation: FoundationService, live: LiveMemory) {
-    this.memory = memory; this.foundation = foundation; this.live = live;
+  constructor(memory: MemoryStore, foundation: FoundationService, live: LiveMemory, snapshots?: Snapshots) {
+    this.memory = memory; this.foundation = foundation; this.live = live; this.snapshots = snapshots;
     for (const job of this.memory.listArtifacts("engine_build")) {
       if (["queued", "running"].includes(job.status)) this.memory.putArtifact({ ...job, expectedVersion: job.version, status: "interrupted",
         content: { ...job.content, finishedAt: now(), outcome: "interrupted", issues: [...dataArray(job.content.issues), { code: "restart", severity: "warning", message: "服务重启中断构建。已保存结果可查看；重新构建会重新读取来源。" }] } });
@@ -141,6 +146,7 @@ export class ProgramBuilds {
   }
 
   private async execute(id: string, sources: Artifact[]): Promise<Artifact> {
+    if (this.snapshots) return this.executeSnapshots(id, sources, this.snapshots);
     try {
       this.advance(id, "read");
       const profiles: DatasetProfile[] = [], issues: BuildIssue[] = structuredClone((this.memory.getArtifact(id).content as unknown as BuildContent).issues);
@@ -170,28 +176,70 @@ export class ProgramBuilds {
       this.advance(id, "read", true); this.advance(id, "discover");
       issues.push(...discoverLinks(profiles));
       this.advance(id, "discover", true); this.advance(id, "compile");
-      const job = this.memory.getArtifact(id), content = job.content as unknown as BuildContent;
       this.assertRunning(id);
-      let candidate = profiles.some(profile => profile.rows.length && profile.idField) ? this.compile(id, profiles, issues) : null;
+      const compiled = profiles.some(profile => profile.rows.length && profile.idField) ? this.compile(id, profiles, issues) : null;
       this.advance(id, "compile", true);
-      if (candidate && content.autoAdopt) {
-        candidate = await this.check({ id: candidate.id, version: candidate.version }, () => this.assertRunning(id));
-        this.assertRunning(id);
-        if ((candidate.content.checks as Data).valid && !issues.some(issue => issue.code === "pending_foundation_review"))
-          candidate = (await this.adopt({ id: candidate.id, version: candidate.version, operationId: `automatic:${content.operationId}` }, () => this.assertRunning(id))).candidate;
-      }
-      const latest = this.memory.getArtifact(id);
-      return this.memory.putArtifact({ ...latest, expectedVersion: latest.version, status: "completed", content: jsonData({ ...latest.content,
-        issues, finishedAt: now(), outcome: candidate?.status === "adopted" ? "adopted" : candidate ? "candidate" : sources.length ? "needs_attention" : "empty", candidateRef: candidate ? ref(candidate) : null,
-        ...(sources.length ? {} : { issues: [{ code: "no_sources", severity: "info", message: "尚未接入可构建的结构化来源" }] }),
-      }) });
-    } catch (error) {
-      const job = this.memory.getArtifact(id);
-      if (["cancelled", "interrupted"].includes(job.status)) return job;
-      return this.memory.putArtifact({ ...job, expectedVersion: job.version, status: "failed", content: jsonData({ ...job.content,
-        outcome: "failed", finishedAt: now(), issues: [...dataArray(job.content.issues), { code: "build_failed", severity: "error", message: (error as Error).message }],
-      }) });
+      const candidate = await this.finishCandidate(id, issues, compiled);
+      return this.finish(id, sources, issues, candidate);
+    } catch (error) { return this.fail(id, error); }
+  }
+
+  private async finishCandidate(id: string, issues: BuildIssue[], candidate: Artifact | null) {
+    const content = this.memory.getArtifact(id).content as unknown as BuildContent;
+    if (candidate && content.autoAdopt) {
+      candidate = await this.check({ id: candidate.id, version: candidate.version }, () => this.assertRunning(id));
+      this.assertRunning(id);
+      if ((candidate.content.checks as Data).valid && !issues.some(issue => issue.code === "pending_foundation_review"))
+        candidate = (await this.adopt({ id: candidate.id, version: candidate.version, operationId: `automatic:${content.operationId}` }, () => this.assertRunning(id))).candidate;
     }
+    return candidate;
+  }
+
+  private finish(id: string, sources: Artifact[], issues: BuildIssue[], candidate: Artifact | null) {
+    const latest = this.memory.getArtifact(id);
+    return this.memory.putArtifact({ ...latest, expectedVersion: latest.version, status: "completed", content: jsonData({ ...latest.content,
+      issues, finishedAt: now(), outcome: candidate?.status === "adopted" ? "adopted" : candidate ? "candidate" : sources.length ? "needs_attention" : "empty", candidateRef: candidate ? ref(candidate) : null,
+      ...(sources.length ? {} : { issues: [{ code: "no_sources", severity: "info", message: "尚未接入可构建的结构化来源" }] }),
+    }) });
+  }
+
+  private fail(id: string, error: unknown) {
+    const job = this.memory.getArtifact(id);
+    if (["cancelled", "interrupted"].includes(job.status)) return job;
+    return this.memory.putArtifact({ ...job, expectedVersion: job.version, status: "failed", content: jsonData({ ...job.content,
+      outcome: "failed", finishedAt: now(), issues: [...dataArray(job.content.issues), { code: "build_failed", severity: "error", message: (error as Error).message }],
+    }) });
+  }
+
+  /** Full-data path: sync snapshots, run Helix discovery over them, and compile entities into ADE concepts and mappings. */
+  private async executeSnapshots(id: string, sources: Artifact[], snapshots: Snapshots): Promise<Artifact> {
+    try {
+      this.advance(id, "read");
+      const content = this.memory.getArtifact(id).content as unknown as BuildContent;
+      const issues: BuildIssue[] = structuredClone(content.issues);
+      for (const source of sources) for (const cap of source.kind === "source" ? [] : dataArray(source.content.capabilities))
+        if (cap.contentKind && cap.contentKind !== "records") issues.push({ code: "non_record_capability", severity: "info", sourceId: source.id, capability: String(cap.name), message: "知识片段或指标能力保留为依据入口，不自动映射成业务记录。" });
+      const synced = sources.length ? await snapshots.sync({ operationId: `build:${content.operationId}`, sourceIds: sources.map(s => s.id) }) : null;
+      this.assertRunning(id);
+      issues.push(...dataArray(synced?.content.issues).map(issue => issue as unknown as BuildIssue));
+      const sourceIds = new Set(sources.map(s => s.id));
+      const datasets = snapshots.datasets().filter(d => sourceIds.has(String(d.content.sourceId)));
+      for (const d of datasets) {
+        const c = d.content as unknown as DatasetContent;
+        if (c.materialization === "live") issues.push({ code: "live_dataset", severity: "info", sourceId: c.sourceId, capability: c.capability, message: "该数据集设为实时读取，不参与全量发现；如需程序构建请切换为快照。" });
+        else if (!c.profile?.rows) issues.push({ code: "empty_sample", severity: "error", sourceId: c.sourceId, capability: c.capability, message: "来源当前没有记录，未生成可执行对象映射；请补充记录或显式缩小构建范围。" });
+        else if (c.pendingVersion) issues.push({ code: "pending_schema", severity: "warning", sourceId: c.sourceId, capability: c.capability, message: "数据集有待确认的结构变化；本次按当前已采用的快照构建。" });
+      }
+      const usable = datasets.filter(d => d.content.materialization !== "live" && d.content.activeVersion);
+      this.advance(id, "read", true); this.advance(id, "discover");
+      const source = (sid: string) => { try { return this.memory.getArtifact(sid); } catch { return undefined; } };
+      const discovery = usable.length ? await discoverFromSnapshots(snapshots, source, usable.map(d => d.id)) : null;
+      this.assertRunning(id);
+      this.advance(id, "discover", true); this.advance(id, "compile");
+      const candidate = discovery ? this.compileDiscovery(id, discovery, usable, issues) : null;
+      this.advance(id, "compile", true);
+      return this.finish(id, sources, issues, await this.finishCandidate(id, issues, candidate));
+    } catch (error) { return this.fail(id, error); }
   }
 
   private async inspectCsv(source: Artifact, profiles: DatasetProfile[], issues: BuildIssue[]) {
@@ -280,6 +328,128 @@ export class ProgramBuilds {
       diff: { addedConcepts, preservedConcepts, addedMappings, preservedMappings }, checks: { valid: false, description: "候选已生成，采用前需重新检查来源与执行映射。" },
       }) });
     });
+  }
+
+  /** ADE mapping from a Helix suggestion: entity -> concept + type, direct merges -> supplements, anchor links -> relations. */
+  private compileDiscovery(jobId: string, o: SuggestedOntology, datasets: Artifact[], issues: BuildIssue[]) {
+    const job = this.memory.getArtifact(jobId), base = this.foundation.read(), active = this.activeModel();
+    const previous = base.current?.content;
+    const concepts = dataArray(previous?.concepts), relations = dataArray(previous?.relations), evidence = dataArray(previous?.evidence);
+    const types = dataArray(active?.content.types), modelRelations = dataArray(active?.content.relations);
+    const preservedConcepts = concepts.map(concept => String(concept.id)), preservedMappings = types.map(type => String(type.conceptId));
+    const addedConcepts: string[] = [], addedMappings: string[] = [], addedRelations: string[] = [];
+    const byId = new Map(datasets.map(d => [d.id, d.content as unknown as DatasetContent]));
+    const resources = new Map<string, Resource>(datasets.map(d => [d.id, { id: d.id, name: String(d.content.name),
+      data: { activeVersion: String(d.content.activeVersion), profile: (d.content as unknown as DatasetContent).profile! } }]));
+    const bundle: Bundle = ontologyBundle(o, resources);
+    const { omittedEntities, anchorOnlyEntities, omittedRelationships } = bundle.capacity;
+    if (omittedEntities.length) issues.push({ code: "capacity_limit", severity: "warning", message: `发现 ${omittedEntities.length} 个实体超过单次 20 个的映射范围，未纳入本次候选；请缩小来源范围后分批构建。`, details: { entities: omittedEntities } });
+    if (anchorOnlyEntities.length) issues.push({ code: "capacity_limit", severity: "warning", message: `${anchorOnlyEntities.length} 个合并实体超过 10 条合并计划的范围，本次只按主来源映射。`, details: { entities: anchorOnlyEntities } });
+    if (omittedRelationships.length) issues.push({ code: "capacity_limit", severity: "warning", message: `${omittedRelationships.length} 条关系超过单次 30 条的范围，未纳入本次候选。`, details: { links: omittedRelationships } });
+    for (const id of o.unplaced) issues.push({ code: "identity_unknown", severity: "warning", sourceId: byId.get(id)?.sourceId, capability: byId.get(id)?.capability, message: `「${resources.get(id)?.name}」没有非空唯一的身份键，未生成对象映射；请补充稳定编号或由助手协助修复，未把普通唯一字段猜作业务身份。` });
+    for (const e of o.entities.filter(e => e.kind === "activity")) issues.push({ code: "activity_stream", severity: "info", message: `${e.name}是大规模事件流，保留为分析数据，不作为对象映射。`, details: { entity: e.id } });
+
+    // The execution connection of a snapshot dataset: an HTTP/MCP source itself, or the CSV bound with the given identity.
+    const connection = (c: DatasetContent, key: string) => {
+      const source = this.memory.getArtifact(c.sourceId);
+      return source.kind === "source" ? this.live.sources.connectUpload(source.id, source.version, key).id : source.id;
+    };
+    const boundTo = (c: DatasetContent) => {
+      const ids = new Set([c.sourceId, ...this.live.sources.list().filter(x => (x.content.localSource as Data | undefined)?.id === c.sourceId).map(x => x.id)]);
+      return types.find(type => [type, ...dataArray(type.supplements)].some(b => ids.has(String(b.sourceId)) && b.capability === c.capability));
+    };
+    const typeOf = new Map<string, Data>();
+    for (const t of bundle.ontology) {
+      const e = o.entities.find(x => x.id === t.entityId)!, anchor = byId.get(e.anchorDatasetId)!;
+      const existing = boundTo(anchor);
+      if (existing) { typeOf.set(e.id, existing); continue; }
+      let sourceId: string;
+      try { sourceId = connection(anchor, e.key); }
+      catch (error) { issues.push({ code: "identity_unknown", severity: "error", sourceId: anchor.sourceId, capability: anchor.capability, message: (error as Error).message }); continue; }
+      const identity = `source_${fingerprint([anchor.sourceId, anchor.capability]).slice(0, 24)}`;
+      let concept = concepts.find(item => item.id === identity);
+      if (!concept) {
+        const sourceEvidence = this.captureEvidence(this.snapshotProfile(anchor, sourceId), jobId), evidenceId = String(sourceEvidence.id);
+        evidence.push(sourceEvidence);
+        let name = e.name;
+        if (concepts.some(item => item.name === name)) name = `${name} · ${identity.slice(7, 13)}`;
+        concept = { id: identity, name, description: `${e.description}业务含义待核对。`.slice(0, 1500), evidenceRefs: [evidenceId], origin: "program", mappingStatus: "unbound",
+          programEvidenceId: evidenceId, programSource: { sourceId: anchor.sourceId, capability: anchor.capability } };
+        concepts.push(concept); addedConcepts.push(identity);
+      }
+      const fields = Object.fromEntries((anchor.profile?.columns ?? []).map(c => [c.name, c.name]));
+      const supplements: Data[] = [];
+      for (const m of e.members.slice(1)) {
+        const member = byId.get(m.datasetId)!, why = (message: string) => issues.push({ code: "merge_not_expressible", severity: "info", sourceId: member.sourceId, capability: member.capability,
+          message: `「${m.datasetName}」与${e.name}的合并${message}；合并结果保留在候选中，按快照执行时使用。`, details: { entity: e.id, dataset: m.datasetId } });
+        if (!m.via || m.via.targetDatasetId !== e.anchorDatasetId) { why("经过其他数据集间接匹配，在线映射只支持与主来源直接匹配"); continue; }
+        if (supplements.length >= 3) { why("超过每个对象 3 个附来源的在线映射范围"); continue; }
+        let memberSource: string;
+        try { memberSource = connection(member, m.key); } catch (error) { why(`无法建立执行来源（${(error as Error).message}）`); continue; }
+        const { cap } = this.live.sources.capability(memberSource, member.capability);
+        if (!Object.hasOwn(cap.filters, m.via.column)) { why(`需要附来源支持按 ${m.via.column} 精确过滤`); continue; }
+        const memberFields = Object.fromEntries(entityColumns(e, resources).filter(c => c.datasetId === m.datasetId && !Object.hasOwn(fields, c.as)).map(c => [c.as, c.column]));
+        if (!Object.keys(memberFields).length) continue;
+        supplements.push({ name: m.datasetName.slice(0, 200), sourceId: memberSource, capability: member.capability, match: { primaryField: m.via.targetColumn, sourceField: m.via.column },
+          fields: memberFields, rationale: `程序发现：${m.rows} 条中 ${m.matched} 条按 ${m.via.column} = ${m.via.targetColumn} 精确匹配。同名属性保留来源前缀，业务含义待核对。` });
+      }
+      const type: Data = { name: concept.name, description: concept.description, conceptId: concept.id, sourceId, capability: anchor.capability, fields, ...(supplements.length ? { supplements } : {}) };
+      types.push(type); typeOf.set(e.id, type); addedMappings.push(String(concept.id));
+    }
+    for (const r of bundle.relationships) {
+      const l = o.links.find(x => x.id === r.linkId)!, from = typeOf.get(l.from), to = typeOf.get(l.to);
+      const fromEntity = o.entities.find(x => x.id === l.from)!, toEntity = o.entities.find(x => x.id === l.to)!;
+      const skip = (message: string) => issues.push({ code: "relationship_candidate", severity: "warning", message: `${fromEntity.name}.${l.fromColumn} → ${toEntity.name}.${l.toColumn}（${l.matchedRows}/${l.totalRows} 条匹配）${message}`,
+        details: { link: l.id, matchedRows: l.matchedRows, totalRows: l.totalRows, evidence: l.evidence } });
+      if (!from || !to) { skip("：端点未形成对象映射，保留为待核对关联。"); continue; }
+      if (l.fromDatasetId !== fromEntity.anchorDatasetId || l.toDatasetId !== toEntity.anchorDatasetId || l.caseInsensitive) { skip("：需经合并数据或忽略大小写匹配，在线映射暂不表达，按快照执行时使用。"); continue; }
+      const prop = (type: Data, column: string) => Object.entries(type.fields as Record<string, string>).find(([, field]) => field === column)?.[0];
+      const fromField = prop(from, l.fromColumn), toField = prop(to, l.toColumn);
+      const { cap } = this.live.sources.capability(String(to.sourceId), String(to.capability));
+      if (!fromField || !toField || !Object.hasOwn(cap.filters, l.toColumn)) { skip("：目标来源不支持按关联字段过滤，保留为待核对关联。"); continue; }
+      if (modelRelations.some(x => x.from === from.name && x.to === to.name && x.fromField === fromField)) continue;
+      let name = l.name;
+      for (let n = 2; modelRelations.some(x => x.from === from.name && x.name === name); n++) name = `${l.name}${n}`;
+      const relationId = `rel_${fingerprint([from.conceptId, l.fromColumn, to.conceptId]).slice(0, 24)}`;
+      if (!relations.some(x => x.id === relationId)) {
+        const fromConcept = concepts.find(c => c.id === from.conceptId)!;
+        relations.push({ id: relationId, name, from: String(from.conceptId), to: String(to.conceptId), origin: "program", mappingStatus: "unbound", evidenceRefs: [(fromConcept.evidenceRefs as string[])[0]],
+          description: `程序发现：${l.totalRows} 条中 ${l.matchedRows} 条的 ${l.fromColumn} 能在${toEntity.name}中找到；业务含义待核对。` });
+        addedRelations.push(relationId);
+      }
+      const relation = relations.find(x => x.id === relationId)!;
+      modelRelations.push({ name: String(relation.name), from: String(from.name), to: String(to.name), fromField, toField, relationId });
+    }
+    if (concepts.length > MAX_FOUNDATION_CONCEPTS || types.length > MAX_MODEL_TYPES) throw new Error(`生成结果有 ${concepts.length} 个概念、${types.length} 个映射，超过当前 ${MAX_FOUNDATION_CONCEPTS}/${MAX_MODEL_TYPES} 的执行契约。请缩小来源范围，程序没有截断或覆盖既有定义。`);
+    if (!types.length) return null;
+    const profile = this.memory.listArtifacts("profile")[0];
+    const enterprise = previous?.enterprise ?? { name: "未设置企业", evidenceRefs: [] };
+    const foundation = jsonData({ ...previous, enterprise, concepts, relations, evidence, unknowns: dataArray(previous?.unknowns), conflicts: dataArray(previous?.conflicts),
+      adoptedVersion: base.adopted?.version ?? null, profileRef: ref(profile), documentVersions: previous?.documentVersions ?? {}, operation: { hash: fingerprint([concepts, relations, types, modelRelations]) },
+      method: { name: "helix-program-discovery", sourceCommit: "00d7927d7c08e16c58316e006959f052427e7fa1", suggestionHash: o.hash },
+      checks: { valid: true, description: "程序在全量快照上核对了身份、合并与关联。业务含义仍需核对。" } });
+    const sourceVersions = { ...(job.content.sourceVersions as Record<string, number>), ...Object.fromEntries(types.flatMap(t => [t, ...dataArray(t.supplements)]).map(b => [String(b.sourceId), this.memory.getArtifact(String(b.sourceId)).version])) };
+    return this.memory.atomic(() => {
+      for (const prior of this.memory.listArtifacts("engine_candidate").filter(item => ["candidate", "checked"].includes(item.status)))
+        this.memory.putArtifact({ ...prior, expectedVersion: prior.version, status: "superseded" });
+      return this.memory.putArtifact({ kind: "engine_candidate", title: "程序构建候选", status: "candidate", content: jsonData({
+        jobId, baseFoundationRef: job.content.baseFoundationRef, baseModelRef: job.content.baseModelRef, sourceVersions, foundation, concepts, relations, types, modelRelations, issues,
+        coverage: datasets.map(d => { const c = d.content as unknown as DatasetContent; return { sourceId: c.sourceId, capability: c.capability, datasetId: d.id, snapshotId: c.activeVersion,
+          sampledRows: c.coverage?.rows ?? c.profile?.rows ?? 0, totalRows: c.coverage?.total ?? null, complete: c.coverage?.complete ?? true, readAt: c.lastSync }; }),
+        diff: { addedConcepts, preservedConcepts, addedMappings, preservedMappings, addedRelations },
+        discovery: { hash: o.hash, signature: o.signature, summary: o.summary, entities: o.entities, links: o.links, notes: o.notes, unplaced: o.unplaced },
+        bundle, snapshotInputs: Object.fromEntries(datasets.map(d => [d.id, String(d.content.activeVersion)])),
+        checks: { valid: false, description: "候选已生成，采用前需重新检查来源与执行映射。" },
+      }) });
+    });
+  }
+
+  /** Evidence input from a snapshot: its schema and the first stored sample rows. */
+  private snapshotProfile(c: DatasetContent, connectionId: string): DatasetProfile {
+    const rows = (c.profile?.sample ?? []) as Data[];
+    return { sourceId: connectionId, sourceVersion: this.memory.getArtifact(connectionId).version, capability: c.capability, name: c.name,
+      fields: profileColumns((c.profile?.columns ?? []).map(col => col.name), rows), rows, rowCount: c.profile?.rows ?? rows.length,
+      complete: c.coverage?.complete ?? true, readAt: c.lastSync ?? now(), strategy: "uploaded_snapshot" };
   }
 
   private captureEvidence(dataset: DatasetProfile, jobId: string): Data {

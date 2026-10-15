@@ -195,7 +195,7 @@ export class AgentApplication {
     this.live = new LiveMemory(directory, this.memory);
     this.foundation = new FoundationService(this.memory, this.live);
     this.snapshots = new Snapshots(this.memory, this.live, directory);
-    this.programBuilds = new ProgramBuilds(this.memory, this.foundation, this.live);
+    this.programBuilds = new ProgramBuilds(this.memory, this.foundation, this.live, this.snapshots);
     this.onboarding = new Onboarding(this.memory, this.foundation, () => this.canvasTask("setup").id);
     this.contexts = new WorkContexts(this.memory, this.live);
     this.capabilities = new AgentCapabilities(directory, this.memory);
