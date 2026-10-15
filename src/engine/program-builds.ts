@@ -363,8 +363,10 @@ export class ProgramBuilds {
     const typeOf = new Map<string, Data>();
     for (const t of bundle.ontology) {
       const e = o.entities.find(x => x.id === t.entityId)!, anchor = byId.get(e.anchorDatasetId)!;
-      // An already mapped anchor keeps its mapping; newly discovered direct merges are still added to it as supplements.
-      const existing = boundTo(anchor);
+      // Extend an existing mapping instead of duplicating the object: the anchor's own, or else that of a member matched directly to it.
+      // Newly discovered direct merges are added to it as supplements.
+      const pivot = boundTo(anchor) ? undefined : e.members.slice(1).find(m => m.via?.targetDatasetId === e.anchorDatasetId && boundTo(byId.get(m.datasetId)!));
+      const existing = boundTo(pivot ? byId.get(pivot.datasetId)! : anchor);
       let sourceId = String(existing?.sourceId ?? "");
       if (!existing) {
         try { sourceId = connection(anchor, e.key); }
@@ -377,26 +379,32 @@ export class ProgramBuilds {
         evidence.push(sourceEvidence);
         let name = e.name;
         if (concepts.some(item => item.name === name)) name = `${name} · ${identity.slice(7, 13)}`;
-        concept = { id: identity, name, description: `${e.description}业务含义待核对。`.slice(0, 1500), evidenceRefs: [evidenceId], origin: "program", mappingStatus: "unbound",
+        // Row counts change with every sync, so the stored definition omits them; snapshots carry the current count.
+        concept = { id: identity, name, description: `${e.description.replace(/的 [\d,]+ 条/, "的")}业务含义待核对。`.slice(0, 1500), evidenceRefs: [evidenceId], origin: "program", mappingStatus: "unbound",
           programEvidenceId: evidenceId, programSource: { sourceId: anchor.sourceId, capability: anchor.capability } };
         concepts.push(concept); addedConcepts.push(identity);
       }
       const fields = existing ? existing.fields as Record<string, string> : Object.fromEntries((anchor.profile?.columns ?? []).map(c => [c.name, c.name]));
       const supplements = dataArray(existing?.supplements), added = supplements.length;
-      for (const m of e.members.slice(1)) {
+      for (const m of e.members.filter(m => m.datasetId !== (pivot?.datasetId ?? e.anchorDatasetId))) {
         const member = byId.get(m.datasetId)!, why = (message: string) => issues.push({ code: "merge_not_expressible", severity: "info", sourceId: member.sourceId, capability: member.capability,
           message: `「${m.datasetName}」与${e.name}的合并${message}；合并结果保留在候选中，按快照执行时使用。`, details: { entity: e.id, dataset: m.datasetId } });
-        if (!m.via || m.via.targetDatasetId !== e.anchorDatasetId) { why("经过其他数据集间接匹配，在线映射只支持与主来源直接匹配"); continue; }
+        // The match is stated against the primary mapping: with a pivot, the anchor matches it in reverse and other members only through the anchor.
+        const via = pivot ? (m.datasetId === e.anchorDatasetId ? { primary: pivot.via!.column, source: pivot.via!.targetColumn, rows: pivot.rows, matched: pivot.matched } : null)
+          : m.via?.targetDatasetId === e.anchorDatasetId ? { primary: m.via.targetColumn, source: m.via.column, rows: m.rows, matched: m.matched } : null;
+        if (!via) { why("经过其他数据集间接匹配，在线映射只支持与主来源直接匹配"); continue; }
         if (boundTo(member)) { why("的来源已作为其他对象的映射，未重复绑定；如需合并请由助手协助调整映射"); continue; }
+        const primaryField = Object.entries(fields).find(([, column]) => column === via.primary)?.[0];
+        if (!primaryField) { why(`需要主映射包含 ${via.primary} 字段`); continue; }
         if (supplements.length >= 3) { why("超过每个对象 3 个附来源的在线映射范围"); continue; }
         let memberSource: string;
         try { memberSource = connection(member, m.key); } catch (error) { why(`无法建立执行来源（${(error as Error).message}）`); continue; }
         const { cap } = this.live.sources.capability(memberSource, member.capability);
-        if (!Object.hasOwn(cap.filters, m.via.column)) { why(`需要附来源支持按 ${m.via.column} 精确过滤`); continue; }
+        if (!Object.hasOwn(cap.filters, via.source)) { why(`需要附来源支持按 ${via.source} 精确过滤`); continue; }
         const memberFields = Object.fromEntries(entityColumns(e, resources).filter(c => c.datasetId === m.datasetId && !Object.hasOwn(fields, c.as)).map(c => [c.as, c.column]));
         if (!Object.keys(memberFields).length) continue;
-        supplements.push({ name: m.datasetName.slice(0, 200), sourceId: memberSource, capability: member.capability, match: { primaryField: m.via.targetColumn, sourceField: m.via.column },
-          fields: memberFields, rationale: `程序发现：${m.rows} 条中 ${m.matched} 条按 ${m.via.column} = ${m.via.targetColumn} 精确匹配。同名属性保留来源前缀，业务含义待核对。` });
+        supplements.push({ name: m.datasetName.slice(0, 200), sourceId: memberSource, capability: member.capability, match: { primaryField, sourceField: via.source },
+          fields: memberFields, rationale: `程序发现：${via.rows} 条中 ${via.matched} 条按 ${via.source} = ${via.primary} 精确匹配。同名属性保留来源前缀，业务含义待核对。` });
       }
       if (existing) {
         const type = supplements.length > added ? { ...existing, supplements } : existing;
