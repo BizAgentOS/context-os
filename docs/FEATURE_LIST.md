@@ -26,7 +26,7 @@ Last Updated: 2026-10-15
 | Version | Status | Planned | InProgress | Completed | Progress |
 |---|---|---:|---:|---:|---:|
 | v0.1.0 | InProgress | 2 | 3 | 19 | 19/24 |
-| v0.2.0 | InProgress | 1 | 0 | 10 | 10/11 |
+| v0.2.0 | InProgress | 0 | 0 | 11 | 11/11 |
 
 ## Feature Index
 
@@ -70,7 +70,7 @@ Last Updated: 2026-10-15
 | 032 | 完整本体发现与映射编译 | Enhancement | High | Completed | v0.2.0 | 031 | [设计](features/v0.2.0.md#feature-032) |
 | 033 | 执行验证与 Agent 辅助构建 | Enhancement | High | Completed | v0.2.0 | 032 | [设计](features/v0.2.0.md#feature-033) |
 | 034 | 发布锁定数据与快照消费 | Enhancement | High | Completed | v0.2.0 | 031、033 | [设计](features/v0.2.0.md#feature-034) |
-| 035 | 快照三页界面与整链验收 | Enhancement | High | Planned | v0.2.0 | 031—034 | [设计](features/v0.2.0.md#feature-035) |
+| 035 | 快照三页界面与整链验收 | Enhancement | High | Completed | v0.2.0 | 031—034 | [设计](features/v0.2.0.md#feature-035) |
 
 此表保留已有能力与票的实际完成记录，计数不代表新 MVP 体验的完成比例。本轮按 [MVP 完成条件](MVP.md)及 FEATURE_012—016 的任务依赖验收。006、远程 MCP 服务和旧票中尚未覆盖的完整回归/恢复保留为后续工作，不因范围调整标为完成。
 
@@ -459,10 +459,10 @@ Last Updated: 2026-10-15
 
 ### 035: 快照三页界面与整链验收
 
-- **Status:** Planned
+- **Status:** Completed
 - **Category / Priority:** Enhancement / High
 - **Planned / Released:** v0.2.0 / —
-- **Created / Started / Completed:** 2026-10-15 / — / —
+- **Created / Started / Completed:** 2026-10-15 / 2026-10-15 / 2026-10-15
 - **Description:** 数据、本体、发布三页展示快照、发现依据、验证与数据差异，完成整链和浏览器验收。
 - **Blocked by:** 031—034
 - **Design:** [FEATURE_035](features/v0.2.0.md#feature-035)。

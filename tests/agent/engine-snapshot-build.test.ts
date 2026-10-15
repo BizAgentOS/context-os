@@ -82,6 +82,37 @@ test("a build syncs full snapshots, merges the same company across sources, link
   } finally { await api.close(); await f.close(); }
 });
 
+test("a later build adds a newly discovered merge to an already adopted mapping instead of skipping it", async () => {
+  const f = fixture();
+  const api = await crm();
+  try {
+    const source = await f.live.sources.connect({ name: "CRM", protocol: "http", url: api.url,
+      capabilities: [{ name: "companies", path: "/companies", fields: ["code", "owner"], idField: "code", totalPath: "total", filters: { code: "code" } }] });
+    await f.engine.build({ operationId: "crm-only" });
+    let candidate = f.engine.overview().candidate!;
+    let checked = await f.engine.check({ id: candidate.id, version: candidate.version });
+    await f.engine.adopt({ id: checked.id, version: checked.version, operationId: "adopt-crm" });
+
+    f.workspace.upload("企业.csv", "企业编号,企业名称\n" + Array.from({ length: 30 }, (_, i) => `${code(i)},企业${i}`).join("\n") + "\n");
+    const run = await f.engine.build({ operationId: "with-file" });
+    assert.equal(run.content.outcome, "candidate", JSON.stringify(run.content.issues));
+    candidate = f.engine.overview().candidate!;
+    const types = candidate.content.types as any[], diff = candidate.content.diff as any;
+    assert.equal(types.length, 1, "the file merges into the existing company mapping");
+    assert.equal(types[0].sourceId, source.id);
+    assert.equal(types[0].supplements.length, 1);
+    assert.deepEqual(types[0].supplements[0].match, { primaryField: "code", sourceField: "企业编号" });
+    assert.deepEqual(diff.addedMappings, []);
+    assert.equal(diff.addedSupplements.length, 1);
+
+    checked = await f.engine.check({ id: candidate.id, version: candidate.version });
+    assert.equal((checked.content.checks as any).valid, true, JSON.stringify(checked.content.checks));
+    const adopted = await f.engine.adopt({ id: checked.id, version: checked.version, operationId: "adopt-file" });
+    const objects = await f.live.query({ modelId: adopted.model.id, type: String(types[0].name), id: code(3) });
+    assert.ok(JSON.stringify(objects.items[0]).includes("企业3"), JSON.stringify(objects).slice(0, 400));
+  } finally { await api.close(); await f.close(); }
+});
+
 test("datasets without a usable identity are reported instead of guessed, and live datasets stay out of discovery", async () => {
   const f = fixture();
   try {

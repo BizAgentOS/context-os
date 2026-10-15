@@ -129,7 +129,7 @@ export async function fuseRows(
   type: FusionType,
   primary: Page,
   fields: string[],
-  sources: SourceConnections,
+  sources: Pick<SourceConnections, "capability" | "readRecords" | "list">,
   connections: Record<string, number>,
   assertValid: () => void,
 ) {

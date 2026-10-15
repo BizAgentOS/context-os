@@ -109,3 +109,6 @@ body:has(.engine-workspace),body:has(.ontology-space){--engine-ink:#e2ece9;--eng
 @media(prefers-reduced-motion:reduce){.engine-workspace *,.engine-dialog *{animation:none!important;transition:none!important;}}
 .engine-raw-diff{white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.8 ui-monospace,monospace;color:#aac3b4;max-height:300px;overflow:auto;}
 @media(max-width:700px){.ontology-space .os-empty{top:215px;left:24px;right:24px;transform:none;max-width:none;}.ontology-space .os-empty h2{font-size:20px;line-height:1.5;}.ontology-space .os-empty p{font-size:12px;line-height:1.8;}}
+.engine-notes{margin:10px 0 0;padding-left:18px;font-size:12px;line-height:1.7;color:var(--engine-muted,#65756c);}
+.engine-dialog .engine-notes{color:#adbbb5;}
+.engine-notes li{overflow-wrap:anywhere;}

@@ -119,7 +119,12 @@ export class Releases {
     const connections = this.memory.listArtifacts("release_connection").map(a => this.connectionState(a));
     const checks = this.memory.listArtifacts("release_check");
     const working = this.working();
-    return { working, currentRelease: releases[0] ?? null, releases, connections, latestCheck: checks.find(a => a.content.inputHash === working.inputHash) ?? null };
+    return { working, currentRelease: releases[0] ?? null, releases, connections, latestCheck: checks.find(a => a.content.inputHash === working.inputHash) ?? null, names: this.names() };
+  }
+  /** Readable titles of sources and datasets, so definition diffs can show names instead of ids. */
+  private names() {
+    return Object.fromEntries([...this.memory.listArtifacts("source"), ...this.memory.listArtifacts("source_connection"), ...this.memory.listArtifacts("data_dataset")]
+      .map(a => [a.id, String(a.kind === "data_dataset" ? a.content.name : a.title)]));
   }
   read(input: unknown) {
     const r = ref.parse(input), a = this.memory.getArtifact(r.id, r.version);
@@ -130,7 +135,7 @@ export class Releases {
     const args = z.object({ from: ref, to: ref }).strict().parse(input);
     const from = this.read(args.from), to = this.read(args.to);
     return { from: { ...reference(from), name: from.title }, to: { ...reference(to), name: to.title },
-      diff: releaseDiff(from.content.definition, to.content.definition) };
+      diff: releaseDiff(from.content.definition, to.content.definition), names: this.names() };
   }
   /** Row-level differences of each pinned dataset between a release and another release or the working version. */
   async dataDiff(input: unknown) {

@@ -223,8 +223,9 @@ export class ProgramBuilds {
       const synced = sources.length ? await snapshots.sync({ operationId: `build:${content.operationId}`, sourceIds: sources.map(s => s.id) }) : null;
       this.assertRunning(id);
       issues.push(...dataArray(synced?.content.issues).map(issue => issue as unknown as BuildIssue));
-      const sourceIds = new Set(sources.map(s => s.id));
-      const datasets = snapshots.datasets().filter(d => sourceIds.has(String(d.content.sourceId)));
+      // The selection only decides which sources are refreshed: fusion needs every synced dataset in view.
+      const available = new Set(this.selectedSources({ operationId: content.operationId, autoAdopt: false }).map(s => s.id));
+      const datasets = snapshots.datasets().filter(d => available.has(String(d.content.sourceId)));
       for (const d of datasets) {
         const c = d.content as unknown as DatasetContent;
         if (c.materialization === "live") issues.push({ code: "live_dataset", severity: "info", sourceId: c.sourceId, capability: c.capability, message: "该数据集设为实时读取，不参与全量发现；如需程序构建请切换为快照。" });
@@ -338,7 +339,7 @@ export class ProgramBuilds {
     const concepts = dataArray(previous?.concepts), relations = dataArray(previous?.relations), evidence = dataArray(previous?.evidence);
     const types = dataArray(active?.content.types), modelRelations = dataArray(active?.content.relations);
     const preservedConcepts = concepts.map(concept => String(concept.id)), preservedMappings = types.map(type => String(type.conceptId));
-    const addedConcepts: string[] = [], addedMappings: string[] = [], addedRelations: string[] = [];
+    const addedConcepts: string[] = [], addedMappings: string[] = [], addedRelations: string[] = [], addedSupplements: string[] = [];
     const byId = new Map(datasets.map(d => [d.id, d.content as unknown as DatasetContent]));
     const resources = new Map<string, Resource>(datasets.map(d => [d.id, { id: d.id, name: String(d.content.name),
       data: { activeVersion: String(d.content.activeVersion), profile: (d.content as unknown as DatasetContent).profile! } }]));
@@ -362,13 +363,15 @@ export class ProgramBuilds {
     const typeOf = new Map<string, Data>();
     for (const t of bundle.ontology) {
       const e = o.entities.find(x => x.id === t.entityId)!, anchor = byId.get(e.anchorDatasetId)!;
+      // An already mapped anchor keeps its mapping; newly discovered direct merges are still added to it as supplements.
       const existing = boundTo(anchor);
-      if (existing) { typeOf.set(e.id, existing); continue; }
-      let sourceId: string;
-      try { sourceId = connection(anchor, e.key); }
-      catch (error) { issues.push({ code: "identity_unknown", severity: "error", sourceId: anchor.sourceId, capability: anchor.capability, message: (error as Error).message }); continue; }
+      let sourceId = String(existing?.sourceId ?? "");
+      if (!existing) {
+        try { sourceId = connection(anchor, e.key); }
+        catch (error) { issues.push({ code: "identity_unknown", severity: "error", sourceId: anchor.sourceId, capability: anchor.capability, message: (error as Error).message }); continue; }
+      }
       const identity = `source_${fingerprint([anchor.sourceId, anchor.capability]).slice(0, 24)}`;
-      let concept = concepts.find(item => item.id === identity);
+      let concept = existing ? concepts.find(item => item.id === existing.conceptId) : concepts.find(item => item.id === identity);
       if (!concept) {
         const sourceEvidence = this.captureEvidence(this.snapshotProfile(anchor, sourceId), jobId), evidenceId = String(sourceEvidence.id);
         evidence.push(sourceEvidence);
@@ -378,12 +381,13 @@ export class ProgramBuilds {
           programEvidenceId: evidenceId, programSource: { sourceId: anchor.sourceId, capability: anchor.capability } };
         concepts.push(concept); addedConcepts.push(identity);
       }
-      const fields = Object.fromEntries((anchor.profile?.columns ?? []).map(c => [c.name, c.name]));
-      const supplements: Data[] = [];
+      const fields = existing ? existing.fields as Record<string, string> : Object.fromEntries((anchor.profile?.columns ?? []).map(c => [c.name, c.name]));
+      const supplements = dataArray(existing?.supplements), added = supplements.length;
       for (const m of e.members.slice(1)) {
         const member = byId.get(m.datasetId)!, why = (message: string) => issues.push({ code: "merge_not_expressible", severity: "info", sourceId: member.sourceId, capability: member.capability,
           message: `「${m.datasetName}」与${e.name}的合并${message}；合并结果保留在候选中，按快照执行时使用。`, details: { entity: e.id, dataset: m.datasetId } });
         if (!m.via || m.via.targetDatasetId !== e.anchorDatasetId) { why("经过其他数据集间接匹配，在线映射只支持与主来源直接匹配"); continue; }
+        if (boundTo(member)) { why("的来源已作为其他对象的映射，未重复绑定；如需合并请由助手协助调整映射"); continue; }
         if (supplements.length >= 3) { why("超过每个对象 3 个附来源的在线映射范围"); continue; }
         let memberSource: string;
         try { memberSource = connection(member, m.key); } catch (error) { why(`无法建立执行来源（${(error as Error).message}）`); continue; }
@@ -393,6 +397,11 @@ export class ProgramBuilds {
         if (!Object.keys(memberFields).length) continue;
         supplements.push({ name: m.datasetName.slice(0, 200), sourceId: memberSource, capability: member.capability, match: { primaryField: m.via.targetColumn, sourceField: m.via.column },
           fields: memberFields, rationale: `程序发现：${m.rows} 条中 ${m.matched} 条按 ${m.via.column} = ${m.via.targetColumn} 精确匹配。同名属性保留来源前缀，业务含义待核对。` });
+      }
+      if (existing) {
+        const type = supplements.length > added ? { ...existing, supplements } : existing;
+        if (type !== existing) { types[types.indexOf(existing)] = type; addedSupplements.push(...supplements.slice(added).map(x => `${concept.name} ← ${x.name}`)); }
+        typeOf.set(e.id, type); continue;
       }
       const type: Data = { name: concept.name, description: concept.description, conceptId: concept.id, sourceId, capability: anchor.capability, fields, ...(supplements.length ? { supplements } : {}) };
       types.push(type); typeOf.set(e.id, type); addedMappings.push(String(concept.id));
@@ -437,7 +446,7 @@ export class ProgramBuilds {
         jobId, baseFoundationRef: job.content.baseFoundationRef, baseModelRef: job.content.baseModelRef, sourceVersions, foundation, concepts, relations, types, modelRelations, issues,
         coverage: datasets.map(d => { const c = d.content as unknown as DatasetContent; return { sourceId: c.sourceId, capability: c.capability, datasetId: d.id, snapshotId: c.activeVersion,
           sampledRows: c.coverage?.rows ?? c.profile?.rows ?? 0, totalRows: c.coverage?.total ?? null, complete: c.coverage?.complete ?? true, readAt: c.lastSync }; }),
-        diff: { addedConcepts, preservedConcepts, addedMappings, preservedMappings, addedRelations },
+        diff: { addedConcepts, preservedConcepts, addedMappings, preservedMappings, addedSupplements, addedRelations },
         discovery: { hash: o.hash, signature: o.signature, summary: o.summary, entities: o.entities, links: o.links, notes: o.notes, unplaced: o.unplaced },
         bundle, snapshotInputs: Object.fromEntries(datasets.map(d => [d.id, String(d.content.activeVersion)])),
         checks: { valid: false, description: "候选已生成，采用前需重新检查来源与执行映射。" },

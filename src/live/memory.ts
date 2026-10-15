@@ -685,7 +685,7 @@ export class LiveMemory {
           type,
           result,
           fields,
-          src as SourceConnections,
+          src,
           d.connections,
           assertValid,
         )
@@ -714,11 +714,12 @@ export class LiveMemory {
     };
   }
   /** Source access for one read: pinned bindings come from their locked snapshot, others from the live source. */
-  private sourcesFor(pins?: SnapshotPins): Pick<SourceConnections, "capability" | "readRecords"> {
+  private sourcesFor(pins?: SnapshotPins): Pick<SourceConnections, "capability" | "readRecords" | "list"> {
     const reader = this.snapshots;
     if (!pins || !reader || !Object.keys(pins).length) return this.sources;
     const sources = this.sources;
     return {
+      list: () => sources.list(),
       capability: (id: string, capability: string, version?: number) => pins[pinKey(id, capability)] && version !== undefined
         ? sources.pinnedCapability(id, capability, version) : sources.capability(id, capability, version),
       readRecords: async (id: string, capability: string, where: Data = {}, offset = 0, limit = 20, version?: number) => {
@@ -727,7 +728,7 @@ export class LiveMemory {
         const { cap } = sources.pinnedCapability(id, capability, version);
         return reader.readPinned(snapshotId, cap, { sourceId: id, connectionVersion: version }, where, offset, limit);
       },
-    } as Pick<SourceConnections, "capability" | "readRecords">;
+    } as Pick<SourceConnections, "capability" | "readRecords" | "list">;
   }
   validateConsumerScope(input: unknown, fixedSemantic = false) {
     const args = prepareSchema.parse(input);

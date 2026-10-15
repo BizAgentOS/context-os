@@ -115,3 +115,32 @@ test("an old release keeps reading a re-uploaded CSV's locked version, and a pen
     assert.equal(((await f.read(a.key!, type.name, "P1")).body as any).items[0].properties["价格"].value, "10", "drift never reaches published consumers");
   } finally { await f.close(); }
 });
+
+test("a release whose object merges a second source can be checked and read through both pinned snapshots", async () => {
+  const f = fixture();
+  const rows = Array.from({ length: 12 }, (_, i) => ({ id: `C${i}`, tier: i % 2 ? "gold" : "silver" }));
+  const server = createServer((req, res) => {
+    const url = new URL(req.url!, "http://localhost");
+    const selected = rows.filter(r => !url.searchParams.has("id") || r.id === url.searchParams.get("id"));
+    const offset = Number(url.searchParams.get("offset") ?? 0), limit = Number(url.searchParams.get("limit") ?? 20);
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ items: selected.slice(offset, offset + limit), total: selected.length }));
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    await f.live.sources.connect({ name: "企业目录", protocol: "http", url: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
+      capabilities: [{ name: "companies", path: "/companies", fields: ["id", "tier"], idField: "id", totalPath: "total", filters: { id: "id" } }] });
+    f.workspace.upload("企业.csv", "企业编号,企业名称\n" + rows.map((r, i) => `${r.id},公司${i}`).join("\n") + "\n");
+    const adopted = await f.adoptBuild("merged");
+    const type = (adopted.model.content.types as any[])[0];
+    assert.equal(type.supplements?.length, 1, JSON.stringify(adopted.model.content.types));
+    const v1 = await f.publish("v1");
+    const props = [...Object.keys(type.fields), ...Object.keys(type.supplements[0].fields)];
+    const a = f.releases.connect({ operationId: "a", name: "A", releaseRef: ref(v1), conceptIds: [String(type.conceptId)], relationIds: [],
+      business: { grants: [{ type: type.name, fields: ["$id", ...props], relations: [] }] } });
+    const read = await f.read(a.key!, type.name, "C3");
+    assert.equal(read.status, 200, JSON.stringify(read.body));
+    assert.ok(JSON.stringify(read.body).includes("公司3") && JSON.stringify(read.body).includes("gold"), JSON.stringify(read.body).slice(0, 600));
+    assert.equal((read.body as any).consistency, "pinned_snapshot");
+  } finally { await new Promise(resolve => server.close(resolve)); await f.close(); }
+});
