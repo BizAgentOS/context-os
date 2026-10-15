@@ -1,89 +1,90 @@
 # ADE · Agent Data Engine
 
-本体驱动的通用多源数据底座。程序构建结构，KodaX Agent 协助接入、解释与修订，人类与外部 Agent 使用同一语义服务。投研作为后续验证场景。
+本体驱动的通用多源数据底座。把散落在不同系统的数据接进来，构建可溯源、有依据的本体，按版本发布给人和外部 Agent 使用。程序负责构建结构，KodaX Agent 协助接入、解释与修订。投研作为后续验证场景。
 
-**当前版本：`0.2.0`（2026-10-15 本地发布，Tag `v0.2.0`）。** 三个页面是 **数据 · 本体 · 发布与接入**。功能与验收见 [0.2.0 设计](docs/features/v0.2.0.md)、[功能台账](docs/FEATURE_LIST.md)和[整体验收](docs/experiment/ENGINE_WORKBENCH.md)。
+## 当前版本
 
-首次配置模型并选择来源，可稍后接入。数据页管理文件/API/MCP及实际存取策略；结构化首轮构建不需要模型。第二页查看本体、真实对象和依据，处理程序候选或让 Agent 修复。第三页检查并发布不可变定义版本，为接入方选择范围、签发配置、显式升级或撤销；可以单独开启受限的 ADE Agent 委托。
+| 版本 | 日期 | 提交 / Tag | 内容 |
+|---|---|---|---|
+| **0.2.1**（当前） | 2026-10-15 | Tag `v0.2.1` | 移植 Helix 快照底座：全量快照、全量本体发现与检查、发布锁定数据（FEATURE_031—035）及后续修复 |
+| 0.2.0 | 2026-10-14 | `930b10e` / Tag `v0.2.0` | 数据 · 本体 · 发布与接入三页工作台（FEATURE_025—030） |
 
-HTTP/MCP 按需读取，CSV 使用上传快照。移植的是 Helix 确定性发现与构建方法，许可与修改记录见 [第三方说明](third_party/helix-foundry/MODIFICATIONS.md)；没有复制其全部存储、连接器或模型循环。样本检查不证明业务语义或全量质量，发布定义不冻结远端事实。
+版本只在本地 Git 发布，仓库没有配置远程。完整变更见 [CHANGELOG](docs/CHANGELOG.md)，功能状态见[功能台账](docs/FEATURE_LIST.md)，版本规则见下方[版本与发布管理](#版本与发布管理)。
 
-运行空工作台：`npm ci` 后 `npm start`，按终端输出的本机入口打开。默认保持本地单企业实验范围。真实业务源与真实模型质量留待后续场景验证。
+## 三个页面
 
-## 连接源系统的实际版本
+- **数据**：接入文件、HTTP API 与 MCP 来源；把结构化记录同步为不可变快照，查看行数、字段画像与样本；来源字段结构变化时列出逐字段差异，确认后才生效；可把单个数据集改为实时读取。
+- **本体**：程序在全量快照上识别身份、跨来源合并与关联，生成候选并检查（身份唯一、字段、合并与关系匹配率），检查通过后采用；人或 Agent 提出或修订映射时，自动比较前后的全量检查结果，引入新问题则不能采用。
+- **发布与接入**：发布锁定本体、映射和各来源快照版本；发布与升级前显示定义差异和行级数据差异；为接入方选择范围、签发密钥、显式升级或撤销；可单独开启受限的 ADE Agent 委托。
 
-`npm run live:demo` 启动 **8796** 体验：两个独立热力源（投诉 API、回访 MCP）、实际本体映射、第三方只读访问。源记录修改后，下一次查询能读到变化，数据不整体导入本地。首次候选由用户采用，聊天使用真实 KodaX。完整配置、验证及限制见[运行说明](docs/experiment/LIVE_MEMORY.md)。
+本体构建方法移植自 Helix Foundry（Apache-2.0），许可与逐文件修改记录见[第三方说明](third_party/helix-foundry/MODIFICATIONS.md)，设计决定见 [ADR-004](docs/ADR/ADR-004-managed-snapshots-and-pinned-releases.md)。
 
-## 从这里开始
+## 快速开始
 
-- [文档中心](docs/README.md)：按 Agent 产品职责组织的完整入口，区分当前设计、接入事实与历史。
-- [产品需求](docs/PRODUCT.md)与[总体架构](docs/DATA_ENGINE_DESIGN.md)：本体融合价值、用户与系统分工。
-- [内部 Agent](docs/AGENT_DESIGN.md)、[KodaX 接入记录](docs/KODAX_CAPABILITY_LEDGER.md)和[运行 Skill](docs/BUILTIN_SKILLS.md)：方法、能力与运行边界。
-- [语义契约](docs/SEMANTIC_CONTRACTS.md)、[人机协作](docs/AGENT_UI_DESIGN.md)、[画布](docs/CANVAS_DESIGN.md)、[消费](docs/DATA_CONSUMPTION_DESIGN.md)：同一对象与操作如何服务人和其他 Agent。
-- [当前开发任务](docs/features/v0.2.0.md)：六项整体功能及交付；[原三页实施计划](docs/THREE_PAGE_PLAN.md)保留历史迁移依据。
-- [功能台账](docs/FEATURE_LIST.md)、[开发流程](docs/DEVELOPMENT.md)、[Agent 工作约定](AGENTS.md)：实际状态与开发规则。
-- [当前在线运行](docs/experiment/LIVE_MEMORY.md)、[通用能力](docs/experiment/AGENT_CAPABILITIES.md)、[历史设计](docs/archive/README.md)：现有命令、验证与参考。
-
-## 既有能力与历史验收
-
-升级前仍打开旧页面的用户，先导出未发送草稿，再重启并导入；方法与边界见[三页迁移说明](docs/experiment/THREE_PAGE_MIGRATION.md)。
-
-**此前三页融合的十八张票已完成，未发布。** T016-04 真实模型、双消费者、浏览器治理与离线兼容见[整链验收](docs/experiment/FUSION_CHAIN.md)。可用 `npm run verify:chain -- --real` 在独立临时工作区复跑（调用已配置模型，会产生费用）。 T016-03 已交付指定消费者迁移、版本校验与原许可保护，见[验收](docs/experiment/CONSUMER_MIGRATIONS.md)。 T016-02 已交付属性/关系/文档/BI证据与HTTP/MCP说明，见[验收](docs/experiment/CONSUMER_EVIDENCE.md)。 T016-01 已完成 v3 许可融合查询，见[验收](docs/experiment/CONSUMER_VIEWS.md)。 T015-04 已完成全局规则修订与样本影响，见[验收](docs/experiment/MAPPING_CHANGES.md)。 T015-03 已完成局部关系候选、检查与人工采用，见[验收](docs/experiment/RELATION_CORRECTIONS.md)。 T015-02 已接入页内在线对象/关系探索与属性取证，见[验收](docs/experiment/LIVE_OBJECTS.md)。 T015-01 已支持基础定义图/列表、同引用说明与映射展开，见[可视化验收](docs/experiment/FOUNDATION_VISUALIZATION.md)。 T014-05 已支持三类证据共同取证、历史查看与范围解释，见[共同取证验收](docs/experiment/EVIDENCE.md)。 T014-04 已接入主/附来源融合、逐属性依据及冲突状态，见[融合验收](docs/experiment/FUSION.md)。 已接通基础概念与真实业务映射，支持检查、预览和采用执行子集，见[绑定验收](docs/experiment/FOUNDATION_BINDINGS.md)。 T014-01/02 已接入统一来源目录、知识片段取证及 HTTP/MCP 指标定义与观测；指标保留单位、维度、期间、粒度和覆盖，见[指标验收](docs/experiment/METRICS.md)。以下保留旧四页与样本能力的实际档案，不作为新任务优先级。
-
-**当前版本 0.2.0，2026-10-15 本地发布。** 新一轮整体功能见 [0.2.0 设计与任务](docs/features/v0.2.0.md)。以下为既有实验能力。 已构建澄川热力的企业设定和第一批固定来源样本：1 个热源接入点、2 座换热站、4 个小区、12 栋楼、两周记录。17 份来源文件包含 738 条 CSV 记录及 8 份业务文档。
-
-FEATURE_001 已完成企业样本、可重复生成与历史回放，以及10题原始资料基线。操作见 [生成说明](docs/experiment/GENERATOR.md)和 [基线说明](docs/experiment/BASELINE.md)，实际表现与限制见 [首跑结果](docs/experiment/BASELINE_RESULT.md)。T002-01 的早期建模方案见 [流程设计草案](docs/experiment/ONTOLOGY_MODELING.md)，当前任务顺序以三页实施计划为准。此前9类对象及738个实例保留为技术试样，其导入与追溯可运行，业务模型尚未定稿；见 [试样说明](docs/experiment/ONTOLOGY_REVIEW.md)。本地实验室前端与建模同步建设，见[工作台使用说明](docs/experiment/LAB.md)。维护 Agent 和方法对照继续按 [功能台账](docs/FEATURE_LIST.md)推进。
-
-## 工作方式
-
-底层接通 KodaX SDK、资料保存、本体构建/采用和对象查证。三页可随时往返，Agent 保留原任务范围；来源权限、语义工作版、对外发布和接入升级分别管理。以下热力演示是既有固定样本，和空工作台及本轮隔离验收分开。
-
-先看填好内容的热力公司演示，无需模型 API Key：
-
-```sh
-npm ci
-npm run demo
-```
-
-生成可发给他人的单文件 HTML 演示：
-
-```sh
-npm run export:html
-```
-
-文件位于 `output/share/DataEngine-热力公司-演示.html`，下载后用浏览器打开即可。企业、资料、本体关系与连接范围都可离线查看；示例问答为本地演示，不连接模型或服务端。导出使用隔离的虚构热力样本，不包含当前空间凭据或用户新增资料。详见[分享说明](docs/experiment/SHARE_HTML.md)。
-
-打开终端给出的管理链接（默认端口 8794）。三页已填入澄川热力的企业信息、业务资料、本体与对象、业务验证和调用方。右上角标记“演示数据”；输入框提供固定的模拟问答。对象读取、证据追溯、编辑与访问限制由本地程序实际执行；没有调用模型，也没有连接真实企业或外部应用。演示状态单独保存在 `local-state/heating-demo`，重启保留修改。详见[热力公司演示](docs/experiment/HEATING_DEMO.md)。
-
-启动 DataEngine（Node.js 22.18+）：
+需要 Node.js 22.18+。
 
 ```sh
 npm ci
 npm start
 ```
 
-首次打开终端输出的本机管理链接（默认端口 8788），页面会移除地址中的管理凭据片段并建立浏览器管理会话；同一浏览器后续可直接打开 <http://127.0.0.1:8788>。新空间先进入五步初始化，存量企业可从“完善初始化”重新进入，见[冷启动使用与验收](docs/experiment/ENTERPRISE_ONBOARDING.md)。在模型设置中配置模型凭据，或沿用宿主环境变量。页面保存的模型密钥写入本机独立受限凭据文件，跨刷新和服务重启保留，可主动删除；服务商失效或撤销仍以实际连接结果为准。GLM 可选择“智谱 GLM · 普通 API”“智谱 GLM · Coding Plan”或“Z.ai GLM · Coding Plan”，分别使用 `ZHIPU_API_KEY`、`ZHIPU_CODING_API_KEY`、`ZAI_CODING_API_KEY`。按账户填写模型 ID；切换厂商后重新填写对应密钥，连接测试成功后使用。另可选择“自定义 API”填写 OpenAI/Anthropic 兼容 Base URL、模型 ID 和密钥，见[自定义接口使用说明](docs/experiment/CUSTOM_MODEL_API.md)。管理凭据与消费方 API Key 分开：消费方使用第三页启用时单独交付的密钥，只能访问其明确范围。详情见[画布运行与验收](docs/experiment/CANVAS.md)和[消费链运行与验收](docs/experiment/CONSUMPTION.md)。
+打开终端输出的本机管理链接（默认端口 8788）。页面会移除地址中的管理凭据片段并建立浏览器管理会话，之后同一浏览器可直接打开 <http://127.0.0.1:8788>。新空间先进入初始化，存量企业可从“完善初始化”重新进入，见[冷启动使用与验收](docs/experiment/ENTERPRISE_ONBOARDING.md)。结构化来源的首轮构建不需要模型。
 
-`npm run check` 已通过类型检查与 85 项 Agent 测试，包括第三方 MCP 接入与数据版本发布、热力演示、三页与存量迁移、文档概念、业务验证与消费页上下文、真实 HTTP 权限检查、访问记录及重启后的停用结果；此前 22 项 Python 回归测试也通过；浏览器与真实模型及两个客户端的历史验收记录单独保存，本次演示入口使用本地模拟问答。
+**模型配置**：在模型设置中配置凭据，或沿用宿主环境变量。页面保存的模型密钥写入本机独立受限凭据文件，跨刷新和重启保留，可主动删除。GLM 可选“智谱 GLM · 普通 API”“智谱 GLM · Coding Plan”或“Z.ai GLM · Coding Plan”，分别使用 `ZHIPU_API_KEY`、`ZHIPU_CODING_API_KEY`、`ZAI_CODING_API_KEY`；也可选“自定义 API”填写 OpenAI/Anthropic 兼容 Base URL、模型 ID 和密钥，见[自定义接口说明](docs/experiment/CUSTOM_MODEL_API.md)。
 
-检查第一批样本（Python 3.9+，仅标准库）：
+**凭据分开**：管理凭据只用于本机管理；接入方使用第三页签发的独立密钥，只能访问其授权范围，升级会撤销旧密钥。
+
+## 验证
+
+| 命令 | 内容 | 是否调用模型 |
+|---|---|---|
+| `npm run check` | 类型检查与全部 Agent 测试（0.2.1 发布时 219 项） | 否 |
+| `npm run verify:snapshots` | 经 HTTP 接口走完快照整链：同步 → 构建 → 检查采用 → 发布 → 来源更新与字段类型变化 → 再发布 → 升级 → 撤销，见[验收](docs/experiment/ENGINE_WORKBENCH.md#021-更新2026-10-15) | 否 |
+| `npm run verify:chain -- --real` | 真实模型、双消费者的历史融合整链，见[整链验收](docs/experiment/FUSION_CHAIN.md) | 是，会产生费用 |
+
+## 数据存储与边界
+
+- 结构化记录默认复制为快照，保存在本机状态目录下的 `data/`（Parquet，未加密）。每个数据集保留最近 5 个版本，被发布引用的版本不清理；单次快照默认上限 100 万行（`ADE_SNAPSHOT_MAX_ROWS`），超限明确标注不完整。
+- 文档与知识片段、指标观测，以及用户设为实时读取的数据集仍按需回源读取；发布时标注为非锁定，接入方能看到。
+- 程序检查证明的是结构与数据一致性（身份、匹配率、合并），不证明业务含义；业务含义由人或 Agent 核对。
+- 当前为本地单企业实验：没有远程存储、多租户或记录级权限，尚未用真实业务数据和真实模型做场景验证。完整限制见[验收文档](docs/experiment/ENGINE_WORKBENCH.md)。
+
+## 版本与发布管理
+
+- **版本号只有一个来源**：`package.json` 的 `version`。开发期间不加 `-dev` 后缀，保持最近一次发布的版本号，未发布内容记在 CHANGELOG 的 `[Unreleased]`。
+- **发布步骤**（由用户确认版本号后执行）：同步 `package.json` / `package-lock.json` 和代码中对外报告的版本号 → CHANGELOG 把 `[Unreleased]` 整理成 `[x.y.z] - 日期` → 功能台账填写 `Released` → 本地提交 `chore(release): vx.y.z` → 打附注 Tag `vx.y.z`。
+- **Tag 一经发布不移动**；发现问题就发下一个补丁版本。推送远程和 GitHub Release 需用户另行确认。
+- 完整规则见 [AGENTS.md](AGENTS.md#版本与发布) 与[开发流程](docs/DEVELOPMENT.md)。
+
+## 文档入口
+
+- [文档中心](docs/README.md)：按 Agent 产品职责组织的完整入口，区分当前设计、接入事实与历史。
+- [产品需求](docs/PRODUCT.md)与[总体架构](docs/DATA_ENGINE_DESIGN.md)：本体融合价值、用户与系统分工。
+- [内部 Agent](docs/AGENT_DESIGN.md)、[KodaX 接入记录](docs/KODAX_CAPABILITY_LEDGER.md)和[运行 Skill](docs/BUILTIN_SKILLS.md)：方法、能力与运行边界。
+- [语义契约](docs/SEMANTIC_CONTRACTS.md)、[人机协作](docs/AGENT_UI_DESIGN.md)、[画布](docs/CANVAS_DESIGN.md)、[消费](docs/DATA_CONSUMPTION_DESIGN.md)：同一对象与操作如何服务人和其他 Agent。
+- [0.2.x 设计与任务](docs/features/v0.2.0.md)、[功能台账](docs/FEATURE_LIST.md)、[开发流程](docs/DEVELOPMENT.md)、[Agent 工作约定](AGENTS.md)：实际状态与开发规则。
+
+## 演示与历史能力
+
+以下是既有固定样本与历史验收，和空工作台及 0.2.x 验收分开。
+
+**热力公司演示**（无需模型 API Key）：
 
 ```sh
-python3 scripts/validate_heating_sample.py
+npm ci
+npm run demo
 ```
 
-它检查来源清单、哈希、记录引用、时间与数量关系；也可用 `--dataset` 检查生成的快照。生成器使用 `scripts/heating_data.py` 的 `generate`、`export`、`diff` 三个命令，完整示例见上述说明。
+打开终端给出的管理链接（默认端口 8794）。三页已填入澄川热力的企业信息、业务资料、本体与对象、业务验证和调用方，右上角标记“演示数据”，输入框提供固定的模拟问答；对象读取、证据追溯、编辑与访问限制由本地程序实际执行，不调用模型。演示状态单独保存在 `local-state/heating-demo`。详见[热力公司演示](docs/experiment/HEATING_DEMO.md)。
 
-启动本地实验室（无新增依赖）：
+**单文件 HTML 演示**：`npm run export:html` 生成 `output/share/DataEngine-热力公司-演示.html`，下载后用浏览器离线打开；使用隔离的虚构样本，不包含当前空间凭据或用户资料。详见[分享说明](docs/experiment/SHARE_HTML.md)。
 
-```sh
-python3 scripts/lab_server.py
-```
+**在线读取体验**：`npm run live:demo` 启动 8796 端口，两个独立热力源（投诉 API、回访 MCP）按需读取，聊天使用真实 KodaX，见[运行说明](docs/experiment/LIVE_MEMORY.md)。这是 0.1.x 时期的在线读取方式；0.2.1 起结构化来源默认同步为快照。
 
-打开 http://127.0.0.1:8787。可查看企业来源、建模过程、概念/对象试样与证据，保存步骤笔记，并通过浮窗问答；DeepSeek 凭据沿用服务端 `DEEPSEEK_API_KEY` 环境变量。此 8787 页面保留为旧浏览入口；企业记忆画布使用上面的 8788 入口。
+**Agent 通用能力**：三页 Agent 已接入 KodaX 网页搜索/读取、Skill 加载、通用 MCP 发现与授权调用，以及可信业务 SDK 注册表，顶部“能力”管理配置，见[Agent 能力说明](docs/experiment/AGENT_CAPABILITIES.md)。
 
-外层目录中的调研资料、星桥软件数据和旧方案保留为参考。本项目当前执行范围以本仓库的产品目标、MVP 目标和执行清单为准，旧方案中的完整平台能力不自动进入本次实验。
+**历史验收**：此前三页融合的十八张票（T014-01 至 T016-04）已完成，覆盖统一来源目录、知识与指标取证、概念绑定、多源融合、共同取证、可视化、关系纠正、映射修订、许可消费视图与消费者迁移，验收文档在 `docs/experiment/`，汇总见[整链验收](docs/experiment/FUSION_CHAIN.md)。升级前仍打开旧页面的用户，先导出未发送草稿再重启并导入，见[三页迁移说明](docs/experiment/THREE_PAGE_MIGRATION.md)。
 
-### Agent 通用能力
+**热力样本与实验室**：澄川热力企业设定与第一批固定来源样本（17 份来源文件、738 条 CSV 记录及 8 份业务文档）；FEATURE_001 完成样本生成、历史回放及 10 题基线，见[生成说明](docs/experiment/GENERATOR.md)、[基线说明](docs/experiment/BASELINE.md)和[首跑结果](docs/experiment/BASELINE_RESULT.md)。检查样本：`python3 scripts/validate_heating_sample.py`（Python 3.9+，可加 `--dataset` 检查生成的数据集）。旧版本地实验室：`python3 scripts/lab_server.py`，打开 <http://127.0.0.1:8787>，见[工作台说明](docs/experiment/LAB.md)。
 
-三页 Agent 已接入 KodaX 网页搜索/读取、Skill 加载、通用 MCP 发现与授权调用，以及可信业务 SDK 注册表。顶部“能力”管理配置。当前业务 SDK 示例为 Octokit 公开仓库查询；详细边界、体验方法和真实验证见[Agent 能力说明](docs/experiment/AGENT_CAPABILITIES.md)。
+外层目录中的调研资料和旧方案仅供参考；当前执行范围以本仓库的功能台账和设计文档为准。

@@ -1,6 +1,6 @@
 {
   "name": "dataengine-lab",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "engines": {
@@ -16,7 +16,8 @@
     "export:html": "node scripts/export-heating-html.ts",
     "live:demo": "node scripts/live-heating.ts",
     "sources:demo": "node src/live/heating-sources.ts",
-    "verify:chain": "node scripts/verification/fusion-chain.ts"
+    "verify:chain": "node scripts/verification/fusion-chain.ts",
+    "verify:snapshots": "node scripts/verification/snapshot-chain.ts"
   },
   "dependencies": {
     "@duckdb/node-api": "1.5.5-r.1",
