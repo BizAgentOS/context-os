@@ -403,6 +403,7 @@ function render() {
   }
   document.title = `${state.profile ? companyName() : "DataEngine"} · ${pageLabels[ui.page]}`;
   renderCanvas();
+  syncOnboarding();
   renderDialogue();
   renderAgentTask();
   updateComposer();
@@ -445,12 +446,6 @@ function renderCanvas(force = false) {
   const fingerprint = canvasFingerprint();
   if (!force && fingerprint === ui.canvasKey) return;
   ui.canvasKey = fingerprint;
-  const onboarding = ui.page === "setup" && state.onboarding?.active && !shareMode && !state.demo && !ui.detail;
-  $(".canvas-app").classList.toggle("is-onboarding", !!onboarding);
-  if (onboarding && $("#canvas").firstElementChild?.classList.contains("onboarding")) {
-    $("#canvas").firstElementChild.update(state);
-    return;
-  }
   const spatial = ui.page === "ontology" && !ui.detail && !shareMode && !state.demo;
   $(".canvas-app").classList.toggle("is-ontology-space", spatial);
   for (const element of $$(".os-chat-metrics,.os-chat-footer")) element.hidden = !spatial;
@@ -668,18 +663,100 @@ function askAssistant(text) {
   rememberDraft();resizeInput();openComposer();
 }
 function dataActions() {return {api,apply:applySnapshot,upload:()=>$("#file-input").click(),refresh,ask:askAssistant,ontology:()=>navigate("ontology")};}
+let onboardingDialog;
+let onboardingWorkspace;
+let onboardingClosing = false;
+let onboardingDismissed = null;
+function setOnboardingDismissed(dismissed) {
+  onboardingDismissed = dismissed ? state.workspaceId : null;
+  try {
+    const key = `de-onboarding-dismissed:${state.workspaceId}`;
+    if (dismissed) sessionStorage.setItem(key, "true");
+    else sessionStorage.removeItem(key);
+  } catch { /* A blocked browser store still allows dismissal in this tab. */ }
+}
+async function startOnboarding(origin) {
+  if (state.onboarding?.active) {
+    setOnboardingDismissed(false);
+    origin?.closest("dialog")?.close();
+    syncOnboarding();
+    return true;
+  }
+  return mutate("/api/onboarding/start", {
+    expectedVersion: state.onboarding?.version ?? 0,
+    flow: state.onboarding?.flow || "engine",
+  }, () => { setOnboardingDismissed(false); origin?.closest("dialog")?.close(); });
+}
+async function dismissOnboarding() {
+  const component = onboardingDialog?.component;
+  if (onboardingClosing || component?.isWorking()) return;
+  if (state.busy) {
+    setOnboardingDismissed(true);
+    onboardingDialog.close();
+    renderAgentTask();
+    return;
+  }
+  onboardingClosing = true;
+  onboardingDialog.closeButton.disabled = true;
+  try {
+    applySnapshot(await api("/api/onboarding/suspend", {
+      expectedVersion: state.onboarding.version,
+    }));
+  } catch (error) {
+    component?.showError(error.message);
+  } finally {
+    onboardingClosing = false;
+    if (onboardingDialog) onboardingDialog.closeButton.disabled = false;
+  }
+}
+function syncOnboarding() {
+  if (onboardingWorkspace !== state.workspaceId) {
+    try { onboardingDismissed = sessionStorage.getItem(`de-onboarding-dismissed:${state.workspaceId}`) ? state.workspaceId : null; } catch { onboardingDismissed = null; }
+  }
+  const active = ui.page === "setup" && state.onboarding?.active && onboardingDismissed !== state.workspaceId && !shareMode && !state.demo;
+  if (onboardingDialog && (onboardingWorkspace !== state.workspaceId || (!state.onboarding?.active && state.onboarding?.completedAt))) {
+    onboardingDialog.close();
+    onboardingDialog.remove();
+    onboardingDialog = null;
+  }
+  if (!active) {
+    onboardingDialog?.close();
+    return;
+  }
+  if (!onboardingDialog) {
+    const dialog = node("dialog", "onboarding-dialog");
+    dialog.setAttribute("aria-label", "初始化数据工作区");
+    const close = button("关闭", "quiet-button", dismissOnboarding);
+    const component = renderOnboarding(state, {
+      ...dataActions(), connect: kind => openEngineSource(kind, dataActions()),
+    });
+    dialog.component = component;
+    dialog.closeButton = close;
+    dialog.append(close, component);
+    dialog.addEventListener("cancel", event => {
+      event.preventDefault();
+      void dismissOnboarding();
+    });
+    document.body.append(dialog);
+    styleDialog(dialog);
+    onboardingDialog = dialog;
+    onboardingWorkspace = state.workspaceId;
+  } else onboardingDialog.component.update(state);
+  if (!onboardingDialog.open) onboardingDialog.showModal();
+  onboardingDialog.closeButton.disabled = onboardingClosing;
+}
 function renderSetup() {
-  if(shareMode||state.demo)return renderLegacySetup();
-  if(state.onboarding?.active)return renderOnboarding(state,{...dataActions(),connect:kind=>openEngineSource(kind,dataActions())});
-  return renderEngineWorkspace(state,{...dataActions(),advanced:()=>{
-    const d=engineDialog("企业资料与已有连接",true),legacy=renderLegacySetup();d.body.append(legacy);
-    d.addEventListener("close",()=>legacy.dispose?.());
+  if (shareMode || state.demo) return renderLegacySetup();
+  const workspace = renderEngineWorkspace(state, {...dataActions(),
+    initialize: !state.onboarding?.completedAt || state.onboarding?.active ? () => startOnboarding() : null,
+    advanced: () => {
+    const dialog = engineDialog("企业资料与已有连接", true);
+    dialog.body.append(renderLegacySetup());
+    dialog.addEventListener("close", () => dialog.body.firstElementChild?.dispose?.());
   }});
+  return workspace;
 }
 function renderLegacySetup() {
-  if (state.onboarding?.active && !shareMode && !state.demo) return renderOnboarding(state, {
-    api, apply: applySnapshot, upload: () => $("#file-input").click(),
-  });
   const changeTab = async (tab) => {
     ui.enterpriseTab = tab;
     renderCanvas(true);
@@ -707,7 +784,8 @@ function renderLegacySetup() {
     foundation: !shareMode && !state.demo ? foundationPanel : null,
   });
   if (!shareMode && !state.demo) {
-    section.prepend(button("完善初始化 →", "ob-reopen", () => mutate("/api/onboarding/start", {expectedVersion:state.onboarding?.version ?? 0})));
+    const initialize = button("完善初始化 →", "ob-reopen", () => startOnboarding(initialize));
+    section.prepend(initialize);
     sources.append(
       renderLiveWorkspace("sources", state.live, {
         api,
@@ -3170,7 +3248,7 @@ function renderDialogue() {
 function renderAgentTask() {
   let host=$("#agent-task-status");
   if(!host){host=node("aside","agent-task-status");host.id="agent-task-status";host.setAttribute("aria-label","ADE 助手任务");$(".canvas-app").append(host);}
-  const task=state.agentTask;host.hidden=!task||!!state.onboarding?.active||!!state.demo;
+  const task=state.agentTask;host.hidden=!task||!!onboardingDialog?.open||!!state.demo;
   if(host.hidden)return;
   const key=JSON.stringify(task);if(host.dataset.key===key)return;host.dataset.key=key;host.replaceChildren();
   const labels={queued:"等待执行",waiting:"等待输入",paused:"已暂停",running:"处理中",completed:"已完成",failed:"失败",stopped:"已停止",cancelled:"已取消",interrupted:"已中断"};

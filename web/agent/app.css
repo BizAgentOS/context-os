@@ -4074,21 +4074,24 @@ dialog.ds-dialog > h2 { flex-shrink: 0; }
 .enterprise-dashboard .ed-upload-delete { flex-shrink: 0; padding: 8px 4px; color: #ba9990; font-size: 11px; }
 .enterprise-dashboard .ed-upload-delete:hover { color: #ffcec1; }
 
-/* First-run enterprise setup. Existing dashboard remains the destination. */
-.canvas-app.is-onboarding { --topbar-height: 0px; --interaction-height: 0px; grid-template-rows: minmax(0, 1fr); }
-.canvas-app.is-onboarding > .topbar, .canvas-app.is-onboarding .interaction { display: none; }
-.canvas-app.is-onboarding .canvas { padding: 48px 28px; display: flex; overflow-y: auto; }
-.canvas-app.is-onboarding .canvas::after { display: none; }
-.onboarding { flex: none; width: min(100%, 780px); margin: auto; color: #202422; font-size: 14px; line-height: 1.65; }
-.ob-progress { display:flex;gap:4px;margin:20px 0 42px;border-bottom:1px solid #d7dcd8; }
-.ob-progress button { flex:1;padding:12px 4px 15px;color:#7a827e;background:transparent;border:0;border-bottom:2px solid transparent;border-radius:0;font-size:12px;white-space:nowrap; }
-.ob-progress button[aria-current] { border-color:#252c28;color:#1c241f;font-weight:600; }
-.ob-progress button:disabled { opacity:.65; }
-.ob-heading { margin-bottom:28px; }
-.ob-heading h1 { font-size:36px;font-weight:550;letter-spacing:-1.3px;line-height:1.25;margin:0 0 12px; }
+/* First-run setup is a sequence inside its own dialog. */
+dialog.onboarding-dialog { --dialog-gutter:24px; --dialog-radius:24px; max-width:calc(100vw - 2 * var(--dialog-gutter)); max-height:min(90dvh,calc(100dvh - 2 * var(--dialog-gutter))); margin:auto; border-radius:var(--dialog-radius); box-shadow:0 28px 90px #0005; width: min(640px, calc(100vw - 2 * var(--dialog-gutter))); padding: 0; color-scheme: light; background: #fff; }
+dialog.onboarding-dialog::backdrop { background:rgb(3 13 15 / 56%); backdrop-filter:blur(6px); }
+dialog.onboarding-dialog .unified-dialog-close { z-index:2; }
+dialog.onboarding-dialog:has(.ob-concepts) { width: min(760px, calc(100vw - 2 * var(--dialog-gutter))); }
+dialog.onboarding-dialog[open] { display: flex; flex-direction: column; overflow: hidden; }
+.onboarding { display: flex; flex-direction: column; width: 100%; min-height: 0; max-height: inherit; margin: 0; padding: 30px; color: #202422; font-size: 14px; line-height: 1.65; }
+.ob-progress { display:flex;align-items:center;gap:16px;margin:0 44px 24px 0;flex-shrink:0; }
+.ob-progress-label { color:#69746d;font-size:12px;font-weight:500;font-variant-numeric:tabular-nums; }
+.ob-progress-dots { display:flex;align-items:center;gap:6px; }
+.ob-progress-dot { width:6px;height:6px;border-radius:50%;background:#dfe6e1; }
+.ob-progress-dot[data-state="complete"] { background:#789787; }
+.ob-progress-dot[data-state="current"] { width:20px;border-radius:6px;background:#335b47; }
+.ob-heading { margin-bottom:24px;flex-shrink:0; }
+.ob-heading h1 { font-size:28px;font-weight:550;letter-spacing:-.6px;line-height:1.3;margin:0 0 10px; }
 .ob-heading h1:focus { outline:none; }
-.ob-heading p { font-size:15px;color:#68716b;margin:0; }
-.ob-body { background:rgba(255,255,255,.92);border:1px solid #e0e4df;border-radius:18px;padding:30px;box-shadow:0 12px 40px #21352805; }
+.ob-heading p { font-size:13px;color:#68716b;margin:0;line-height:1.8; }
+.ob-body { flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:3px 5px 5px 3px;margin:-3px -5px -5px -3px;scrollbar-width:thin; }
 .ob-form { display:grid;gap:18px; }
 .ob-field { display:flex;flex-direction:column;gap:7px;font-size:12px;color:#5e6762;min-width:0; }
 .ob-field input,.ob-field select,.ob-field textarea { width:100%;border:1px solid #d9dedb;background:#fff;border-radius:8px;padding:11px 12px;color:#252c28;font:inherit;font-size:14px;box-sizing:border-box;min-width:0; }
@@ -4102,11 +4105,11 @@ dialog.ds-dialog > h2 { flex-shrink: 0; }
 .ob-outline { border:1px solid #d6dcd7;background:#fff;padding:9px 15px;border-radius:8px;font-size:12px;white-space:nowrap; }
 .ob-outline:hover { background:#f1f4f1; }
 .ob-delete { color:#886453;font-size:12px;padding:8px 0; }
-.ob-footer { display:flex;justify-content:space-between;align-items:center;gap:16px;padding:23px 0; }
+.ob-footer { display:flex;justify-content:space-between;align-items:center;gap:16px;padding:20px 0 0;margin-top:24px;border-top:1px solid #e6ebe7;flex-shrink:0; }
 .ob-footer-actions { display:flex;align-items:center;gap:20px; }
 .ob-back { color:#69716c;font-size:13px; }
 .ob-next { min-width:160px;border-radius:8px;padding:12px 20px;background:#202924;color:#fff;white-space:nowrap; }
-.ob-status { padding:12px 15px;margin:0 0 18px;background:#eef3ee;border:1px solid #cfd9d1;border-radius:9px;overflow-wrap:anywhere; }
+.ob-status { padding:12px 15px;margin:0 0 18px;background:#eef3ee;border:1px solid #cfd9d1;border-radius:9px;overflow-wrap:anywhere;max-height:18dvh;overflow-y:auto;flex-shrink:0; }
 .ob-pack-summary { margin:22px 0;color:#606a63;font-size:14px; }
 .ob-section-heading { display:flex;justify-content:space-between;align-items:center;gap:16px;margin:20px 0 10px; }
 .ob-section-heading h2,.ob-connector h2 { font-size:15px;font-weight:550;margin:0; }
@@ -4137,17 +4140,29 @@ dialog.ds-dialog > h2 { flex-shrink: 0; }
 .ob-research summary {font-size:12px;color:#5d7165;cursor:pointer;}
 .ob-research-text {white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow-y:auto;font-size:13px;margin-top:12px;}
 .ob-reopen {font-size:12px;color:#5e7466;align-self:flex-end;padding:0 0 12px;}
+.onboarding .engine-source-choices { grid-template-columns:1fr;gap:10px; }
+.onboarding .engine-source-choices .engine-choice { padding:15px 17px;gap:4px;font-size:14px; }
+.onboarding :is(button,input,select,textarea,summary,a):focus-visible { outline:2px solid #527b64;outline-offset:3px; }
 @media (max-width:700px) {
-  .canvas-app.is-onboarding .canvas {padding:28px 16px;}
-  .ob-progress {gap:0;margin-bottom:28px;overflow-x:auto;}
-  .ob-progress button {font-size:10px;min-width:70px;}
-  .ob-heading h1 {font-size:29px;}
-  .ob-body {padding:20px;border-radius:13px;}
+  dialog.onboarding-dialog {--dialog-radius:20px;--dialog-gutter:12px;}
+  .onboarding {padding:24px 20px;}
+  .ob-progress {margin-bottom:20px;}
+  .ob-heading {margin-bottom:20px;}
+  .ob-heading h1 {font-size:25px;}
   .ob-fields-row,.ob-custom,.ob-concepts {grid-template-columns:1fr;}
   .ob-connector {align-items:flex-start;gap:12px;flex-direction:column;}
-  .ob-footer {align-items:flex-start;}
-  .ob-footer-actions {gap:12px;flex-direction:column-reverse;align-items:flex-end;}
+  .ob-footer {align-items:center;flex-wrap:wrap;gap:12px;margin-top:20px;padding-top:18px;}
+  .ob-footer > .ob-muted {flex-basis:100%;}
+  .ob-footer-actions {gap:12px;margin-left:auto;flex-wrap:wrap;justify-content:flex-end;}
   .ob-next {min-width:140px;padding:11px 14px;}
   .ob-section-heading {align-items:flex-start;flex-direction:column;gap:4px;}
   .ob-result-grid {grid-template-columns:repeat(2,1fr);}
+}
+@media (max-height:480px) {
+  dialog.onboarding-dialog[open] {overflow:auto;}
+  .onboarding {max-height:none;flex-shrink:0;padding-block:22px;}
+  .ob-body {overflow:visible;flex:none;}
+}
+@media (prefers-reduced-motion:reduce) {
+  .onboarding-dialog, .onboarding-dialog *, .onboarding-dialog::backdrop {animation:none!important;transition:none!important;scroll-behavior:auto!important;}
 }

@@ -79,6 +79,7 @@ export function renderEngineWorkspace(state, actions) {
   }
   function render() {
     root.replaceChildren();
+    if (actions.initialize) root.append(action("继续初始化", actions.initialize, "ob-reopen"));
     const head=el("header",null,"engine-page-head"),copy=el("div");copy.append(el("p","DATA SOURCES","engine-eyebrow"),el("h1","数据"),el("p","接入来源，检查可用内容，为本体准备可信的数据。","engine-lead"));
     const controls=el("div",null,"engine-actions");controls.append(action("＋ 接入来源",()=>sourceChooser(sourceActions),"engine-primary"),action("同步数据",()=>void sync()),action("前往本体 →",actions.ontology));head.append(copy,controls);root.append(head);
     const sources=[...(state.live?.connections||[]).filter(s=>!s.content.localSource).map(s=>({s,file:false})),...(state.sources||[]).map(s=>({s,file:true}))];

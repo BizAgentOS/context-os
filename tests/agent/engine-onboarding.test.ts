@@ -25,6 +25,11 @@ test('model-first engine initialization persists a source choice without creatin
   await service.close();service=await createServer({directory,driver,automaticApi:false});origin=await listen();
   state=(await request('/api/onboarding')).body;assert.equal(state.active,false);assert.equal(state.sourceKind,'later');
   r=await request('/api/onboarding/start',{expectedVersion:state.version,flow:'engine'});state=r.body.onboarding;
+  assert.equal(state.completedAt,undefined,'reopening starts a fresh initialization session');
+  r=await request('/api/onboarding/step',{expectedVersion:state.version,step:2});state=r.body.onboarding;
+  r=await request('/api/onboarding/suspend',{expectedVersion:state.version});state=r.body.onboarding;
+  r=await request('/api/onboarding/start',{expectedVersion:state.version,flow:'engine'});state=r.body.onboarding;
+  assert.equal(state.step,2,'closing and resuming a reopened initialization preserves its step');
   assert.equal((await request('/api/onboarding/complete',{expectedVersion:state.version,sourceKind:'invented'})).status,400);
  }finally{await service.close();rmSync(directory,{recursive:true,force:true});}
 });

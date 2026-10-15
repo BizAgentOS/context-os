@@ -3,7 +3,7 @@ import { openConnections } from "./connections.js";
 import { openApiImport } from "./openapi-import.js";
 
 const engineTitles = ["连接模型", "选择数据来源"];
-const engineDescriptions = ["配置模型 API，让 ADE 助手协助数据接入、本体修复和发布检查。", "先选择接入方式，进入数据页配置与检查。也可以稍后接入来源。"];
+const engineDescriptions = ["先连接模型，让 ADE 助手帮助你整理数据、建立本体。", "选择一种接入方式，下一步打开对应配置。也可以稍后再添加。"];
 const titles = ["连接模型", "认识你的企业", "选择行业本体", "连接资料与系统", "准备开始"];
 const descriptions = [
   "连接一个模型，让助手帮你理解企业、整理资料与建立本体。",
@@ -28,7 +28,7 @@ function selectField(parent, title, values, value) {
   select.value=value; return select;
 }
 export function renderOnboarding(initial, actions) {
-  let state=initial, working=false, rendered="", renderedStep=null, packSelection=null, researchId=null;
+  let state=initial, working=false, rendered="", packSelection=null, researchId=null, refreshStep=()=>{};
   const root=el("section",null,"onboarding"); root.setAttribute("aria-label","ADE 初始化");
   const draftKey=initial.workspaceId;
   let draft=drafts.get(draftKey);
@@ -68,29 +68,40 @@ export function renderOnboarding(initial, actions) {
   }
   function model(body) {
     const form=el("form",null,"ob-form");
+    const values=draft.model||state.model;
+    let dirty=!!draft.model;
     const providers=[...document.querySelectorAll("#provider-input option")].map(option=>[option.value,option.textContent]);
-    const provider=selectField(form,"模型服务",providers,state.model.provider||"deepseek");
-    const name=inputField(form,"模型 ID",state.model.model||"");name.required=true;name.maxLength=120;
+    const provider=selectField(form,"模型服务",providers,values.provider||"deepseek");
+    const name=inputField(form,"模型 ID",values.model||"");name.required=true;name.maxLength=120;
     const custom=el("div",null,"ob-custom");form.append(custom);
-    const protocol=selectField(custom,"接口协议",[["openai","OpenAI 兼容"],["anthropic","Anthropic 兼容"]],state.model.protocol||"openai");
-    const url=inputField(custom,"API Base URL",state.model.baseUrl||"","url");
+    const protocol=selectField(custom,"接口协议",[["openai","OpenAI 兼容"],["anthropic","Anthropic 兼容"]],values.protocol||"openai");
+    const url=inputField(custom,"API Base URL",values.baseUrl||"","url");
     const key=inputField(form,"API Key","","password");key.placeholder=state.model.configured?"已配置，留空继续使用":"填写该服务的 API Key";
     key.maxLength=16000;
     form.append(el("p","密钥保存在本机服务端，除非主动删除，不会因刷新或重启而清除。","ob-muted"));
     const customChanged=()=>{custom.hidden=provider.value!=="custom";url.required=!custom.hidden;};customChanged();
     provider.onchange=()=>{customChanged();key.value="";key.placeholder="填写该服务的密钥";name.value=provider.value===state.model.provider?state.model.model:"";};
     for(const control of [protocol,url])control.addEventListener("input",()=>{key.value="";key.placeholder="填写该接口的密钥";});
-    const configured=el("div",state.model.configured?`${state.model.keySaved?"已保存":"已配置"} · ${state.model.model}`:"尚未连接模型","ob-model-state");body.append(configured,form);
+    const remember=()=>{dirty=true;draft.model={provider:provider.value,model:name.value,protocol:protocol.value,baseUrl:url.value};keep();};
+    form.addEventListener("input",event=>{dirty=true;if(event.target!==key)remember();});form.addEventListener("change",remember);
+    const configured=el("div",null,"ob-model-state");body.append(configured,form);
     const submit=async(test)=>{
       if(!form.reportValidity())return false;
       const request={provider:provider.value,model:name.value.trim(),apiKey:key.value,testConnection:test,
         ...(provider.value==="custom"?{baseUrl:url.value.trim(),protocol:protocol.value}:{})};
-      try { const result=await actions.api("/api/settings",request);key.value="";await fresh();show(test?`连接检查成功 · ${result.connection?.message||"模型已响应"}`:"模型设置已保存。");return true; }
+      try { const result=await actions.api("/api/settings",request);key.value="";dirty=false;delete draft.model;keep();await fresh();show(test?`连接检查成功 · ${result.connection?.message||"模型已响应"}`:"模型设置已保存。");return true; }
       catch(error){key.value="";await fresh();throw error;}
     };
     const controls=el("div",null,"ob-inline-actions");
     controls.append(action("保存并测试连接",()=>run(()=>submit(true)),"ob-outline"),action("保存设置",()=>run(()=>submit(false)),"quiet-button"));
-    if(state.model.configured)controls.append(action("删除当前密钥",()=>run(async()=>{await actions.api("/api/settings/key/delete",{});key.value="";await fresh();show("当前模型密钥已删除。");}),"ob-delete"));
+    const remove=action("删除当前密钥",()=>run(async()=>{await actions.api("/api/settings/key/delete",{});key.value="";await fresh();show("当前模型密钥已删除。");}),"ob-delete");controls.append(remove);
+    refreshStep=()=>{
+      if(!dirty){provider.value=state.model.provider||"deepseek";name.value=state.model.model||"";protocol.value=state.model.protocol||"openai";url.value=state.model.baseUrl||"";customChanged();}
+      configured.textContent=state.model.configured?`${state.model.keySaved?"已保存":"已配置"} · ${state.model.model}`:"尚未连接模型";
+      remove.hidden=!state.model.configured;
+      const sameConnection=provider.value===state.model.provider&&(provider.value!=="custom"||(url.value.trim()===state.model.baseUrl&&protocol.value===state.model.protocol));
+      key.placeholder=state.model.configured&&sameConnection?"已配置，留空继续使用":"填写该服务的 API Key";
+    };
     form.append(controls);form.onsubmit=event=>{event.preventDefault();void run(()=>submit(true));};
     footer(null,"继续 →",async()=>{
       const changed=provider.value!==state.model.provider||name.value.trim()!==state.model.model||key.value.trim()||
@@ -113,9 +124,9 @@ export function renderOnboarding(initial, actions) {
   }
   function company(body) {
     const form=el("form",null,"ob-form");body.append(form);
-    const profileVersion=state.onboarding.currentProfileVersion;
+    let profileVersion=state.onboarding.currentProfileVersion;
     if(draft.profileVersion!==profileVersion){
-      if(draft.company && Object.keys(state.onboarding.company).some(key=>(draft.company[key]||"")!==(state.onboarding.company[key]||"")))draft.previousCompany=draft.company;
+      if(!draft.previousCompany && draft.company && Object.keys(state.onboarding.company).some(key=>(draft.company[key]||"")!==(state.onboarding.company[key]||"")))draft.previousCompany={...draft.company};
       draft.company={...state.onboarding.company};draft.profileVersion=profileVersion;keep();
     }
     const value={...state.onboarding.company,...draft.company};
@@ -136,7 +147,7 @@ export function renderOnboarding(initial, actions) {
         delete draft.previousCompany;draft.company=values();keep();prior.remove();
       },"quiet-button"));form.append(prior);
     }
-    const commit=async(stay=false)=>{if(!form.reportValidity())return false;draft.company=values();keep();await save("company",{...values(),stay,profileVersion});return true;};
+    const commit=async(stay=false)=>{if(!form.reportValidity())return false;draft.company=values();keep();await save("company",{...values(),stay,profileVersion});profileVersion=state.onboarding.currentProfileVersion;draft.profileVersion=profileVersion;keep();return true;};
     const research=action("搜索企业与行业公开信息 ↗",()=>run(async()=>{
       if(!await commit(true))return;
       researchId ||= crypto.randomUUID();
@@ -217,6 +228,7 @@ export function renderOnboarding(initial, actions) {
     footer(4,"进入企业与数据 →",async()=>{await save("complete");drafts.delete(draftKey);try{localStorage.removeItem(`de-onboarding:${draftKey}`);}catch{}});
   }
   function live() {
+    refreshStep();
     const result=root.querySelector(".ob-result"), counts=root.querySelector(".ob-live-counts");
     const sourceCount=state.sources.filter(s=>s.status==="ready").length;
     const liveCount=state.live?.connections?.length||0;
@@ -256,25 +268,27 @@ export function renderOnboarding(initial, actions) {
   function render() {
     const setup=state.onboarding;
     const engine=setup.flow==="engine", activeTitles=engine?engineTitles:titles, activeDescriptions=engine?engineDescriptions:descriptions;
-    const key=`${setup.flow}:${setup.version}:${setup.currentProfileVersion}:${setup.step}:${JSON.stringify(state.model)}`;
+    // Ordinary polling preserves edits. A changed enterprise profile must be reconciled
+    // against its new version; company() keeps the prior draft available for review.
+    const profileRevision=!engine&&setup.step===2?setup.currentProfileVersion:"";
+    const key=`${setup.flow}:${setup.step}:${profileRevision}`;
     if(rendered!==key){
-      const previous=rendered, stepChanged=renderedStep!==setup.step;rendered=key;renderedStep=setup.step;
+      const previous=rendered;rendered=key;refreshStep=()=>{};
       root.replaceChildren();
-      const nav=el("nav",null,"ob-progress");nav.setAttribute("aria-label","初始化步骤");
-      activeTitles.forEach((title,i)=>{
-        const button=action(`${i+1}  ${title}`,()=>step(i+1));
-        if(i+1===setup.step)button.setAttribute("aria-current","step");
-        if(i+1>setup.step)button.dataset.unavailable="true";
-        nav.append(button);
-      });root.append(nav);
+      const progress=el("div",null,"ob-progress");
+      progress.append(el("span",`第 ${setup.step} / ${activeTitles.length} 步`,"ob-progress-label"));
+      const dots=el("span",null,"ob-progress-dots");dots.setAttribute("aria-hidden","true");
+      activeTitles.forEach((_,i)=>{const dot=el("span",null,"ob-progress-dot");dot.dataset.state=i+1<setup.step?"complete":i+1===setup.step?"current":"upcoming";dots.append(dot);});
+      progress.append(dots);root.append(progress);
       const heading=el("header",null,"ob-heading");const h1=el("h1",activeTitles[setup.step-1]);h1.tabIndex=-1;
       heading.append(h1,el("p",activeDescriptions[setup.step-1]));root.append(heading,status);
       const body=el("div",null,"ob-body");root.append(body);
       (engine?[model,engineSources]:[model,company,packages,connections,summary])[setup.step-1](body);
-      if(previous)queueMicrotask(()=>{if(root.isConnected){h1.focus({preventScroll:true});if(stepChanged)root.closest(".canvas")?.scrollTo({top:0});}});
+      if(previous)queueMicrotask(()=>{if(root.isConnected){h1.focus({preventScroll:true});root.closest(".onboarding-dialog")?.scrollTo({top:0});}});
     }
     live();lock();
   }
   root.showError=show;
+  root.isWorking=()=>working;
   root.update=snapshot=>{state=snapshot;render();};render();return root;
 }

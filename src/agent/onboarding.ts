@@ -55,7 +55,7 @@ export class Onboarding {
     const state = this.expected(body);
     if (body.flow !== undefined && body.flow !== "engine" && body.flow !== "legacy") throw new Error("无效的初始化流程");
     const flow = body.flow === "legacy" ? "legacy" : "engine";
-    this.save({ ...state, flow, company: this.currentCompany(), active: true, step: flow !== state.flow || state.completedAt ? 1 : state.step });
+    this.save({ ...state, flow, company: this.currentCompany(), active: true, completedAt: undefined, step: flow !== state.flow || state.completedAt ? 1 : state.step });
   }
   suspend(body: Record<string, unknown>) { const state = this.expected(body); this.save({ ...state, active: false }); }
   step(body: Record<string, unknown>, configured: boolean) {
