@@ -1,6 +1,6 @@
 # 开发导航：三页数据融合产品
 
-当前开发版本为 0.2.0-dev，目标 v0.2.0，未发布。新一轮全产品 Feature 与任务见 [v0.2.0 设计](features/v0.2.0.md)。以下保留 v0.1.0 历史实施导航。产品核心、三页方案和范围见[三页产品计划](THREE_PAGE_PLAN.md)；当前运行已为三页；T012-01 完成记录见[迁移验收](experiment/THREE_PAGE_MIGRATION.md)。
+当前版本 v0.2.0，2026-10-15 本地发布。新一轮全产品 Feature 与任务见 [v0.2.0 设计](features/v0.2.0.md)。以下保留 v0.1.0 历史实施导航。产品核心、三页方案和范围见[三页产品计划](THREE_PAGE_PLAN.md)；当前运行已为三页；T012-01 完成记录见[迁移验收](experiment/THREE_PAGE_MIGRATION.md)。
 
 ## 本轮交付
 

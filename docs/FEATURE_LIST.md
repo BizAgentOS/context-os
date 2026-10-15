@@ -14,9 +14,9 @@ Last Updated: 2026-10-15
 
 ## Version Info
 
-- **Current Release:** 无，尚未发布产品版本。
-- **Planned Version:** v0.2.0；开发版本 `0.2.0-dev`。v0.1.0 保留历史功能与验收记录。
-- **版本状态:** v0.2.0 增补 031—035 开发中，尚未正式发布；旧 v0.1.0 的未完成历史继续保留。
+- **Current Release:** v0.2.0（2026-10-15，本地 Tag `v0.2.0`）。
+- **Planned Version:** 下一版本待定。v0.1.0 保留历史功能与验收记录。
+- **版本状态:** v0.2.0 的 11 项全部完成并发布；v0.1.0 未单独发布，002、004、005、006、019 仍未完成，继续保留。
 - **状态规则:** `Planned → InProgress → Completed`；`Released` 仅填写实际发布版本。
 - **设计:** [v0.2.0 设计与开发步骤](features/v0.2.0.md)；[v0.1.0 历史](features/v0.1.0.md)。
 - **范围:** [产品目标](PRODUCT.md)与 [MVP 目标](MVP.md)。
@@ -26,7 +26,7 @@ Last Updated: 2026-10-15
 | Version | Status | Planned | InProgress | Completed | Progress |
 |---|---|---:|---:|---:|---:|
 | v0.1.0 | InProgress | 2 | 3 | 19 | 19/24 |
-| v0.2.0 | InProgress | 0 | 0 | 11 | 11/11 |
+| v0.2.0 | Released | 0 | 0 | 11 | 11/11 |
 
 ## Feature Index
 
@@ -361,7 +361,7 @@ Last Updated: 2026-10-15
 
 - **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.2.0 / —
+- **Planned / Released:** v0.2.0 / v0.2.0
 - **Created / Started / Completed:** 2026-10-14 / 2026-10-14 / 2026-10-14
 - **Description:** 先配置模型，再选择 MCP/API/文件并进入数据页。无需企业问卷或预置数据；现有来源、样本、更新与错误成为第一页主体。
 - **Blocked by:** 复用 017、020、021、024
@@ -371,7 +371,7 @@ Last Updated: 2026-10-15
 
 - **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.2.0 / —
+- **Planned / Released:** v0.2.0 / v0.2.0
 - **Created / Started / Completed:** 2026-10-14 / 2026-10-14 / 2026-10-14
 - **Description:** 移植 Helix 确定性发现与构建，将授权结构化来源形成可维护本体候选；程序处理确定部分，AI 辅助未决语义。
 - **Blocked by:** 复用 010、013、014
@@ -381,7 +381,7 @@ Last Updated: 2026-10-15
 
 - **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.2.0 / —
+- **Planned / Released:** v0.2.0 / v0.2.0
 - **Created / Started / Completed:** 2026-10-14 / 2026-10-14 / 2026-10-14
 - **Description:** 保留现有三维本体与共享助手，明确本体定义/实际对象入口、问题定位、差异和任务状态。
 - **Blocked by:** 复用 015、022；联调依赖 026
@@ -391,7 +391,7 @@ Last Updated: 2026-10-15
 
 - **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.2.0 / —
+- **Planned / Released:** v0.2.0 / v0.2.0
 - **Created / Started / Completed:** 2026-10-14 / 2026-10-14 / 2026-10-14
 - **Description:** 第三页管理工作版差异、检查、发布版本与接入方；工作修改不影响既有外部消费者。
 - **Blocked by:** 复用 016、023；整链依赖 026、027
@@ -401,7 +401,7 @@ Last Updated: 2026-10-15
 
 - **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.2.0 / —
+- **Planned / Released:** v0.2.0 / v0.2.0
 - **Created / Started / Completed:** 2026-10-14 / 2026-10-14 / 2026-10-14
 - **Description:** 第三方除了直接查询，还能委托 ADE Agent 调查、解释获准数据，获取进度、结果与依据。
 - **Blocked by:** 028
@@ -411,7 +411,7 @@ Last Updated: 2026-10-15
 
 - **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.2.0 / —
+- **Planned / Released:** v0.2.0 / v0.2.0
 - **Created / Started / Completed:** 2026-10-14 / 2026-10-14 / 2026-10-14
 - **Description:** 完成空状态、隔离端到端、浏览器、双轴评审和开发文档，为下一轮真实场景验证准备产品。
 - **Blocked by:** 025—029
@@ -421,7 +421,7 @@ Last Updated: 2026-10-15
 
 - **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.2.0 / —
+- **Planned / Released:** v0.2.0 / v0.2.0
 - **Created / Started / Completed:** 2026-10-15 / 2026-10-15 / 2026-10-15
 - **Description:** 结构化来源同步为不可变 Parquet 快照，带完整画像、指纹、结构漂移待确认与质量问题；隔离子进程执行只读查询。
 - **Blocked by:** 复用 010、026
@@ -431,7 +431,7 @@ Last Updated: 2026-10-15
 
 - **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.2.0 / —
+- **Planned / Released:** v0.2.0 / v0.2.0
 - **Created / Started / Completed:** 2026-10-15 / 2026-10-15 / 2026-10-15
 - **Description:** 移植 Helix 完整发现（键、关系、跨源身份、合并分组、两跳去冗余）与映射编译，在全量快照上形成可维护候选。
 - **Blocked by:** 031
@@ -441,7 +441,7 @@ Last Updated: 2026-10-15
 
 - **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.2.0 / —
+- **Planned / Released:** v0.2.0 / v0.2.0
 - **Created / Started / Completed:** 2026-10-15 / 2026-10-15 / 2026-10-15
 - **Description:** 真实执行映射与检查，报告唯一性、匹配率和影响；KodaX 获得数据概览、同步、发现解释与只读快照查询工具。
 - **Blocked by:** 032
@@ -451,7 +451,7 @@ Last Updated: 2026-10-15
 
 - **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.2.0 / —
+- **Planned / Released:** v0.2.0 / v0.2.0
 - **Created / Started / Completed:** 2026-10-15 / 2026-10-15 / 2026-10-15
 - **Description:** 发布固定本体、映射与快照版本，展示数据差异；旧发布消费者持续读取锁定快照。
 - **Blocked by:** 031、033
@@ -461,7 +461,7 @@ Last Updated: 2026-10-15
 
 - **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.2.0 / —
+- **Planned / Released:** v0.2.0 / v0.2.0
 - **Created / Started / Completed:** 2026-10-15 / 2026-10-15 / 2026-10-15
 - **Description:** 数据、本体、发布三页展示快照、发现依据、验证与数据差异，完成整链和浏览器验收。
 - **Blocked by:** 031—034

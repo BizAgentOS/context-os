@@ -29,7 +29,7 @@
 
 使用项目内 `.agents/skills/` 的开发技能，来源固定在 [.agents/CODINGSKILLS.md](.agents/CODINGSKILLS.md)。产品运行身份位于 `config/agent/`，运行 Skill 位于 `config/skills/`；它们与本文件、开发技能和 `docs/` 规格是不同角色，不能把设计文档自动装入模型。
 
-按 [DEVELOPMENT](docs/DEVELOPMENT.md) 管理 Feature：功能状态只在台账，票勾选和依赖只在设计块。开工、完成和验证均记录实际发生内容；`PLAN.md` 只作导航。当前计划版本 v0.2.0（运行开发版本 0.2.0-dev），未发布，不为文档变更伪造版本或 Tag。
+按 [DEVELOPMENT](docs/DEVELOPMENT.md) 管理 Feature：功能状态只在台账，票勾选和依赖只在设计块。开工、完成和验证均记录实际发生内容；`PLAN.md` 只作导航。当前已发布版本 v0.2.0（2026-10-15，本地 Tag，无远程）；后续开发不为文档变更伪造版本或 Tag。
 
 使用适合改动的验证，优先沿现有公共边界核查来源、领域操作和外部结果，不用只重复实现的测试充数。评测答案、生成器内部信息和未来事件不能进入被测 Agent 的输入。
 

@@ -2,7 +2,7 @@
 
 本体驱动的通用多源数据底座。程序构建结构，KodaX Agent 协助接入、解释与修订，人类与外部 Agent 使用同一语义服务。投研作为后续验证场景。
 
-**当前开发版本：`0.2.0-dev`，未正式发布。** 三个页面是 **数据 · 本体 · 发布与接入**。功能与验收见 [0.2.0 设计](docs/features/v0.2.0.md)、[功能台账](docs/FEATURE_LIST.md)和[整体验收](docs/experiment/ENGINE_WORKBENCH.md)。
+**当前版本：`0.2.0`（2026-10-15 本地发布，Tag `v0.2.0`）。** 三个页面是 **数据 · 本体 · 发布与接入**。功能与验收见 [0.2.0 设计](docs/features/v0.2.0.md)、[功能台账](docs/FEATURE_LIST.md)和[整体验收](docs/experiment/ENGINE_WORKBENCH.md)。
 
 首次配置模型并选择来源，可稍后接入。数据页管理文件/API/MCP及实际存取策略；结构化首轮构建不需要模型。第二页查看本体、真实对象和依据，处理程序候选或让 Agent 修复。第三页检查并发布不可变定义版本，为接入方选择范围、签发配置、显式升级或撤销；可以单独开启受限的 ADE Agent 委托。
 
@@ -30,7 +30,7 @@ HTTP/MCP 按需读取，CSV 使用上传快照。移植的是 Helix 确定性发
 
 **此前三页融合的十八张票已完成，未发布。** T016-04 真实模型、双消费者、浏览器治理与离线兼容见[整链验收](docs/experiment/FUSION_CHAIN.md)。可用 `npm run verify:chain -- --real` 在独立临时工作区复跑（调用已配置模型，会产生费用）。 T016-03 已交付指定消费者迁移、版本校验与原许可保护，见[验收](docs/experiment/CONSUMER_MIGRATIONS.md)。 T016-02 已交付属性/关系/文档/BI证据与HTTP/MCP说明，见[验收](docs/experiment/CONSUMER_EVIDENCE.md)。 T016-01 已完成 v3 许可融合查询，见[验收](docs/experiment/CONSUMER_VIEWS.md)。 T015-04 已完成全局规则修订与样本影响，见[验收](docs/experiment/MAPPING_CHANGES.md)。 T015-03 已完成局部关系候选、检查与人工采用，见[验收](docs/experiment/RELATION_CORRECTIONS.md)。 T015-02 已接入页内在线对象/关系探索与属性取证，见[验收](docs/experiment/LIVE_OBJECTS.md)。 T015-01 已支持基础定义图/列表、同引用说明与映射展开，见[可视化验收](docs/experiment/FOUNDATION_VISUALIZATION.md)。 T014-05 已支持三类证据共同取证、历史查看与范围解释，见[共同取证验收](docs/experiment/EVIDENCE.md)。 T014-04 已接入主/附来源融合、逐属性依据及冲突状态，见[融合验收](docs/experiment/FUSION.md)。 已接通基础概念与真实业务映射，支持检查、预览和采用执行子集，见[绑定验收](docs/experiment/FOUNDATION_BINDINGS.md)。 T014-01/02 已接入统一来源目录、知识片段取证及 HTTP/MCP 指标定义与观测；指标保留单位、维度、期间、粒度和覆盖，见[指标验收](docs/experiment/METRICS.md)。以下保留旧四页与样本能力的实际档案，不作为新任务优先级。
 
-**当前开发版本 0.2.0-dev，目标 v0.2.0，尚未发布。** 新一轮整体功能见 [0.2.0 设计与任务](docs/features/v0.2.0.md)。以下为既有实验能力。 已构建澄川热力的企业设定和第一批固定来源样本：1 个热源接入点、2 座换热站、4 个小区、12 栋楼、两周记录。17 份来源文件包含 738 条 CSV 记录及 8 份业务文档。
+**当前版本 0.2.0，2026-10-15 本地发布。** 新一轮整体功能见 [0.2.0 设计与任务](docs/features/v0.2.0.md)。以下为既有实验能力。 已构建澄川热力的企业设定和第一批固定来源样本：1 个热源接入点、2 座换热站、4 个小区、12 栋楼、两周记录。17 份来源文件包含 738 条 CSV 记录及 8 份业务文档。
 
 FEATURE_001 已完成企业样本、可重复生成与历史回放，以及10题原始资料基线。操作见 [生成说明](docs/experiment/GENERATOR.md)和 [基线说明](docs/experiment/BASELINE.md)，实际表现与限制见 [首跑结果](docs/experiment/BASELINE_RESULT.md)。T002-01 的早期建模方案见 [流程设计草案](docs/experiment/ONTOLOGY_MODELING.md)，当前任务顺序以三页实施计划为准。此前9类对象及738个实例保留为技术试样，其导入与追溯可运行，业务模型尚未定稿；见 [试样说明](docs/experiment/ONTOLOGY_REVIEW.md)。本地实验室前端与建模同步建设，见[工作台使用说明](docs/experiment/LAB.md)。维护 Agent 和方法对照继续按 [功能台账](docs/FEATURE_LIST.md)推进。
 
