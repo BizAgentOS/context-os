@@ -9,6 +9,7 @@ import { discoverLinks, entityName, fingerprint, ownKey, profileColumns, type Bu
 import type { DatasetContent, Snapshots } from "../data/snapshots.ts";
 import { entityColumns, ontologyBundle, type Bundle, type Resource, type SuggestedOntology } from "./helix-discovery.ts";
 import { discoverFromSnapshots } from "./snapshot-discovery.ts";
+import { describeReport, validateDefinition } from "./validation.ts";
 
 const identifier = z.string().trim().min(1).max(200);
 const buildInput = z.object({ operationId: identifier, sourceIds: z.array(identifier).max(100).optional(), expectedFoundationVersion: z.number().int().nonnegative().optional(), autoAdopt: z.boolean().default(false) }).strict();
@@ -466,6 +467,8 @@ export class ProgramBuilds {
     const input = referenceInput.parse(args), candidate = this.memory.getArtifact(input.id);
     if (candidate.kind !== "engine_candidate" || candidate.version !== input.version || !["candidate", "checked"].includes(candidate.status)) throw new Error("构建候选版本已变化，请重新读取");
     this.assertInputs(candidate.content as unknown as CandidateContent);
+    for (const [datasetId, snapshotId] of Object.entries((candidate.content as unknown as CandidateContent).snapshotInputs ?? {}))
+      if (this.snapshots?.dataset(datasetId).content.activeVersion !== snapshotId) throw new Error("数据快照已更新，请重新构建后再检查");
     return candidate;
   }
 
@@ -494,18 +497,25 @@ export class ProgramBuilds {
 
   async check(args: unknown, assertActive: () => void = () => {}): Promise<Artifact> {
     assertActive();
-    const candidate = this.candidate(args);
+    const candidate = this.candidate(args), content = candidate.content as unknown as CandidateContent;
+    let snapshot: Awaited<ReturnType<typeof validateDefinition>> | undefined;
     try {
+      // Full-data checks first; the live sample check then confirms the mapping is executable against current sources.
+      if (this.snapshots && content.snapshotInputs) {
+        snapshot = await validateDefinition(this.snapshots, this.live, { types: content.types, relations: content.modelRelations }, ((content.bundle as Data | undefined)?.pipelines ?? []) as never);
+        assertActive();
+        if (!snapshot.valid) throw new Error(describeReport(snapshot));
+      }
       const prepared = await this.prepare(candidate, assertActive);
       assertActive();
       this.candidate({ id: candidate.id, version: candidate.version });
       return this.memory.putArtifact({ ...candidate, expectedVersion: candidate.version, status: "checked", content: { ...candidate.content,
-        checks: jsonData({ valid: true, checkedAt: now(), description: "当前来源、身份、映射与样本检查通过；业务含义仍需核对。", samples: prepared.definition.checks }) } });
+        checks: jsonData({ valid: true, checkedAt: now(), description: snapshot ? describeReport(snapshot) : "当前来源、身份、映射与样本检查通过；业务含义仍需核对。", samples: prepared.definition.checks, ...(snapshot ? { snapshot } : {}) }) } });
     } catch (error) {
       assertActive();
       this.candidate({ id: candidate.id, version: candidate.version });
       return this.memory.putArtifact({ ...candidate, expectedVersion: candidate.version, status: "candidate", content: { ...candidate.content,
-        checks: { valid: false, checkedAt: now(), description: (error as Error).message } } });
+        checks: jsonData({ valid: false, checkedAt: now(), description: (error as Error).message, ...(snapshot ? { snapshot } : {}) }) } });
     }
   }
 

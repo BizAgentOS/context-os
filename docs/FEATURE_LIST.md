@@ -26,7 +26,7 @@ Last Updated: 2026-10-15
 | Version | Status | Planned | InProgress | Completed | Progress |
 |---|---|---:|---:|---:|---:|
 | v0.1.0 | InProgress | 2 | 3 | 19 | 19/24 |
-| v0.2.0 | InProgress | 3 | 0 | 8 | 8/11 |
+| v0.2.0 | InProgress | 2 | 0 | 9 | 9/11 |
 
 ## Feature Index
 
@@ -68,7 +68,7 @@ Last Updated: 2026-10-15
 | 030 | 0.2.0 整链验收与开发交付 | Enhancement | High | Completed | v0.2.0 | 025—029 | [设计](features/v0.2.0.md#feature-030) |
 | 031 | 数据快照与执行服务 | Enhancement | High | Completed | v0.2.0 | 复用 010、026 | [设计](features/v0.2.0.md#feature-031) |
 | 032 | 完整本体发现与映射编译 | Enhancement | High | Completed | v0.2.0 | 031 | [设计](features/v0.2.0.md#feature-032) |
-| 033 | 执行验证与 Agent 辅助构建 | Enhancement | High | Planned | v0.2.0 | 032 | [设计](features/v0.2.0.md#feature-033) |
+| 033 | 执行验证与 Agent 辅助构建 | Enhancement | High | Completed | v0.2.0 | 032 | [设计](features/v0.2.0.md#feature-033) |
 | 034 | 发布锁定数据与快照消费 | Enhancement | High | Planned | v0.2.0 | 031、033 | [设计](features/v0.2.0.md#feature-034) |
 | 035 | 快照三页界面与整链验收 | Enhancement | High | Planned | v0.2.0 | 031—034 | [设计](features/v0.2.0.md#feature-035) |
 
@@ -439,10 +439,10 @@ Last Updated: 2026-10-15
 
 ### 033: 执行验证与 Agent 辅助构建
 
-- **Status:** Planned
+- **Status:** Completed
 - **Category / Priority:** Enhancement / High
 - **Planned / Released:** v0.2.0 / —
-- **Created / Started / Completed:** 2026-10-15 / — / —
+- **Created / Started / Completed:** 2026-10-15 / 2026-10-15 / 2026-10-15
 - **Description:** 真实执行映射与检查，报告唯一性、匹配率和影响；KodaX 获得数据概览、同步、发现解释与只读快照查询工具。
 - **Blocked by:** 032
 - **Design:** [FEATURE_033](features/v0.2.0.md#feature-033)。

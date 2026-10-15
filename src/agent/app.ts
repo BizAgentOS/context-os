@@ -17,7 +17,7 @@ import { AgentDelegations } from "../engine/delegations.ts";
 import { ProgramBuilds } from "../engine/program-builds.ts";
 import { Snapshots } from "../data/snapshots.ts";
 import { Releases } from "../engine/releases.ts";
-import { engineTools, engineOverviewForAgent, releaseOverviewForAgent } from "../engine/tools.ts";
+import { engineTools, engineOverviewForAgent, releaseOverviewForAgent, dataOverviewForAgent, snapshotQueryForAgent, discoveryExplainForAgent, ontologySnapshotCheckForAgent } from "../engine/tools.ts";
 import {
   WorkContexts,
   parseWorkContext,
@@ -1969,6 +1969,16 @@ export class AgentApplication {
               : `write-${++writeSequence}`
             : undefined;
           if (name === "engine_overview") return serializable(engineOverviewForAgent(this.programBuilds));
+          if (name === "data_overview") return serializable(dataOverviewForAgent(this.snapshots));
+          if (name === "snapshot_query") return serializable(await snapshotQueryForAgent(this.snapshots, args));
+          if (name === "discovery_explain") return serializable(await discoveryExplainForAgent(this.programBuilds, this.snapshots, args));
+          if (name === "ontology_snapshot_check") return serializable(await ontologySnapshotCheckForAgent(this.memory, this.live, this.snapshots, args));
+          if (name === "data_sync") {
+            const result = await this.snapshots.sync(args);
+            this.memory.assertWritable(context);
+            this.memory.attachArtifact(context.taskId, result);
+            return serializable(result);
+          }
           if (name === "release_overview") return serializable(releaseOverviewForAgent(new Releases(this.memory, this.live)));
           if (name === "engine_build" || name === "engine_check") {
             const assertActive = () => this.memory.assertWritable(context);

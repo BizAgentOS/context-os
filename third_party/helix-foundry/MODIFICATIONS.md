@@ -25,6 +25,14 @@ ADE changes:
 uniqueness-lost and null-rate issues) on ADE's `MemoryStore`. CSV cells are ingested as text so
 identities keep their form; HTTP/MCP records are read through ADE source contracts.
 
+## Snapshot validation (2026-10-15, FEATURE_033)
+
+Reference: `apps/api/src/assistant.ts` `validateBundle` (check order, persisted pipeline outputs, checks whose
+first row must be all true, key uniqueness, relationship match counts). ADE file: `src/engine/validation.ts`
+re-implements these checks against ADE mapping definitions (types, supplements, relations) over snapshots
+instead of a Helix bundle, adds supplement fan-out and low-match warnings, and fails a relationship with no
+matches. Dashboard and action checks are not ported.
+
 ## Full ontology discovery (2026-10-15, FEATURE_032)
 
 Original file: `apps/api/src/discovery.ts` (`suggestOntology`, `confirmOntology`, `ontologyBundle`,

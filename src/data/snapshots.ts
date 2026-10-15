@@ -126,10 +126,22 @@ export class Snapshots {
   }
 
   async query(refs: Array<string | { datasetId: string; snapshotId: string }>, sql: string, options: { limit?: number; offset?: number; persist?: string } = {}) {
-    const inputs = this.inputs(refs);
+    const inputs = this.inputs(refs).filter((input, i, all) => all.findIndex(other => other.datasetId === input.datasetId) === i);
     const result = await this.executor.run({ mode: "query", scope: SCOPE, inputs: inputs.map(({ datasetId: _, ...input }) => input), sql, limit: options.limit, offset: options.offset,
       ...(options.persist ? { persist: true, version: options.persist } : {}) });
     return { ...result, inputs: inputs.map(i => ({ datasetId: i.datasetId, snapshotId: i.version })) };
+  }
+
+  /** Runs over explicit snapshot versions, such as derived pipeline outputs that are not datasets of their own. */
+  async run(inputs: ExecutionInput[], sql: string, options: { limit?: number; persist?: string } = {}) {
+    return this.executor.run({ mode: "query", scope: SCOPE, inputs, sql, limit: options.limit, ...(options.persist ? { persist: true, version: options.persist } : {}) });
+  }
+
+  /** The snapshot dataset an execution binding reads: a connection itself, or the CSV a connection serves. */
+  bindingDataset(connectionId: string, capability: string) {
+    let origin = connectionId;
+    try { origin = String((this.memory.getArtifact(connectionId).content.localSource as Data | undefined)?.id ?? connectionId); } catch { return undefined; }
+    return this.find(origin, capability);
   }
 
   private versioned(input: { id: string; version: number }) {
