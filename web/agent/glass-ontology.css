@@ -304,14 +304,21 @@ body.haizhi-glass .is-ontology-space .agent-task-status > small { display: none;
 body.haizhi-glass .is-ontology-space .agent-task-status button { min-height: 28px; margin-top: 3px; white-space: nowrap; }
 body.haizhi-glass .is-ontology-space:has(.agent-task-status:not([hidden])) .os-legend { bottom: 110px; }
 
+@media (min-width: 721px) {
+  body.haizhi-glass .is-ontology-space[data-ontology-stage="local"] .os-local-card {
+    left: auto;
+    transform: none;
+  }
+}
+
 @media (min-width: 1101px) {
-  body.haizhi-glass .is-ontology-space[data-ontology-stage="local"] .interaction {
+  body.haizhi-glass .is-ontology-space[data-ontology-stage="local"] :is(.interaction, .os-local-card) {
     right: max(32px, calc((100% - min(650px, 55vw)) / 2 - clamp(72px, 12vw, 180px)));
   }
 }
 
 @media (min-width: 721px) and (max-width: 1100px) {
-  body.haizhi-glass .is-ontology-space[data-ontology-stage="local"] .interaction {
+  body.haizhi-glass .is-ontology-space[data-ontology-stage="local"] :is(.interaction, .os-local-card) {
     right: max(24px, calc(21vw - clamp(72px, 12vw, 180px)));
   }
   body.haizhi-glass .is-ontology-space .agent-task-status { left: 22px; }

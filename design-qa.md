@@ -1,3 +1,11 @@
+# 本体局部聚焦：概念概览同步右移 · 2026-10-16
+
+final result: passed
+
+用户进一步标注“当前概念概览”并要求一起移动。仅桌面 local 状态下，将概念卡片改为右侧定位，与 Agent 共用两档 right 规则；移除原居中 translate，保留卡片尺寸和纵向布局。979×827 浏览器中两者均为 x306.078、right873.891、宽567.813，左右边缘完全对齐，焦点球体从左侧露出。检查普通输入与展开历史两种显示；本轮仅同步横移，沿用现有历史与概览的纵向叠层。CSS 解析、差异检查和独立代码复核通过。截图 `../output/product/haizhi-glass-ui-2026-10-16/ontology-local-aligned.png` 与 `ontology-local-aligned-history.png`。
+
+---
+
 # 本体局部聚焦：交互区右移 · 2026-10-16
 
 final result: passed
