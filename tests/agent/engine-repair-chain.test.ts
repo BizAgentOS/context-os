@@ -10,34 +10,22 @@ import { createServer } from "../../src/agent/server.ts";
 
 const ref = (a: Artifact) => ({id: a.id, version: a.version});
 
-test("program construction, Agent repair, explicit mapping adoption and publication preserve an existing consumer", async () => {
+test("program construction, Agent repair, program realignment and publication preserve an existing consumer", async () => {
   const directory = mkdtempSync(join(tmpdir(), "ade-repair-chain-"));
-  let stage: "repair" | "rebind" = "repair", calls = 0;
-  let repaired: Artifact | undefined, rebound: Artifact | undefined;
+  let calls = 0;
+  let repaired: Artifact | undefined;
   const driver: AgentDriver = {
     async run(request) {
       calls++;
       const input = JSON.parse(request.input);
       const foundation = (await request.onTool("foundation_read", {}) as any).current;
-      if (stage === "repair") {
-        await request.onTool("skill_use", {name: "company-foundation-ontology"});
-        const message = input.recentMessages.at(-1);
-        repaired = await request.onTool("foundation_propose", {
-          baseVersion: foundation.version, enterprise: foundation.content.enterprise,
-          concepts: [{id: foundation.content.concepts[0].id, name: "公司", description: "公司业务记录", evidenceRefs: ["repair"]}],
-          relations: [], evidence: [{id: "repair", messageId: message.id, quote: message.content}], unknowns: [], conflicts: [],
-        }) as unknown as Artifact;
-      } else {
-        assert.equal(foundation.status, "adopted");
-        const model = (await request.onTool("live_overview", {}) as any).models.find((m: Artifact) => m.status === "adopted");
-        const before = model.content.types[0], concept = foundation.content.concepts.find((c: any) => c.id === before.conceptId);
-        const sample = await request.onTool("live_read", {sourceId: before.sourceId, capability: before.capability, limit: 1}) as any;
-        assert.equal(sample.items[0].name, "Example");
-        rebound = await request.onTool("live_propose", {
-          foundationRef: ref(foundation), baseModelRef: ref(model), purpose: "采用修订后的公司定义", rationale: "沿用相同来源和字段，执行类型名称与含义同步已采用概念。",
-          types: [{...before, name: concept.name, description: concept.description}], relations: model.content.relations,
-        }) as unknown as Artifact;
-      }
+      await request.onTool("skill_use", {name: "company-foundation-ontology"});
+      const message = input.recentMessages.at(-1);
+      repaired = await request.onTool("foundation_propose", {
+        baseVersion: foundation.version, enterprise: foundation.content.enterprise,
+        concepts: [{id: foundation.content.concepts[0].id, name: "公司", description: "公司业务记录", evidenceRefs: ["repair"]}],
+        relations: [], evidence: [{id: "repair", messageId: message.id, quote: message.content}], unknowns: [], conflicts: [],
+      }) as unknown as Artifact;
       return {text: "候选已保存，等待页面采用。", sessionId: "repair-chain", runId: `repair-chain-${calls}`};
     }, async stop() {}, async close() {},
   };
@@ -81,16 +69,11 @@ test("program construction, Agent repair, explicit mapping adoption and publicat
     assert.equal((service.app.foundation.read().adopted!.content.concepts as any[])[0].name, "公司");
     assert.equal((await external(old.key, conceptPath)).concept.name, originalType.name);
     assert.equal((await external(old.key, originalObjectPath)).items[0].properties.name.value, "Example");
-    const blocked = await api("/api/releases/check", {inputHash: (await api("/api/releases")).working.inputHash});
-    assert.equal(blocked.status, "blocked", "a semantic change needs a matching execution mapping before publication");
-
-    stage = "rebind";
-    await api("/api/canvas/message", {page: "ontology", text: "沿用来源和字段，把执行映射名称及含义同步到已采用的公司概念。", messageId: "rebind"});
-    await service.app.idle();
-    assert.equal(rebound?.status, "candidate");
-    await api("/api/live/adopt", ref(rebound!));
-    await service.app.idle();
+    // The program rebuild after the adoption realigns the mapping's wording; no Agent rebind is needed.
     const active = service.app.live.overview().models.find(m => m.status === "adopted")!;
+    assert.equal((active.content.types as any[])[0].name, "公司");
+    assert.equal((active.content.types as any[])[0].description, "公司业务记录");
+    assert.equal(service.app.canvasState().automaticApiBuild.status, "completed");
     const records = await api("/api/live/query", {modelId: active.id, type: "公司"});
     assert.equal(records.items[0].name, "Example");
     const second = await publish("v2");
@@ -102,6 +85,6 @@ test("program construction, Agent repair, explicit mapping adoption and publicat
     assert.equal((await external(newer.key, `/v4/objects?type=${encodeURIComponent("公司")}`)).items[0].properties.name.value, "Example");
     assert.equal((await external(old.key, conceptPath)).concept.name, originalType.name);
     assert.equal((await external(old.key, originalObjectPath)).items[0].properties.name.value, "Example");
-    assert.equal(calls, 2, "the same Agent only assists the repair and rebind");
+    assert.equal(calls, 1, "the Agent only assists the repair; the program realigns the mapping");
   } finally {await service.close(); rmSync(directory, {recursive: true, force: true});}
 });

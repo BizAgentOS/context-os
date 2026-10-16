@@ -1,6 +1,6 @@
 ---
 name: company-foundation-ontology
-description: 从用户对话、已上传企业文档和确认企业后的公开网页建立有原文依据的基础概念与关系，支持无数据源初稿、增量补充和人工采用。
+description: 用用户对话、已上传企业文档和确认企业后的公开网页，为数据程序已建的概念与关系补充有原文依据的名称、说明、未知与冲突，修正不正确的定义并交人工采用。
 ---
 
 ## API 自动构建模式
@@ -8,7 +8,7 @@ description: 从用户对话、已上传企业文档和确认企业后的公开�
 宿主输入 `mode: automatic-api-ontology` 时，用户已授权自动保存并采用映射，无需确认。本模式只执行下面流程，跳过其余对话、网页、知识与消费流程：
 
 1. 并行读取 foundation_read 与 live_overview，再用 foundation_api_read 读取本次连接每个 records 能力；一次最多 3 条实际样本。
-2. 已有对应概念时直接复用，**不调用 foundation_propose**。需要新增概念或基础关系才用 API readId 与原文引文补充并读取实际采用回执。`rebindOnly: true` 时禁止修改基础定义。
+2. 已有对应概念时直接复用，**不调用 foundation_propose**。概念和关系由数据程序构建，不新增。`rebindOnly: true` 时禁止修改基础定义。
 3. live_propose 的 types 每项使用现有 conceptId，**name、description 逐字复制基础概念**；fields 是 `{业务属性名: 实际源字段名}`，`$id` 由来源 idField 提供。完整保留已有执行映射。
 4. **执行关系的 from/to 必须填写 types 的 name（中文业务名称），不能填基础概念 ID。** relationId 是基础关系 id，name 是基础关系 name。根据基础关系 from/to 的概念 ID 找到 types 中对应项，再取其 name。fromField/toField 必须填写映射后的业务属性名或 `$id`，不能直接填尚未映射的物理列。举例：基础关系 from=`sale`, to=`store`，执行类型 name 为「销售」「门店」，则执行关系 from=`销售`, to=`门店`，而非 `sale`/`store`。方向逐字遵循基础关系，不能反转后还复用相同 relationId。缺少实际键或目标过滤能力时不绑定该关系，基础层保留未映射关系。
 5. foundationRef 使用当前已采用基础版本，baseModelRef 为最新已采用执行模型引用或 null。记录金额单位、统计期间等真实口径。简短说明即可，尽快提交 live_propose，不先输出长篇分析或完整参数文本。工具返回错误时按错误修正再调用；保存成功即结束，由宿主复检并自动采用。
@@ -17,14 +17,14 @@ description: 从用户对话、已上传企业文档和确认企业后的公开�
 
 ## 文档自动构建模式
 
-宿主输入 `mode: automatic-document-ontology` 时，用户已授权接入资料后自动构建并生效。只使用本轮提供的读取和生成工具；无需 profile_update、task_ask 或人工采用。读取本轮每份资料，用真实片段生成增量概念、关系与未决项，保持现有企业及定义 ID。缺失保留 unknowns；冲突保留原含义和双方依据，不伪造解决。保存后由宿主检查来源版本并自动生效。本模式优先于下文人工确认步骤，不涉及发布或业务来源映射。
+宿主输入 `mode: automatic-document-ontology` 时，用户已授权接入资料后自动构建并生效。只使用本轮提供的读取和生成工具；无需 profile_update、task_ask 或人工采用。读取本轮每份资料，用真实片段为已有概念和关系补充说明与依据，或记录未决项；不新增概念或关系，保持现有企业及定义 ID。缺失保留 unknowns；冲突保留原含义和双方依据，不伪造解决。保存后由宿主检查来源版本并自动生效。本模式优先于下文人工确认步骤，不涉及发布或业务来源映射。
 
 
 围绕当前企业和业务问题建立少量有用的基础定义。用户目标：$ARGUMENTS。
 
 1. 用 foundation_read 查看当前候选与已采用版本。已有概念、原话、未知和冲突是持续记忆；不要重新建同名不同 id 的概念。没有基础版本时 baseVersion 为 0。只有公司名且完全没有业务线索时，用户要求公开研究则走下方研究路径，否则只问最影响起步的一个业务问题；业务已明确时直接形成初稿，不重复确认企业名。
 2. 先用 profile_update 保存用户明确给出的企业名称、业务与必要纠正。text 与 quote 均为实际用户消息的连续原话片段。已有信息不重复更新。不要在保存基础候选之后再次更新企业信息，否则采用时会要求重新核对。
-3. 从实际对话提取 2–5 个有依据的业务概念和必要关系。概念是模型对原话的语义解释，仍待人核对；不要虚构业务事实。证据只能用当前任务 recentMessages 中真实用户 messageId 和连续 quote；模型回复、网页摘录与推测不能伪装用户原话。旧证据从 foundation_read 原样复用，不改写 id。文档使用下方资料路径，不能假装成 user 原话。公开网页使用下方研究路径，不能引用搜索摘要冒充正文。
+3. 概念和关系由数据程序根据结构化数据构建，宿主会拒绝新增概念、新增关系或改关系端点。从实际对话和资料找出已有概念名称或说明不准确之处，沿原 id 修正，依据仍待人核对；不要虚构业务事实。没有结构化数据时说明需先接入数据。证据只能用当前任务 recentMessages 中真实用户 messageId 和连续 quote；模型回复、网页摘录与推测不能伪装用户原话。旧证据从 foundation_read 原样复用，不改写 id。文档使用下方资料路径，不能假装成 user 原话。公开网页使用下方研究路径，不能引用搜索摘要冒充正文。
 4. 调用 foundation_propose 保存。同一基础版本的多项修改合并为一次调用，不并行保存；下一次修改先使用实际回执版本。参数为 baseVersion、enterprise{name,evidenceRefs}、concepts[{id,name,description,evidenceRefs}]、relations[{id,name,description,from,to,evidenceRefs}]、evidence[{id,messageId,quote}]、unknowns[{id,description}]、conflicts[{id,description}]。id 使用稳定英文短标识，name/description 用中文业务语言。概念与关系按 id 增量合并，未传入的已保存项仍保留。企业名称须来自实际用户原话或已读取文档；纯文档起步不要伪造 profile_update 的用户陈述，可直接形成基础候选。同一企业简称/错字/正式名称纠正时先保存新的 profile 名称，再在 foundation_propose 顶层传 identityCorrection:{previousName:旧名称,evidenceRefs:[本轮新证据id]}，证据必须是当前用户对同一主体名称纠正的原话且包含新名称；不能用该字段合并不同企业。不同主体不得合并。没有依据的必要概念放到 unknowns，不伪造引用。
 5. 未知和冲突也按 id 持续保留。用户补充明确依据后，用相同 id、原 description、resolvedBy:[新的证据 id] 标明已解决；未知项也可由本轮新读取的文档/网页依据补齐，但冲突必须有本轮用户原话作决定；不得为方便采用而清空冲突。冲突未解决可保存候选，但不能采用。已有定义更正仍形成候选，已采用版本保持有效。
 6. 保存成功后核对实际回执，再用 task_ask，附 foundationId 和 version，请用户查看并采用具体基础定义；允许未知，无需先上传或接入数据。新初稿说明尚未绑定来源；已有版本按实际 bindings 说明可用子集，不说未授权 API 已可用。程序检查通过只表示结构与原话可定位，不保证语义正确。用户通过画布或明确确认采用，Agent 没有直接采用工具。

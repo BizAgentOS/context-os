@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { computeOntologyLayout } from "./ontology-space-model.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { Line2 } from "three/addons/lines/Line2.js";
 import { LineGeometry } from "three/addons/lines/LineGeometry.js";
@@ -82,7 +83,7 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
   controls.maxPolarAngle = Math.PI - .6;
   controls.rotateSpeed = .35;
   controls.zoomSpeed = .65;
-  const ambient = new THREE.HemisphereLight(0xc8f2ec, 0x151626, 1.7);
+  const ambient = new THREE.HemisphereLight(0xc6d5f4, 0x151626, 1.7);
   scene.add(ambient);
   const keyLight = new THREE.DirectionalLight(0xffffff, 4.5);
   keyLight.position.set(-200, 350, 500);
@@ -90,7 +91,7 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
   Object.assign(keyLight.shadow.camera, {left: -650, right: 650, top: 650, bottom: -650, near: 1, far: 1800});
   keyLight.shadow.normalBias = .08; keyLight.shadow.bias = -.00015;
   scene.add(keyLight);
-  const rimLight = new THREE.DirectionalLight(0x66bcb5, 2.5);
+  const rimLight = new THREE.DirectionalLight(0x6380bf, 2.5);
   rimLight.position.set(300, -150, -200); scene.add(rimLight);
   const world = new THREE.Group(); scene.add(world);
   const labels = document.createElement("div"); labels.className = "os-labels"; host.append(labels);
@@ -106,21 +107,18 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
   let moving = null, userMoving = false, motion = true, elapsed = 0, previous = performance.now();
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
   const transitionDuration = () => reduced.matches ? 0 : 1050;
-  const globalPositions = new Map();
-  const others = graph.nodes.filter(item => !item.primary && item.kind === "concept");
-  for (const item of graph.nodes) {
-    if (item.primary) globalPositions.set(item.key, vec(-65, 25, 25));
-    else if (item.kind === "concept") {
-      const index = others.indexOf(item);
-      const angle = index / Math.max(others.length, 1) * Math.PI * 2 + .5;
-      const ring = 260 + Math.floor(index / 9) * 85;
-      globalPositions.set(item.key, vec(Math.cos(angle) * ring * 1.35 - 50, Math.sin(angle) * ring * .65 + 55, Math.sin(angle * 2.1) * 85));
-    } else {
-      const index = graph.nodes.filter(node => node.kind === "evidence").indexOf(item);
-      const angle = index * 2.4 + 2.1;
-      globalPositions.set(item.key, vec(Math.cos(angle) * 410 + 30, Math.sin(angle) * 260, -90 + (index % 3) * 65));
-    }
+  let obstacles = [], obstacleSignature = "", pendingObstacles = "", obstacleChangedAt = 0, lastObstacleCheck = 0;
+  const obstacleSelector = ".os-identity,.os-toolbar,.os-utilities,.os-work-entries,.os-legend,.os-local-card,.os-inspector,.os-directory,.interaction,.agent-task-status";
+  function readObstacles() {
+    const origin = host.getBoundingClientRect();
+    return [...(host.closest(".canvas-app") || host.parentElement).querySelectorAll(obstacleSelector)]
+      .filter(element => !element.closest("[hidden]") && getComputedStyle(element).visibility !== "hidden")
+      .map(element => element.getBoundingClientRect())
+      .filter(rect => rect.width && rect.height && rect.right > origin.left && rect.bottom > origin.top && rect.left < origin.right && rect.top < origin.bottom)
+      .map(rect => ({left: Math.max(0, rect.left - origin.left - 8), top: Math.max(0, rect.top - origin.top - 8),
+        right: Math.min(width, rect.right - origin.left + 8), bottom: Math.min(height, rect.bottom - origin.top + 8)}));
   }
+  const signature = rects => JSON.stringify(rects.map(rect => Object.values(rect).map(value => Math.round(value / 4))));
   function glow(color, radius) {
     const glowMaterial = material(new THREE.ShaderMaterial({
       uniforms: {tint: {value: new THREE.Color(color)}, opacity: {value: .28}},
@@ -193,7 +191,7 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
       const path = new WaveRingCurve(base, amplitude, frequency, phase);
       const thickness = radius * (i < 2 ? .027 : i % 3 === 0 ? .021 : .016);
       const ringGeometry = geometry(new THREE.TubeGeometry(path, Math.min(768, frequency * 12), thickness, 6, true));
-      const tint = i % 3 === 1 ? "#a6d9ca" : i % 3 === 2 ? "#f0dcaf" : item.color;
+      const tint = i % 3 === 1 ? "#a4b7db" : i % 3 === 2 ? "#f0afbd" : item.color;
       const ringMaterial = material(new THREE.MeshStandardMaterial({
         color: tint, metalness: .05, roughness: .52, roughnessMap: finish.roughness,
         normalMap: finish.normal, normalScale: new THREE.Vector2(.18, .18),
@@ -208,7 +206,7 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
     const rays = createRays(item, radius, connections);
     if (rays) group.add(rays);
     group.add(rings);
-    group.position.copy(globalPositions.get(item.key));
+
     world.add(group);
     const label = document.createElement("button"); label.type = "button"; label.className = `os-node-label os-node-${item.kind}`;
     label.dataset.nodeKey = item.key;
@@ -223,7 +221,9 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
       name.textContent = `${category} ${String(graph.evidence.indexOf(item.item) + 1).padStart(2, "0")}`;
       label.title = item.name;
     }
-    const caption = document.createElement("span"); caption.textContent = item.kind === "concept" ? `${item.degree} 条关系 · ${item.item.mappingStatus === "bound" ? "已映射" : "未映射"}` : "定义依据";
+    const caption = document.createElement("span"); caption.textContent = item.kind !== "concept" ? "说明依据" : item.item.helix
+      ? `${item.item.helix.entity.rows} 条记录 · ${item.item.helix.entity.members.length > 1 ? `合并 ${item.item.helix.entity.members.length} 源` : "单一来源"}`
+      : `${item.degree} 条关系 · ${item.item.mappingStatus === "bound" ? "已映射" : "未映射"}`;
     label.append(name, caption);
     label.onclick = event => { event.stopPropagation(); onActivate(item.key); };
     label.style.setProperty("--node-tint", item.color);
@@ -234,7 +234,7 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
     const positions = new Float32Array(41 * 3);
     const lineGeometry = geometry(new LineGeometry());
     lineGeometry.setPositions(positions);
-    const color = edge.kind === "relation" ? "#ead6a0" : "#7ccbc4";
+    const color = edge.kind === "relation" ? "#eaa0b0" : "#7994ce";
     const lineMaterial = material(new LineMaterial({color, linewidth: edge.kind === "relation" ? 1.8 : .7, transparent: true, opacity: edge.kind === "relation" ? .65 : .23, depthWrite: false}));
     const line = new Line2(lineGeometry, lineMaterial); line.frustumCulled = false; world.add(line);
     const pulse = new THREE.Mesh(sphereGeometry, material(new THREE.MeshBasicMaterial({color, transparent: true, opacity: .8})));
@@ -262,27 +262,36 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
   const observer = new ResizeObserver(resize); observer.observe(host);
   function setView(next, immediate = false) {
     view = next;
-    const narrow = width < 720;
+    const narrow = window.matchMedia("(max-width:720px)").matches;
     const focusKey = `concept:${next.focus}`;
-    const focusX = narrow ? -70 : -width / height * 160;
     const selectedKey = next.target?.kind === "foundation_concept" ? `concept:${next.target.member}` : focusKey;
     const connected = new Set([focusKey]);
     for (const link of graph.edges) if (link.from === focusKey || link.to === focusKey) {connected.add(link.from); connected.add(link.to);}
-    const visibleNeighbors = [...items.values()].filter(item => connected.has(item.item.key) && item.item.key !== focusKey);
+    const distance = 900;
+    const units = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * distance / height;
+    obstacles = readObstacles(); obstacleSignature = signature(obstacles); pendingObstacles = obstacleSignature;
+    const activeGraph = next.stage === "local" ? {...graph,
+      nodes: graph.nodes.filter(item => connected.has(item.key)),
+      edges: graph.edges.filter(edge => connected.has(edge.from) && connected.has(edge.to))} : graph;
+    const compact = window.matchMedia("(max-width:440px)").matches ? {conceptWidth:48, conceptHeight:44, evidenceSize:12, offset:6, radius:6.5}
+      : narrow ? {conceptWidth:60, conceptHeight:60, evidenceSize:14, offset:10, radius:8}
+      : window.matchMedia("(max-width:1100px)").matches ? {conceptWidth:124, conceptHeight:92, evidenceSize:18, offset:16, radius:14}
+      : {conceptWidth:148, conceptHeight:100, evidenceSize:18, offset:18, radius:16};
+    const positions = next.stage === "detail" ? new Map() : computeOntologyLayout(activeGraph, {width, height, obstacles, ...compact});
     for (const item of items.values()) {
       const isFocus = item.item.key === focusKey;
-      item.target.copy(item.home);
-      if (narrow) item.target.set(item.home.x * .44, item.home.y * .85 + 95, item.home.z);
-      item.targetScale = 1; item.targetOpacity = 1;
-      if (next.stage === "local") {
-        item.targetOpacity = connected.has(item.item.key) ? 1 : .16;
-        if (isFocus) {item.target.set(focusX, narrow ? 160 : 145, 55); item.targetScale = 1.25;}
-        else if (connected.has(item.item.key)) {
-          const index = visibleNeighbors.indexOf(item);
-          const angle = (index / Math.max(visibleNeighbors.length, 1)) * Math.PI * 1.7 + .15;
-          item.target.set(focusX + Math.cos(angle) * (narrow ? 150 : 260), (narrow ? 160 : 145) + Math.sin(angle) * 160, Math.cos(angle) * 35);
-        }
+      const position = positions.get(item.item.key);
+      if (position) {
+        const z = position.z * units, perspective = (distance - z) / distance;
+        const y = position.y - (item.item.kind === "concept" ? compact.offset : 0);
+        item.home.set((position.x - width / 2) * units * perspective, (height / 2 - y) * units * perspective, z);
       }
+      item.target.copy(item.home);
+      // Keep the ring and label within the pixel footprint used by the layout solver.
+      const radiusPx = item.item.kind === "concept" ? (item.item.primary ? compact.radius * 1.15 : compact.radius) : (narrow ? 4 : 5);
+      item.targetScale = radiusPx * units / item.radius;
+      item.targetOpacity = next.stage === "local" && !connected.has(item.item.key) ? .08 : 1;
+      if (next.stage === "local" && isFocus) item.targetScale *= 1.12;
       if (next.stage === "detail") {
         item.targetOpacity = item.item.key === selectedKey ? 1 : .025;
         if (item.item.key === selectedKey) {
@@ -292,18 +301,96 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
       }
       item.label.classList.toggle("is-focused", next.stage !== "global" && (isFocus || item.item.key === selectedKey));
       item.label.disabled = item.targetOpacity < .2;
-      item.labelWidth = 0;
+      item.labelWidth = 0; item.labelHeight = 0;
+      if (immediate) {item.group.position.copy(item.target); item.group.scale.setScalar(item.targetScale); item.opacity = item.targetOpacity;}
     }
-    const distance = narrow ? 1250 : next.stage === "global" ? Math.max(900, 1200 / camera.aspect) : 900;
     moving = {start: performance.now(), duration: immediate ? 0 : transitionDuration(),
       position: camera.position.clone(), target: controls.target.clone(), toPosition: vec(0, 0, distance), toTarget: vec(0, 0, 0)};
     controls.enableRotate = next.stage !== "detail";
     controls.enablePan = next.stage !== "detail";
   }
+  function reflow() {
+    const previousMoving = moving;
+    setView(view);
+    moving = previousMoving;
+  }
+  const intersects = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+  function placeLabels() {
+    const projected = [...items.values()].map(item => {
+      const point = projection(item.group.position);
+      const distance = camera.position.distanceTo(item.group.position);
+      const depth = -item.group.position.clone().applyMatrix4(world.matrixWorld).applyMatrix4(camera.matrixWorldInverse).z;
+      const radius = item.radius * item.group.scale.x * height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.max(1, depth));
+      return {item, point, distance, radius};
+    });
+    const nodeBounds = projected.filter(({item}) => item.targetOpacity >= .2).map(({item, point, radius}) => ({
+      key: item.item.key, left: point.x - radius * 1.8, right: point.x + radius * 1.8,
+      top: point.y - radius * 1.8, bottom: point.y + radius * 1.8}));
+    const occupied = [...obstacles];
+    // Concepts get readable names first. Evidence stays as an accessible small target until hovered/focused.
+    projected.sort((a, b) => Number(b.item.label.matches(":hover,:focus-visible")) - Number(a.item.label.matches(":hover,:focus-visible")) ||
+      Number(b.item.item.kind === "concept") - Number(a.item.item.kind === "concept"));
+    for (const {item, point, distance, radius} of projected) {
+      const hidden = !point.visible || item.targetOpacity < .2 || point.x < -50 || point.x > width + 50 || point.y < 0 || point.y > height;
+      item.label.hidden = hidden;
+      if (hidden) continue;
+      const evidence = item.item.kind === "evidence";
+      const expanded = item.label.matches(":hover,:focus-visible");
+      const labelWidth = evidence ? 22 : (item.labelWidth ||= item.label.offsetWidth);
+      const labelHeight = evidence ? 22 : (item.labelHeight ||= item.label.offsetHeight);
+      let left = point.x - labelWidth / 2, top = point.y + radius * 1.8 + 3;
+      if (evidence) {
+        left = point.x - 11; top = point.y - 11;
+        if (expanded) {
+          const tooltip = item.label.firstElementChild;
+          const tooltipWidth = tooltip.offsetWidth, tooltipHeight = tooltip.offsetHeight;
+          tooltip.style.left = `${Math.max(4, Math.min(width - tooltipWidth - 4, point.x - tooltipWidth / 2)) - left}px`;
+          tooltip.style.top = `${point.y - tooltipHeight - 16 < 4 ? 25 : -tooltipHeight - 4}px`;
+        }
+      }
+      else {
+        const candidates = [[left, top], [left, point.y - radius * 1.8 - labelHeight - 3],
+          [point.x + radius * 1.8 + 4, point.y - labelHeight / 2], [point.x - radius * 1.8 - labelWidth - 4, point.y - labelHeight / 2],
+          [point.x + radius + 4, point.y + radius + 3], [point.x - radius - labelWidth - 4, point.y + radius + 3],
+          [point.x + radius + 4, point.y - radius - labelHeight - 3], [point.x - radius - labelWidth - 4, point.y - radius - labelHeight - 3]];
+        const blockers = [...occupied, ...nodeBounds.filter(bound => bound.key !== item.item.key)];
+        const score = ([x, y]) => {
+          const rect = {left: x, top: y, right: x + labelWidth, bottom: y + labelHeight};
+          let value = x < 8 || y < 8 || rect.right > width - 8 || rect.bottom > height - 8 ? 100000 : 0;
+          for (const b of blockers) if (intersects(rect, b)) value +=
+            (Math.min(rect.right,b.right)-Math.max(rect.left,b.left)) * (Math.min(rect.bottom,b.bottom)-Math.max(rect.top,b.top));
+          return value;
+        };
+        const previous = item.labelPlacement ?? 0;
+        let best = previous, bestScore = score(candidates[previous]);
+        for (let i = 0; i < candidates.length; i++) {const value = score(candidates[i]); if (value + 30 < bestScore) {best = i; bestScore = value;}}
+        item.labelPlacement = best;
+        [left, top] = candidates[best];
+        left = Math.max(4, Math.min(width - labelWidth - 4, left)); top = Math.max(4, Math.min(height - labelHeight - 4, top));
+        occupied.push({left, top, right: left + labelWidth, bottom: top + labelHeight});
+      }
+      if (!evidence && expanded) {
+        const caption = item.caption, captionWidth = caption.offsetWidth, captionHeight = caption.offsetHeight;
+        caption.style.left = `${Math.max(4, Math.min(width - captionWidth - 4, left + (labelWidth - captionWidth) / 2)) - left}px`;
+        caption.style.top = `${top + labelHeight + captionHeight + 6 > height ? -captionHeight - 5 : labelHeight}px`;
+      }
+      item.label.style.transform = `translate(${left}px,${top}px)`;
+      item.label.style.opacity = String(item.opacity);
+      item.label.style.zIndex = String(expanded ? 4000 : Math.round(3000 - distance));
+    }
+    return occupied;
+  }
   function frame(now) {
     if (disposed) return;
     animationId = requestAnimationFrame(frame);
     if (document.hidden) {previous = now; return;}
+    // Panel resizing does not resize the canvas. Wait until its transition settles before solving again.
+    if (now - lastObstacleCheck > 180 && view.stage !== "detail") {
+      lastObstacleCheck = now;
+      const current = signature(readObstacles());
+      if (current !== pendingObstacles) {pendingObstacles = current; obstacleChangedAt = now;}
+      else if (current !== obstacleSignature && now - obstacleChangedAt > 180) reflow();
+    }
     const dt = Math.min((now - previous) / 1000, .05); previous = now;
     const animate = motion && !reduced.matches;
     if (animate) elapsed += dt;
@@ -338,22 +425,9 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
       for (const ring of item.rings.children) ring.castShadow = item.opacity > .8;
       item.aura.quaternion.copy(camera.quaternion);
       item.aura.material.uniforms.opacity.value = item.opacity * (.2 + Math.sin(elapsed * 1.2) * .02);
-      const point = projection(item.group.position);
-      const isHidden = !point.visible || item.targetOpacity < .2 || point.x < -50 || point.x > width + 50 || point.y < 0 || point.y > height - 65;
-      item.label.hidden = isHidden;
-      if (!isHidden) {
-        const distance = camera.position.distanceTo(item.group.position);
-        const radiusPx = item.radius * scale * height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * distance);
-        const labelWidth = item.labelWidth ||= item.label.offsetWidth;
-        const beside = point.x + radiusPx * 1.9;
-        const labelX = beside + labelWidth > width - 12 ? Math.max(12, point.x - radiusPx * 1.9 - labelWidth) : beside;
-        item.label.style.transform = view.stage === "detail"
-          ? `translate(${point.x - 100}px,${point.y - radiusPx * 2.2 - 38}px)`
-          : `translate(${labelX}px,${point.y - 17}px)`;
-        item.label.style.opacity = String(item.opacity);
-        item.label.style.zIndex = String(Math.round(3000 - distance));
-      }
     }
+    world.updateMatrixWorld(true); camera.updateMatrixWorld();
+    const labelBounds = placeLabels();
     for (const link of links) {
       const start = items.get(link.edge.from).group.position;
       const end = items.get(link.edge.to).group.position;
@@ -375,7 +449,13 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
       link.label.hidden = !showLabel;
       if (showLabel) {
         const point = projection(curve.getPoint(.52));
-        link.label.style.transform = `translate(${point.x}px,${point.y}px)`;
+        const labelWidth = link.label.offsetWidth, labelHeight = link.label.offsetHeight;
+        const rect = {left: point.x - labelWidth / 2, right: point.x + labelWidth / 2, top: point.y, bottom: point.y + labelHeight};
+        link.label.hidden = !point.visible || rect.left < 8 || rect.right > width - 8 || rect.top < 8 || rect.bottom > height - 8 || labelBounds.some(bound => intersects(rect, bound));
+        if (!link.label.hidden) {
+          link.label.style.transform = `translate(${rect.left}px,${rect.top}px)`;
+          labelBounds.push(rect);
+        }
       }
     }
     renderer.render(scene, camera);

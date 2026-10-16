@@ -5,8 +5,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgentApplication } from "../../src/agent/app.ts";
 import type { AgentDriver } from "../../src/agent/runtime.ts";
+import { seedFoundation } from "./program-foundation-fixture.ts";
 
-test("uploading a document automatically builds and adopts the foundation without a confirmation", async () => {
+const meaning = (foundation: any) => (foundation.content.concepts as any[]).map(c => [c.id, c.description, c.evidenceRefs]);
+
+// Documents enrich structure the data program built; they never add concepts.
+const seedStore = (app: AgentApplication) => seedFoundation(app.memory, app.foundation,
+  { enterprise: "澄川仓配", concepts: [{ id: "store", name: "门店", description: "来自门店表的记录，业务含义待核对。" }], program: true });
+
+test("an uploaded document enriches the program-built concept and is adopted without a confirmation", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-auto-foundation-"));
   const driver: AgentDriver = {
     async run(request) {
@@ -17,8 +24,8 @@ test("uploading a document automatically builds and adopts the foundation withou
       const part = await request.onTool("foundation_document_read", { sourceId: source.id, version: source.version }) as any;
       const current = await request.onTool("foundation_read", {}) as any;
       await request.onTool("foundation_propose", {
-        baseVersion: current.current?.version ?? 0,
-        enterprise: { name: "澄川仓配", evidenceRefs: ["doc1"] },
+        baseVersion: current.current.version,
+        enterprise: current.current.content.enterprise,
         concepts: [{ id: "store", name: "门店", description: "收货地点", evidenceRefs: ["doc1"] }], relations: [],
         evidence: [{ id: "doc1", kind: "document", readId: part.readId, quote: "澄川仓配的门店负责收货。" }], unknowns: [], conflicts: [],
       });
@@ -27,12 +34,16 @@ test("uploading a document automatically builds and adopts the foundation withou
   };
   const app = new AgentApplication(directory, driver);
   try {
+    seedStore(app);
     await app.canvasUpload({ page: "setup", name: "仓配.md", content: "澄川仓配的门店负责收货。" });
     await app.idle();
     const state = app.canvasState("ontology");
     assert.equal(state.foundation.current?.status, "adopted");
     assert.equal(state.foundation.current?.content.automatic, true);
-    assert.equal((state.foundation.current?.content.concepts as any[])[0].name, "门店");
+    const concepts = state.foundation.current?.content.concepts as any[];
+    assert.equal(concepts.length, 1, "the document adds no concept");
+    assert.equal(concepts[0].description, "收货地点");
+    assert.equal(concepts[0].origin, "program");
     assert.equal(state.pending, null);
     assert.equal(state.automaticBuild.status, "completed");
     assert.equal(state.automaticBuild.completed, 1);
@@ -43,15 +54,15 @@ const buildDriver = (after?: () => Promise<void>): AgentDriver => ({
   async run(request) {
     const input = JSON.parse(request.input);
     const before = await request.onTool("foundation_read", {}) as any;
-    const evidence: any[] = [], concepts: any[] = [];
+    const evidence: any[] = [];
     for (const source of input.sources) {
       const part = await request.onTool("foundation_document_read", { sourceId: source.id, version: source.version }) as any;
-      const id = `doc-${source.id}-${before.current?.version ?? 0}`;
-      evidence.push({ id, kind: "document", readId: part.readId, quote: part.text });
-      concepts.push({ id: `concept-${source.id}`, name: source.title, description: "资料描述的业务概念", evidenceRefs: [id] });
+      evidence.push({ id: `doc-${source.id}-${before.current.version}`, kind: "document", readId: part.readId, quote: part.text });
     }
-    await request.onTool("foundation_propose", { baseVersion: before.current?.version ?? 0,
-      enterprise: { name: "澄川仓配", evidenceRefs: [evidence[0].id] }, concepts, relations: [], evidence, unknowns: [], conflicts: [] });
+    const prior = (before.current.content.concepts as any[]).find(c => c.id === "store");
+    await request.onTool("foundation_propose", { baseVersion: before.current.version, enterprise: before.current.content.enterprise,
+      concepts: [{ id: "store", name: "门店", description: "资料描述的业务概念", evidenceRefs: [...prior.evidenceRefs, ...evidence.map(e => e.id)] }],
+      relations: [], evidence, unknowns: [], conflicts: [] });
     await after?.();
     return { text: "完成", sessionId: "batch", runId: "batch" };
   }, async stop() {}, async close() {},
@@ -63,6 +74,7 @@ test("text and Feishu documents wait for a model across restart while CSV identi
   delete process.env.DEEPSEEK_API_KEY;
   let app = new AgentApplication(directory);
   try {
+    const seeded = seedStore(app);
     await app.canvasUpload({ page: "setup", name: "仓配.md", content: "澄川仓配的门店负责收货。" });
     await app.canvasUpload({ page: "setup", name: "清单.csv", content: "company,type\n澄川仓配,门店\n" });
     app.capabilities.feishu.readDocument = async (url: string) => ({provider: "feishu", documentId: "auto-doc", title: "补货.md", url, revision: null, contentHash: undefined, format: "markdown", content: "澄川仓配的仓库负责补货。", readAt: new Date().toISOString(), coverage: "file"});
@@ -72,7 +84,7 @@ test("text and Feishu documents wait for a model across restart while CSV identi
     await app.idle();
     assert.equal(app.canvasState().automaticApiBuild.status, "failed");
     assert.match(app.canvasState().automaticApiBuild.errors[0].message, /身份键/);
-    assert.equal(app.canvasState().foundation.current, null);
+    assert.equal(app.canvasState().foundation.current!.version, seeded.version, "a failed CSV build leaves the structure as it was");
     await app.close();
     app = new AgentApplication(directory, buildDriver());
     await app.idle();
@@ -93,6 +105,7 @@ test("navigation preserves an automatic run, and another upload is processed aft
   const driver = buildDriver(async () => { if (++count === 1) { entered(); await new Promise<void>(resolve => { release = resolve; }); } });
   const app = new AgentApplication(directory, driver);
   try {
+    seedStore(app);
     await app.canvasUpload({page: "setup", name: "第一份.md", content: "澄川仓配的门店负责收货。"});
     await started;
     await app.canvasNavigate({page: "ontology"});
@@ -102,7 +115,8 @@ test("navigation preserves an automatic run, and another upload is processed aft
     const state = app.canvasState();
     assert.equal(state.currentPage, "ontology");
     assert.equal(state.automaticBuild.completed, 2, JSON.stringify(state.automaticBuild));
-    assert.equal((state.foundation.current!.content.concepts as any[]).length, 2);
+    assert.equal((state.foundation.current!.content.concepts as any[]).length, 1, "documents add evidence, not concepts");
+    assert.equal((state.foundation.current!.content.concepts as any[])[0].evidenceRefs.length, 3);
   } finally { release?.(); await app.close(); rmSync(directory, {recursive: true, force: true}); }
 });
 
@@ -112,11 +126,12 @@ test("a failed build exposes its reason and retries without adoption confirmatio
   const driver = buildDriver(async () => { if (fail) throw new Error("测试模型不可用"); });
   const app = new AgentApplication(directory, driver);
   try {
+    const seeded = seedStore(app);
     await app.canvasUpload({page: "setup", name: "仓配.md", content: "澄川仓配的门店负责收货。"});
     await app.idle();
     assert.equal(app.canvasState().automaticBuild.status, "failed");
     assert.match(app.canvasState().automaticBuild.errors[0].message, /模型不可用/);
-    assert.equal(app.canvasState().foundation.adopted, null);
+    assert.deepEqual(meaning(app.canvasState().foundation.adopted), meaning(seeded));
     fail = false;
     app.retryAutomaticBuild(); await app.idle();
     assert.equal(app.canvasState().automaticBuild.status, "completed", JSON.stringify(app.canvasState().automaticBuild));
@@ -133,13 +148,14 @@ test("deleting an upload during construction rejects the late adoption", async (
   driver.stop = async () => release?.();
   const app = new AgentApplication(directory, driver);
   try {
+    const seeded = seedStore(app);
     await app.canvasUpload({page: "setup", name: "仓配.md", content: "澄川仓配的门店负责收货。"});
     await started;
     const source = app.canvasState().sources[0];
     await app.removeUpload({id: source.id, version: source.version});
     await app.idle();
     assert.equal(app.canvasState().sources.length, 0);
-    assert.equal(app.canvasState().foundation.adopted, null);
+    assert.deepEqual(meaning(app.canvasState().foundation.adopted), meaning(seeded), "the late result is not adopted");
     assert.equal(app.canvasState().automaticBuild.total, 0);
     driver.run = buildDriver().run;
     await app.canvasUpload({page: "setup", name: "后续.md", content: "澄川仓配的仓库负责补货。"});
@@ -153,6 +169,7 @@ test("deleting a previously built upload does not block later documents or erase
   const directory = mkdtempSync(join(tmpdir(), "de-auto-history-"));
   const app = new AgentApplication(directory, buildDriver());
   try {
+    seedStore(app);
     await app.canvasUpload({page: "setup", name: "第一份.md", content: "澄川仓配的门店负责收货。"});
     await app.idle();
     const source = app.canvasState().sources[0];
@@ -164,7 +181,7 @@ test("deleting a previously built upload does not block later documents or erase
     assert.equal(state.automaticBuild.completed, 1);
     assert.equal(state.sources.length, 1);
     assert.equal(state.foundation.current?.status, "adopted");
-    assert.equal((state.foundation.current!.content.evidence as any[]).length, 2);
+    assert.equal((state.foundation.current!.content.evidence as any[]).length, 3, "the seed and both documents keep their evidence");
   } finally { await app.close(); rmSync(directory, {recursive: true, force: true}); }
 });
 
@@ -175,6 +192,7 @@ test("saving and testing a model connection happens before queued automatic cons
   const app = new AgentApplication(directory);
   let tested = false;
   try {
+    seedStore(app);
     await app.canvasUpload({page: "setup", name: "仓配.md", content: "澄川仓配的门店负责收货。"});
     const driver = buildDriver();
     app.driver.run = async request => {

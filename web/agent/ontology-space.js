@@ -17,6 +17,13 @@ const button = (label, action, symbol, cls = "os-button") => {
 };
 const kindLabel = kind => ({web: "公开网页", document: "企业资料", api: "API 样本", user: "用户陈述"}[kind] || "定义依据");
 const mappingLabel = item => item.mappingStatus === "bound" ? "已映射" : "未映射";
+// Program (Helix) discovery vocabulary, as shown for each built entity.
+const linkEvidence = kind => ({declared: "来源声明的外键", name: "字段名与值匹配", values: "值重合"}[kind] || "值重合");
+const noteKind = kind => ({merged: "已合并", unmatched: "未匹配", case: "仅忽略大小写匹配", unlinked: "未关联"}[kind] || "需核对");
+const severity = level => ({error: "需处理", warning: "需核对", info: "说明"}[level] || "需核对");
+const memberLine = m => m.anchor ? `主来源 · ${m.rows} 条` : m.via ? `${m.matched}/${m.rows} 条匹配 · 按 ${m.via.column} = ${m.via.targetDataset}.${m.via.targetColumn}` : `${m.matched}/${m.rows} 条匹配`;
+const linkLine = l => `${l.name} · ${l.matchedRows}/${l.totalRows} 条匹配 · ${linkEvidence(l.evidence)}${l.caseInsensitive ? " · 忽略大小写" : ""}${l.executable ? "" : " · 待核对"}`;
+const review = helix => [...helix.notes.map(n => ({label: n.text, sub: noteKind(n.kind)})), ...helix.issues.map(i => ({label: i.message, sub: severity(i.severity)}))];
 
 export function renderOntologySpace(value, {selections, read, select, management, objects, evidence, onLayout, automaticBuild, automaticApiBuild, connectModel, retryBuild, engine, programBuild}) {
   const root = el("section", "ontology-space"); root.setAttribute("aria-label", "三维本体空间");
@@ -25,7 +32,7 @@ export function renderOntologySpace(value, {selections, read, select, management
   let artifact = versions.find(item => item.id === saved?.id && item.version === saved?.version) || versions[0];
   let graph = buildOntologyGraph(artifact);
   let nav = createOntologyNavigation(graph, saved?.id === artifact?.id && saved?.version === artifact?.version ? saved?.view : null);
-  let scene = null, disposed = false, generation = 0, fanFrame = 0, motion = true, activeGroup = "relations";
+  let scene = null, disposed = false, generation = 0, fanFrame = 0, motion = true, activeGroup = "links", highlight = null;
   const content = el("div", "os-scene-host");
   const top = el("header", "os-header");
   const identity = el("div", "os-identity");
@@ -38,9 +45,10 @@ export function renderOntologySpace(value, {selections, read, select, management
   for (const [build, isApi] of [[automaticBuild, false], [automaticApiBuild, true]]) {
     if (!build || build.status === "idle") continue;
     const progress = el("div", "os-build-status"); progress.setAttribute("role", "status");
-    const labels = {running: "正在读取资料并构建本体…", queued: "资料已加入自动构建队列", waiting_model: "资料已保存，连接模型后自动构建", completed: "本体已自动构建并生效", failed: "部分资料构建失败"};
-    const apiLabels = {running: "正在读取 API 并构建映射…", queued: "API 已加入自动构建队列", waiting_model: "API 已连接，连接模型后自动构建", completed: "API 已本体化并可查询", failed: "部分 API 本体化未完成"};
-    progress.append(el("span", "", `${(isApi ? apiLabels : labels)[build.status]} · ${build.completed}/${build.total} ${isApi ? "个 API 来源" : "份资料"}`));
+    // Data builds the structure; documents only refine the concepts it built.
+    const labels = {running: "正在用资料补充本体说明…", queued: "资料已排队，用于补充本体说明", waiting_model: "资料已保存，连接模型后补充说明", waiting_data: "资料已保存，接入结构化数据后用于补充说明", completed: "资料已补充到本体说明与依据", failed: "部分资料补充失败"};
+    const apiLabels = {running: "正在按数据构建本体…", queued: "数据已加入程序构建队列", waiting_model: "数据已连接，等待构建", completed: "已按数据构建本体并可查询", failed: "部分数据构建未完成"};
+    progress.append(el("span", "", `${(isApi ? apiLabels : labels)[build.status]} · ${build.completed}/${build.total} ${isApi ? "个数据来源" : "份资料"}`));
     if (build.status === "waiting_model") progress.append(button("连接模型", connectModel));
     if (build.errors?.length) {
       const errors = el("details"); errors.append(el("summary", "", `查看 ${build.errors.length} 项原因`));
@@ -49,6 +57,27 @@ export function renderOntologySpace(value, {selections, read, select, management
     }
     if (build.status === "failed") progress.append(button("重试构建", retryBuild));
     identity.append(progress);
+  }
+  const helixSummary = artifact?.content.helix;
+  if (helixSummary) {
+    const {stats, notes, unplaced} = helixSummary;
+    const line = el("div", "os-helix-summary");
+    line.append(el("span", "", `${stats.tables} 张表 · ${stats.sources} 个来源 → ${stats.entities} 个实体 · ${stats.links} 条关联`));
+    const worth = notes.filter(n => n.kind !== "merged");
+    if (notes.length || unplaced.length) {
+      const dialog = el("dialog", "live-dialog os-management"); dialog.setAttribute("aria-label", "程序构建说明");
+      dialog.append(el("h2", "", "程序构建说明"), button("关闭", () => dialog.close(), "close"));
+      for (const [heading, items] of [["已合并", notes.filter(n => n.kind === "merged").map(n => n.text)],
+        ["值得核对", [...worth.map(n => `${noteKind(n.kind)}：${n.text}`), ...unplaced.map(name => `「${name}」没有可用的身份键，尚未纳入本体；数据仍作为表保留。`)]]]) {
+        if (!items.length) continue;
+        const section = el("section", "os-detail-section"); section.append(el("h3", "", heading));
+        for (const text of items) section.append(el("p", "", text));
+        dialog.append(section);
+      }
+      root.append(dialog);
+      line.append(button(`值得核对 ${worth.length + unplaced.length}`, () => dialog.showModal(), null, "os-helix-review"));
+    }
+    identity.append(line);
   }
   const toolbar = el("div", "os-toolbar"); toolbar.setAttribute("aria-label", "图谱工具");
   const back = button("返回上一层", () => {nav.back(); renderView();}, "back");
@@ -103,10 +132,10 @@ export function renderOntologySpace(value, {selections, read, select, management
   search.oninput = renderDirectory;
   const legend = el("aside", "os-legend");
   legend.append(el("span", "os-eyebrow", "图例"));
-  for (const [name, color] of [["焦点概念", "#e9c988"], ["业务概念", "#c0a1ed"], ["定义依据", "#86d5bd"]]) {
+  for (const [name, color] of [["焦点实体", "#e9889e"], ["业务实体", "#c0a1ed"], ["说明依据", "#83a1d8"]]) {
     const row = el("div", "", name); row.style.setProperty("--legend-color", color); legend.append(row);
   }
-  legend.append(el("small", "", "连线仅表示已有关系与依据"));
+  legend.append(el("small", "", "连线为数据中实际匹配的关联与说明依据"));
   const status = el("div", "os-status"); status.setAttribute("aria-live", "polite");
   identity.append(status);
   const hint = el("p", "os-hint", "点击节点探索 · 拖动旋转 · 滚轮缩放");
@@ -123,7 +152,7 @@ export function renderOntologySpace(value, {selections, read, select, management
   fan.append(fanCanvas, groups, leaves);
   root.prepend(content, top, directory, legend, hint, local, fan, inspector);
 
-  function activate(key) {nav.activate(key); renderView();}
+  function activate(key) {highlight = null; nav.activate(key); renderView();}
   function currentConcept() {
     const state = nav.current;
     return graph.concepts.find(item => item.id === (state.target?.kind === "foundation_concept" ? state.target.member : state.focus));
@@ -143,25 +172,32 @@ export function renderOntologySpace(value, {selections, read, select, management
     const head = el("header");
     head.append(el("span", "os-eyebrow", "当前聚焦"), button("返回全局", () => {nav.back(); renderView();}, "close"));
     const body = button(concept.name, () => {nav.activate(`concept:${concept.id}`); renderView();}, null, "os-local-summary");
-    body.append(el("p", "", concept.description || "暂无业务说明"), el("span", "os-explore", "探索定义与关联内容 →"));
+    const helix = concept.helix;
+    body.append(el("p", "", concept.description || "暂无业务说明"), el("span", "os-explore", helix ? "查看合并来源、关联与待核对 →" : "探索定义与关联内容 →"));
     const bottom = el("div", "os-local-actions");
-    bottom.append(el("span", "", `${related(concept).length} 条关系 · ${concept.evidenceRefs?.length || 0} 条依据 · ${mappingLabel(concept)}`),
+    const members = helix?.entity.members.length || 0;
+    bottom.append(el("span", "", helix ? `${helix.entity.rows} 条记录 · 身份键 ${helix.entity.key} · ${members > 1 ? `合并自 ${members} 个来源` : "单一来源"}`
+      : `${related(concept).length} 条关系 · 非程序构建`),
       button("引用到对话", () => attach({kind: "foundation_concept", member: concept.id}, concept.name)));
     local.append(head, body, bottom);
   }
   function renderFan() {
     const concept = currentConcept(); if (!concept) return;
     const relationships = related(concept);
-    const neighbors = [...new Set(relationships.map(item => item.from === concept.id ? item.to : item.from))].map(id => graph.concepts.find(item => item.id === id));
     const refs = graph.evidence.filter(item => concept.evidenceRefs?.includes(item.id));
-    const bindings = concept.bindings || [];
-    const buckets = [
-      {id: "concepts", name: "关联概念", items: neighbors.map(item => ({label: item.name, sub: mappingLabel(item), action: () => activate(`concept:${item.id}`)}))},
+    // A program-built entity shows what the program found; leaves open the matching evidence card.
+    const show = key => () => {highlight = key; renderHelix(concept); inspectorBody.querySelector(`[data-helix="${key}"]`)?.scrollIntoView({block: "nearest"});};
+    const helix = concept.helix;
+    const buckets = helix ? [
+      {id: "members", name: "合并来源", items: helix.entity.members.map((m, i) => ({label: m.datasetName, sub: memberLine(m), action: show(`members:${i}`)}))},
+      {id: "links", name: "关联", items: helix.links.map((l, i) => ({label: `${l.direction === "out" ? "→" : "←"} ${l.other.name}`, sub: linkLine(l), action: show(`links:${i}`)}))},
+      {id: "properties", name: "属性", items: [helix.entity.key, ...helix.entity.properties.filter(p => p !== helix.entity.key)].map((p, i) => ({label: p, sub: i ? "属性" : "身份键", action: show("properties")}))},
+      {id: "review", name: "待核对", items: review(helix).map((r, i) => ({label: r.label, sub: r.sub, action: show(`review:${i}`)}))},
+    ] : [
       {id: "relations", name: "关系定义", items: relationships.map(item => ({label: item.name, sub: `${graph.concepts.find(c => c.id === item.from)?.name} → ${graph.concepts.find(c => c.id === item.to)?.name}`, action: () => activate(`relation:${item.id}`)}))},
       {id: "evidence", name: "定义依据", items: refs.map(item => ({label: item.title || "用户陈述", sub: kindLabel(item.kind), action: () => activate(`evidence:${item.id}`)}))},
-      {id: "mappings", name: "来源映射", items: bindings.map(item => ({label: item.sourceId || `映射 v${item.modelVersion}`, sub: item.status === "adopted" ? "已采用" : "候选映射", action: () => {activeGroup = "mappings"; activate(`concept:${concept.id}`);}}))},
     ];
-    if (!buckets.some(item => item.id === activeGroup)) activeGroup = "relations";
+    if (!buckets.some(item => item.id === activeGroup)) activeGroup = helix ? "links" : "relations";
     groups.replaceChildren(); leaves.replaceChildren();
     for (const bucket of buckets) {
       const control = button(bucket.name, () => {activeGroup = bucket.id; renderFan(); groups.querySelector('[aria-pressed="true"]')?.focus({preventScroll: true});}, null, "os-fan-group");
@@ -188,11 +224,39 @@ export function renderOntologySpace(value, {selections, read, select, management
       ctx.bezierCurveTo(from.x + (to.x - from.x) * .52, from.y, to.x - 45, to.y, to.x, to.y);
       ctx.strokeStyle = color; ctx.lineWidth = .8; ctx.stroke();
     };
-    for (const group of groups.children) curve(origin, point(group, false), "#86b8b366");
+    for (const group of groups.children) curve(origin, point(group, false), "#8495ba66");
     const selected = groups.querySelector('[aria-pressed="true"]');
-    if (selected) for (const leaf of leaves.querySelectorAll("button")) curve(point(selected, true), point(leaf, false), "#dbd19cbb");
+    if (selected) for (const leaf of leaves.querySelectorAll("button")) curve(point(selected, true), point(leaf, false), "#db9ca8bb");
   }
   const fanResize = new ResizeObserver(() => {cancelAnimationFrame(fanFrame); fanFrame = requestAnimationFrame(drawFan);}); fanResize.observe(fan);
+  // The program's evidence for one entity: merged sources, matched links, properties and review items.
+  function renderHelix(concept) {
+    const helix = concept?.helix, old = inspectorBody.querySelector(".os-helix");
+    if (!helix) {old?.remove(); return;}
+    const section = el("section", "os-detail-section os-helix");
+    const card = (key, title, lines) => {
+      const details = el("details", "os-evidence-card"); details.dataset.helix = key; details.open = highlight === key;
+      details.append(el("summary", "", title), ...lines.filter(Boolean).map(line => typeof line === "string" ? el("p", "", line) : line));
+      return details;
+    };
+    section.append(el("h3", "", "合并来源"));
+    helix.entity.members.forEach((m, i) => section.append(card(`members:${i}`, `${m.datasetName}${m.anchor ? " · 主来源" : ""}`, [`来源：${m.source}`, memberLine(m), `身份键 ${m.key}`])));
+    section.append(el("h3", "", "关联"));
+    if (!helix.links.length) section.append(el("p", "os-muted", "程序没有在数据中发现与其他实体的匹配。"));
+    helix.links.forEach((l, i) => section.append(card(`links:${i}`, `${l.direction === "out" ? "→" : "←"} ${l.other.name} · ${l.name}`, [
+      `${l.from.dataset}.${l.from.column} → ${l.to.dataset}.${l.to.column}`,
+      `${l.matchedRows}/${l.totalRows} 条匹配 · ${linkEvidence(l.evidence)}${l.caseInsensitive ? " · 仅忽略大小写时匹配" : ""}`,
+      l.executable ? "已进入执行映射，可查询" : "未进入执行映射：需经合并数据或忽略大小写才能匹配，待核对",
+      l.other.conceptId && button(`前往 ${l.other.name}`, () => activate(`concept:${l.other.conceptId}`), null, "os-button"),
+    ])));
+    section.append(el("h3", "", "属性"));
+    section.append(card("properties", `身份键 ${helix.entity.key} · ${helix.entity.properties.length} 个属性`, [helix.entity.properties.join("、")]));
+    section.append(el("h3", "", "待核对"));
+    const items = review(helix);
+    if (!items.length) section.append(el("p", "os-muted", "程序没有发现需要核对的问题；业务含义仍需人确认。"));
+    items.forEach((r, i) => section.append(card(`review:${i}`, r.sub, [r.label])));
+    if (old) old.replaceWith(section); else inspectorBody.querySelector(".os-badges")?.after(section);
+  }
   function renderBindings(host, bindings) {
     const section = el("section", "os-detail-section"); section.append(el("h3", "", "来源与执行映射"));
     if (!bindings.length) section.append(el("p", "os-muted", "尚未建立执行映射，暂无可查询的实际对象。"));
@@ -228,13 +292,23 @@ export function renderOntologySpace(value, {selections, read, select, management
         const name = id => graph.concepts.find(item => item.id === id)?.name || id;
         inspectorBody.append(el("p", "os-relation-path", `${name(definition.from)} → ${definition.name} → ${name(definition.to)}`));
       }
+      const helix = !isRelation && !evidenceItem && currentConcept()?.helix;
       const numbers = el("div", "os-detail-metrics");
-      for (const [number, label] of [[definition.evidence?.length || 0, "定义依据"], [definition.bindings?.length || 0, "来源映射"]]) {
+      const metrics = helix ? [[helix.entity.members.length, "合并来源"], [helix.links.length, "关联"], [review(helix).length, "待核对"]]
+        : [[definition.evidence?.length || 0, "定义依据"], [definition.bindings?.length || 0, "来源映射"]];
+      for (const [number, label] of metrics) {
         const stat = el("div"); stat.append(el("strong", "", String(number)), el("span", "", label)); numbers.append(stat);
       }
       inspectorBody.append(numbers, button("引用到对话", () => attach(state.target, definition.name), null, "os-primary"));
+      if (helix) renderHelix(currentConcept());
+      else if (!isRelation && !evidenceItem) {
+        const legacy = el("section", "os-detail-section os-legacy");
+        legacy.append(el("h3", "", "非程序构建"), el("p", "", "这个概念来自资料或对话解读，没有经过数据程序的身份、合并与关联匹配。建议按数据重新构建。"));
+        if (programBuild) legacy.append(button("按数据重新构建", programBuild, null, "os-button"));
+        inspectorBody.append(legacy);
+      }
       renderBindings(inspectorBody, definition.bindings || []);
-      const sources = el("section", "os-detail-section"); sources.append(el("h3", "", "定义依据"));
+      const sources = el("section", "os-detail-section"); sources.append(el("h3", "", helix ? "说明依据" : "定义依据"));
       for (const proof of definition.evidence || []) {
         const details = el("details", "os-evidence-card"); details.open = proof.id === state.evidenceId;
         details.append(el("summary", "", `${kindLabel(proof.kind)} · ${proof.title || "用户陈述"}`), el("blockquote", "", proof.quote));
@@ -274,7 +348,7 @@ export function renderOntologySpace(value, {selections, read, select, management
     inspector.hidden = fan.hidden = state.stage !== "detail";
     legend.hidden = state.stage === "detail";
     hint.textContent = state.stage === "global" ? "点击节点探索 · 拖动旋转 · 滚轮缩放" : state.stage === "local" ? "点击节点或关系查看内容 · 点击空白返回" : "点击分组展开关联 · 点击空白或 Esc 返回";
-    status.textContent = state.stage === "global" ? `${graph.stats.concepts} 个概念 · ${graph.stats.relations} 条关系` : (currentConcept()?.name || "当前关系");
+    status.textContent = state.stage === "global" ? `${graph.stats.concepts} 个${artifact?.content.helix ? "实体" : "概念"} · ${graph.stats.relations} 条关系` : (currentConcept()?.name || "当前关系");
     scene?.setView(state);
     if (state.stage === "local") renderLocal();
     if (state.stage === "detail") {renderFan(); void renderDetail();}

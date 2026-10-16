@@ -1,0 +1,4 @@
+release_key,name,product_key,project_key,original_target_date,forecast_date,status,release_manager,updated_at
+FP-3.2,FlowPilot 3.2 企业治理版,FLOWPILOT,FP32,2026-09-30,2026-10-08,at_risk,xuan_release,2026-09-03T18:00:00+08:00
+FP-3.3,FlowPilot 3.3 移动体验版,FLOWPILOT,,2026-12-20,2026-12-20,planning,xuan_release,2026-08-28T17:40:00+08:00
+IB-2.1,InsightBoard 2.1 指标治理,INSIGHTBOARD,IB21,2026-10-20,2026-10-20,on_track,xuan_release,2026-08-28T14:00:00+08:00

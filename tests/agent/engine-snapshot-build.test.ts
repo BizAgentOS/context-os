@@ -203,6 +203,8 @@ test("new source properties avoid existing primary and supplement names without 
     const foundation = f.foundation.read().adopted!;
     const originalType = (original.content.types as any[])[0];
     const file = f.workspace.upload("registry.csv", "id,name\nC0,REG0\nC1,REG1\nC2,REG2\nC3,REG3\n");
+    // The program processes the registry first; the manual mapping then refines what it found.
+    await f.engine.build({ operationId: "registry-seen", sourceIds: [file.id] });
     const connection = f.live.sources.connectUpload(file.id, file.version, "id");
     const manualFields = { ...originalType.fields, account_name: "name" };
     const manualSupplement = { name: "人工登记名称", sourceId: connection.id, capability: "records", match: { primaryField: "id", sourceField: "id" },

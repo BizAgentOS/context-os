@@ -28,10 +28,11 @@ export class AutomaticApi {
     const current = this.memory.getArtifact(job.id);
     return this.memory.putArtifact({...current, expectedVersion: current.version, status, content: {...current.content, ...extra}});
   }
-  enqueue(source: Artifact) {
+  /** `trigger` names new data for an unchanged source (a sync or accepted schema change), so it rebuilds once more. */
+  enqueue(source: Artifact, trigger?: string) {
     if (!["source_connection", "source"].includes(source.kind) || source.status !== "ready" || source.content.localSource || !recordCaps(source).length) return;
-    if (this.jobs().some(job => job.content.sourceId === source.id && job.content.sourceVersion === source.version)) return;
-    this.memory.putArtifact({kind: "api_build", title: source.title, status: "queued", content: {sourceId: source.id, sourceVersion: source.version, attempts: 0}});
+    if (this.jobs().some(job => job.content.sourceId === source.id && job.content.sourceVersion === source.version && (job.content.trigger ?? null) === (trigger ?? null))) return;
+    this.memory.putArtifact({kind: "api_build", title: source.title, status: "queued", content: {sourceId: source.id, sourceVersion: source.version, attempts: 0, ...(trigger ? {trigger} : {})}});
   }
   enqueueUpload(source: Artifact) { if (source.kind === "source" && source.content.format === "csv") this.enqueue(source); }
   retry() {for (const job of this.jobs().filter(item => item.status === "failed")) this.update(job, "queued", {error: null});}

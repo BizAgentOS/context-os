@@ -1,0 +1,4 @@
+product_key,name,former_name,description,owner_username,owner_updated_at,status
+FLOWPILOT,FlowPilot,WorkflowX,企业流程自动化与审批平台,lin.yue,2026-06-25T10:20:00+08:00,active
+INSIGHTBOARD,InsightBoard,,企业指标与经营分析平台,lin.yue,2026-08-12T16:00:00+08:00,active
+CONNECTHUB,ConnectHub,,企业系统连接与数据同步平台,gy_platform,2026-08-10T11:00:00+08:00,active

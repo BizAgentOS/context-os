@@ -123,11 +123,11 @@ test("source queue reports pending foundation review without automatically adopt
   try {
     await f.app.live.sources.connect(f.config); await f.app.idle();
     const adopted = f.app.foundation.read().adopted!;
-    const task = f.app.memory.createTask("待审核修订"), message = f.app.memory.addMessage(task.id, "user", "增加联系人概念，表示门店联系人，先保存候选。");
+    const task = f.app.memory.createTask("待审核修订"), message = f.app.memory.addMessage(task.id, "user", "门店联系人还没有数据，先记为待补充并保存候选。");
     const context = f.app.memory.beginExecution(task.id);
     const repair = f.app.foundation.propose({baseVersion: adopted.version, enterprise: adopted.content.enterprise,
-      concepts: [{id: "contact", name: "联系人", description: "门店联系人", evidenceRefs: ["repair"]}], relations: [],
-      evidence: [{id: "repair", messageId: message.id, quote: message.content}], unknowns: [], conflicts: []}, context, "repair", "fixture-skill");
+      concepts: [], relations: [], evidence: [{id: "repair", messageId: message.id, quote: message.content}],
+      unknowns: [{id: "contact", description: "门店联系人尚无来源数据", evidenceRefs: ["repair"]}], conflicts: []}, context, "repair", "fixture-skill");
     f.app.memory.endExecution(context);
     await f.app.live.sources.connect({...f.config, name: "补充来源"}); await f.app.idle();
     assert.deepEqual(f.app.foundation.read().current, repair);

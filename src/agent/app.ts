@@ -196,6 +196,11 @@ export class AgentApplication {
     this.live = new LiveMemory(directory, this.memory);
     this.foundation = new FoundationService(this.memory, this.live);
     this.snapshots = new Snapshots(this.memory, this.live, directory);
+    this.snapshots.onChanged = (sourceIds, key) => {
+      if (!this.automaticApiEnabled) return;
+      for (const id of sourceIds) this.automaticApiBuild.enqueue(this.memory.getArtifact(id), key);
+      this.startAutomaticBuild();
+    };
     this.live.snapshotCheck = definition => validateDefinition(this.snapshots, this.live, definition) as never;
     this.programBuilds = new ProgramBuilds(this.memory, this.foundation, this.live, this.snapshots);
     this.onboarding = new Onboarding(this.memory, this.foundation, () => this.canvasTask("setup").id);
@@ -1435,8 +1440,9 @@ export class AgentApplication {
     }
     if (this.closing || this.stopping || this.active || this.modelTest) return;
     if (this.delegations?.pump()) return;
-    const jobs = this.model().configured ? this.automaticBuild.pending() : [];
-    const apiJob = jobs.length || !this.automaticApiEnabled ? undefined : this.automaticApiBuild.pending();
+    // Structure comes from the data program first; documents then refine the concepts it built.
+    const apiJob = this.automaticApiEnabled ? this.automaticApiBuild.pending() : undefined;
+    const jobs = !apiJob && this.model().configured ? this.automaticBuild.pending() : [];
     if (!jobs.length && !apiJob) return;
     const task = this.canvasTask("ontology");
     this.memory.clearInvestigation(task.id, "按当前资料自动构建本体。");
@@ -1600,8 +1606,7 @@ export class AgentApplication {
               ...(page !== "consumption" ? ["profile_update"] : []),
               ...(page === "ontology"
                 ? [
-                    "ontology_outline",
-                    "ontology_propose",
+                    // Structure comes from the data program; outline/propose would bypass it.
                     "ontology_preview",
                     "object_execute",
                     "ontology_verify",
@@ -2068,6 +2073,7 @@ export class AgentApplication {
                                 operationId!,
                                 foundationSkill,
                                 foundationDocuments,
+                                { lockStructure: true },
                               ),
                             ),
                           )
@@ -2229,7 +2235,11 @@ export class AgentApplication {
     this.memory.attachArtifact(task.id, artifact);
     const text = `已上传资料：${artifact.title}（版本 ${artifact.version}）。请检查内容，更新企业理解并说明与当前目标相关的缺口。`;
     this.memory.addMessage(task.id, "user", text);
-    if (this.model().configured) this.launch(task.id, text, artifact);
+    // Structured files are built by the data program, never interpreted by the model.
+    if (artifact.content.format === "csv") {
+      this.automaticApiBuild.enqueueUpload(artifact);
+      this.startAutomaticBuild();
+    } else if (this.model().configured) this.launch(task.id, text, artifact);
     return { artifact, task: this.memory.getTask(task.id) };
   }
 
@@ -2260,7 +2270,11 @@ export class AgentApplication {
     const text =
       "已接入虚构澄川热力的原始示例资料。请先阅读企业说明和相关业务规则，保存企业理解，再提出一个适合验证的投诉复盘任务。";
     this.memory.addMessage(task.id, "user", text);
-    if (this.model().configured) this.launch(task.id, text);
+    // Same order as canvas uploads: the data program builds structure, documents refine it.
+    for (const artifact of artifacts)
+      if (artifact.content.format === "csv") this.automaticApiBuild.enqueueUpload(artifact);
+      else this.automaticBuild.enqueue(artifact);
+    this.startAutomaticBuild();
     return { artifacts, task: this.memory.getTask(task.id) };
   }
 

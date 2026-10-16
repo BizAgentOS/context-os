@@ -3,11 +3,12 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const sceneEntry = fileURLToPath(new URL("../../web/agent/ontology-scene.js", import.meta.url));
-let cached: { modified: number; contents: Promise<Uint8Array> } | undefined;
+const sceneModel = fileURLToPath(new URL("../../web/agent/ontology-space-model.js", import.meta.url));
+let cached: { modified: string; contents: Promise<Uint8Array> } | undefined;
 
 // Serve the pinned local renderer, without a runtime CDN or exposing node_modules.
 export async function ontologySceneAsset(): Promise<Uint8Array> {
-  const modified = (await stat(sceneEntry)).mtimeMs;
+  const modified = (await Promise.all([sceneEntry, sceneModel].map(path => stat(path)))).map(info => info.mtimeMs).join(":");
   if (!cached || cached.modified !== modified) {
     const contents = build({
       entryPoints: [sceneEntry], bundle: true, write: false, format: "esm",

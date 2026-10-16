@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { AddressInfo } from "node:net";
 import type { AgentDriver, RunRequest } from "../../src/agent/runtime.ts";
+import { seedFoundation } from "./program-foundation-fixture.ts";
 import { createServer } from "../../src/agent/server.ts";
 import { AgentApplication } from "../../src/agent/app.ts";
 import type { Artifact } from "../../src/agent/contracts.ts";
@@ -336,9 +337,9 @@ test("each page has bounded chat and a fresh model context while saved enterpris
   }
 });
 
-test("sources require inspected records, and ontology adoption remains bound to the displayed candidate version", async () => {
+test("sources require inspected records, and the ontology page offers no tool that writes structure around the data program", async () => {
   const directory = mkdtempSync(join(tmpdir(), "dataengine-canvas-stages-"));
-  let candidate: Artifact;
+  let offered: string[] = [];
   const driver: AgentDriver = {
     async run(request) {
       const input = JSON.parse(request.input);
@@ -393,36 +394,7 @@ test("sources require inspected records, and ontology adoption remains bound to 
             reason: "需要实际记录来创建对象",
           });
       } else {
-        const source = input.enterprise.sources.find(
-          (item: { title: string }) => item.title === "tickets.csv",
-        );
-        await request.onTool("memory_read", { id: source.id });
-        const proposed = (await request.onTool("ontology_propose", {
-          title: "投诉模型",
-          purpose: "记录投诉状态",
-          types: [
-            {
-              name: "Ticket",
-              description: "一条投诉",
-              sourceId: source.id,
-              idField: "id",
-              fields: { status: "status" },
-            },
-          ],
-          relations: [],
-          functions: [],
-          evidence: [{ sourceId: source.id, version: source.version }],
-        })) as unknown as Artifact;
-        candidate = (await request.onTool("ontology_preview", {
-          id: proposed.id,
-          version: proposed.version,
-        })) as unknown as Artifact;
-        await request.onTool("task_ask", {
-          question: "是否采用这版投诉定义？",
-          reason: "请确认业务含义",
-          candidateId: candidate.id,
-          version: candidate.version,
-        });
+        offered = request.tools.map((tool) => tool.name);
       }
       return {
         text: "已保存本页内容。",
@@ -465,27 +437,9 @@ test("sources require inspected records, and ontology adoption remains bound to 
     assert.equal(app.canvasState().messages.length, 0);
     await app.canvasMessage({ page: "ontology", text: "建立投诉对象。" });
     await app.idle();
-    assert.equal(app.canvasState().pending?.candidateId, candidate!.id);
-    await assert.rejects(
-      app.canvasMessage({
-        page: "ontology",
-        text: "采用这版",
-        focusId: candidate!.id,
-        focusVersion: candidate!.version - 1,
-      }),
-      /待决定/,
-    );
-    assert.equal(app.memory.getArtifact(candidate!.id).status, "candidate");
-    await app.canvasDecision({
-      page: "ontology",
-      candidateId: candidate!.id,
-      version: candidate!.version,
-      decision: "adopt",
-    });
-    assert.equal(app.canvasState().ontologies[0].status, "adopted");
-    assert.equal(app.canvasState().pending, null);
-    assert.equal(app.canvasState().pages[1].ready, true);
-    assert.equal(app.memory.listTasks().length, 2);
+    // Concepts and relations come from the rules; the assistant only corrects them.
+    assert(offered.includes("foundation_propose") && offered.includes("engine_build"));
+    for (const name of ["ontology_outline", "ontology_propose"]) assert(!offered.includes(name), name);
     await app.canvasNavigate({ page: "company" });
     assert.match(JSON.stringify(app.canvasState().profile), /居民供热/);
   } finally {
@@ -586,6 +540,8 @@ test("explicit cancellation after navigation invalidates pending writes, and fai
       false,
     );
     mode = "failed";
+    // Documents enrich program-built concepts, so the failure needs existing structure to refine.
+    seedFoundation(app.memory, app.foundation, { enterprise: "澄川热力", concepts: [{ id: "heating", name: "供热服务", description: "来自供热表的记录。" }], program: true });
     await app.canvasUpload({
       page: "sources",
       name: "company.md",

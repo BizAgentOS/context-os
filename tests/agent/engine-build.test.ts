@@ -133,11 +133,11 @@ test("automatic source refresh preserves an unadopted foundation repair until ex
     await f.engine.build({operationId: "initial", autoAdopt: true});
     const adopted = f.foundation.read().adopted!;
     const task = f.memory.createTask("修订概念含义");
-    const message = f.memory.addMessage(task.id, "user", "增加联系人概念，表示公司的联系人员，先保存候选。");
+    const message = f.memory.addMessage(task.id, "user", "公司的联系人员还没有数据，先记为待补充并保存候选。");
     const context = f.memory.beginExecution(task.id);
     const repair = f.foundation.propose({baseVersion: adopted.version, enterprise: adopted.content.enterprise,
-      concepts: [{id: "contact", name: "联系人", description: "公司的联系人员", evidenceRefs: ["repair"]}], relations: [],
-      evidence: [{id: "repair", messageId: message.id, quote: message.content}], unknowns: [], conflicts: []}, context, "repair", "fixture-skill");
+      concepts: [], relations: [], evidence: [{id: "repair", messageId: message.id, quote: message.content}],
+      unknowns: [{id: "contact", description: "公司的联系人员尚无来源数据", evidenceRefs: ["repair"]}], conflicts: []}, context, "repair", "fixture-skill");
     f.memory.endExecution(context);
     workspace.upload("companies.csv", "id,name\nA1,青山更新\n");
     const refreshed = await f.engine.build({operationId: "refresh", autoAdopt: true});
@@ -147,9 +147,9 @@ test("automatic source refresh preserves an unadopted foundation repair until ex
     assert((refreshed.content.issues as any[]).some(issue => issue.code === "pending_foundation_review"), JSON.stringify(f.engine.overview().candidate));
     const candidate = f.engine.overview().candidate!;
     assert.equal(candidate.status, "checked");
-    assert((candidate.content.concepts as any[]).some(c => c.id === "contact"));
+    assert(((candidate.content.foundation as any).unknowns as any[]).some(u => u.id === "contact"));
     const result = await f.engine.adopt({id: candidate.id, version: candidate.version, operationId: "explicit"});
-    assert((result.foundation.content.concepts as any[]).some(c => c.id === "contact"));
+    assert((result.foundation.content.unknowns as any[]).some(u => u.id === "contact"));
     const type = (result.model.content.types as any[])[0];
     assert.equal((await f.live.query({modelId: result.model.id, type: type.name})).items[0].name, "青山更新");
   } finally { f.close(); }
@@ -227,6 +227,8 @@ test("rebuilding a supplemental source preserves the fusion rule and its unresol
     const primary = workspace.upload("companies.csv", "id,name\nCO1,青山\nCO2,海川\n");
     await f.engine.build({operationId: "primary", sourceIds: [primary.id], autoAdopt: true});
     const secondary = workspace.upload("crm.csv", "id,name\nCO1,青山集团\nCO2,海川集团\n");
+    // Data reaches mappings through the program first; the manual fusion then refines what it found.
+    await f.engine.build({operationId: "crm-seen", sourceIds: [secondary.id]});
     const connection = f.live.sources.connectUpload(secondary.id, secondary.version, "id");
     const foundation = f.foundation.read().adopted!, model = f.live.overview().models.find(item => item.status === "adopted")!;
     const type = (model.content.types as any[])[0];

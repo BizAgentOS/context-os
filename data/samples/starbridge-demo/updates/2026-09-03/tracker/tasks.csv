@@ -1,0 +1,11 @@
+task_key,title,requirement_key,assignee,status,blocked_by,updated_at
+FP-TASK-3201,OIDC 后端接入,FP-REQ-3201,chen.wang,done,,2026-08-26T19:20:00+08:00
+FP-TASK-3202,SSO 管理配置界面,FP-REQ-3201,liqi_fe,in_progress,,2026-08-29T16:15:00+08:00
+FP-TASK-3203,SSO 安全评审,FP-REQ-3201,sunran_sec,in_progress,,2026-09-02T17:10:00+08:00
+FP-TASK-3204,外部 IdP 沙箱联调,FP-REQ-3201,gy_platform,done,,2026-09-02T16:40:00+08:00
+FP-TASK-3205,审计日志导出管道,FP-REQ-3202,hx_data,in_progress,,2026-08-29T15:05:00+08:00
+FP-TASK-3206,导出数据脱敏检查,FP-REQ-3202,sunran_sec,todo,FP-TASK-3205,2026-08-29T15:05:00+08:00
+FP-TASK-3207,模板历史版本迁移,FP-REQ-3203,chen.wang,in_review,,2026-08-28T20:30:00+08:00
+FP-TASK-3208,移动审批交互开发,FP-REQ-3204,luoning_mobile,paused,,2026-08-28T17:40:00+08:00
+FP-TASK-3209,发布流水线回归,FP-REQ-3202,ci-bot,in_progress,,2026-08-29T20:00:00+08:00
+IB-TASK-2101,指标口径导入,IB-REQ-2101,hx_data,in_progress,,2026-08-28T14:00:00+08:00

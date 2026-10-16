@@ -34,6 +34,7 @@
 | 开发哪张票、什么算完成 | [功能台账](FEATURE_LIST.md)、[当前版本设计块](features/v0.2.0.md) | 功能状态、当前票的依赖与验收；状态各有唯一位置 |
 | 现在怎样运行、当时验证了什么 | [项目运行入口](../README.md)、[实验与运行索引](experiment/README.md) | 实际命令、现有能力与带日期的验证证据 |
 | 怎样维护文档与实现 | [开发流程](DEVELOPMENT.md)、[变更记录](CHANGELOG.md) | Feature 流程、文档变更归属、实际交付记录 |
+| 还有哪些已知问题待修 | [待修问题](ISSUES.md) | 已发现未修复的问题与修复方向；不代替台账状态 |
 
 保留 `PRODUCT.md` 和 `DATA_ENGINE_DESIGN.md` 的现有路径，分别承担 PRD 和 HLD 的职责，不再新建同义长文。
 

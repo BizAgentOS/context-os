@@ -1,0 +1,256 @@
+{
+  "dataset_version": "starbridge-demo-v1",
+  "fictional": true,
+  "timezone": "Asia/Shanghai",
+  "as_of": "2026-08-30T09:00:00+08:00",
+  "source_root": "sources",
+  "files": [
+    {
+      "path": "sources/hr/people.csv",
+      "source_system": "StarHR",
+      "source_id": "SRC-HR-PEOPLE",
+      "bytes": 1324,
+      "sha256": "e976ddc87e3bad8a0ca7c22806184b9b068b61ad23ef4ded8e5594ea3b1b38aa",
+      "format": "csv",
+      "primary_key": "employee_no",
+      "records": 13,
+      "columns": [
+        "employee_no",
+        "name",
+        "email",
+        "title",
+        "team_id",
+        "manager_employee_no",
+        "status",
+        "hired_on",
+        "left_on"
+      ]
+    },
+    {
+      "path": "sources/hr/teams.csv",
+      "source_system": "StarHR",
+      "source_id": "SRC-HR-TEAMS",
+      "bytes": 387,
+      "sha256": "61b9e525562e9bdbc174ba1ebc53193fd18df6f8dd16f5563d5141a36437ad10",
+      "format": "csv",
+      "primary_key": "team_id",
+      "records": 8,
+      "columns": [
+        "team_id",
+        "name",
+        "parent_team_id",
+        "lead_employee_no"
+      ]
+    },
+    {
+      "path": "sources/tracker/products.csv",
+      "source_system": "StarTrack",
+      "source_id": "SRC-TRACKER-PRODUCTS",
+      "bytes": 398,
+      "sha256": "21bd4bef3951d0e9aa682e1ff2a5dc8a2d21fb1067ac085516468a6bd965288a",
+      "format": "csv",
+      "primary_key": "product_key",
+      "records": 3,
+      "columns": [
+        "product_key",
+        "name",
+        "former_name",
+        "description",
+        "owner_username",
+        "owner_updated_at",
+        "status"
+      ]
+    },
+    {
+      "path": "sources/tracker/projects.csv",
+      "source_system": "StarTrack",
+      "source_id": "SRC-TRACKER-PROJECTS",
+      "bytes": 333,
+      "sha256": "4d784bf2c368bce265d42810d06560cdb3771b6f90facb7bc97b9c3afe015910",
+      "format": "csv",
+      "primary_key": "project_key",
+      "records": 2,
+      "columns": [
+        "project_key",
+        "name",
+        "product_key",
+        "project_manager",
+        "engineering_lead",
+        "health",
+        "status",
+        "started_at",
+        "updated_at"
+      ]
+    },
+    {
+      "path": "sources/tracker/releases.csv",
+      "source_system": "StarTrack",
+      "source_id": "SRC-TRACKER-RELEASES",
+      "bytes": 474,
+      "sha256": "371ec38835ca8b5297c3b907d6cf94eda9185fd895288ba56b74459f22ef3749",
+      "format": "csv",
+      "primary_key": "release_key",
+      "records": 3,
+      "columns": [
+        "release_key",
+        "name",
+        "product_key",
+        "project_key",
+        "original_target_date",
+        "forecast_date",
+        "status",
+        "release_manager",
+        "updated_at"
+      ]
+    },
+    {
+      "path": "sources/tracker/requirements.csv",
+      "source_system": "StarTrack",
+      "source_id": "SRC-TRACKER-REQUIREMENTS",
+      "bytes": 622,
+      "sha256": "b919f06a653b5c47e91403e592a503259ad9f63734c952fa7c0d46bfe7cfa4d1",
+      "format": "csv",
+      "primary_key": "requirement_key",
+      "records": 5,
+      "columns": [
+        "requirement_key",
+        "title",
+        "product_key",
+        "project_key",
+        "target_release",
+        "priority",
+        "owner_username",
+        "status",
+        "updated_at"
+      ]
+    },
+    {
+      "path": "sources/tracker/tasks.csv",
+      "source_system": "StarTrack",
+      "source_id": "SRC-TRACKER-TASKS",
+      "bytes": 1036,
+      "sha256": "17ceab122b54a633992fa6aecdf0e4edcc922433c56330249e8053992d63ed0e",
+      "format": "csv",
+      "primary_key": "task_key",
+      "records": 10,
+      "columns": [
+        "task_key",
+        "title",
+        "requirement_key",
+        "assignee",
+        "status",
+        "blocked_by",
+        "updated_at"
+      ]
+    },
+    {
+      "path": "sources/tracker/users.csv",
+      "source_system": "StarTrack",
+      "source_id": "SRC-TRACKER-USERS",
+      "bytes": 777,
+      "sha256": "33a3c07c90ade8e8d9d7a3b621819af54ec979eb8ba65043a4f3ee1f3f89d6ac",
+      "format": "csv",
+      "primary_key": "username",
+      "records": 14,
+      "columns": [
+        "username",
+        "display_name",
+        "email",
+        "account_status"
+      ]
+    },
+    {
+      "path": "sources/wiki/delivery-meeting-2026-08-28.md",
+      "source_system": "StarWiki",
+      "source_id": "SRC-WIKI-DELIVERY-MEETING-2026-08-28",
+      "bytes": 936,
+      "sha256": "df11b597d08f27e4fd8f81917e7be94811f8f1e98dad695a20a4f129146ae56c",
+      "format": "markdown",
+      "document_id": "DOC-FP-MEETING-20260828"
+    },
+    {
+      "path": "sources/wiki/flowpilot-overview.md",
+      "source_system": "StarWiki",
+      "source_id": "SRC-WIKI-FLOWPILOT-OVERVIEW",
+      "bytes": 580,
+      "sha256": "3f4e9ed1752e60b1b24697667d25acee036b6ba84ce4f80434c3e50541603ea2",
+      "format": "markdown",
+      "document_id": "DOC-FP-OVERVIEW"
+    },
+    {
+      "path": "sources/wiki/flowpilot-owner-handover.md",
+      "source_system": "StarWiki",
+      "source_id": "SRC-WIKI-FLOWPILOT-OWNER-HANDOVER",
+      "bytes": 562,
+      "sha256": "599d1f912c69291e7b4ced94b722f196b510346a90fd5e22c2362cd68b62db67",
+      "format": "markdown",
+      "document_id": "DOC-FP-HANDOVER-20260701"
+    },
+    {
+      "path": "sources/wiki/legacy-template-requirement.md",
+      "source_system": "StarWiki",
+      "source_id": "SRC-WIKI-LEGACY-TEMPLATE-REQUIREMENT",
+      "bytes": 443,
+      "sha256": "d7a01c2eb2634c8f8b85ef4cd722ca0ee242179fb86d139f0095060bedd4f443",
+      "format": "markdown",
+      "document_id": "DOC-FP-TEMPLATE-LEGACY"
+    },
+    {
+      "path": "sources/wiki/roadmap-2026-h1.md",
+      "source_system": "StarWiki",
+      "source_id": "SRC-WIKI-ROADMAP-2026-H1",
+      "bytes": 377,
+      "sha256": "7b09a54ffbb0babd62fe6c3bb63c89ed0fbf88c7e8878842456d8c2281aa6465",
+      "format": "markdown",
+      "document_id": "DOC-FP-ROADMAP-H1"
+    }
+  ],
+  "updates": [
+    {
+      "as_of": "2026-09-03T18:00:00+08:00",
+      "replaces": "sources/tracker",
+      "files": [
+        {
+          "path": "updates/2026-09-03/tracker/releases.csv",
+          "source_system": "StarTrack",
+          "source_id": "SRC-TRACKER-RELEASES",
+          "bytes": 474,
+          "sha256": "7d99f2815085b5c64cc278162a7c530d87f022b1f5f3e569da17c32801a2fb7f",
+          "format": "csv",
+          "primary_key": "release_key",
+          "records": 3,
+          "columns": [
+            "release_key",
+            "name",
+            "product_key",
+            "project_key",
+            "original_target_date",
+            "forecast_date",
+            "status",
+            "release_manager",
+            "updated_at"
+          ]
+        },
+        {
+          "path": "updates/2026-09-03/tracker/tasks.csv",
+          "source_system": "StarTrack",
+          "source_id": "SRC-TRACKER-TASKS",
+          "bytes": 1016,
+          "sha256": "209807e0201da2f9adc4d73b4a2f6236d03bd511e9eaf06e62ceef09efd30489",
+          "format": "csv",
+          "primary_key": "task_key",
+          "records": 10,
+          "columns": [
+            "task_key",
+            "title",
+            "requirement_key",
+            "assignee",
+            "status",
+            "blocked_by",
+            "updated_at"
+          ]
+        }
+      ]
+    }
+  ]
+}

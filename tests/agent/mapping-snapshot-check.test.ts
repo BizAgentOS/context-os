@@ -52,7 +52,7 @@ test("a mapping revision reports its full-snapshot effect, and one that breaks a
   } finally { await engine.close(); await snapshots.close(); memory.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
-test("adopting a mapping with a relation that matches nothing in the full data is refused by the full-snapshot check", async () => {
+test("a mapping with a relation that matches nothing in the full data is refused by the full-snapshot check when proposed", async () => {
   const directory = mkdtempSync(join(tmpdir(), "ade-adopt-snapshot-"));
   const memory = new MemoryStore(directory), live = new LiveMemory(directory, memory), snapshots = new Snapshots(memory, live, directory);
   live.snapshotCheck = definition => validateDefinition(snapshots, live, definition) as never;
@@ -78,9 +78,9 @@ test("adopting a mapping with a relation that matches nothing in the full data i
       types: [{ name: "企业", description: "CRM 企业", sourceId: crm.id, capability: "companies", fields: { 编号: "code", 负责人: "owner" } },
         { name: "订单", description: "订单", sourceId: erp.id, capability: "orders", fields: { 订单号: "order_id", 企业编号: "company_id", 备注: "note" } }],
       relations: [{ name: "属于", from: "订单", to: "企业", fromField, toField: "编号" }] });
-    // The online adoption check reads three sample records per type and never measures relation match rates.
-    const wrong = await propose("备注");
-    await assert.rejects(live.adopt(wrong.id, wrong.version), /全量快照上引入新的问题：关系：订单 属于 企业/);
+    // Online sample checks never measure relation match rates; the full-snapshot check refuses the proposal itself.
+    await assert.rejects(propose("备注"), /全量快照上引入新的问题：关系：订单 属于 企业/);
+    assert.equal(memory.listArtifacts("live_ontology").length, 0, "a refused proposal saves no candidate");
     const right = await propose("企业编号");
     assert.equal((await live.adopt(right.id, right.version)).status, "adopted");
   } finally { await new Promise(resolve => server.close(resolve)); await snapshots.close(); memory.close(); rmSync(directory, { recursive: true, force: true }); }

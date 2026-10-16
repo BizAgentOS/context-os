@@ -46,6 +46,8 @@ export class Snapshots {
   private root: string;
   private running = new Map<string, Promise<Artifact>>();
   private closing = false;
+  /** Called when a sync outside a program build, or an accepted schema change, gives sources new current data. */
+  onChanged?: (sourceIds: string[], key: string) => void;
 
   constructor(memory: MemoryStore, live: LiveMemory, stateDir: string) {
     this.memory = memory; this.live = live; this.root = join(stateDir, "data");
@@ -103,8 +105,10 @@ export class Snapshots {
     const current = this.versioned(input), { pendingChanges: _, ...c } = current.content as unknown as DatasetContent;
     if (!c.pendingVersion) throw new Error("没有待确认的结构变化");
     const snapshot = this.memory.getArtifact(c.pendingVersion);
-    return this.memory.putArtifact({ ...current, content: jsonData({ ...c, activeVersion: c.pendingVersion, pendingVersion: null, profile: snapshot.content.profile, coverage: snapshot.content.coverage,
+    const accepted = this.memory.putArtifact({ ...current, content: jsonData({ ...c, activeVersion: c.pendingVersion, pendingVersion: null, profile: snapshot.content.profile, coverage: snapshot.content.coverage,
       acceptedBy: [...((current.content.acceptedBy as string[] | undefined) ?? []), input.operationId].slice(-20) }) });
+    this.onChanged?.([c.sourceId], c.pendingVersion);
+    return accepted;
   }
 
   setPolicy(args: unknown) {
@@ -226,8 +230,12 @@ export class Snapshots {
           }
         }
       }
-      return this.update(id, c => ({ ...c, issues: [...c.issues as Data[], ...jsonData(issues) as unknown as Data[]], finishedAt: now(),
+      const done = this.update(id, c => ({ ...c, issues: [...c.issues as Data[], ...jsonData(issues) as unknown as Data[]], finishedAt: now(),
         outcome: !sources.length ? "empty" : issues.some(i => i.severity === "error") ? "needs_attention" : "synced" }), "completed");
+      // A program build syncs its own inputs; only other syncs ask for a rebuild.
+      const changed = [...new Set((done.content.progress as Data[]).filter(p => p.status === "updated").map(p => String(p.sourceId)))];
+      if (changed.length && !String(done.content.operationId).startsWith("build:")) this.onChanged?.(changed, id);
+      return done;
     } catch (error) {
       const job = this.memory.getArtifact(id);
       if (!["queued", "running"].includes(job.status)) return job;

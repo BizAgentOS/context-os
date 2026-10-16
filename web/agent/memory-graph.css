@@ -4,7 +4,7 @@
   overflow: hidden;
   border: 1px solid #ebebeb;
   border-radius: 14px;
-  background: #fcfcfb;
+  background: #fcfbfb;
 }
 .memory-graph-viewport {
   position: relative;
@@ -100,7 +100,7 @@
   padding: 4px 6px;
   border: 1px solid transparent;
   border-radius: 4px;
-  background: #fcfcfb;
+  background: #fcfbfb;
   color: #818181;
   font-size: 10.5px;
   line-height: 1.4;

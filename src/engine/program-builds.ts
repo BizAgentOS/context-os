@@ -40,6 +40,16 @@ const MAX_MODEL_TYPES = 20;
 const MAX_FOUNDATION_CONCEPTS = 30;
 
 /** Deterministic build jobs share ADE's ontology and mapping services, never a model loop. */
+/** A mapping follows its adopted concept's wording: documents and repairs may have renamed or described it since the mapping was built. */
+function alignTypes(types: Data[], modelRelations: Data[], concepts: Data[]) {
+  for (const [index, type] of types.entries()) {
+    const concept = concepts.find(item => item.id === type.conceptId);
+    if (!concept || (type.name === concept.name && type.description === concept.description)) continue;
+    for (const relation of modelRelations) for (const end of ["from", "to"]) if (relation[end] === type.name) relation[end] = concept.name;
+    types[index] = { ...type, name: concept.name, description: concept.description };
+  }
+}
+
 export class ProgramBuilds {
   private memory: MemoryStore;
   private foundation: FoundationService;
@@ -311,6 +321,7 @@ export class ProgramBuilds {
       types.push({ name: concept.name, description: concept.description, conceptId: concept.id, sourceId: dataset.sourceId, capability: dataset.capability, fields });
       addedMappings.push(String(concept.id));
     }
+    alignTypes(types, modelRelations, concepts);
     if (concepts.length > MAX_FOUNDATION_CONCEPTS || types.length > MAX_MODEL_TYPES) throw new Error(`生成结果有 ${concepts.length} 个概念、${types.length} 个映射，超过当前 ${MAX_FOUNDATION_CONCEPTS}/${MAX_MODEL_TYPES} 的执行契约。请缩小来源范围，程序没有截断或覆盖既有定义。`);
     if (!types.length) return null;
     const profile = this.memory.listArtifacts("profile")[0];
@@ -332,8 +343,24 @@ export class ProgramBuilds {
     });
   }
 
+  /** A replaced CSV keeps its execution connection (and so every mapping on it); the connection moves to the new
+   *  file version under the same identity column. New entities connect on their own during compilation. */
+  private refreshUploads(datasets: Artifact[], issues: BuildIssue[]) {
+    const uploads = new Set(datasets.map(d => String(d.content.sourceId)));
+    for (const connection of this.live.sources.list()) {
+      const local = connection.content.localSource as Data | undefined;
+      if (connection.status !== "ready" || !local || !uploads.has(String(local.id))) continue;
+      const source = this.memory.getArtifact(String(local.id));
+      if (source.status !== "ready" || source.version === local.version) continue;
+      const key = String((dataArray(connection.content.capabilities)[0] ?? {}).idField);
+      try { this.live.sources.connectUpload(source.id, source.version, key); }
+      catch (error) { issues.push({ code: "identity_unknown", severity: "error", sourceId: source.id, capability: "records", message: `「${source.title}」更新后无法沿用身份字段 ${key}：${(error as Error).message}` }); }
+    }
+  }
+
   /** ADE mapping from a Helix suggestion: entity -> concept + type, direct merges -> supplements, anchor links -> relations. */
   private compileDiscovery(jobId: string, o: SuggestedOntology, datasets: Artifact[], issues: BuildIssue[]) {
+    this.refreshUploads(datasets, issues);
     const job = this.memory.getArtifact(jobId), base = this.foundation.read(), active = this.activeModel();
     const previous = base.current?.content;
     const concepts = dataArray(previous?.concepts), relations = dataArray(previous?.relations), evidence = dataArray(previous?.evidence);
@@ -361,6 +388,8 @@ export class ProgramBuilds {
       return types.find(type => [type, ...dataArray(type.supplements)].some(b => ids.has(String(b.sourceId)) && b.capability === c.capability));
     };
     const typeOf = new Map<string, Data>();
+    // Which concept and relation each discovered entity and link became, so the adopted ontology can show its evidence.
+    const entityConcepts: Record<string, string> = {}, linkRelations: Record<string, string> = {};
     for (const t of bundle.ontology) {
       const e = o.entities.find(x => x.id === t.entityId)!, anchor = byId.get(e.anchorDatasetId)!;
       // Extend an existing mapping instead of duplicating the object: the anchor's own, or else that of a member matched directly to it.
@@ -384,6 +413,7 @@ export class ProgramBuilds {
           programEvidenceId: evidenceId, programSource: { sourceId: anchor.sourceId, capability: anchor.capability } };
         concepts.push(concept); addedConcepts.push(identity);
       }
+      entityConcepts[e.id] = String(concept.id);
       const fields = existing ? existing.fields as Record<string, string> : Object.fromEntries((anchor.profile?.columns ?? []).map(c => [c.name, c.name]));
       const supplements = dataArray(existing?.supplements), added = supplements.length;
       const usedProperties = new Set([Object.keys(fields), ...supplements.map(s => Object.keys(s.fields as Data))].flat().map(name => name.toLowerCase()));
@@ -434,7 +464,8 @@ export class ProgramBuilds {
       const fromField = prop(from, l.fromColumn), toField = prop(to, l.toColumn);
       const { cap } = this.live.sources.capability(String(to.sourceId), String(to.capability));
       if (!fromField || !toField || !Object.hasOwn(cap.filters, l.toColumn)) { skip("：目标来源不支持按关联字段过滤，保留为待核对关联。"); continue; }
-      if (modelRelations.some(x => x.from === from.name && x.to === to.name && x.fromField === fromField)) continue;
+      const kept = modelRelations.find(x => x.from === from.name && x.to === to.name && x.fromField === fromField);
+      if (kept) { if (kept.relationId) linkRelations[l.id] = String(kept.relationId); continue; }
       let name = l.name;
       for (let n = 2; modelRelations.some(x => x.from === from.name && x.name === name); n++) name = `${l.name}${n}`;
       const relationId = `rel_${fingerprint([from.conceptId, l.fromColumn, to.conceptId]).slice(0, 24)}`;
@@ -445,8 +476,10 @@ export class ProgramBuilds {
         addedRelations.push(relationId);
       }
       const relation = relations.find(x => x.id === relationId)!;
+      linkRelations[l.id] = relationId;
       modelRelations.push({ name: String(relation.name), from: String(from.name), to: String(to.name), fromField, toField, relationId });
     }
+    alignTypes(types, modelRelations, concepts);
     if (concepts.length > MAX_FOUNDATION_CONCEPTS || types.length > MAX_MODEL_TYPES) throw new Error(`生成结果有 ${concepts.length} 个概念、${types.length} 个映射，超过当前 ${MAX_FOUNDATION_CONCEPTS}/${MAX_MODEL_TYPES} 的执行契约。请缩小来源范围，程序没有截断或覆盖既有定义。`);
     if (!types.length) return null;
     const profile = this.memory.listArtifacts("profile")[0];
@@ -464,7 +497,8 @@ export class ProgramBuilds {
         coverage: datasets.map(d => { const c = d.content as unknown as DatasetContent; return { sourceId: c.sourceId, capability: c.capability, datasetId: d.id, snapshotId: c.activeVersion,
           sampledRows: c.coverage?.rows ?? c.profile?.rows ?? 0, totalRows: c.coverage?.total ?? null, complete: c.coverage?.complete ?? true, readAt: c.lastSync }; }),
         diff: { addedConcepts, preservedConcepts, addedMappings, preservedMappings, addedSupplements, addedRelations },
-        discovery: { hash: o.hash, signature: o.signature, summary: o.summary, entities: o.entities, links: o.links, notes: o.notes, unplaced: o.unplaced },
+        discovery: { hash: o.hash, signature: o.signature, summary: o.summary, entities: o.entities, links: o.links, notes: o.notes, unplaced: o.unplaced,
+          unplacedNames: o.unplaced.map(id => resources.get(id)?.name ?? id), entityConcepts, linkRelations },
         bundle, snapshotInputs: Object.fromEntries(datasets.map(d => [d.id, String(d.content.activeVersion)])),
         checks: { valid: false, description: "候选已生成，采用前需重新检查来源与执行映射。" },
       }) });

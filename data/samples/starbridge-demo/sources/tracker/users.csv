@@ -1,0 +1,15 @@
+username,display_name,email,account_status
+zming,Zhao Ming,zhao.ming@starbridge.example,active
+lin.yue,Lin Yue,lin.yue@starbridge.example,active
+cx_pm,Xi Chen,chen.xi@starbridge.example,active
+zhouhang,Hang Zhou,zhou.hang@starbridge.example,active
+chen.wang,Chen Wang,wangchen@workflowx.example,active
+liqi_fe,Qi Li,li.qi@starbridge.example,active
+sunran_sec,Ran Sun,sun.ran@starbridge.example,active
+gy_platform,Yuan Gao,gao.yuan@starbridge.example,active
+hx_data,Xue Han,han.xue@starbridge.example,active
+luoning_mobile,Ning Luo,luo.ning@starbridge.example,active
+fangfei_cs,Fei Fang,fang.fei@starbridge.example,active
+xuan_release,An Xu,xu.an@starbridge.example,active
+zhangwei_pm,Wei Zhang,zhang.wei@starbridge.example,active
+ci-bot,CI Bot,ci-bot@starbridge.example,active

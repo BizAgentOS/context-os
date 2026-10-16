@@ -12,6 +12,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { MemoryStore } from "./memory.ts";
 import type { Artifact, Data, DomainTool, WriteContext } from "./contracts.ts";
+import { helixProjection } from "../engine/helix-projection.ts";
 
 const id = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
 const text = z.string().trim().min(1).max(1500);
@@ -81,6 +82,27 @@ function merge<T extends { id: string }>(previous: T[], updates: T[]): T[] {
   return [...entries.values()];
 }
 
+// Program (Helix) provenance survives wording and evidence updates.
+const PROGRAM_FIELDS = ["origin", "programSource", "programEvidenceId"] as const;
+function keepProgram<T extends { id: string }>(previous: T[], updates: T[]): T[] {
+  return updates.map((item) => {
+    const prior = previous.find((entry) => entry.id === item.id) as Record<string, unknown> | undefined;
+    if (prior?.origin !== "program") return item;
+    return { ...item, ...Object.fromEntries(PROGRAM_FIELDS.filter((key) => key in prior).map((key) => [key, prior[key]])) };
+  });
+}
+
+/** Concepts and relations come from the data program; documents and the assistant refine existing ones. */
+function assertStructureLocked(previous: FoundationContent | null, concepts: { id: string }[], relations: { id: string; from: string; to: string }[]) {
+  const message = "概念和关系由数据程序根据结构化数据构建；文档与助手只能补充已有概念和关系的名称、说明、依据、未知项与冲突。请先接入结构化数据。";
+  if (concepts.some((item) => !previous?.concepts.some((entry) => entry.id === item.id))) throw new Error(message);
+  for (const item of relations) {
+    const prior = previous?.relations.find((entry) => entry.id === item.id);
+    if (!prior) throw new Error(message);
+    if (prior.from !== item.from || prior.to !== item.to) throw new Error("关系端点由数据程序的匹配结果决定，不能改写；可补充名称、说明和依据。");
+  }
+}
+
 export const foundationTools: DomainTool[] = [
   foundationDocumentTool,
   foundationWebTool,
@@ -99,7 +121,7 @@ export const foundationTools: DomainTool[] = [
   {
     name: "foundation_propose",
     description:
-      "加载 company-foundation-ontology Skill 后，按基础版本保存有真实对话或文档依据的候选。概念/关系/未决项按稳定 id 增量合并；证据 id 不可改写。检查只保证结构与引文可定位。",
+      "加载 company-foundation-ontology Skill 后，按基础版本保存有真实对话或文档依据的候选。概念和关系由数据程序构建：只能沿已有 id 补充名称、说明和依据，不能新增概念或关系、不能改关系端点；未知项和冲突可以新增。证据 id 不可改写。检查只保证结构与引文可定位。",
     mutates: true,
     inputSchema: z.toJSONSchema(proposal),
   },
@@ -161,6 +183,13 @@ export class FoundationService {
         mappings: b.relations.filter((r) => r.relationId === relation.id),
       }));
     }
+    // Program discovery evidence (merged sources, link match counts, review notes) for each built concept.
+    const helix = helixProjection(this.memory, artifact);
+    if (helix) {
+      const { concepts: byConcept, ...summary } = helix;
+      for (const concept of projected) concept.helix = byConcept[String(concept.id)] ?? null;
+      result.content.helix = asData(summary);
+    }
     result.content.consumerReadiness = {
       objectsQueryable: bindings.some((b) => b.status === "adopted"),
       reason:
@@ -183,6 +212,7 @@ export class FoundationService {
     operationId: string,
     skillDigest: string,
     documents?: FoundationDocuments,
+    options: { lockStructure?: boolean } = {},
   ): Artifact {
     this.memory.assertWritable(context);
     if (!skillDigest)
@@ -204,6 +234,8 @@ export class FoundationService {
     if (input.baseVersion !== (current?.version ?? 0))
       throw new Error("基础本体版本已变化，请 foundation_read 后再修改");
     const previous = current ? content(current) : null;
+    // Model-driven callers (documents, the assistant) may only refine program-built structure.
+    if (options.lockStructure) assertStructureLocked(previous, input.concepts, input.relations);
     for (const key of [
       "concepts",
       "relations",
@@ -272,19 +304,19 @@ export class FoundationService {
     }
     const concepts = merge(
       previous?.concepts ?? [],
-      input.concepts.map((item) => ({
+      keepProgram(previous?.concepts ?? [], input.concepts.map((item) => ({
         ...item,
         mappingStatus: "unbound" as const,
         origin: "interpretation" as const,
-      })),
+      }))),
     );
     const relations = merge(
       previous?.relations ?? [],
-      input.relations.map((item) => ({
+      keepProgram(previous?.relations ?? [], input.relations.map((item) => ({
         ...item,
         mappingStatus: "unbound" as const,
         origin: "interpretation" as const,
-      })),
+      }))),
     );
     unique([...concepts, ...relations], "概念与关系的稳定引用");
     if (!concepts.length)
@@ -376,6 +408,13 @@ export class FoundationService {
         description: item.description,
         ...("from" in item ? { from: item.from, to: item.to } : {}),
       });
+    // A meaning only the program has stated (its placeholder, backed by its own data profile)
+    // is filled in by documents, not contested; confirmed meanings still become conflicts.
+    const programEvidence = new Set(
+      (previous?.concepts ?? []).map((item) => (item as { programEvidenceId?: string }).programEvidenceId).filter(Boolean),
+    );
+    const programOnly = (item: Concept | Relation) =>
+      (item as { origin?: string }).origin === "program" && item.evidenceRefs.every((ref) => programEvidence.has(ref));
     for (const after of [...concepts, ...relations]) {
       const before = [
         ...(previous?.concepts ?? []),
@@ -383,6 +422,7 @@ export class FoundationService {
       ].find((item) => item.id === after.id);
       if (
         !before ||
+        programOnly(before) ||
         meaning(before) === meaning(after) ||
         after.evidenceRefs.some(freshUser) ||
         !after.evidenceRefs.some((ref) =>

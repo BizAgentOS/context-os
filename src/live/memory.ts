@@ -291,7 +291,29 @@ export class LiveMemory {
     assertActive: () => void = () => {},
   ) {
     const content = await this.prepareDefinition(input, assertActive);
+    this.assertProgramScope(content);
+    // Fail early, as adoption would: a relation must actually match on the saved snapshots.
+    const base = this.active();
+    assertSnapshotImpact(await this.snapshotImpact(base ? this.definition(base) : null, content as { types: Data[]; relations: Data[] }));
+    assertActive();
     return this.repo.putArtifact({kind:"live_ontology",title:String(content.purpose),status:"candidate",content},context,operationId);
+  }
+  /** Once the data program is in use, a revision may only use data it has processed: datasets it
+   *  snapshotted for discovery, or bindings it compiled. Data reaches mappings through the program. */
+  private assertProgramScope(content: Data) {
+    const builds = this.repo.listArtifacts("engine_candidate");
+    if (!builds.length) return;
+    const key = (b: Data) => `${b.sourceId}\u0000${b.capability}`;
+    const discovered = new Set(builds.flatMap(build => ((build.content.types ?? []) as Data[])
+      .flatMap(type => [type, ...((type.supplements ?? []) as Data[])].map(key))));
+    const connections = this.sources.list();
+    for (const dataset of this.repo.listArtifacts("data_dataset")) {
+      const { sourceId, capability } = dataset.content;
+      discovered.add(key({ sourceId, capability }));
+      for (const c of connections) if ((c.content.localSource as Data | undefined)?.id === sourceId) discovered.add(key({ sourceId: c.id, capability }));
+    }
+    const outside = (content.types as Data[]).flatMap(type => [type, ...((type.supplements ?? []) as Data[])]).filter(binding => !discovered.has(key(binding)));
+    if (outside.length) throw new Error(`「${outside.map(b => String(b.name ?? b.capability)).join("、")}」不在数据程序发现的数据集中。对象与合并来源由程序构建，请先用 engine_build 按数据重新构建，修订只调整程序已发现的映射。`);
   }
   /** Validate and read bounded samples without persisting a candidate. */
   async prepareDefinition(input: unknown, assertActive: () => void = () => {}) {
@@ -1023,7 +1045,7 @@ export const liveTools: DomainTool[] = [
   ),
   tool(
     "live_propose",
-    "基于实际源样本和用户业务定义，提出有来源能力绑定的本体候选。已有基础本体时先 foundation_read，必须引用已采用的 foundationRef:{id,version}，baseModelRef 必须为 live_overview 当前最新已采用执行子集的 {id,version}（不存在时为 null），每个类型带 conceptId 并逐字保持概念 name/description，关系带 relationId 且对应端点；未映射概念不删除。同一类型可加最多3个 supplements:{name,sourceId,capability,match:{primaryField,sourceField},fields,rationale}，按主来源业务属性或$id与附来源精确键匹配；同名属性保留冲突，不能把一对多记录强行合一。rationale 写明业务依据与尚未确认的含义。程序仅做结构检查，用户在页面采用。",
+    "基于实际源样本和用户业务定义，提出有来源能力绑定的本体候选。已有基础本体时先 foundation_read，必须引用已采用的 foundationRef:{id,version}，baseModelRef 必须为 live_overview 当前最新已采用执行子集的 {id,version}（不存在时为 null），每个类型带 conceptId 并逐字保持概念 name/description，关系带 relationId 且对应端点；未映射概念不删除。数据程序已构建时，只能使用程序发现的数据集（engine_overview 可查看），关系必须在全量快照上有匹配，否则提出即被拒绝。同一类型可加最多3个 supplements:{name,sourceId,capability,match:{primaryField,sourceField},fields,rationale}，按主来源业务属性或$id与附来源精确键匹配；同名属性保留冲突，不能把一对多记录强行合一。rationale 写明业务依据与尚未确认的含义。程序仅做结构检查，用户在页面采用。",
     modelSchema,
     true,
   ),

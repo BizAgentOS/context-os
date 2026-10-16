@@ -1,0 +1,14 @@
+employee_no,name,email,title,team_id,manager_employee_no,status,hired_on,left_on
+SB001,赵明,zhao.ming@starbridge.example,首席执行官,TEAM-EXEC,,active,2024-01-01,
+SB002,林悦,lin.yue@starbridge.example,产品副总裁,TEAM-PRODUCT,SB001,active,2024-01-01,
+SB003,陈曦,chen.xi@starbridge.example,FlowPilot产品经理,TEAM-PRODUCT,SB002,active,2025-02-10,
+SB004,周航,zhou.hang@starbridge.example,研发总监,TEAM-ENGINEERING,SB001,active,2024-01-01,
+SB005,王晨,wang.chen@starbridge.example,后端工程师,TEAM-FLOWPILOT,SB004,active,2025-04-01,
+SB006,李琪,li.qi@starbridge.example,前端工程师,TEAM-FLOWPILOT,SB004,active,2025-05-12,
+SB007,孙然,sun.ran@starbridge.example,安全负责人,TEAM-SECURITY,SB001,active,2025-01-01,
+SB008,高远,gao.yuan@starbridge.example,平台负责人,TEAM-PLATFORM,SB004,active,2025-04-01,
+SB009,韩雪,han.xue@starbridge.example,数据负责人,TEAM-DATA,SB004,active,2025-06-01,
+SB010,罗宁,luo.ning@starbridge.example,移动端工程师,TEAM-FLOWPILOT,SB004,active,2025-08-01,
+SB011,方菲,fang.fei@starbridge.example,客户成功负责人,TEAM-CS,SB001,active,2024-06-01,
+SB012,许安,xu.an@starbridge.example,发布经理,TEAM-ENGINEERING,SB004,active,2025-03-01,
+SB013,张伟,zhang.wei@starbridge.example,产品经理,TEAM-PRODUCT,SB002,left,2024-05-01,2026-04-30
