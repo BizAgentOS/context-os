@@ -223,7 +223,7 @@ body.haizhi-glass .os-fan-leaf:hover { background: rgba(255, 255, 255, .9); bord
 body.haizhi-glass :is(.os-fan-leaf small, .os-fan-empty, .os-empty p) { color: var(--glass-muted); }
 body.haizhi-glass .os-empty h2 { color: #365782; }
 
-/* Keep one shared composer and the existing overview/local/detail positions. */
+/* Keep one shared composer; local focus leaves more room for graph controls on the left. */
 body.haizhi-glass .is-ontology-space .chat-surface {
   color: var(--glass-ink);
   background: linear-gradient(135deg, rgba(255, 255, 255, .83), rgba(239, 246, 255, .74));
@@ -304,7 +304,16 @@ body.haizhi-glass .is-ontology-space .agent-task-status > small { display: none;
 body.haizhi-glass .is-ontology-space .agent-task-status button { min-height: 28px; margin-top: 3px; white-space: nowrap; }
 body.haizhi-glass .is-ontology-space:has(.agent-task-status:not([hidden])) .os-legend { bottom: 110px; }
 
+@media (min-width: 1101px) {
+  body.haizhi-glass .is-ontology-space[data-ontology-stage="local"] .interaction {
+    right: max(32px, calc((100% - min(650px, 55vw)) / 2 - clamp(72px, 12vw, 180px)));
+  }
+}
+
 @media (min-width: 721px) and (max-width: 1100px) {
+  body.haizhi-glass .is-ontology-space[data-ontology-stage="local"] .interaction {
+    right: max(24px, calc(21vw - clamp(72px, 12vw, 180px)));
+  }
   body.haizhi-glass .is-ontology-space .agent-task-status { left: 22px; }
   body.haizhi-glass .is-ontology-space[data-ontology-stage="local"] .agent-task-status { width: clamp(90px, calc(21vw - 60px), 174px); }
 }
