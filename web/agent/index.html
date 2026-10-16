@@ -21,6 +21,10 @@
       aria-hidden="true"
     >
       <defs>
+        <!-- Remove the monochrome logo's white matte without changing its source artwork. -->
+        <filter id="haizhi-logo-ink" color-interpolation-filters="sRGB">
+          <feColorMatrix type="matrix" values="0 0 0 0 0.0863  0 0 0 0 0.2941  0 0 0 0 0.5843  -0.2126 -0.7152 -0.0722 1 0" />
+        </filter>
         <symbol id="i-plus" viewBox="0 0 24 24">
           <path d="M12 5v14M5 12h14" />
         </symbol>
