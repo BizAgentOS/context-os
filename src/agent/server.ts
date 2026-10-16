@@ -24,6 +24,8 @@ import { ontologySceneAsset } from "./browser-assets.ts";
 
 const webRoot = fileURLToPath(new URL("../../web/agent/", import.meta.url));
 const staticFiles: Record<string, { file: string; type: string }> = {
+  "/glass-theme.css": {file:"glass-theme.css",type:"text/css; charset=utf-8"},
+  "/glass-ontology.css": {file:"glass-ontology.css",type:"text/css; charset=utf-8"},
   "/engine.css": {file:"engine.css",type:"text/css; charset=utf-8"},
   "/engine-ui.js": {file:"engine-ui.js",type:"text/javascript; charset=utf-8"},
   "/engine-workspace.js": {file:"engine-workspace.js",type:"text/javascript; charset=utf-8"},

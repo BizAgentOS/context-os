@@ -11,6 +11,8 @@ test("the final offline HTML contains an executable bundle, not replacement-expa
   try {
     const result = await exportHeatingHtml(join(directory, "demo.html"));
     const html = await readFile(result.path, "utf8");
+    assert.match(html, /<body\b[^>]*><noscript>/, "offline guidance survives body attributes");
+    assert.doesNotMatch(html, /<link\s+rel="stylesheet"/, "all styles are inlined for offline use");
     const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
     assert.equal(scripts.length, 1);
     assert.doesNotThrow(

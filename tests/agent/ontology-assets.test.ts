@@ -14,8 +14,9 @@ test("ontology browser assets resolve locally at root and the legacy agent prefi
     const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
     const html = await (await fetch(base)).text();
     assert.match(html, /href="\.\/ontology-space.css"/);
+    const stylesheets = [...html.matchAll(/<link rel="stylesheet" href="\.\/([^"]+)"/g)].map(match => match[1]);
     for (const prefix of ["", "/agent"]) {
-      for (const name of ["ontology-space.js", "ontology-space-model.js", "ontology-scene.js", "ontology-space.css"]) {
+      for (const name of ["ontology-space.js", "ontology-space-model.js", "ontology-scene.js", ...stylesheets]) {
         const response = await fetch(`${base}${prefix}/${name}`);
         assert.equal(response.status, 200);
         assert.match(response.headers.get("content-type")!, name.endsWith("css") ? /text\/css/ : /text\/javascript/);

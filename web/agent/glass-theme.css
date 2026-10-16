@@ -1,0 +1,313 @@
+/* Haizhi glass material. Loaded after the existing layouts so their behavior stays shared. */
+:root {
+  --glass-ink: #203454;
+  --glass-muted: #5c708e;
+  --glass-blue: #005fd3;
+  --glass-red: #d7092f;
+  --glass-border: rgba(255, 255, 255, .74);
+  --glass-line: rgba(72, 102, 153, .15);
+  --glass-panel: rgba(255, 255, 255, .7);
+  --glass-shadow: 0 12px 32px rgba(41, 69, 120, .08), inset 0 1px 0 rgba(255, 255, 255, .9);
+}
+body.haizhi-glass {
+  --muted: var(--glass-muted);
+  --line: var(--glass-line);
+  --engine-ink: var(--glass-ink);
+  --engine-muted: var(--glass-muted);
+  --engine-line: var(--glass-line);
+  --engine-accent: var(--glass-blue);
+  --engine-surface: var(--glass-panel);
+  --ed-ink: var(--glass-ink);
+  --ed-muted: var(--glass-muted);
+  --ed-line: var(--glass-line);
+  color-scheme: light;
+  color: var(--glass-ink);
+  background: #dce5eb;
+  font-family: "Avenir Next", Inter, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  padding: 16px;
+}
+body.haizhi-glass .canvas-app {
+  --topbar-height: 76px;
+  height: calc(100dvh - 32px);
+  color-scheme: light;
+  color: var(--glass-ink);
+  border: 1px solid rgba(255, 255, 255, .65);
+  border-radius: 30px;
+  background:
+    radial-gradient(ellipse at 96% 2%, rgba(215, 9, 47, .12), transparent 40%),
+    radial-gradient(ellipse at 12% 0%, rgba(71, 111, 186, .54), transparent 48%),
+    linear-gradient(180deg, #a3b8dc 0%, #d5dfed 37%, #e6edf2 70%, #e9eff3 100%);
+  box-shadow: 0 24px 65px rgba(41, 65, 96, .17), 0 3px 8px rgba(41, 65, 96, .08), inset 0 1px 0 #fff9;
+}
+body.haizhi-glass .canvas-app::before { display: none; }
+body.haizhi-glass .canvas-app > .topbar {
+  padding: 0 32px;
+  background: transparent;
+  border: 0;
+  color: var(--glass-ink);
+}
+body.haizhi-glass .canvas-app .wordmark { gap: 10px; font-size: 18px; letter-spacing: -.65px; }
+body.haizhi-glass .canvas-app .wordmark .launcher-mark { filter: none; mix-blend-mode: multiply; }
+body.haizhi-glass .canvas-app .wordmark > span[aria-hidden="true"] {
+  background-image: linear-gradient(95deg, #164b95, #425887 65%, #a73952);
+}
+body.haizhi-glass .canvas-app .page-nav {
+  gap: 5px;
+  padding: 5px;
+  border: 1px solid #ffffff45;
+  border-radius: 30px;
+  background: #ffffff18;
+  box-shadow: inset 0 1px 0 #ffffff25;
+}
+body.haizhi-glass .canvas-app .page-nav button {
+  padding: 10px 19px;
+  border-radius: 22px;
+  color: #334e77;
+  font-size: 12px;
+  font-weight: 500;
+}
+body.haizhi-glass .canvas-app .page-nav button[aria-current="page"] {
+  color: #144b91;
+  background: #ffffffb8;
+  box-shadow: 0 3px 12px #284a7e0c, inset 0 1px 0 #ffffffb3;
+}
+body.haizhi-glass .canvas-app .page-nav button::after { display: none; }
+body.haizhi-glass .canvas-app .page-nav button:not(:disabled):hover { color: #005fd3; background: #ffffff78; }
+body.haizhi-glass .canvas-app .topbar :is(.quiet-button, .icon-button, #open-capabilities) {
+  color: #34517a;
+  background: #ffffff42;
+  border: 1px solid #ffffff55;
+  border-radius: 18px;
+  box-shadow: inset 0 1px 0 #ffffff45;
+}
+body.haizhi-glass :is(button, input, textarea, select, summary, a):focus-visible {
+  outline: 2px solid var(--glass-blue);
+  outline-offset: 3px;
+}
+body.haizhi-glass .canvas-app > .canvas { scrollbar-color: #7895bc70 transparent; }
+body.haizhi-glass .canvas-app:has(.engine-workspace) > .canvas {
+  padding: 22px max(30px, calc((100% - 1160px) / 2)) 0;
+}
+body.haizhi-glass .engine-workspace { color: var(--glass-ink); }
+body.haizhi-glass .engine-page-head { margin-bottom: 24px; gap: 20px; }
+body.haizhi-glass .engine-workspace h1 { font-weight: 550; font-size: 31px; line-height: 1.3; letter-spacing: -1px; }
+body.haizhi-glass .engine-workspace h2 { font-size: 18px; font-weight: 600; }
+body.haizhi-glass .engine-workspace h3 { font-size: 15px; font-weight: 600; }
+body.haizhi-glass :is(.engine-eyebrow, .engine-lead, .engine-muted, .engine-source-state, .engine-step small, .engine-notes, .engine-raw-diff) { color: var(--glass-muted); }
+body.haizhi-glass .engine-eyebrow { color: #3c5e8f; font-size: 10px; letter-spacing: 1.8px; }
+body.haizhi-glass .engine-lead { font-size: 13px; }
+body.haizhi-glass :is(.engine-workspace, .engine-dialog) button:not(.unified-dialog-close) {
+  border: 1px solid #ffffffb0;
+  border-radius: 22px;
+  background: #ffffffb8;
+  box-shadow: 0 2px 5px #2c528708, inset 0 1px 0 #ffffffb3;
+  color: #35547c;
+  padding: 10px 16px;
+  transition: background .18s, box-shadow .18s, border-color .18s;
+}
+body.haizhi-glass :is(.engine-workspace, .engine-dialog) button:not(:disabled):not(.unified-dialog-close):hover {
+  background: #fff;
+  border-color: #afc8eb;
+  box-shadow: 0 4px 12px #2c528712;
+}
+body.haizhi-glass :is(.engine-workspace, .engine-dialog) button.engine-primary:not(.unified-dialog-close) {
+  color: #fff;
+  background: var(--glass-blue);
+  border-color: #ffffff70;
+  box-shadow: 0 5px 14px #005fd32b, inset 0 1px 0 #ffffff40;
+}
+body.haizhi-glass :is(.engine-workspace, .engine-dialog) button.engine-primary:not(:disabled):not(.unified-dialog-close):hover { background: #0754b1; color: #fff; }
+body.haizhi-glass .engine-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  border: 0;
+  padding: 0;
+  margin-bottom: 28px;
+}
+body.haizhi-glass .engine-stats > div {
+  flex-direction: column-reverse;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 105px;
+  padding: 17px 22px;
+  border: 1px solid var(--glass-border);
+  border-radius: 22px;
+  background: #ffffff70;
+  box-shadow: var(--glass-shadow);
+}
+body.haizhi-glass .engine-stats > div:first-child { background: #ffffff9e; }
+body.haizhi-glass .engine-stats strong { color: #245a9b; font-size: 28px; font-weight: 500; line-height: 1.15; }
+body.haizhi-glass .engine-stats > div:nth-child(3) strong { color: #b03a56; }
+body.haizhi-glass .engine-stats span { color: #4f6687; font-size: 12px; }
+body.haizhi-glass .engine-source-grid { gap: 18px; }
+body.haizhi-glass .engine-panel {
+  border: 1px solid var(--glass-border);
+  border-radius: 24px;
+  background: linear-gradient(125deg, #ffffffd4, #ffffff8f);
+  box-shadow: var(--glass-shadow);
+  color: var(--glass-ink);
+  padding: 22px;
+}
+body.haizhi-glass .engine-source-card { display: flex; flex-direction: column; align-items: stretch; }
+body.haizhi-glass .engine-source-card .engine-actions { margin-top: auto; padding-top: 14px; }
+body.haizhi-glass .engine-source-card .engine-actions button { background: #edf3fbcc; border-color: #e4ecf8; color: #285b9e; }
+body.haizhi-glass .engine-badge { color: #42638f; background: #edf3fcaa; border-color: #d9e4f5; border-radius: 20px; padding: 3px 9px; }
+body.haizhi-glass .engine-source-state { min-height: 39px; }
+body.haizhi-glass :is(.engine-empty, .engine-task-summary) { background: #ffffff65; border-color: #ffffffbf; border-radius: 22px; }
+body.haizhi-glass .engine-task-summary { box-shadow: var(--glass-shadow); }
+body.haizhi-glass :is(.engine-page-footer, .engine-check, .engine-issue, .engine-job, .release-history-row) { border-color: var(--glass-line); }
+body.haizhi-glass .engine-table th { color: #456185; background: #e8f0fa; }
+body.haizhi-glass .engine-table td { color: var(--glass-ink); }
+body.haizhi-glass .engine-table :is(th, td) { border-color: var(--glass-line); }
+body.haizhi-glass .engine-check small { color: var(--glass-muted); }
+body.haizhi-glass .engine-issue-error .engine-badge { color: #b42b4b; border-color: #e7bac5; background: #faedf1; }
+body.haizhi-glass .engine-message:not(:empty) { color: #96334c; border-color: #e9c6cf; background: #fff2f4dd; border-radius: 14px; }
+body.haizhi-glass .release-overview > .engine-panel:first-child { background: linear-gradient(120deg, #f3f7fff0, #e9f0fcbb); }
+
+/* One shared, inline assistant. Material changes do not change its presentation mode. */
+body.haizhi-glass .canvas-app:not(.is-ontology-space) .interaction { padding-bottom: 18px; }
+body.haizhi-glass .canvas-app .chat-surface .composer-wrap {
+  background: #ffffffc9;
+  box-shadow: 0 10px 30px #314f7a1c, 0 0 0 5px #ffffff38, inset 0 1px 0 #fff;
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  border-radius: 27px;
+}
+body.haizhi-glass .canvas-app .chat-surface .composer { background: #ffffff99; color: var(--glass-ink); border-color: #ffffffd9; padding: 13px; }
+body.haizhi-glass .canvas-app .chat-surface textarea { color: var(--glass-ink); font-size: 13px; }
+body.haizhi-glass .canvas-app .chat-surface textarea::placeholder { color: #687e9c; }
+body.haizhi-glass .canvas-app :is(.composer-note, #upload-button, .demo-question) { color: var(--glass-muted); }
+body.haizhi-glass .canvas-app .chat-surface .send-button { color: #fff; background: var(--glass-blue); }
+body.haizhi-glass .canvas-app .chat-surface .send-button:disabled { opacity: .35; }
+body.haizhi-glass .canvas-app .history-panel { background: #f9fbffed; color: var(--glass-ink); border-color: #ffffffd9; backdrop-filter: blur(22px); }
+body.haizhi-glass .canvas-app .history-toggle { background: transparent; color: var(--glass-muted); }
+body.haizhi-glass .canvas-app .history-toggle:hover { background: #e9f0fa88; color: var(--glass-blue); }
+body.haizhi-glass .canvas-app :is(.dialogue-line, .dialogue-line.assistant) { color: var(--glass-ink); }
+body.haizhi-glass .canvas-app .history-panel .dialogue-line.user { color: #234f89; background: #e5eefb; }
+body.haizhi-glass .canvas-app .dialogue-empty { color: var(--glass-muted); }
+body.haizhi-glass .canvas-app :is(.chat-collapse, .chat-launcher) { color: #42618d; background: #f6f9ffed; border-color: #ffffffd9; }
+body.haizhi-glass .canvas-app .focus-context { color: #385c8d; background: #e9f1fc; border-color: #d5e2f6; border-radius: 12px; }
+body.haizhi-glass .canvas-app .focus-context :is(.quiet-button, .icon-button) { color: #385c8d; }
+body.haizhi-glass .canvas-app .request-error { color: #a6324e; background: #fff1f4; border-radius: 12px; }
+body.haizhi-glass .agent-task-status { background: #f5f8ffed; border-color: #ffffffc9; border-radius: 18px; color: #294b7b; box-shadow: var(--glass-shadow); backdrop-filter: blur(18px); }
+body.haizhi-glass .agent-task-status > small { color: var(--glass-muted); }
+body.haizhi-glass .agent-task-status button { color: var(--glass-blue); }
+/* Reserve a separate dock for the task receipt instead of covering the send control. */
+@media (min-width: 701px) {
+  body.haizhi-glass .canvas-app:has(.agent-task-status:not([hidden])):not(.is-ontology-space) .interaction:not([data-mode="compact"]):not([data-mode="collapsed"]) {
+    width: min(620px, calc(100% - 580px));
+  }
+}
+@media (min-width: 701px) and (max-width: 1100px) {
+  body.haizhi-glass .canvas-app:not(.is-ontology-space) .agent-task-status { max-width: 180px; }
+  body.haizhi-glass .canvas-app:has(.agent-task-status:not([hidden])):not(.is-ontology-space) .interaction:not([data-mode="compact"]):not([data-mode="collapsed"]) {
+    width: calc(100% - 440px);
+  }
+}
+
+/* Existing settings, source details, and first-run dialogs use the same material. */
+body.haizhi-glass:has(.canvas-app) dialog.unified-dialog {
+  color-scheme: light;
+  --ed-ink: var(--glass-ink);
+  --ed-muted: var(--glass-muted);
+  --ed-line: var(--glass-line);
+  color: var(--glass-ink);
+  background: linear-gradient(140deg, #fffffffa, #edf3fcf5);
+  border: 1px solid #ffffffdb;
+  border-radius: 26px;
+  box-shadow: 0 30px 100px #23456b40, inset 0 1px 0 #fff;
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  scrollbar-color: #7895bc70 transparent;
+}
+body.haizhi-glass:has(.canvas-app) dialog.unified-dialog::backdrop { background: #233c644d; backdrop-filter: blur(8px); }
+body.haizhi-glass:has(.canvas-app) dialog.unified-dialog :is(h1, h2, h3, h4, .connection-field, .oi-field, .connection-advanced > summary) { color: var(--glass-ink); }
+body.haizhi-glass:has(.canvas-app) dialog.unified-dialog :is(.unified-dialog-close, .quiet-button) { background: #e8eff9c9; color: #3d5c89; border-color: #d6e2f2; }
+body.haizhi-glass:has(.canvas-app) dialog.unified-dialog :is(.unified-dialog-close, .quiet-button):hover { background: #dce8f8; color: var(--glass-blue); }
+body.haizhi-glass:has(.canvas-app) dialog.unified-dialog :is(.engine-muted, .engine-notes, .source-meta, .muted, .field-note, .ed-methods-intro, .ed-method-summary, .ed-methods-note, dd, .connection-description, .connection-note, .connection-count, .connection-entry small, .connection-entry-action, .connection-capability small, .connection-capability p, .oi-eyebrow, .oi-status, .oi-operation code, .oi-operation summary, summary) { color: var(--glass-muted); }
+body.haizhi-glass:has(.canvas-app) dialog.unified-dialog :is(.live-card, .live-legacy, .data-map-fact, .ed-method-card, .connection-entry, .connection-summary, .oi-guide, .oi-table-scroll th) { background: #eaf1fb80; color: var(--glass-ink); border-color: var(--glass-line); border-radius: 14px; }
+body.haizhi-glass:has(.canvas-app) dialog.unified-dialog :is(.data-map-file, .oi-panel, .oi-guide-row, .oi-operation, .oi-footer, .oi-results, .oi-steps, .connection-footer, .connection-advanced, .connection-capabilities, .connection-capability) { border-color: var(--glass-line); }
+body.haizhi-glass:has(.canvas-app) dialog.unified-dialog .connection-entry:hover { background: #e4edfc; border-color: #b7cee9; }
+body.haizhi-glass:has(.canvas-app) dialog.unified-dialog :is(input, textarea, select) {
+  color: var(--glass-ink);
+  background: #ffffffcc;
+  border-color: #cddcf0;
+  border-radius: 12px;
+  accent-color: var(--glass-blue);
+}
+body.haizhi-glass:has(.canvas-app) dialog.unified-dialog :is(input, textarea)::placeholder { color: #7285a0; }
+body.haizhi-glass:has(.canvas-app) dialog.unified-dialog input::file-selector-button { background: #e8f0fb; color: #3d5c89; }
+body.haizhi-glass:has(.canvas-app) dialog.unified-dialog :is(.primary-button, .ob-next, .oi-tabs .active, .oi-complete-mark) { color: white; background: var(--glass-blue); border-color: var(--glass-blue); border-radius: 18px; }
+body.haizhi-glass:has(.canvas-app) dialog.unified-dialog :is(.primary-button, .ob-next):not(:disabled):hover { background: #0754b1; }
+body.haizhi-glass:has(.canvas-app) dialog.unified-dialog :is(.oi-steps > .active, .connection-progress li.active) { color: var(--glass-blue); border-color: var(--glass-blue); }
+body.haizhi-glass:has(.canvas-app) dialog.unified-dialog .connection-progress li { color: var(--glass-muted); border-color: var(--glass-line); }
+body.haizhi-glass:has(.canvas-app) dialog.unified-dialog :is(.oi-status.error, .request-error, .error) { color: #a6324e; border-color: #e2b1bf; }
+body.haizhi-glass:has(.canvas-app) dialog.unified-dialog :is(button, input, textarea, select, summary, a):focus-visible { outline: 2px solid var(--glass-blue); outline-offset: 3px; }
+body.haizhi-glass .onboarding { color: var(--glass-ink); }
+body.haizhi-glass .onboarding :is(.ob-progress-label, .ob-heading p, .ob-field, .ob-muted, .ob-pack-summary, .ob-concept p, .ob-connector p, .ob-relations, .ob-back, .ob-result-grid span) { color: var(--glass-muted); }
+body.haizhi-glass .ob-progress-dot[data-state="current"] { background: var(--glass-blue); }
+body.haizhi-glass .ob-progress-dot[data-state="complete"] { background: #86acd9; }
+body.haizhi-glass .onboarding :is(.ob-status, .ob-note, .ob-concept, .ob-outline, .engine-choice) { background: #ffffffb3; color: var(--glass-ink); border-color: #d5e2f2; border-radius: 14px; }
+body.haizhi-glass .onboarding .engine-choice[aria-pressed="true"] { background: #e8f1ff; border-color: #6c9cda; box-shadow: 0 0 0 1px #6c9cda; }
+body.haizhi-glass .onboarding :is(.ob-footer, .ob-connector, .ob-live-counts, .ob-result-grid, .ob-model-state) { border-color: var(--glass-line); }
+
+/* Older enterprise and dataset views remain reachable through the management entrances. */
+body.haizhi-glass .enterprise-profile.enterprise-dashboard,
+body.haizhi-glass .dataset-workspace {
+  --ed-ink: var(--glass-ink); --ed-muted: var(--glass-muted); --ed-line: var(--glass-line);
+  color: var(--glass-ink);
+}
+body.haizhi-glass :is(.enterprise-dashboard, .dataset-workspace, .ds-dialog) :is(.ed-company, .ed-uploads, .ed-api, .ed-knowledge, .ed-services, .ed-methods, .ds-hero, .ds-source, .ds-dataset, .ds-publish-summary, .ds-panel, .ds-empty) {
+  color: var(--glass-ink); background: var(--glass-panel); border-color: var(--glass-border); box-shadow: var(--glass-shadow);
+}
+body.haizhi-glass :is(.enterprise-dashboard, .dataset-workspace, .ds-dialog) :is(h1, h2, h3, strong, .ed-file-name, .ed-service-name, .ed-business, .ds-check strong) { color: var(--glass-ink); }
+body.haizhi-glass :is(.enterprise-dashboard, .dataset-workspace, .ds-dialog) :is(p, small, .ed-muted, .ed-file-meta, .ed-services-note, .ds-check small, .ds-lead, .ds-muted, .ds-source-meta, .ds-description, .ds-eyebrow, .ds-dataset-scope, .ds-field, .ds-footer, .ds-source-notes, .ds-summary-label, .ds-flow-end, .ds-relation, .ds-scope-item p) { color: var(--glass-muted); }
+body.haizhi-glass :is(.enterprise-dashboard, .dataset-workspace, .ds-dialog) :is(.ed-pill, .ds-badge, .ds-tags > span, .ds-scope-count, .ds-notice) { color: #375d90; background: #e8f0fc; border-color: #cbdcf2; }
+body.haizhi-glass :is(.enterprise-dashboard, .dataset-workspace, .ds-dialog) :is(.ds-button, .quiet-button, .ed-file, .ed-method-button) { color: #365d91; background: #ffffffb3; border-color: #d2e0f2; }
+body.haizhi-glass :is(.enterprise-dashboard, .dataset-workspace, .ds-dialog) :is(.primary-button, .ds-primary) { color: #fff; background: var(--glass-blue); border-color: var(--glass-blue); }
+body.haizhi-glass .ed-upload-delete { color: #9e3c55; }
+body.haizhi-glass :is(.dataset-workspace, .ds-dialog) .ds-button.ds-primary { color: white; background: var(--glass-blue); border-color: var(--glass-blue); }
+body.haizhi-glass :is(.dataset-workspace, .ds-dialog) .ds-button.ds-primary:hover:not(:disabled) { color: white; background: #0754b1; }
+body.haizhi-glass .ds-flow-core { color: var(--glass-ink); background: #e2ecf9; border-color: #c8d8ef; box-shadow: var(--glass-shadow); }
+body.haizhi-glass :is(.ds-check-list, .ds-check, .ds-business-group, .ds-business-summary, .ds-steps, .ds-steps > div, .ds-scope-item) { border-color: var(--glass-line); }
+body.haizhi-glass .ds-source-stats span { color: var(--glass-muted); }
+body.haizhi-glass .ds-steps > div > span { color: #ae3f59; }
+body.haizhi-glass .ds-business-group summary { color: var(--glass-ink); }
+body.haizhi-glass .ds-dialog form > label { color: var(--glass-muted); }
+body.haizhi-glass .dataset-workspace .ds-hero { background: transparent; box-shadow: none; }
+body.haizhi-glass:has(.canvas-app) dialog.unified-dialog .engine-config { color: #29496f; background: #eaf1fb; border-color: #d0dff3; }
+
+@media (max-width: 1000px) {
+  body.haizhi-glass .canvas-app > .topbar { padding-inline: 24px; }
+  body.haizhi-glass .engine-stats { gap: 12px; }
+  body.haizhi-glass .engine-stats > div { padding: 16px; }
+}
+@media (max-width: 700px) {
+  body.haizhi-glass { padding: 7px; }
+  body.haizhi-glass .canvas-app { height: calc(100dvh - 14px); border-radius: 23px; --topbar-height: 106px; }
+  body.haizhi-glass .canvas-app > .topbar { display: grid; grid-template-columns: 1fr auto; grid-template-rows: 44px 44px; padding: 9px 16px; gap: 0 8px; }
+  body.haizhi-glass .canvas-app .wordmark { font-size: 16px; }
+  body.haizhi-glass .canvas-app .page-nav { grid-row: 2; grid-column: 1 / -1; justify-self: center; width: auto; padding: 3px; }
+  body.haizhi-glass .canvas-app .page-nav button { padding: 8px 17px; font-size: 11px; }
+  body.haizhi-glass .canvas-app .settings-button { grid-column: 2; grid-row: 1; }
+  body.haizhi-glass .canvas-app .capabilities-button { top: 14px; right: 58px; }
+  body.haizhi-glass .canvas-app:has(.engine-workspace) > .canvas { padding: 20px 16px 0; }
+  body.haizhi-glass .engine-workspace h1 { font-size: 27px; }
+  body.haizhi-glass .engine-page-head { margin-bottom: 21px; }
+  body.haizhi-glass .engine-page-head .engine-actions { gap: 7px; }
+  body.haizhi-glass .engine-page-head .engine-actions button { padding: 9px 12px; font-size: 11px; }
+  body.haizhi-glass .engine-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 24px; }
+  body.haizhi-glass .engine-stats > div { min-height: 94px; border-radius: 19px; }
+  body.haizhi-glass .engine-stats strong { font-size: 26px; }
+  body.haizhi-glass .engine-panel { padding: 20px; border-radius: 21px; }
+  body.haizhi-glass .agent-task-status { top: 112px; left: 16px; right: 16px; border-radius: 12px; }
+  body.haizhi-glass .canvas-app:has(.agent-task-status:not([hidden])):has(.engine-workspace) > .canvas { padding-top: 70px; }
+  body.haizhi-glass:has(.canvas-app) dialog.unified-dialog { border-radius: 22px; }
+}
+@supports not (backdrop-filter: blur(1px)) {
+  body.haizhi-glass .canvas-app .history-panel,
+  body.haizhi-glass .canvas-app .chat-surface .composer-wrap,
+  body.haizhi-glass .agent-task-status { background: #f5f8ff; }
+}

@@ -14,7 +14,7 @@ export async function exportHeatingHtml(
   const [template, styles, compiled] = await Promise.all([
     readFile(resolve(root, "web/agent/index.html"), "utf8"),
     Promise.all(
-      ["app.css", "memory-graph.css", "ontology-space.css", "engine.css", "share.css"].map((name) =>
+      ["app.css", "memory-graph.css", "ontology-space.css", "engine.css", "glass-theme.css", "glass-ontology.css", "share.css"].map((name) =>
         readFile(resolve(root, "web/agent", name), "utf8"),
       ),
     ),
@@ -46,8 +46,8 @@ export async function exportHeatingHtml(
     .replace(/<link\s+rel="stylesheet"[^>]*>/g, "")
     .replace(/<script\s+src="\.\/app\.js"\s+type="module"><\/script>/, "")
     .replace(
-      "<body>",
-      '<body><noscript><p style="padding:24px">请下载此 HTML 文件，并使用启用 JavaScript 的浏览器打开，以查看完整演示。</p></noscript>',
+      /<body\b[^>]*>/,
+      '$&<noscript><p style="padding:24px">请下载此 HTML 文件，并使用启用 JavaScript 的浏览器打开，以查看完整演示。</p></noscript>',
     )
     .replace(
       "</head>",

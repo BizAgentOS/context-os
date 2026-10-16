@@ -1,0 +1,498 @@
+/* The graph keeps its spatial layouts; this layer changes only its material and contrast. */
+body.haizhi-glass .canvas-app.is-ontology-space {
+  --os-ink: var(--glass-ink);
+  --os-muted: var(--glass-muted);
+  --os-line: rgba(72, 102, 153, .18);
+  --os-gold: #b13b58;
+  --os-aqua: var(--glass-blue);
+  color-scheme: light;
+  color: var(--glass-ink);
+}
+
+body.haizhi-glass .ontology-space {
+  color: var(--glass-ink);
+  background:
+    radial-gradient(ellipse 70% 60% at 43% 60%, rgba(255, 255, 255, .65), transparent 70%),
+    radial-gradient(ellipse at 8% 68%, rgba(141, 174, 226, .22), transparent 48%),
+    radial-gradient(ellipse at 93% 82%, rgba(215, 9, 47, .045), transparent 40%),
+    linear-gradient(180deg, transparent 0%, transparent 8%, rgba(235, 242, 248, .62) 75%);
+}
+
+body.haizhi-glass .ontology-space :is(button, input, textarea, summary, select):focus-visible {
+  outline: 2px solid var(--glass-blue);
+  outline-offset: 3px;
+}
+
+body.haizhi-glass .os-identity h1 { color: #24446f; font-weight: 550; }
+body.haizhi-glass .os-eyebrow { color: #536c92; }
+body.haizhi-glass :is(.os-status, .os-hint, .os-muted, .os-build-status details) { color: var(--glass-muted); }
+body.haizhi-glass .os-build-status { color: #315f98; }
+body.haizhi-glass .os-version {
+  border-color: rgba(255, 255, 255, .8);
+  border-radius: 9px;
+  color: #49648b;
+  background: rgba(255, 255, 255, .57);
+}
+
+body.haizhi-glass :is(.os-toolbar, .os-work-entries) {
+  border-color: var(--glass-border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .6);
+  box-shadow: 0 8px 22px rgba(47, 77, 123, .07), inset 0 1px 0 rgba(255, 255, 255, .85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+body.haizhi-glass .os-button {
+  border-color: rgba(255, 255, 255, .82);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, .65);
+  color: #38577f;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7);
+}
+body.haizhi-glass .os-button:not(:disabled):hover {
+  color: var(--glass-blue);
+  background: rgba(255, 255, 255, .92);
+  border-color: #b7cce9;
+}
+body.haizhi-glass .os-button:disabled { opacity: .45; }
+body.haizhi-glass .os-toolbar .os-button { background: transparent; border-color: transparent; box-shadow: none; }
+body.haizhi-glass .os-toolbar .os-button:not(:disabled):hover { background: #e8f0fb; border-color: #d8e5f7; }
+body.haizhi-glass .os-menu summary {
+  color: #38577f;
+  border-color: var(--glass-border);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, .65);
+}
+body.haizhi-glass .os-menu[open] summary { background: #fff; color: var(--glass-blue); }
+body.haizhi-glass .os-menu-body {
+  background: rgba(247, 250, 255, .96);
+  border-color: var(--glass-border);
+  border-radius: 16px;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* Labels are real controls over the transparent WebGL canvas, not canvas text. */
+body.haizhi-glass .os-node-label {
+  border-radius: 10px;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, .98), 0 0 12px rgba(255, 255, 255, .9);
+}
+body.haizhi-glass .os-node-label strong { color: #294b79; font-weight: 550; }
+body.haizhi-glass .os-node-label span {
+  color: #526a8b;
+  background: rgba(255, 255, 255, .75);
+  border: 1px solid rgba(255, 255, 255, .8);
+  border-radius: 6px;
+  text-shadow: none;
+}
+body.haizhi-glass .os-node-label:hover {
+  background: rgba(255, 255, 255, .68);
+  border-color: rgba(137, 169, 215, .35);
+}
+body.haizhi-glass .os-node-label.is-focused strong { color: #ab3452; }
+body.haizhi-glass .os-node-evidence strong { color: #536b90; font-weight: 500; }
+body.haizhi-glass .os-edge-label {
+  color: #a33350;
+  background: rgba(255, 248, 250, .9);
+  border-color: rgba(193, 106, 129, .22);
+  border-radius: 9px;
+  text-shadow: none;
+  box-shadow: 0 3px 12px rgba(124, 64, 88, .06);
+}
+
+body.haizhi-glass .os-legend {
+  border-color: var(--glass-border);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .56);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+body.haizhi-glass .os-legend > div { color: #4b6385; }
+body.haizhi-glass .os-legend > div::before { box-shadow: 0 0 0 2px rgba(255, 255, 255, .7); }
+body.haizhi-glass .os-legend small { color: #657a97; }
+body.haizhi-glass .os-directory {
+  background: rgba(248, 251, 255, .93);
+  border-color: var(--glass-border);
+  border-radius: 20px;
+  box-shadow: var(--glass-shadow);
+  scrollbar-color: #8aa7ce80 transparent;
+}
+body.haizhi-glass .os-directory input {
+  color: var(--glass-ink);
+  background: rgba(255, 255, 255, .9);
+  border-color: #d4e1f1;
+  border-radius: 12px;
+}
+body.haizhi-glass .os-directory input::placeholder { color: #6d819d; }
+body.haizhi-glass .os-directory-entries .os-button { background: transparent; border-color: transparent; }
+body.haizhi-glass .os-directory-entries .os-button:not(:disabled):hover { background: #e9f1fc; border-color: #d8e5f7; }
+
+body.haizhi-glass :is(.os-local-card, .os-inspector) {
+  color: var(--glass-ink);
+  border-color: var(--glass-border);
+  border-radius: 24px;
+  background: linear-gradient(140deg, rgba(255, 255, 255, .85), rgba(244, 249, 255, .72));
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+body.haizhi-glass :is(.os-local-card header, .os-inspector-head) .os-button {
+  background: transparent;
+  box-shadow: none;
+  border-color: transparent;
+}
+body.haizhi-glass .os-local-summary {
+  color: #294f83;
+  border-color: rgba(255, 255, 255, .8);
+  border-radius: 16px;
+  background: linear-gradient(120deg, rgba(227, 238, 253, .7), rgba(255, 255, 255, .6));
+}
+body.haizhi-glass .os-local-summary:hover { border-color: #b1c8e8; background: #f4f8ff; }
+body.haizhi-glass :is(.os-local-summary p, .os-local-actions > span, .os-detail-description) { color: var(--glass-muted); }
+body.haizhi-glass .os-explore { color: var(--glass-blue); }
+body.haizhi-glass .os-inspector-body { scrollbar-color: #8aa7ce80 transparent; }
+body.haizhi-glass .os-detail-kind { color: #ac3e59; }
+body.haizhi-glass .os-inspector h2 { color: #26466f; font-weight: 550; }
+body.haizhi-glass .os-badges span {
+  color: #47658e;
+  background: #e8f0fb;
+  border-color: #d8e4f6;
+  border-radius: 8px;
+}
+body.haizhi-glass .os-detail-metrics > div {
+  background: rgba(255, 255, 255, .62);
+  border-color: rgba(255, 255, 255, .88);
+  border-radius: 16px;
+}
+body.haizhi-glass .os-detail-metrics strong { color: #2b5c9d; font-weight: 500; }
+body.haizhi-glass .os-detail-metrics span { color: var(--glass-muted); }
+body.haizhi-glass .os-primary {
+  color: #fff;
+  background: var(--glass-blue);
+  border-color: rgba(255, 255, 255, .8);
+  box-shadow: 0 5px 14px rgba(0, 95, 211, .14), inset 0 1px 0 rgba(255, 255, 255, .3);
+}
+body.haizhi-glass .os-primary:not(:disabled):hover { background: #0754b1; color: #fff; }
+body.haizhi-glass .os-detail-section { border-color: rgba(80, 112, 155, .13); }
+body.haizhi-glass .os-detail-section h3 { color: #36557f; }
+body.haizhi-glass .os-detail-section p { color: var(--glass-muted); }
+body.haizhi-glass .os-evidence-card {
+  background: rgba(255, 255, 255, .59);
+  border-color: #dae5f2;
+  border-radius: 14px;
+}
+body.haizhi-glass .os-evidence-card summary { color: #3e5a80; }
+body.haizhi-glass .os-evidence-card blockquote { color: #526c8e; }
+body.haizhi-glass .os-evidence-card small { color: #627a9a; }
+body.haizhi-glass .os-relation-path {
+  color: #a03e58;
+  background: rgba(255, 242, 246, .7);
+  border-color: #edd1db;
+  border-radius: 12px;
+}
+body.haizhi-glass .os-issues summary { color: #ac3b57; }
+body.haizhi-glass .os-error { color: #aa304c; }
+
+body.haizhi-glass .os-fan-group {
+  color: #46648e;
+  background: rgba(248, 252, 255, .77);
+  border-color: var(--glass-border);
+  border-radius: 15px;
+  box-shadow: 0 7px 20px rgba(44, 77, 126, .07), inset 0 1px 0 #fff;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+body.haizhi-glass .os-fan-group strong { color: #305c95; }
+body.haizhi-glass .os-fan-group[aria-pressed="true"] {
+  color: #a13953;
+  background: rgba(255, 245, 248, .92);
+  border-color: #ddadbd;
+  box-shadow: 0 7px 20px rgba(141, 62, 88, .08), inset 0 1px 0 #fff;
+}
+body.haizhi-glass .os-fan-group[aria-pressed="true"] strong { color: #ac3d57; }
+body.haizhi-glass .os-fan-leaves { scrollbar-color: #8aa7ce80 transparent; }
+body.haizhi-glass .os-fan-leaf {
+  color: #385a86;
+  background: rgba(255, 255, 255, .63);
+  border-color: rgba(255, 255, 255, .78);
+  border-radius: 12px;
+}
+body.haizhi-glass .os-fan-leaf:hover { background: rgba(255, 255, 255, .9); border-color: #b1c9e9; }
+body.haizhi-glass :is(.os-fan-leaf small, .os-fan-empty, .os-empty p) { color: var(--glass-muted); }
+body.haizhi-glass .os-empty h2 { color: #365782; }
+
+/* Keep one shared composer and the existing overview/local/detail positions. */
+body.haizhi-glass .is-ontology-space .chat-surface {
+  color: var(--glass-ink);
+  background: linear-gradient(135deg, rgba(255, 255, 255, .83), rgba(239, 246, 255, .74));
+  border-color: var(--glass-border);
+  border-radius: 25px;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+body.haizhi-glass .is-ontology-space .chat-surface .composer-wrap {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+body.haizhi-glass .is-ontology-space .chat-surface .composer {
+  color: var(--glass-ink);
+  background: rgba(255, 255, 255, .85);
+  border-color: rgba(209, 222, 241, .8);
+  box-shadow: 0 2px 8px rgba(52, 82, 127, .035), inset 0 1px 0 #fff;
+}
+body.haizhi-glass .is-ontology-space .chat-surface .composer textarea { color: #2c476d; }
+body.haizhi-glass .is-ontology-space .chat-surface textarea::placeholder { color: #71839e; }
+body.haizhi-glass .is-ontology-space .chat-surface .composer .send-button {
+  color: #fff;
+  background: var(--glass-blue);
+  box-shadow: 0 3px 8px rgba(0, 95, 211, .15), inset 0 1px 0 rgba(255, 255, 255, .3);
+}
+body.haizhi-glass .is-ontology-space .chat-surface .composer-note { color: var(--glass-muted); }
+body.haizhi-glass .is-ontology-space .history-panel {
+  background: rgba(250, 252, 255, .9);
+  border-color: #dce6f3;
+  border-radius: 17px;
+}
+body.haizhi-glass .is-ontology-space .history-panel .dialogue { color: var(--glass-ink); }
+body.haizhi-glass .os-chat-metrics { color: #5f7698; }
+body.haizhi-glass .os-chat-metrics > div { border-color: rgba(80, 112, 155, .12); }
+body.haizhi-glass .os-chat-metrics strong { color: #315b92; font-weight: 500; }
+body.haizhi-glass .os-chat-footer { color: #5b7497; }
+body.haizhi-glass .os-chat-footer > span { color: #44638e; background: #e8f0fb; border-radius: 10px; }
+body.haizhi-glass .os-chat-footer button { color: #526e94; }
+body.haizhi-glass .os-chat-footer .os-chat-discuss {
+  color: var(--glass-blue);
+  border-color: #c5d8f1;
+  background: #edf4ff;
+}
+body.haizhi-glass .is-ontology-space .chat-launcher { color: #345781; background: #f1f6ff; border-color: #d5e2f3; }
+
+body.haizhi-glass .os-management.live-dialog { color-scheme: light; color: var(--glass-ink); }
+body.haizhi-glass .os-management :is(.live-legacy, .live-card) {
+  color: var(--glass-ink);
+  background: rgba(255, 255, 255, .65);
+  border-color: #d8e4f3;
+  border-radius: 16px;
+}
+body.haizhi-glass .os-management :is(summary, .source-meta, .live-lead) { color: var(--glass-muted); }
+body.haizhi-glass .os-management .quiet-button { color: #416591; border-color: #d2e0f2; }
+
+/* Keep the task entrance clear of the graph's moving composer. */
+body.haizhi-glass .is-ontology-space .agent-task-status {
+  top: auto;
+  right: auto;
+  bottom: 24px;
+  left: 32px;
+  width: 174px;
+  max-width: none;
+  padding: 10px 13px;
+  z-index: 9;
+}
+body.haizhi-glass .is-ontology-space .agent-task-status > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: 18px;
+}
+body.haizhi-glass .is-ontology-space .agent-task-status > small { display: none; }
+body.haizhi-glass .is-ontology-space .agent-task-status button { min-height: 28px; margin-top: 3px; white-space: nowrap; }
+body.haizhi-glass .is-ontology-space:has(.agent-task-status:not([hidden])) .os-legend { bottom: 110px; }
+
+@media (min-width: 721px) and (max-width: 1100px) {
+  body.haizhi-glass .is-ontology-space .agent-task-status { left: 22px; }
+  body.haizhi-glass .is-ontology-space[data-ontology-stage="local"] .agent-task-status { width: clamp(90px, calc(21vw - 60px), 174px); }
+}
+
+@media (max-width: 720px) {
+  body.haizhi-glass .ontology-space {
+    display: flex;
+    flex-direction: column;
+    --os-mobile-controls-height: 224px;
+  }
+  body.haizhi-glass .os-header {
+    position: relative;
+    top: auto;
+    right: auto;
+    left: auto;
+    order: 1;
+    flex: none;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    margin: 12px 16px 0;
+  }
+  body.haizhi-glass .os-identity {
+    /* engine.css fixes mobile identity at 45%; the full-width status row replaces it. */
+    max-width: none !important;
+    min-width: 0;
+    max-height: 122px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #8aa7ce80 transparent;
+    grid-column: 1 / -1;
+    grid-row: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px 8px;
+  }
+  body.haizhi-glass .os-identity > .os-eyebrow { grid-column: 1 / -1; font-size: 8px; line-height: 11px; margin: 0; }
+  body.haizhi-glass .os-identity h1 { min-width: 0; margin: 0; font-size: 16px; line-height: 22px; overflow-wrap: anywhere; }
+  body.haizhi-glass .os-identity .os-version { max-width: 128px; font-size: 9px; padding: 4px 6px; }
+  body.haizhi-glass .os-identity :is(.os-build-status, .os-status) {
+    grid-column: 1 / -1;
+    max-width: 100%;
+    margin: 0;
+    font-size: 10px;
+    line-height: 15px;
+  }
+  body.haizhi-glass .os-build-status { gap: 3px; }
+  body.haizhi-glass .os-build-status button { min-height: 25px; font-size: 10px; }
+  body.haizhi-glass .os-build-status details { max-height: 65px; }
+  body.haizhi-glass .ontology-space[data-stage="detail"] .os-status { display: block; }
+  body.haizhi-glass .os-toolbar {
+    position: static;
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: start;
+    transform: none;
+    gap: 2px;
+    padding: 3px;
+  }
+  body.haizhi-glass .os-toolbar .os-button { min-width: 28px; width: 28px; height: 28px; padding: 4px; font-size: 10px; }
+  body.haizhi-glass .os-utilities { grid-column: 2; grid-row: 2; align-self: center; gap: 4px; }
+  body.haizhi-glass .os-utilities > .os-button,
+  body.haizhi-glass .os-menu summary { padding: 7px; font-size: 10px; }
+  body.haizhi-glass .os-work-entries {
+    position: relative;
+    top: auto;
+    right: auto;
+    left: auto;
+    order: 2;
+    flex: none;
+    transform: none;
+    margin: 8px 16px 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.35fr;
+    gap: 4px;
+    padding: 4px;
+  }
+  body.haizhi-glass .os-work-entries .os-button { min-width: 0; padding: 7px 5px; font-size: 10px; line-height: 14px; white-space: normal; }
+  body.haizhi-glass .os-directory {
+    position: relative;
+    /* engine.css has an absolute 170px mobile top; directory now follows both tool rows. */
+    top: auto !important;
+    right: auto;
+    left: auto;
+    order: 3;
+    flex: none;
+    width: auto;
+    max-height: min(40%, calc(100% - var(--os-mobile-controls-height) - var(--os-composer-height, 170px) - 40px));
+    margin: 8px 16px 0;
+  }
+  body.haizhi-glass .os-local-card {
+    max-height: calc(100% - var(--os-mobile-controls-height) - var(--os-composer-height, 170px) - 32px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  body.haizhi-glass .os-inspector { top: max(var(--os-mobile-controls-height), 35%); }
+  body.haizhi-glass .is-ontology-space:has(.agent-task-status:not([hidden])) .os-local-card {
+    max-height: calc(100% - var(--os-mobile-controls-height) - var(--os-composer-height, 170px) - 84px);
+  }
+  body.haizhi-glass .is-ontology-space:has(.agent-task-status:not([hidden])) .os-directory {
+    max-height: min(40%, calc(100% - var(--os-mobile-controls-height) - var(--os-composer-height, 170px) - 92px));
+  }
+  body.haizhi-glass .os-legend { border-radius: 12px; }
+  body.haizhi-glass :is(.os-local-card, .os-inspector) { border-radius: 20px; }
+  body.haizhi-glass .os-local-summary { border-radius: 13px; }
+  body.haizhi-glass .os-toolbar { border-radius: 14px; }
+  body.haizhi-glass .os-work-entries { border-radius: 16px; }
+  body.haizhi-glass .is-ontology-space .chat-surface { border-radius: 22px; }
+  body.haizhi-glass .is-ontology-space .agent-task-status:not([hidden]) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    top: auto;
+    right: 16px;
+    bottom: calc(var(--os-composer-height, 170px) + 28px);
+    left: 16px;
+    width: auto;
+    padding: 6px 12px;
+    border-radius: 14px;
+  }
+  body.haizhi-glass .is-ontology-space .agent-task-status > span { min-width: 0; }
+  body.haizhi-glass .is-ontology-space .agent-task-status button { flex: none; margin-top: 0; }
+  body.haizhi-glass .is-ontology-space:has(.agent-task-status:not([hidden])) :is(.os-local-card, .os-inspector) {
+    bottom: calc(var(--os-composer-height, 170px) + 84px);
+  }
+  body.haizhi-glass .is-ontology-space:has(.agent-task-status:not([hidden])) .os-legend {
+    bottom: calc(var(--os-composer-height, 170px) + 84px);
+  }
+  /* Match the existing measured composer ceiling so the task strip stays above history. */
+  body.haizhi-glass .is-ontology-space .interaction[data-mode="history"] {
+    height: 280px;
+    max-height: 280px;
+  }
+  body.haizhi-glass .is-ontology-space .interaction[data-mode="history"] .chat-surface {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: 100%;
+  }
+  body.haizhi-glass .is-ontology-space .interaction[data-mode="history"] .history-panel {
+    flex: 1 1 0;
+    min-height: 100px;
+    max-height: none;
+  }
+  body.haizhi-glass .is-ontology-space .interaction[data-mode="history"] .history-panel .dialogue {
+    flex: 1 1 auto;
+    min-height: 70px;
+    max-height: none;
+    overflow-y: auto;
+    padding: 4px 12px 12px;
+    scrollbar-width: thin;
+    scrollbar-color: #8aa7ce80 transparent;
+  }
+  body.haizhi-glass .is-ontology-space .interaction[data-mode="history"] .os-chat-metrics { display: none; }
+  body.haizhi-glass .is-ontology-space .interaction[data-mode="history"] .composer-wrap {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: 120px;
+    overflow: visible;
+  }
+  body.haizhi-glass .is-ontology-space .interaction[data-mode="history"] .composer {
+    flex: 0 0 auto;
+    padding: 8px 10px;
+  }
+  body.haizhi-glass .is-ontology-space .interaction[data-mode="history"] :is(.focus-context, .request-error) {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: 38px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    margin: 0 0 4px;
+    padding: 4px 6px;
+    scrollbar-width: thin;
+  }
+  body.haizhi-glass .is-ontology-space .interaction[data-mode="history"] .focus-context { gap: 5px; }
+  body.haizhi-glass .is-ontology-space .interaction[data-mode="history"] .focus-context > span { min-width: 0; line-height: 15px; }
+  body.haizhi-glass .is-ontology-space .interaction[data-mode="history"] .focus-context .quiet-button { padding: 3px 5px; min-height: 22px; line-height: 16px; }
+  body.haizhi-glass .is-ontology-space .interaction[data-mode="history"] .focus-context .icon-button { width: 22px; height: 22px; padding: 3px; }
+  body.haizhi-glass .is-ontology-space .interaction[data-mode="history"] .composer-note { max-height: 28px; overflow-y: auto; line-height: 14px; }
+  body.haizhi-glass .is-ontology-space .interaction[data-mode="history"] .composer textarea { max-height: 42px; }
+  body.haizhi-glass .is-ontology-space .interaction[data-mode="history"] .os-chat-footer { flex: none; margin-top: 6px; }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  body.haizhi-glass :is(.os-toolbar, .os-work-entries, .os-legend, .os-local-card, .os-inspector, .os-fan-group),
+  body.haizhi-glass .is-ontology-space .chat-surface { background: #f3f7fc; }
+  body.haizhi-glass :is(.os-menu-body, .os-directory) { background: #f8fbff; }
+}
