@@ -20,7 +20,7 @@ export interface HelixProjection {
 
 const issueTargets = (issue: Data) => {
   const details = (issue.details ?? {}) as Data;
-  return { entity: details.entity as string | undefined, link: details.link as string | undefined };
+  return { entity: details.entity as string | undefined, entities: Array.isArray(details.entities) ? details.entities as string[] : [], link: details.link as string | undefined };
 };
 
 /** Latest adopted program build for this foundation; documents may have added later foundation versions. */
@@ -62,13 +62,18 @@ export function helixProjection(memory: MemoryStore, foundation: Artifact): Heli
       };
     });
     const linkIds = new Set(links.map(l => l.id));
+    const currentConcept = ((foundation.content.concepts ?? []) as Data[]).find(c => c.id === conceptId);
     concepts[conceptId] = {
       entity: { id: entity.id, name: entity.name, kind: entity.kind, key: entity.key, rows: entity.rows,
         properties: entity.properties, members: entity.members.map(member) },
       links,
       notes: discovery.notes.filter(n => n.entities?.includes(entity.id) || n.links?.some(id => linkIds.has(id))).map(n => ({ kind: n.kind, text: n.text })),
-      issues: issues.filter(issue => { const t = issueTargets(issue); return t.entity === entity.id || (t.link && linkIds.has(t.link)); })
-        .map(issue => ({ code: issue.code, severity: issue.severity, message: issue.message })),
+      issues: issues.filter(issue => {
+        const t = issueTargets(issue);
+        if (issue.code === "entity_name_review" && currentConcept?.name !== (issue.details as Data | undefined)?.originalName) return false;
+        return t.entity === entity.id || t.entities.includes(entity.id) || (t.link && linkIds.has(t.link));
+      })
+        .map(issue => ({ code: issue.code, severity: issue.severity, message: issue.message, details: issue.details ?? null })),
     } as unknown as Data;
   }
   const members = discovery.entities.flatMap(e => e.members);

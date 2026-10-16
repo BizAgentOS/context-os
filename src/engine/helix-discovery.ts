@@ -2,6 +2,7 @@
 // ADE changes are listed in third_party/helix-foundry/MODIFICATIONS.md: an injected snapshot
 // query replaces the Helix store, names split on Unicode words and Chinese key suffixes, notes
 // and link names are Chinese, and capacity cuts are reported instead of applied silently.
+// ADE also reports non-identity overlap, pruned paths and unconfirmed names for review.
 import { createHash } from "node:crypto";
 
 export interface ColumnProfile { name: string; type: string; nulls: number; distinct: number; primaryKey: boolean }
@@ -18,7 +19,15 @@ export interface OntologyMember { datasetId: string; datasetName: string; source
 export interface SuggestedEntity { id: string; name: string; description: string; kind: "record" | "activity"; anchorDatasetId: string; key: string; rows: number; members: OntologyMember[]; properties: string[] }
 export interface SuggestedLink { id: string; name: string; from: string; to: string; fromDatasetId: string; fromColumn: string; toDatasetId: string; toColumn: string; totalRows: number; matchedRows: number; caseInsensitive: boolean; evidence: "declared" | "name" | "values" }
 export interface OntologyNote { kind: "merged" | "unmatched" | "case" | "unlinked"; text: string; entities?: string[]; links?: string[] }
-export interface SuggestedOntology { signature: string; hash: string; summary: string; described: boolean; entities: SuggestedEntity[]; links: SuggestedLink[]; notes: OntologyNote[]; unplaced: string[] }
+export interface ReviewColumn { datasetId: string; datasetName: string; column: string }
+/** Observed ambiguities, not proposed business facts or executable relationships. */
+export interface DiscoveryReview {
+  id: string; kind: "value_overlap" | "implied_link" | "entity_name"; entities: string[]; text: string;
+  from?: ReviewColumn; to?: ReviewColumn; path?: ReviewColumn[];
+  matchedRows?: number; totalRows?: number; matchedDistinct?: number; distinct?: number;
+  caseInsensitive?: boolean; originalName?: string;
+}
+export interface SuggestedOntology { signature: string; hash: string; summary: string; described: boolean; entities: SuggestedEntity[]; links: SuggestedLink[]; notes: OntologyNote[]; unplaced: string[]; reviews?: DiscoveryReview[] }
 export interface OntologyConfirm { hash: string; excluded: string[]; names: Record<string, string> }
 export interface Pipeline { name: string; description: string; inputs: string[]; sql: string; nodes: unknown[]; checks: { name: string; sql: string }[]; entityId: string; datasetId: string }
 export interface OntologyType { name: string; datasetId: string; primaryKey: string; properties: string[]; description: string; entityId: string }
@@ -61,6 +70,7 @@ type Col = {
   integer: boolean;
   unique: boolean;
   key: boolean;
+  reviewOnly: boolean;
 };
 type Edge = {
   A: Col;
@@ -350,10 +360,10 @@ export async function suggestOntology(
   }
   const declared = declaredKeys(infos, sources);
   const cols: Col[] = [];
-  const column = (x: Info, c: ColumnProfile, field?: string) => {
+  const column = (x: Info, c: ColumnProfile, field?: string, reviewOnly = false) => {
     const name = field ? c.name + "." + field : c.name;
     const found = cols.find((y) => y.ds === x && y.name === name);
-    if (found) return found;
+    if (found) { if (!reviewOnly) found.reviewOnly = false; return found; }
     const col: Col = {
       i: cols.length,
       ds: x,
@@ -363,6 +373,7 @@ export async function suggestOntology(
       integer: !field && /INT/.test(c.type),
       unique: !field && c.distinct > 0 && c.distinct === x.rows - c.nulls,
       key: !field && c.primaryKey,
+      reviewOnly,
     };
     cols.push(col);
     return col;
@@ -379,6 +390,10 @@ export async function suggestOntology(
         c.distinct >= 2
       )
         column(x, c);
+      // Ordinary high-cardinality text can suggest a question (for example a shared
+      // contact address). It must never become an identity or a relationship here.
+      else if (c.type === "VARCHAR" && c.distinct >= 3 && c.distinct >= (x.rows - c.nulls) / 2)
+        column(x, c, undefined, true);
       for (const f of structFields(c.type)) if (keyName(f)) column(x, c, f);
     }
   const declaredPairs = new Set<string>();
@@ -395,7 +410,7 @@ export async function suggestOntology(
   for (const r of rows) {
     const A = cols[r.a],
       B = cols[r.b];
-    if (!A || !B || B.field) continue;
+    if (!A || !B || B.field || A.reviewOnly || B.reviewOnly) continue;
     const isDeclared = declaredPairs.has(A.i + ":" + B.i),
       bOwn = B.ds.key === B.name,
       bAlt = B.ds.alt.has(B.name),
@@ -437,6 +452,8 @@ export async function suggestOntology(
       A.unique &&
       B.key &&
       A.ds.system !== B.ds.system &&
+      // An email match alone cannot establish that two business identities are one.
+      !email(A.name) && !email(B.name) &&
       !(A.ds.source === "upload" && B.ds.source === "upload" && conventional) &&
       exact;
     // A table keyed by another table's key (user_profiles.user_id) extends it 1:1.
@@ -621,7 +638,7 @@ export async function suggestOntology(
       i = x.findIndex((v, j) => v !== y[j]);
     if (!cur || (i >= 0 && x[i] > y[i])) best.set(k, { e, from, to });
   }
-  const refs = await withoutImplied(query, [...best.values()]);
+  const { refs, removed } = await withoutImplied(query, [...best.values()]);
   const hasTime = (x: Info) =>
     x.columns.some((c) => /^(TIMESTAMP|DATE)/.test(c.type));
   // Large event streams feed metrics but are not stored as records. A large orders
@@ -737,6 +754,38 @@ export async function suggestOntology(
   });
 
   await throughAnchor(query, links, entities);
+
+  const reviews: DiscoveryReview[] = [];
+  const columnRef = (c: Col): ReviewColumn => ({ datasetId: c.ds.d.id, datasetName: c.ds.d.name, column: c.name });
+  const pairKey = (a: Col, b: Col) => [[a.ds.d.id, a.name].join("\0"), [b.ds.d.id, b.name].join("\0")].sort(cmp).join("\0");
+  const representedPairs = new Set([...refs, ...removed.map(p => p.direct)].map(({ e }) => pairKey(e.A, e.B)));
+  const reviewedPairs = new Set<string>();
+  for (const row of rows) {
+    const a = cols[row.a], b = cols[row.b];
+    if (!a || !b || a.field || b.field || a.integer || b.integer) continue;
+    const from = entityOf.get(a.ds), to = entityOf.get(b.ds), key = pairKey(a, b);
+    if (!from || !to || from === to || representedPairs.has(key) || reviewedPairs.has(key)) continue;
+    // A review is useful for substantial observed overlap, not a common status value.
+    if (row.m_ci < 3 || row.m_ci / row.a_distinct_ci < 0.8) continue;
+    if (!a.reviewOnly && !b.reviewOnly && !email(a.name) && !email(b.name)) continue;
+    reviewedPairs.add(key);
+    const ci = row.a_rows_ci > row.a_rows_exact;
+    reviews.push({ id: `overlap_${digest(key).slice(0, 20)}`, kind: "value_overlap", entities: [from.id, to.id],
+      from: columnRef(a), to: columnRef(b), matchedRows: row.a_rows_ci, totalRows: row.a_rows,
+      matchedDistinct: row.m_ci, distinct: row.a_distinct_ci, caseInsensitive: ci,
+      text: `「${a.ds.d.name}」.${a.name} 与「${b.ds.d.name}」.${b.name} 有 ${row.m_ci}/${row.a_distinct_ci} 个非空不同值重合（${row.a_rows_ci}/${row.a_rows} 条记录${ci ? "，忽略大小写与首尾空格" : "，精确匹配"}）。值重合不证明同一身份；未自动合并或建立关系。请核对字段含义、身份规则及重复值后再决定映射。` });
+  }
+  for (const { direct, first, second, total, matched } of removed) {
+    const { e, from, to } = direct;
+    reviews.push({ id: `implied_${digest(pairKey(e.A, e.B)).slice(0, 20)}`, kind: "implied_link", entities: [from.id, to.id, first.to.id],
+      from: columnRef(e.A), to: columnRef(e.B), path: [columnRef(first.e.A), columnRef(first.e.B), columnRef(second.e.A), columnRef(second.e.B)],
+      matchedRows: matched, totalRows: total, caseInsensitive: e.caseRows > 0 || first.e.caseRows > 0 || second.e.caseRows > 0,
+      text: `「${e.A.ds.d.name}」.${e.A.name} →「${e.B.ds.d.name}」.${e.B.name} 已按两跳规则去冗余，未生成直接关系。经「${first.e.B.ds.d.name}」.${second.e.A.name} 的路径与直接字段在 ${matched}/${total} 条非空起点记录上一致；数据吻合不代表业务关系含义相同。请核对是否仍需保留独立的直接关系${matched < total ? `；另有 ${total - matched} 条未吻合` : ""}。` });
+  }
+  for (const entity of entities) if (/[A-Za-z]/.test(entity.name) && !/\p{Script=Han}/u.test(entity.name)) {
+    reviews.push({ id: `name_${digest(entity.id).slice(0, 20)}`, kind: "entity_name", entities: [entity.id], originalName: entity.name,
+      text: `“${entity.name}”沿用了数据集「${byDataset.get(entity.anchorDatasetId)!.name}」的英文表名。如需中文业务名称，请提供名称并让助手只修正该概念的名称与说明；稳定标识及来源字段不变。` });
+  }
 
   const notes: SuggestedOntology["notes"] = [];
   const info = (id: string) => infos.find((x) => x.d.id === id)!;
@@ -856,6 +905,7 @@ export async function suggestOntology(
     links,
     notes,
     unplaced,
+    reviews,
   };
 }
 
@@ -957,7 +1007,7 @@ async function withoutImplied(query: Query, refs: Ref[]) {
             .map((second) => ({ direct, first, second })),
     ),
   );
-  if (!paths.length) return refs;
+  if (!paths.length) return { refs, removed: [] as Array<(typeof paths)[number] & { total: number; matched: number }> };
   const value = (expr: string, ci: boolean) =>
     ci ? `lower(trim(CAST(${expr} AS VARCHAR)))` : `CAST(${expr} AS VARCHAR)`;
   const sql = paths
@@ -991,20 +1041,24 @@ WHERE ${d} IS NOT NULL`;
   // through a hop that was dropped.
   const implied = new Set<Ref>(),
     hops = new Set<Ref>();
+  const removed: Array<(typeof paths)[number] & { total: number; matched: number }> = [];
   for (const [i, p] of paths.entries())
     if (
       agreed.has(i) &&
+      !implied.has(p.direct) &&
       !hops.has(p.direct) &&
       !implied.has(p.first) &&
       !implied.has(p.second)
     ) {
       implied.add(p.direct);
       hops.add(p.first).add(p.second);
+      const result = r.rows.find(row => Number(row.k) === i)!;
+      removed.push({ ...p, total: Number(result.n), matched: Number(result.agree) });
     }
-  return refs.filter((ref) => !implied.has(ref));
+  return { refs: refs.filter((ref) => !implied.has(ref)), removed };
 }
 
-// Value index over every key-like column, self-joined to count shared values for
+// Value index over key-like and review-only text columns, self-joined to count shared values for
 // each column pair (exact and ignoring case), in one executor call. Integer columns
 // only pair with columns for a similar noun, which the join enforces so serial ids
 // never multiply out across unrelated tables.
@@ -1202,6 +1256,7 @@ export function confirmOntology(
         : s.summary,
     entities,
     links,
+    reviews: s.reviews?.filter(review => !review.entities.some(id => excluded.has(id)) && !(review.kind === "entity_name" && edits.names[review.entities[0]]?.trim())),
     notes: s.notes.filter(
       (n) =>
         !n.entities?.some((id) => excluded.has(id)) &&

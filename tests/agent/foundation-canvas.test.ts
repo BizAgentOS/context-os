@@ -9,8 +9,7 @@ import { createServer } from "../../src/agent/server.ts";
 import type { AgentDriver } from "../../src/agent/runtime.ts";
 import { seedFoundation } from "./program-foundation-fixture.ts";
 
-// 待迁移：本测试从空本体起步，由对话/文档/网页/知识库新建概念。基础本体改由规则构建后，需改为在规则建好的结构上修正；其中验证的引用与治理机制仍在产品中。
-test.skip("a real Skill and quoted conversation produce an adoptable, unmapped foundation that survives restart", async () => {
+test("a real Skill and quoted conversation refine the rule-built foundation while preserving unmapped structure across restart", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-foundation-"));
   let ran = false;
   const driver: AgentDriver = {
@@ -107,6 +106,8 @@ test.skip("a real Skill and quoted conversation produce an adoptable, unmapped f
     assert.equal(before.sources.length, 0);
     assert.notEqual(before.foundation.adopted.version, candidate.version, "the rule-built version stays adopted until the user decides");
     assert.equal(candidate.content.checks.valid, true);
+    assert.deepEqual(candidate.content.concepts.map((item: any) => [item.id, item.origin]), [["heating", "program"], ["resident", "program"]]);
+    assert.deepEqual(candidate.content.relations.map((item: any) => [item.id, item.from, item.to, item.origin]), [["serves", "heating", "resident", "program"]]);
     assert.equal(candidate.content.concepts[0].mappingStatus, "unbound");
     const decision = {
       page: "setup",
@@ -172,7 +173,7 @@ test.skip("a real Skill and quoted conversation produce an adoptable, unmapped f
     const restored = await api("/api/canvas/navigate", { page: "ontology" });
     assert.equal(restored.foundation.adopted.id, candidate.id);
     assert.equal(
-      restored.foundation.adopted.content.evidence[0].quote,
+      restored.foundation.adopted.content.evidence.find((item: any) => item.id === "e1").quote,
       "澄川热力主营居民供热",
     );
     assert.equal(restored.foundation.adopted.content.concepts[0].id, "heating");
@@ -182,8 +183,7 @@ test.skip("a real Skill and quoted conversation produce an adoptable, unmapped f
   }
 });
 
-// 待迁移：本测试从空本体起步，由对话/文档/网页/知识库新建概念。基础本体改由规则构建后，需改为在规则建好的结构上修正；其中验证的引用与治理机制仍在产品中。
-test.skip("foundation revisions preserve adopted meaning and unknowns, rejecting fake evidence and stale decisions", async () => {
+test("foundation revisions preserve adopted meaning and unknowns, rejecting fake evidence and stale decisions", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-foundation-revision-"));
   let runs = 0;
   let checked = 0;
@@ -323,9 +323,9 @@ test.skip("foundation revisions preserve adopted meaning and unknowns, rejecting
           "foundation_propose",
           draft,
         )) as any;
-        assert.equal(saved.version, 3);
+        assert.equal(saved.version, draft.baseVersion + 1);
         const visible = (await request.onTool("foundation_read", {})) as any;
-        assert.equal(visible.adopted.version, 2);
+        assert.equal(visible.adopted.version, draft.baseVersion);
         assert.equal(visible.current.content.concepts.length, 2);
         assert.equal(
           visible.current.content.unknowns[0].description,
@@ -386,7 +386,7 @@ test.skip("foundation revisions preserve adopted meaning and unknowns, rejecting
       }),
       /版本已变化/,
     );
-    assert.equal(service.app.canvasState().foundation.adopted!.version, 2);
+    assert.equal(service.app.canvasState().foundation.adopted!.version, initial.version + 1);
     const profile = service.app.canvasState().profile!;
     await service.app.editProfile({
       id: profile.id,
@@ -398,11 +398,11 @@ test.skip("foundation revisions preserve adopted meaning and unknowns, rejecting
       service.app.canvasFoundationAdopt({
         page: "setup",
         id: initial.id,
-        version: 3,
+        version: service.app.canvasState().foundation.current!.version,
       }),
       /企业信息已变化/,
     );
-    assert.equal(service.app.canvasState().foundation.adopted!.version, 2);
+    assert.equal(service.app.canvasState().foundation.adopted!.version, initial.version + 1);
   } finally {
     await service.close();
     rmSync(directory, { recursive: true, force: true });
@@ -502,8 +502,7 @@ test("stopping foundation generation prevents late saves; unresolved conflicts b
   }
 });
 
-// 待迁移：本测试从空本体起步，由对话/文档/网页/知识库新建概念。基础本体改由规则构建后，需改为在规则建好的结构上修正；其中验证的引用与治理机制仍在产品中。
-test.skip("an explicit same-enterprise name correction retains semantic identity and awaits adoption", async () => {
+test("an explicit same-enterprise name correction retains semantic identity and awaits adoption", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-foundation-name-"));
   let checked = 0;
   const driver: AgentDriver = {
@@ -565,16 +564,15 @@ test.skip("an explicit same-enterprise name correction retains semantic identity
         await assert.rejects(
           request.onTool("foundation_propose", {
             ...draft,
-            relations: [
-              {
-                id: "resident",
-                name: "认识",
-                description: "同类关系",
-                from: "resident",
-                to: "resident",
-                evidenceRefs: ["e1"],
-              },
-            ],
+            relations: [{ id: "resident", name: "认识", description: "同类关系", from: "resident", to: "resident", evidenceRefs: ["e1"] }],
+          }),
+          /数据程序/,
+        );
+        await assert.rejects(
+          request.onTool("foundation_propose", {
+            ...draft,
+            // The duplicate must use an existing concept: new relations fail the structure lock first.
+            concepts: [draft.concepts[0], { ...draft.concepts[0] }],
           }),
           /标识重复/,
         );
@@ -604,7 +602,7 @@ test.skip("an explicit same-enterprise name correction retains semantic identity
     await service.app.canvasFoundationAdopt({
       page: "setup",
       id: initial.id,
-      version: 1,
+      version: initial.version,
     });
     await service.app.canvasMessage({
       page: "setup",
@@ -631,7 +629,7 @@ test.skip("an explicit same-enterprise name correction retains semantic identity
     const adopted = await service.app.canvasFoundationAdopt({
       page: "setup",
       id: initial.id,
-      version: 3,
+      version: service.app.canvasState().foundation.current!.version,
     });
     assert.equal(
       (adopted.foundation.adopted!.content.enterprise as any).name,

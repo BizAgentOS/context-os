@@ -7,9 +7,9 @@ import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { createServer } from "../../src/agent/server.ts";
 import type { AgentDriver } from "../../src/agent/runtime.ts";
+import { seedFoundation } from "./program-foundation-fixture.ts";
 
-// 待迁移：本测试从空本体起步，由对话/文档/网页/知识库新建概念。基础本体改由规则构建后，需改为在规则建好的结构上修正；其中验证的引用与治理机制仍在产品中。
-test.skip("authorized knowledge directory, bounded read and cited foundation survive source revocation", async () => {
+test("authorized knowledge directory, bounded read and cited foundation survive source revocation", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-knowledge-"));
   const text = "澄川热力为居民提供供热服务。" + "服务说明。".repeat(1500);
   let revision = "2026-09-01";
@@ -78,7 +78,7 @@ test.skip("authorized knowledge directory, bounded read and cited foundation sur
         /版本/,
       );
       const draft = {
-        baseVersion: 0,
+        baseVersion: ((await request.onTool("foundation_read", {})) as any).current.version,
         enterprise: { name: "澄川热力", evidenceRefs: ["kb1"] },
         concepts: [
           {
@@ -108,7 +108,8 @@ test.skip("authorized knowledge directory, bounded read and cited foundation sur
         /读取/,
       );
       candidate = await request.onTool("foundation_propose", draft);
-      assert.equal(candidate.content.evidence[0].knowledgeSnapshot, undefined);
+      assert.deepEqual(candidate.content.concepts.map((item: any) => [item.id, item.origin]), [["resident", "program"]]);
+      assert.equal(candidate.content.evidence.find((item: any) => item.id === "kb1").knowledgeSnapshot, undefined);
       checked = true;
       return {
         text: "已保存知识依据候选",
@@ -120,6 +121,12 @@ test.skip("authorized knowledge directory, bounded read and cited foundation sur
     async close() {},
   };
   let service = await createServer({ directory, driver, automaticApi: false });
+  seedFoundation(service.app.memory, service.app.foundation, {
+    enterprise: "澄川热力",
+    concepts: [
+      { id: "resident", name: "居民", description: "来自居民表的记录，业务含义待核对。" },
+    ],
+  });
   await new Promise<void>((r) => service.server.listen(0, "127.0.0.1", r));
   let base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
   const api = async (path: string, body?: unknown) => {
@@ -351,8 +358,7 @@ test("MCP knowledge contract rejects filtering, unknown identity coverage, schem
   }
 });
 
-// 待迁移：本测试从空本体起步，由对话/文档/网页/知识库新建概念。基础本体改由规则构建后，需改为在规则建好的结构上修正；其中验证的引用与治理机制仍在产品中。
-test.skip("resolved historical knowledge conflict does not lock a foundation after user replaces its active meaning", async () => {
+test("resolved historical knowledge conflict does not lock a foundation after user replaces its active meaning", async () => {
   const { createKnowledgeSource, knowledgeCapability } =
     await import("./knowledge-fixture.ts");
   const upstream = await createKnowledgeSource();
@@ -432,6 +438,12 @@ test.skip("resolved historical knowledge conflict does not lock a foundation aft
     async close() {},
   };
   const service = await createServer({ directory, driver, automaticApi: false });
+  seedFoundation(service.app.memory, service.app.foundation, {
+    enterprise: "澄川热力",
+    concepts: [
+      { id: "service", name: "客服", description: "来自客服表的记录，业务含义待核对。" },
+    ],
+  });
   try {
     source = await service.app.live.sources.connect({
       name: "知识",

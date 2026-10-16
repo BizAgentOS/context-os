@@ -58,7 +58,17 @@ test("adopted mapping serves fresh objects to scoped consumers and rejects drift
       rationale: "回访结果代表客户反馈，不能仅用办结证明恢复。",
     });
     assert.equal(candidate.status, "candidate");
+    assert.equal(live.overview().models.find(m => m.id === candidate.id)?.canAdopt, true);
+    const stale = await live.propose({
+      purpose: "同一基线的另一候选",
+      types: [{name:"回访", description:"客户反馈记录", sourceId:source.id, capability:"callbacks", fields:{结果:"outcome"}}],
+      relations: [], rationale: "用于核对采用后的旧候选可用性。",
+    });
     const model = await live.adopt(candidate.id, candidate.version);
+    const availability = live.overview().models.find(m => m.id === stale.id)!;
+    assert.equal(availability.canAdopt, false);
+    assert.match(availability.adoptionReason!, /执行子集版本已变化/);
+    await assert.rejects(live.adopt(stale.id, stale.version), /已变化/);
     const draft = live.prepare({
       name: "客服 Agent",
       purpose: "读取回访",

@@ -25,7 +25,7 @@ const memberLine = m => m.anchor ? `主来源 · ${m.rows} 条` : m.via ? `${m.m
 const linkLine = l => `${l.name} · ${l.matchedRows}/${l.totalRows} 条匹配 · ${linkEvidence(l.evidence)}${l.caseInsensitive ? " · 忽略大小写" : ""}${l.executable ? "" : " · 待核对"}`;
 const review = helix => [...helix.notes.map(n => ({label: n.text, sub: noteKind(n.kind)})), ...helix.issues.map(i => ({label: i.message, sub: severity(i.severity)}))];
 
-export function renderOntologySpace(value, {selections, read, select, management, objects, evidence, onLayout, automaticBuild, automaticApiBuild, connectModel, retryBuild, engine, programBuild}) {
+export function renderOntologySpace(value, {selections, read, select, management, objects, evidence, onLayout, onSelection, automaticBuild, automaticApiBuild, connectModel, retryBuild, engine, programBuild}) {
   const root = el("section", "ontology-space"); root.setAttribute("aria-label", "三维本体空间");
   const versions = [value?.current, value?.adopted].filter((item, i, all) => item && all.findIndex(other => other?.version === item.version) === i);
   const saved = selections.get("ontology-space");
@@ -42,6 +42,9 @@ export function renderOntologySpace(value, {selections, read, select, management
   for (const item of versions) {const option = el("option", "", `v${item.version} · ${item.status === "adopted" ? "已采用" : "候选待核对"}`); option.value = item.version; version.append(option);}
   version.value = artifact?.version || ""; version.hidden = !artifact;
   identity.append(eyebrow, title, version);
+  const progressHost = el("div"); identity.append(progressHost);
+  function updateProgress(automaticBuild, automaticApiBuild) {
+  progressHost.replaceChildren();
   for (const [build, isApi] of [[automaticBuild, false], [automaticApiBuild, true]]) {
     if (!build || build.status === "idle") continue;
     const progress = el("div", "os-build-status"); progress.setAttribute("role", "status");
@@ -56,8 +59,10 @@ export function renderOntologySpace(value, {selections, read, select, management
       progress.append(errors);
     }
     if (build.status === "failed") progress.append(button("重试构建", retryBuild));
-    identity.append(progress);
+    progressHost.append(progress);
   }
+  }
+  updateProgress(automaticBuild, automaticApiBuild);
   const helixSummary = artifact?.content.helix;
   if (helixSummary) {
     const {stats, notes, unplaced} = helixSummary;
@@ -74,8 +79,8 @@ export function renderOntologySpace(value, {selections, read, select, management
         for (const text of items) section.append(el("p", "", text));
         dialog.append(section);
       }
-      root.append(dialog);
-      line.append(button(`值得核对 ${worth.length + unplaced.length}`, () => dialog.showModal(), null, "os-helix-review"));
+      dialog.addEventListener("close", () => dialog.remove());
+      line.append(button(`值得核对 ${worth.length + unplaced.length}`, () => {document.body.append(dialog); dialog.showModal();}, null, "os-helix-review"));
     }
     identity.append(line);
   }
@@ -96,19 +101,23 @@ export function renderOntologySpace(value, {selections, read, select, management
   const menu = el("details", "os-menu"); menu.append(el("summary", "", "工作区"));
   const menuBody = el("div", "os-menu-body");
   function panel(label, contents) {
-    const dialog = el("dialog", "live-dialog os-management"); dialog.setAttribute("aria-label", label);
-    dialog.append(el("h2", "", label), button("关闭", () => dialog.close(), "close"));
-    if (typeof contents !== "function") dialog.append(contents);
-    root.append(dialog);
-    return button(label, () => {menu.open = false; if (typeof contents === "function" && !dialog.dataset.loaded) { dialog.append(contents()); dialog.dataset.loaded="true"; } dialog.showModal();});
+    return button(label, () => {
+      menu.open = false;
+      const dialog = el("dialog", "live-dialog os-management"); dialog.setAttribute("aria-label", label);
+      dialog.append(el("h2", "", label), button("关闭", () => dialog.close(), "close"), typeof contents === "function" ? contents() : contents);
+      // Dialogs own their lifetime. Polls and new graph versions must not discard open forms.
+      dialog.addEventListener("close", () => {dialog.querySelectorAll("[data-disposable]").forEach(node => node.dispose?.()); dialog.remove();}, {once:true});
+      document.body.append(dialog); dialog.showModal();
+    });
   }
   const definitionEntry = panel("本体定义", management);definitionEntry.classList.add("os-definition-entry");
   const objectEntry = panel("实际对象", objects);objectEntry.classList.add("os-object-entry");
   const workEntries = el("nav", "os-work-entries");workEntries.setAttribute("aria-label","本体工作入口");
   workEntries.append(definitionEntry,objectEntry);
+  let buildEntry;
   if(programBuild) {
     const taskCount=(engine?.jobs||[]).filter(j=>["queued","running"].includes(j.status)).length;
-    workEntries.append(button(taskCount?`构建任务 · ${taskCount} 进行中`:"构建与修订",programBuild));
+    buildEntry = button(taskCount?`构建任务 · ${taskCount} 进行中`:"构建与修订",programBuild); workEntries.append(buildEntry);
   }
   menuBody.append(panel("共同取证", evidence));
   menu.append(menuBody); utilities.append(directoryButton, menu); top.append(identity, toolbar, utilities);root.append(workEntries);
@@ -151,6 +160,13 @@ export function renderOntologySpace(value, {selections, read, select, management
   const leaves = el("div", "os-fan-leaves");
   fan.append(fanCanvas, groups, leaves);
   root.prepend(content, top, directory, legend, hint, local, fan, inspector);
+  const narrow = matchMedia("(max-width: 720px)");
+  const placeFan = () => {if (narrow.matches) inspector.insertBefore(fan, inspectorBody); else root.insertBefore(fan, inspector);};
+  narrow.addEventListener("change", placeFan); placeFan();
+  const controlsResize = new ResizeObserver(() => {
+    if (root.isConnected && narrow.matches) root.style.setProperty("--os-mobile-controls-height", `${workEntries.getBoundingClientRect().bottom - root.getBoundingClientRect().top}px`);
+  });
+  controlsResize.observe(top); controlsResize.observe(workEntries);
 
   function activate(key) {highlight = null; nav.activate(key); renderView();}
   function currentConcept() {
@@ -213,7 +229,7 @@ export function renderOntologySpace(value, {selections, read, select, management
     cancelAnimationFrame(fanFrame); fanFrame = requestAnimationFrame(drawFan);
   }
   function drawFan() {
-    if (disposed || !root.isConnected || fan.hidden) return;
+    if (disposed || !root.isConnected || fan.hidden || narrow.matches) return;
     const rect = fan.getBoundingClientRect(); const scale = Math.min(devicePixelRatio, 2);
     fanCanvas.width = rect.width * scale; fanCanvas.height = rect.height * scale;
     const ctx = fanCanvas.getContext("2d"); ctx.scale(scale, scale);
@@ -335,6 +351,7 @@ export function renderOntologySpace(value, {selections, read, select, management
       inspectorBody.replaceChildren(message, button("重新读取", renderDetail));
     }
   }
+  let selectionKey;
   function renderView() {
     const previousFocus = document.activeElement;
     const hadFocus = root.contains(previousFocus) && !previousFocus.matches("input,select,textarea");
@@ -353,6 +370,12 @@ export function renderOntologySpace(value, {selections, read, select, management
     if (state.stage === "local") renderLocal();
     if (state.stage === "detail") {renderFan(); void renderDetail();}
     onLayout({stage: state.stage, stats: graph.stats, label: currentConcept()?.name || "企业本体"});
+    const target = state.stage === "local" ? {kind:"foundation_concept", member:state.focus} : state.target;
+    const key = JSON.stringify([artifact?.id, artifact?.version, state.stage === "global" ? null : target]);
+    if (selectionKey !== key) {
+      selectionKey = key;
+      onSelection?.(artifact, state.stage === "global" ? null : target, () => !disposed && selectionKey === key);
+    }
     if (hadFocus && (previousStage !== state.stage || !previousFocus.isConnected || previousFocus.closest("[hidden]"))) {
       const nextFocus = state.stage === "detail" ? inspectorHead.querySelector("button")
         : state.stage === "local" ? local.querySelector(".os-local-summary") : directoryButton;
@@ -389,7 +412,17 @@ export function renderOntologySpace(value, {selections, read, select, management
   if (!graph.concepts.length) {
     const empty = el("div", "os-empty"); empty.append(el("h2", "", "从第一个业务概念开始"), el("p", "", "接入数据后构建本体。检查候选并采用，随后可通过助手继续修订。")); root.append(empty);
   }
-  root.dispose = () => {disposed = true; generation++; document.removeEventListener("keydown", onKeyDown); cancelAnimationFrame(fanFrame); fanResize.disconnect(); scene?.dispose();};
+  root.dispose = () => {disposed = true; generation++; controlsResize.disconnect(); narrow.removeEventListener("change", placeFan); document.removeEventListener("keydown", onKeyDown); cancelAnimationFrame(fanFrame); fanResize.disconnect(); scene?.dispose();};
+  let progressKey = JSON.stringify([automaticBuild, automaticApiBuild]);
+  root.updateStatus = state => {
+    const nextKey = JSON.stringify([state.automaticBuild, state.automaticApiBuild]);
+    if (nextKey !== progressKey) {progressKey = nextKey; updateProgress(state.automaticBuild, state.automaticApiBuild);}
+    if (buildEntry) {
+      const count = (state.engine?.jobs || []).filter(j => ["queued","running"].includes(j.status)).length;
+      const label = count ? `构建任务 · ${count} 进行中` : "构建与修订";
+      buildEntry.textContent = buildEntry.title = label; buildEntry.setAttribute("aria-label", label);
+    }
+  };
   renderDirectory(); renderView(); queueMicrotask(mountScene);
   return root;
 }

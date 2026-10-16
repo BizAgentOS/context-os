@@ -678,14 +678,16 @@ export function renderLiveWorkspace(
       const actions = el("div", "live-actions");
       for (const type of model.content.types)
         actions.append(button(`查看${type.name}`, () => readType(type)));
-      if (model.status === "candidate")
-        actions.append(
-          button("采用本体", () =>
-            action(() =>
-              change("adopt", { id: model.id, version: model.version }),
-            ),
-          ),
-        );
+      if (model.status === "candidate" && model.canAdopt !== false) {
+        const accept = button("采用本体", async () => {
+          accept.disabled = true; accept.textContent = "正在采用…";
+          const ok = await change("adopt", {id:model.id, version:model.version});
+          accept.disabled = ok; accept.textContent = ok ? "已采用" : "重试采用";
+        });
+        actions.append(accept);
+      }
+      if (model.status === "candidate" && model.adoptionReason)
+        actions.append(el("p", "source-meta", `暂不能采用：${model.adoptionReason}`));
       block.append(actions);
       const objects = el("details", "live-object-entry");
       objects.append(el("summary", "", "探索在线对象与关系"));

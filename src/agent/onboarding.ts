@@ -17,15 +17,15 @@ interface SetupState {
   sourceKind?: "mcp" | "api" | "file" | "later";
   version: number; active: boolean; step: number; completedAt?: string;
   company: Company; packId?: string; foundationRef?: {id:string;version:number};
+  packReference?: {id:string;version:number};
   lastOperation?: {id:string;hash:string};
 }
 const data = (value: unknown): Data => JSON.parse(JSON.stringify(value));
 export class Onboarding {
   private memory: MemoryStore;
   private foundation: FoundationService;
-  private task: () => string;
-  constructor(memory: MemoryStore, foundation: FoundationService, task: () => string) {
-    this.memory = memory; this.foundation = foundation; this.task = task;
+  constructor(memory: MemoryStore, foundation: FoundationService, _legacyTask?: () => string) {
+    this.memory = memory; this.foundation = foundation;
   }
   private state(): SetupState {
     const saved = this.memory.getOnboarding();
@@ -44,7 +44,13 @@ export class Onboarding {
       industry: industryPacks.find(pack => pack.id === industry || pack.name === industry)?.id ?? "",
       business: get("company.business", "business"), region: get("company.location"), website: get("company.website"), goal: get("company.goal") };
   }
-  view() { return { ...this.state(), company: this.currentCompany(), currentProfileVersion: this.memory.listArtifacts("profile")[0]?.version ?? 0, packs: industryPacks }; }
+  view() {
+    const state = this.state(), current = this.foundation.read().current;
+    return { ...state, company: this.currentCompany(), currentProfileVersion: this.memory.listArtifacts("profile")[0]?.version ?? 0,
+      packs: industryPacks, reference: state.packReference ? this.memory.getArtifact(state.packReference.id, state.packReference.version) : null,
+      foundationStatus: current ? "available" : "waiting_data",
+      foundationMessage: current ? "已有本体结构；行业参考仅用于核对名称和说明。" : "等待接入结构化数据并由程序构建本体；行业参考只提供名称和说明，不生成概念、关系或实例。" };
+  }
   private expected(body: Record<string, unknown>) {
     const state = this.state();
     if (body.expectedVersion !== state.version) throw new Error("初始化进度已变化，请刷新后继续；输入可重新核对");
@@ -63,7 +69,7 @@ export class Onboarding {
     if (!Number.isInteger(step) || step < 1 || step > (state.flow === "engine" ? 2 : 5)) throw new Error("无效的初始化步骤");
     if (step > 1 && !configured) throw new Error("请先连接模型");
     if (step > 2 && (!state.company.name || !industryPacks.some(pack => pack.id === state.company.industry))) throw new Error("请先保存企业名称和所属行业");
-    if (step > 3 && !this.foundation.read().adopted) throw new Error("请先选择并采用基础定义");
+    if (step > 3 && !state.packReference && !this.foundation.read().adopted) throw new Error("请先选择行业命名参考，或继续使用已有本体；结构由接入的数据构建");
     this.save({ ...state, active: true, step });
   }
   company(body: Record<string, unknown>) {
@@ -112,36 +118,23 @@ export class Onboarding {
     if (new Set(selected.map(c=>c.id)).size !== selected.length || new Set(selected.map(c=>c.name)).size !== selected.length || selected.some(c=>!pack.concepts.some(p=>p.id===c.id))) throw new Error("行业概念选择无效或名称重复");
     const current = this.foundation.read().current;
     if ((current?.version ?? 0) !== body.baseVersion) throw new Error("本体已变化，请刷新后重新核对");
-    if (current && current.status !== "adopted") throw new Error("已有待核对本体，请先在本体工作区处理，再添加行业定义");
     if (current && (current.content.enterprise as Data).name !== state.company.name) throw new Error("企业名称与当前本体不一致");
     this.memory.atomic(() => {
-      const taskId = this.task();
-      const context = this.memory.beginExecution(taskId);
-      const prefix = `pack_${createHash("sha256").update(operationId).digest("hex").slice(0,16)}`;
-      const quote = `我选择将“${pack.name}”行业包 v${pack.version} 用作“${state.company.name}”的初始建模模板；这些定义不是已核实的企业事实或实际业务数据。`;
-      const message = this.memory.addMessage(taskId,"user",quote + "\n所选定义：\n" + selected.map(c=>`${c.name}：${c.description}`).join("\n"));
-      const evidence = [{id:prefix,messageId:message.id,quote}, ...selected.map((c,i)=>({id:`${prefix}_${i}`,messageId:message.id,quote:`${c.name}：${c.description}`}))];
-      const existing = (current?.content.concepts ?? []) as Data[];
-      const ids = new Map(selected.map(c=>[c.id, String(existing.find(old=>old.name===c.name)?.id ??
-        (existing.some(old=>old.id===c.id) ? `${c.id}_${prefix.slice(-8)}` : c.id))]));
-      const additions = selected.filter(c=>!existing.some(old=>old.name===c.name));
-      if (existing.length + additions.length > 30) throw new Error("基础概念超过当前 30 个上限，请减少所选概念");
-      const relations = pack.relations.filter(r=>ids.has(r.from)&&ids.has(r.to));
-      const priorRelations = (current?.content.relations ?? []) as Data[];
-      const candidate = this.foundation.propose({baseVersion:current?.version??0,
-        enterprise:{name:state.company.name,evidenceRefs:[prefix]},
-        concepts:additions.map(c=>({...c,id:ids.get(c.id),evidenceRefs:[`${prefix}_${selected.indexOf(c)}`]})),
-        relations:relations.filter(r=>!priorRelations.some(old=>old.from===ids.get(r.from)&&old.to===ids.get(r.to)&&old.name===r.name))
-          .map(r=>({...r,id:priorRelations.some(old=>old.id===r.id)?`${r.id}_${prefix.slice(-8)}`:r.id,from:ids.get(r.from),to:ids.get(r.to),evidenceRefs:[prefix]})),
-        evidence, unknowns:[{id:`${prefix}_scope`,description:`行业包“${pack.name}”只建立初始定义；业务适用范围、字段身份、实际实例和来源映射尚需企业资料确认。`,evidenceRefs:[prefix]}], conflicts:[],
-      }, context, operationId, `industry-pack:${pack.id}:v${pack.version}`);
-      const adopted = this.foundation.adopt(candidate.id,candidate.version);
-      this.memory.attachArtifact(taskId,adopted);
-      this.memory.complete(context,[adopted.id],"已采用所选行业初始定义，等待真实来源补充。");
-      this.memory.endExecution(context);
-      this.save({...state,active:true,step:4,packId:pack.id,foundationRef:{id:adopted.id,version:adopted.version},lastOperation:{id:operationId,hash}});
+      const previousReference = state.packReference ? this.memory.getArtifact(state.packReference.id) : null;
+      const reference = this.memory.putArtifact({
+        ...(previousReference ? { id: previousReference.id, expectedVersion: previousReference.version } : {}),
+        kind: "industry_reference", title: `${pack.name} · 行业命名参考`, status: "reference",
+        content: data({ enterpriseName: state.company.name, packId: pack.id, packVersion: pack.version,
+          purpose: "naming_reference",
+          concepts: selected.map(({id, name, description}) => ({templateId:id, name, description})),
+          instructions: "仅供程序或助手核对已有概念的名称和说明。templateId 是模板术语标识，不是本体概念身份；不得据此新建概念、关系或实例，不代表已核实的企业事实。修正已有定义仍需实际企业依据和正常候选采用流程。",
+        }),
+      });
+      this.save({...state,active:true,step:4,packId:pack.id,foundationRef:undefined,
+        packReference:{id:reference.id,version:reference.version},lastOperation:{id:operationId,hash}});
     });
   }
+
   complete(body: Record<string, unknown>, configured: boolean) {
     const state = this.expected(body);
     if (state.flow === "engine") {
@@ -150,8 +143,8 @@ export class Onboarding {
       this.save({...state, sourceKind, active:false, step:2, completedAt:new Date().toISOString()});
       return;
     }
-    if (!configured || !state.company.name || !industryPacks.some(p=>p.id===state.company.industry) || !this.foundation.read().adopted)
-      throw new Error("请先完成模型、企业与基础定义；来源可以稍后接入");
+    if (!configured || !state.company.name || !industryPacks.some(p=>p.id===state.company.industry) || (!state.packReference && !this.foundation.read().adopted))
+      throw new Error("请先完成模型、企业与行业命名参考；结构化数据来源可以稍后接入");
     this.save({...state,active:false,step:5,completedAt:new Date().toISOString()});
   }
 }

@@ -1,3 +1,4 @@
+import { seedFoundation } from "./program-foundation-fixture.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -233,13 +234,13 @@ test("inspected nonempty documents can start conceptual modeling, but empty or u
   }
 });
 
-// 待迁移：本测试从空本体起步，由对话/文档/网页/知识库新建概念。基础本体改由规则构建后，需改为在规则建好的结构上修正；其中验证的引用与治理机制仍在产品中。
-test.skip("explicit re-verification refreshes source evidence within one page conversation and preserves prior results", async () => {
+test("explicit re-verification refreshes source evidence within one page conversation and preserves prior results", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-maintenance-refresh-"));
   const driver: AgentDriver = {
     async run(request) {
       assert(request.tools.some((tool) => tool.name === "ontology_verify"));
-      assert(request.tools.some((tool) => tool.name === "ontology_outline"));
+      // Rule-built structure removes the old creation tools; verification of adopted mappings remains available.
+      assert(!request.tools.some((tool) => tool.name === "ontology_outline" || tool.name === "ontology_propose"));
       await request.onTool("ontology_verify", {
         question: "现在记录了多少条投诉？",
         operations: [
@@ -257,6 +258,8 @@ test.skip("explicit re-verification refreshes source evidence within one page co
     async close() {},
   };
   const app = new AgentApplication(directory, driver);
+  seedFoundation(app.memory, app.foundation, { enterprise: "澄川热力", concepts: [{ id: "complaint", name: "投诉", description: "来自投诉表的记录，业务含义待核对。" }] });
+  const seedTaskIds = new Set(app.memory.listTasks().map((task) => task.id));
   try {
     const workspace = new Workspace(app.memory);
     const source = workspace.upload("投诉.csv", "id,status\nT1,closed\n");
@@ -311,7 +314,7 @@ test.skip("explicit re-verification refreshes source evidence within one page co
     assert.notEqual(refreshed.content.snapshot, first.content.snapshot);
     assert.deepEqual(app.memory.getArtifact(first.id), first);
     assert.equal(app.canvasState().ontologies[0].version, adopted.version);
-    assert.equal(app.memory.listTasks().length, 1);
+    assert.equal(app.memory.listTasks().filter((task) => !seedTaskIds.has(task.id)).length, 1);
     const readObjects = (artifact: Artifact) =>
       app.objectDetails(
         new URLSearchParams({

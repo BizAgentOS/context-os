@@ -6,6 +6,7 @@ import {
   correctionTools,
 } from "../live/relation-corrections.ts";
 import { EvidenceService, evidenceTools } from "./evidence.ts";
+import { TurnDelivery } from "./turn-delivery.ts";
 import { MetricReader, metricTools } from "./metrics.ts";
 import { sourceCatalog } from "./knowledge.ts";
 import { FoundationDocuments } from "./foundation-evidence.ts";
@@ -1364,7 +1365,7 @@ export class AgentApplication {
       "ontology_outline",
       "foundation",
       "source_policy",
-      ...(page === "consumption" ? ["consumer"] : ["source", "verification"]),
+      ...(page === "consumption" ? ["consumer"] : ["source", "verification", "industry_reference"]),
     ];
     const repository: Repository = {
       listArtifacts: (kind) =>
@@ -1652,6 +1653,18 @@ export class AgentApplication {
     );
     const evidenceService = new EvidenceService(this.memory, this.live);
     let foundationSkill = "";
+    const delivery = new TurnDelivery();
+    const trackTool = (execute: (name: string, args: Record<string, unknown>) => Promise<Json>) =>
+      async (name: string, args: Record<string, unknown>) => {
+        try {
+          const result = await execute(name, args);
+          delivery.remember(name, args, result);
+          return result;
+        } catch (error) {
+          delivery.failed(this.safeError(error));
+          throw error;
+        }
+      };
     let pageCompleted = false;
     const inspectedSources = new Map<string, number>();
     let closingTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1764,7 +1777,7 @@ export class AgentApplication {
           }
           this.memory.event(task.id, kind, data);
         },
-        onTool: async (name, args) => {
+        onTool: trackTool(async (name, args) => {
           try {
             this.memory.assertWritable(context);
           } catch (error) {
@@ -2127,7 +2140,7 @@ export class AgentApplication {
               this.foundation.project(result as unknown as Artifact),
             );
           return result;
-        },
+        }),
       });
       failure = outcome.error
         ? this.safeError(new Error(outcome.error))
@@ -2143,20 +2156,11 @@ export class AgentApplication {
           undefined,
           workContext,
         );
-      } else if (!interrupted && outcome.text.trim())
+      } else if (!interrupted)
         this.memory.addMessage(
           task.id,
           "assistant",
-          page ? outcome.text.slice(0, 6000) : outcome.text,
-          randomUUID(),
-          undefined,
-          workContext,
-        );
-      else if (!interrupted && this.memory.getTask(task.id).pending)
-        this.memory.addMessage(
-          task.id,
-          "assistant",
-          String(this.memory.getTask(task.id).pending?.question),
+          delivery.finish(page ? outcome.text.slice(0, 6000) : outcome.text, input, this.memory, this.memory.getTask(task.id).pending),
           randomUUID(),
           undefined,
           workContext,

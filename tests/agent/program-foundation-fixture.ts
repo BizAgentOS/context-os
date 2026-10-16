@@ -8,7 +8,8 @@ interface Seed {
   program?: boolean;
 }
 
-/** Seeds, in its own task, the adopted structure the data program would build; `program` marks Helix provenance. */
+/** Seeds the adopted structure in a separate data-program task, preserving program provenance by default.
+ * Set `program: false` only when explicitly testing a historical interpretation-built foundation. */
 export function seedFoundation(memory: MemoryStore, foundation: FoundationService, seed: Seed) {
   const task = memory.createTask("数据程序构建本体");
   const message = memory.addMessage(task.id, "user", `${seed.enterprise}的数据程序已根据结构化数据建立这些概念和关系。`);
@@ -23,7 +24,7 @@ export function seedFoundation(memory: MemoryStore, foundation: FoundationServic
       evidence: [{ id: "program-seed", messageId: message.id, quote: message.content }],
       unknowns: [], conflicts: [],
     }, context, "seed-foundation", "program-seed");
-    if (seed.program) {
+    if (seed.program !== false) {
       const mark = (items: unknown) => (items as Record<string, unknown>[]).map((item) => ({ ...item, origin: "program", programEvidenceId: "program-seed" }));
       candidate = memory.putArtifact({ ...candidate, expectedVersion: candidate.version,
         content: { ...candidate.content, concepts: mark(candidate.content.concepts), relations: mark(candidate.content.relations) } as typeof candidate.content });

@@ -7,9 +7,9 @@ import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { createServer } from "../../src/agent/server.ts";
 import type { AgentDriver } from "../../src/agent/runtime.ts";
+import { seedFoundation } from "./program-foundation-fixture.ts";
 
-// 待迁移：本测试从空本体起步，由对话/文档/网页/知识库新建概念。基础本体改由规则构建后，需改为在规则建好的结构上修正；其中验证的引用与治理机制仍在产品中。
-test.skip("confirmed company web evidence comes from actual HTTP body and survives page change and service restart", async () => {
+test("confirmed company web evidence comes from actual HTTP body and survives page change and service restart", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-foundation-web-"));
   let changed = false;
   const site = httpServer((_req, res) => {
@@ -86,7 +86,7 @@ test.skip("confirmed company web evidence comes from actual HTTP body and surviv
       assert(read.text.includes("澄川热力向城北居民提供供热服务。"));
       assert.equal(read.url, url);
       const draft = {
-        baseVersion: 0,
+        baseVersion: ((await request.onTool("foundation_read", {})) as any).current.version,
         enterprise: { name: "澄川热力", evidenceRefs: ["name"] },
         concepts: [
           {
@@ -152,6 +152,12 @@ test.skip("confirmed company web evidence comes from actual HTTP body and surviv
     driver,
     researchTestOrigins: new Set([new URL(url).origin]),
   });
+  seedFoundation(service.app.memory, service.app.foundation, {
+    enterprise: "澄川热力",
+    concepts: [
+      { id: "heating", name: "供热服务", description: "来自供热服务表的记录，业务含义待核对。" },
+    ],
+  });
   try {
     await service.app.canvasMessage({
       page: "setup",
@@ -161,10 +167,11 @@ test.skip("confirmed company web evidence comes from actual HTTP body and surviv
     await service.app.idle();
     assert(saved, JSON.stringify(service.app.canvasState().messages));
     const current = service.app.canvasState().foundation.current!;
+    assert.deepEqual((current.content.concepts as any[]).map((item) => [item.id, item.origin]), [["heating", "program"]]);
     await service.app.canvasFoundationAdopt({
       page: "setup",
       id: current.id,
-      version: 1,
+      version: current.version,
     });
     await service.close();
     changed = true;
@@ -176,7 +183,7 @@ test.skip("confirmed company web evidence comes from actual HTTP body and surviv
     await new Promise<void>((r) => service.server.listen(0, "127.0.0.1", r));
     const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
     const response = await fetch(
-      `${base}/api/foundation/evidence?foundationId=${current.id}&version=2&evidenceId=web`,
+      `${base}/api/foundation/evidence?foundationId=${current.id}&version=${current.version + 1}&evidenceId=web`,
       { headers: { "x-dataengine-token": service.adminToken } },
     );
     assert.equal(response.status, 200);
@@ -199,11 +206,11 @@ test.skip("confirmed company web evidence comes from actual HTTP body and surviv
       service.app.canvasFoundationAdopt({
         page: "ontology",
         id: current.id,
-        version: 3,
+        version: service.app.canvasState().foundation.current!.version,
       }),
       /冲突/,
     );
-    assert.equal(service.app.canvasState().foundation.adopted!.version, 2);
+    assert.equal(service.app.canvasState().foundation.adopted!.version, current.version + 1);
   } finally {
     await service.close();
     await new Promise<void>((r) => site.close(() => r()));
@@ -211,8 +218,7 @@ test.skip("confirmed company web evidence comes from actual HTTP body and surviv
   }
 });
 
-// 待迁移：本测试从空本体起步，由对话/文档/网页/知识库新建概念。基础本体改由规则构建后，需改为在规则建好的结构上修正；其中验证的引用与治理机制仍在产品中。
-test.skip("web reading rejects false identity, HTTP failures and broken encoding; bounded snapshots cannot cite unread content", async () => {
+test("web reading rejects false identity, HTTP failures and broken encoding; bounded snapshots cannot cite unread content", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-web-boundary-"));
   const site = httpServer((req, res) => {
     res.setHeader("content-type", "text/plain; charset=utf-8");
@@ -269,7 +275,7 @@ test.skip("web reading rejects false identity, HTTP failures and broken encoding
         name: "company-foundation-ontology",
       });
       const draft = {
-        baseVersion: 0,
+        baseVersion: ((await request.onTool("foundation_read", {})) as any).current.version,
         enterprise: { name: "澄川热力", evidenceRefs: ["w"] },
         concepts: [
           {
@@ -302,7 +308,7 @@ test.skip("web reading rejects false identity, HTTP failures and broken encoding
         ...draft,
         evidence: [{ ...draft.evidence[0], quote: "澄川热力向居民供热。" }],
       })) as any;
-      assert.equal(saved.content.evidence[0].coverage.sourceTruncated, true);
+      assert.equal(saved.content.evidence.find((item: any) => item.id === "w").coverage.sourceTruncated, true);
       checked = true;
       return {
         text: "保留局部依据与缺口。",
@@ -317,6 +323,12 @@ test.skip("web reading rejects false identity, HTTP failures and broken encoding
     directory,
     driver,
     researchTestOrigins: new Set([new URL(url).origin]),
+  });
+  seedFoundation(service.app.memory, service.app.foundation, {
+    enterprise: "澄川热力",
+    concepts: [
+      { id: "service", name: "供热服务", description: "来自供热服务表的记录，业务含义待核对。" },
+    ],
   });
   try {
     await service.app.canvasMessage({

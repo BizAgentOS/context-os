@@ -11,9 +11,9 @@ import {
   createHeatingSources,
   connectHeatingSources,
 } from "../../src/live/heating-sources.ts";
+import { seedFoundation } from "./program-foundation-fixture.ts";
 
-// 待迁移：本测试从空本体起步，由对话/文档/网页/知识库新建概念。基础本体改由规则构建后，需改为在规则建好的结构上修正；其中验证的引用与治理机制仍在产品中。
-test.skip("adopted foundation concepts bind a checked execution subset, retain unbound concepts and reject stale dependencies", async () => {
+test("adopted foundation concepts bind a checked execution subset, retain unbound concepts and reject stale dependencies", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-binding-"));
   const upstream = await createHeatingSources();
   let unavailable = false;
@@ -110,6 +110,17 @@ test.skip("adopted foundation concepts bind a checked execution subset, retain u
     async close() {},
   };
   let service = await createServer({ directory, driver, automaticApi: false });
+  seedFoundation(service.app.memory, service.app.foundation, {
+    enterprise: "澄川热力",
+    concepts: [
+      { id: "callback", name: "回访", description: "来自回访表的记录，业务含义待核对。" },
+      { id: "complaint", name: "投诉", description: "来自投诉表的记录，业务含义待核对。" },
+      { id: "resident", name: "居民", description: "来自居民表的记录，业务含义待核对。" },
+    ],
+    relations: [
+      { id: "has_callback", name: "回访记录", from: "complaint", to: "callback", description: "结构化数据中的回访记录关联。" },
+    ],
+  });
   const start = async () => {
     await new Promise<void>((r) => service.server.listen(0, "127.0.0.1", r));
     const url = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
@@ -141,6 +152,8 @@ test.skip("adopted foundation concepts bind a checked execution subset, retain u
     await service.app.idle();
     const current = (await api()).foundation.current;
     assert(current, JSON.stringify((await api()).messages));
+    assert.deepEqual(current.content.concepts.map((item: any) => [item.id, item.origin]), [["callback", "program"], ["complaint", "program"], ["resident", "program"]]);
+    assert.deepEqual(current.content.relations.map((item: any) => [item.id, item.from, item.to, item.origin]), [["has_callback", "complaint", "callback", "program"]]);
     await api("/api/canvas/foundation/adopt", {
       page: "setup",
       id: current.id,

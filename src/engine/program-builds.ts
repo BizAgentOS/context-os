@@ -363,8 +363,27 @@ export class ProgramBuilds {
     this.refreshUploads(datasets, issues);
     const job = this.memory.getArtifact(jobId), base = this.foundation.read(), active = this.activeModel();
     const previous = base.current?.content;
-    const concepts = dataArray(previous?.concepts), relations = dataArray(previous?.relations), evidence = dataArray(previous?.evidence);
-    const types = dataArray(active?.content.types), modelRelations = dataArray(active?.content.relations);
+    // Legacy interpretation-built structures are replaced in the new version only.
+    // Program provenance survives later human/Agent wording edits, so those are retained.
+    const priorConcepts = dataArray(previous?.concepts), priorRelations = dataArray(previous?.relations);
+    const retiredConcepts = priorConcepts.filter(c => c.origin !== "program").map(c => String(c.id));
+    const concepts = priorConcepts.filter(c => c.origin === "program"), keptConcepts = new Set(concepts.map(c => c.id));
+    const relations = priorRelations.filter(r => r.origin === "program" && keptConcepts.has(r.from) && keptConcepts.has(r.to));
+    const retiredRelations = priorRelations.filter(r => !relations.includes(r)).map(r => String(r.id));
+    const evidence = dataArray(previous?.evidence);
+    const priorTypes = dataArray(active?.content.types), priorModelRelations = dataArray(active?.content.relations);
+    const migrating = retiredConcepts.length > 0 || retiredRelations.length > 0;
+    const types = migrating ? priorTypes.filter(t => keptConcepts.has(t.conceptId)) : priorTypes;
+    const keptTypes = new Set(types.map(t => t.name)), keptRelations = new Set(relations.map(r => r.id));
+    const modelRelations = migrating ? priorModelRelations.filter(r => keptTypes.has(r.from) && keptTypes.has(r.to) && keptRelations.has(r.relationId)) : priorModelRelations;
+    const retiredMappings = priorTypes.filter(t => !types.includes(t)).map(t => String(t.conceptId ?? t.name));
+    const retiredIds = new Set([...retiredConcepts, ...retiredRelations]);
+    const priorConflicts = dataArray(previous?.conflicts);
+    const conflicts = migrating ? priorConflicts.filter(c => ![c.retained, c.proposed].some(item => item && retiredIds.has(String((item as Data).id)))) : priorConflicts;
+    const retiredConflicts = priorConflicts.filter(c => !conflicts.includes(c)).map(c => String(c.id));
+    if (migrating) issues.push({ code: "legacy_structure_replaced", severity: "info",
+      message: `本候选以数据规则结果替换 ${retiredConcepts.length} 个旧解读概念、${retiredRelations.length} 条旧关系及 ${retiredMappings.length} 个旧映射。旧定义、映射和发布版本保留在历史中；程序概念的后续命名与说明修正继续保留。`,
+      details: jsonData({ foundationRef: ref(base.current), modelRef: ref(active), retiredConcepts, retiredRelations, retiredMappings, retiredConflicts }) });
     const preservedConcepts = concepts.map(concept => String(concept.id)), preservedMappings = types.map(type => String(type.conceptId));
     const addedConcepts: string[] = [], addedMappings: string[] = [], addedRelations: string[] = [], addedSupplements: string[] = [];
     const byId = new Map(datasets.map(d => [d.id, d.content as unknown as DatasetContent]));
@@ -479,13 +498,35 @@ export class ProgramBuilds {
       linkRelations[l.id] = relationId;
       modelRelations.push({ name: String(relation.name), from: String(from.name), to: String(to.name), fromField, toField, relationId });
     }
+    // Discovery reviews describe observed ambiguity; they never change the executable structure.
+    for (const review of o.reviews ?? []) {
+      const concept = concepts.find(c => c.id === entityConcepts[review.entities[0]]);
+      if (review.kind === "entity_name" && concept && concept.name !== review.originalName) continue;
+      const code = { value_overlap: "possible_identity_overlap", implied_link: "relationship_pruned", entity_name: "entity_name_review" }[review.kind];
+      issues.push({ code, severity: review.kind === "entity_name" ? "info" : "warning", message: review.text,
+        details: jsonData({ ...review, concepts: review.entities.map(id => entityConcepts[id]).filter(Boolean) }) });
+    }
     alignTypes(types, modelRelations, concepts);
     if (concepts.length > MAX_FOUNDATION_CONCEPTS || types.length > MAX_MODEL_TYPES) throw new Error(`生成结果有 ${concepts.length} 个概念、${types.length} 个映射，超过当前 ${MAX_FOUNDATION_CONCEPTS}/${MAX_MODEL_TYPES} 的执行契约。请缩小来源范围，程序没有截断或覆盖既有定义。`);
     if (!types.length) return null;
     const profile = this.memory.listArtifacts("profile")[0];
-    const enterprise = previous?.enterprise ?? { name: "未设置企业", evidenceRefs: [] };
-    const foundation = jsonData({ ...previous, enterprise, concepts, relations, evidence, unknowns: dataArray(previous?.unknowns), conflicts: dataArray(previous?.conflicts),
-      adoptedVersion: base.adopted?.version ?? null, profileRef: ref(profile), documentVersions: previous?.documentVersions ?? {}, operation: { hash: fingerprint([concepts, relations, types, modelRelations]) },
+    const enterprise = (previous?.enterprise ?? { name: "未设置企业", evidenceRefs: [] }) as Data;
+    const unknowns = dataArray(previous?.unknowns);
+    // Retired definitions keep their full evidence in history, not as dependencies of
+    // this new version. Governance explanations and program provenance remain live references.
+    const owners = [enterprise, ...concepts, ...relations, ...unknowns, ...conflicts,
+      ...[...unknowns, ...conflicts].flatMap(item => [item.retained, item.proposed])
+        .filter((item): item is Data => !!item && typeof item === "object" && !Array.isArray(item))];
+    const evidenceIds = new Set(owners.flatMap(item => [
+      ...(Array.isArray(item.evidenceRefs) ? item.evidenceRefs : []),
+      ...(Array.isArray(item.resolvedBy) ? item.resolvedBy : []), item.programEvidenceId,
+    ]).filter((id): id is string => typeof id === "string"));
+    const currentEvidence = evidence.filter(item => evidenceIds.has(String(item.id)));
+    const documentVersions: Record<string, number> = {};
+    for (const item of currentEvidence) if (item.kind === "document" && typeof item.sourceId === "string" && typeof item.sourceVersion === "number")
+      documentVersions[item.sourceId] = Math.max(documentVersions[item.sourceId] ?? 0, item.sourceVersion);
+    const foundation = jsonData({ ...previous, enterprise, concepts, relations, evidence: currentEvidence, unknowns, conflicts,
+      adoptedVersion: base.adopted?.version ?? null, profileRef: ref(profile), documentVersions, operation: { hash: fingerprint([concepts, relations, types, modelRelations]) },
       method: { name: "helix-program-discovery", sourceCommit: "00d7927d7c08e16c58316e006959f052427e7fa1", suggestionHash: o.hash },
       checks: { valid: true, description: "程序在全量快照上核对了身份、合并与关联。业务含义仍需核对。" } });
     const sourceVersions = { ...(job.content.sourceVersions as Record<string, number>), ...Object.fromEntries(types.flatMap(t => [t, ...dataArray(t.supplements)]).map(b => [String(b.sourceId), this.memory.getArtifact(String(b.sourceId)).version])) };
@@ -496,8 +537,9 @@ export class ProgramBuilds {
         jobId, baseFoundationRef: job.content.baseFoundationRef, baseModelRef: job.content.baseModelRef, sourceVersions, foundation, concepts, relations, types, modelRelations, issues,
         coverage: datasets.map(d => { const c = d.content as unknown as DatasetContent; return { sourceId: c.sourceId, capability: c.capability, datasetId: d.id, snapshotId: c.activeVersion,
           sampledRows: c.coverage?.rows ?? c.profile?.rows ?? 0, totalRows: c.coverage?.total ?? null, complete: c.coverage?.complete ?? true, readAt: c.lastSync }; }),
-        diff: { addedConcepts, preservedConcepts, addedMappings, preservedMappings, addedSupplements, addedRelations },
-        discovery: { hash: o.hash, signature: o.signature, summary: o.summary, entities: o.entities, links: o.links, notes: o.notes, unplaced: o.unplaced,
+        diff: { addedConcepts, preservedConcepts, addedMappings, preservedMappings, addedSupplements, addedRelations,
+          retiredConcepts, retiredRelations, retiredMappings, retiredConflicts, ...(migrating ? { legacyFoundationRef: ref(base.current), legacyModelRef: ref(active) } : {}) },
+        discovery: { hash: o.hash, signature: o.signature, summary: o.summary, entities: o.entities, links: o.links, notes: o.notes, unplaced: o.unplaced, reviews: o.reviews ?? [],
           unplacedNames: o.unplaced.map(id => resources.get(id)?.name ?? id), entityConcepts, linkRelations },
         bundle, snapshotInputs: Object.fromEntries(datasets.map(d => [d.id, String(d.content.activeVersion)])),
         checks: { valid: false, description: "候选已生成，采用前需重新检查来源与执行映射。" },
@@ -548,7 +590,9 @@ export class ProgramBuilds {
     const foundation = this.virtualFoundation(content);
     const definition = await this.live.prepareDefinitionAgainst({ foundationRef: ref(foundation), baseModelRef: content.baseModelRef,
       purpose: "程序构建的数据底座", types: content.types, relations: content.modelRelations,
-      rationale: "基于来源字段与实际样本生成；保留现有人工与 Agent 定义。未决关系未自动加入执行映射。",
+      rationale: "基于来源字段与实际数据生成；保留既有程序概念的人工与 Agent 命名修正。"
+        + (Array.isArray(content.diff.retiredConcepts) && content.diff.retiredConcepts.length ? "旧解读结构已由规则结果替换，旧定义仅保留在历史版本。" : "")
+        + "未决关系未自动加入执行映射。",
     }, foundation, () => { assertActive(); this.assertInputs(content); });
     assertActive();
     this.assertInputs(content);

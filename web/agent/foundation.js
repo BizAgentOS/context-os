@@ -194,15 +194,19 @@ export function renderFoundation(
           preview.type = "button";
           preview.onclick = () => previewBinding(item, binding, api);
           row.append(preview);
-          if (binding.status === "candidate" && mutate) {
+          if (binding.status === "candidate" && binding.canAdopt !== false && mutate) {
             const accept = el("button", "quiet-button", "采用此执行子集");
             accept.type = "button";
+            accept.dataset.busyControl = "true";
             accept.disabled = busy;
-            accept.onclick = () =>
-              mutate("/api/live/adopt", {
+            accept.onclick = async () => {
+              accept.disabled = true; accept.textContent = "正在采用…";
+              const ok = await mutate("/api/live/adopt", {
                 id: binding.modelId,
                 version: binding.modelVersion,
               });
+              accept.textContent = ok ? "已采用" : "重试采用"; accept.disabled = ok; accept.dataset.blocked = String(ok);
+            };
             row.append(accept);
           }
         }
@@ -303,6 +307,7 @@ export function renderFoundation(
       const actions = el("div", "foundation-actions");
       const edit = el("button", "quiet-button", "让助手补充或修正");
       edit.type = "button";
+      edit.dataset.busyControl = "true";
       edit.disabled = busy;
       edit.onclick = () => discuss(artifact);
       actions.append(edit);
@@ -314,9 +319,13 @@ export function renderFoundation(
         );
         button.type = "button";
         const conflict = body.conflicts.some((item) => !item.resolvedBy);
+        button.dataset.busyControl = "true"; button.dataset.blocked = String(conflict);
         button.disabled = busy || conflict;
-        button.onclick = () =>
-          adopt({ page, id: artifact.id, version: artifact.version });
+        button.onclick = async () => {
+          button.disabled = true; button.textContent = "正在采用…";
+          const ok = await adopt({ page, id: artifact.id, version: artifact.version });
+          button.textContent = ok ? "已采用" : "重试采用"; button.disabled = ok; button.dataset.blocked = String(ok);
+        };
         actions.append(button);
         if (conflict)
           actions.append(el("span", "muted", "先补充冲突依据，再采用"));

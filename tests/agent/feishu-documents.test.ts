@@ -11,6 +11,7 @@ import { sourceCatalog } from "../../src/agent/knowledge.ts";
 import { createServer } from "../../src/agent/server.ts";
 import type { AgentDriver } from "../../src/agent/runtime.ts";
 import type { AddressInfo } from "node:net";
+import { seedFoundation } from "./program-foundation-fixture.ts";
 
 test("explicit Feishu reads persist inspectable, versioned sources and retain original citations after refresh and restart", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-feishu-docs-"));
@@ -60,8 +61,7 @@ test("explicit Feishu reads persist inspectable, versioned sources and retain or
   } finally { memory.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
-// 待迁移：本测试从空本体起步，由对话/文档/网页/知识库新建概念。基础本体改由规则构建后，需改为在规则建好的结构上修正；其中验证的引用与治理机制仍在产品中。
-test.skip("saved Feishu documents enter the shared ontology flow with pinned evidence, visible candidate/adopted usage, and no invented model success", async () => {
+test("saved Feishu documents enter the shared ontology flow with pinned evidence, visible candidate/adopted usage, and no invented model success", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-feishu-flow-"));
   const memory = new MemoryStore(directory);
   const seed = new FeishuDocuments(memory, { async readDocument(url: string) { return {
@@ -92,10 +92,11 @@ test.skip("saved Feishu documents enter the shared ontology flow with pinned evi
       await request.onTool("skill_use", { name: "company-foundation-ontology" });
       const part = await request.onTool("foundation_document_read", { sourceId: doc.sourceId, version: 1 }) as any;
       const candidate = await request.onTool("foundation_propose", {
-        baseVersion: 0, enterprise: { name: "澄川仓配", evidenceRefs: ["f1"] },
+        baseVersion: ((await request.onTool("foundation_read", {})) as any).current.version, enterprise: { name: "澄川仓配", evidenceRefs: ["f1"] },
         concepts: [{ id: "store", name: "门店", description: "接收补货", evidenceRefs: ["f1"] }], relations: [],
         evidence: [{ id: "f1", kind: "document", readId: part.readId, quote: "澄川仓配的门店接收仓库补货。" }], unknowns: [], conflicts: [],
       }) as any;
+      assert.deepEqual(candidate.content.concepts.map((item: any) => [item.id, item.origin]), [["store", "program"]]);
       await request.onTool("task_ask", { question: "请核对门店定义", reason: "资料解释待采用", foundationId: candidate.id, version: candidate.version });
       return { text: "已生成有原文依据的候选。", sessionId: "feishu-docs", runId: "feishu-docs" };
     }, async stop() { stopped++; release(); }, async close() { release(); },
@@ -110,6 +111,12 @@ test.skip("saved Feishu documents enter the shared ontology flow with pinned evi
     const blocked = await api("/api/connectors/feishu/prepare", request, 400);
     assert.match(blocked.error, /模型/);
     assert.equal((await api("/api/canvas")).foundation.current, null);
+    seedFoundation(service.app.memory, service.app.foundation, {
+      enterprise: "澄川仓配",
+      concepts: [
+        { id: "store", name: "门店", description: "来自门店表的记录，业务含义待核对。" },
+      ],
+    });
     await service.close(); service = await createServer({ directory, driver }); api = await start();
     const saved = await api(`/api/connectors/feishu/document?sourceId=${doc.sourceId}`);
     assert.equal(saved.content, "澄川仓配的门店接收仓库补货。");

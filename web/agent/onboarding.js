@@ -163,13 +163,13 @@ export function renderOnboarding(initial, actions) {
     const packs=state.onboarding.packs;
     const initialId=draft.packId||state.onboarding.packId||state.onboarding.company.industry;
     let selectedPack=packs.find(p=>p.id===initialId)||packs[0];
-    const picker=selectField(body,"行业本体包",packs.map(p=>[p.id,`${p.name}${p.id===state.onboarding.company.industry?" · 推荐":""}`]),selectedPack.id);
+    const picker=selectField(body,"行业术语参考",packs.map(p=>[p.id,`${p.name}${p.id===state.onboarding.company.industry?" · 推荐":""}`]),selectedPack.id);
     const preview=el("section",null,"ob-pack-preview");body.append(preview);
     const renderPack=()=>{
       const chosen=draft.packId===selectedPack.id&&draft.concepts?draft.concepts:selectedPack.concepts;
       packSelection=new Map(chosen.map(c=>[c.id,{...c}]));
       preview.replaceChildren(el("p",selectedPack.summary,"ob-pack-summary"));
-      const heading=el("div",null,"ob-section-heading");heading.append(el("h2","初始业务对象"),el("span",`${selectedPack.concepts.length} 个可选概念 · v${selectedPack.version}`,"ob-muted"));preview.append(heading);
+      const heading=el("div",null,"ob-section-heading");heading.append(el("h2","名称与说明参考"),el("span",`${selectedPack.concepts.length} 个可选术语 · v${selectedPack.version}`,"ob-muted"));preview.append(heading);
       const list=el("div",null,"ob-concepts");preview.append(list);
       const relations=el("div",null,"ob-relations");
       const sync=()=>{
@@ -190,12 +190,12 @@ export function renderOnboarding(initial, actions) {
         const update=()=>{if(checkbox.checked)packSelection.set(concept.id,{id:concept.id,name:name.value,description:description.value});else packSelection.delete(concept.id);sync();};
         checkbox.onchange=update;name.oninput=update;description.oninput=update;
       }
-      preview.append(relations,el("p","这是可调整的起步模板。采用后建立概念与关系，实际对象、业务适用性和来源映射会在接入数据后补充。","ob-note"));sync();
+      preview.append(relations,el("p","保存后仅作为名称和说明参考。本体中的对象与关系由接入数据按规则构建，助手可以参照这些术语修正已有定义。","ob-note"));sync();
     };
     picker.onchange=()=>{selectedPack=packs.find(p=>p.id===picker.value);draft.packId=selectedPack.id;delete draft.concepts;renderPack();};renderPack();
     const current=state.foundation?.current;
-    if(current)body.prepend(el("p",`当前已有 ${current.content.concepts.length} 个概念。添加模板会保留现有定义，同名概念沿用原定义。`,"ob-note"));
-    footer(2,"采用所选定义 →",async()=>{
+    if(current)body.prepend(el("p",`当前已有 ${current.content.concepts.length} 个概念。保存术语参考不会新增或修改这些定义。`,"ob-note"));
+    footer(2,"保存术语参考 →",async()=>{
       const concepts=[...packSelection.values()];
       const payload={packId:selectedPack.id,concepts,baseVersion:state.foundation?.current?.version||0};
       const fingerprint=JSON.stringify(payload);
@@ -237,14 +237,15 @@ export function renderOnboarding(initial, actions) {
     const mapped=concepts.filter(c=>c.mappingStatus==="bound").length;
     if(counts)counts.textContent=`已读取资料 ${sourceCount} 份 · 已配置数据来源 ${liveCount} 个 · 已映射概念 ${mapped} 个`;
     if(result){
-      result.replaceChildren(el("div","企业基础已建立","ob-success"),el("h2",state.onboarding.company.name));
+      result.replaceChildren(el("div",concepts.length ? "企业基础已建立" : "初始化信息已保存","ob-success"),el("h2",state.onboarding.company.name));
+      if(state.onboarding.foundationMessage)result.append(el("p",state.onboarding.foundationMessage,"ob-note"));
       const grid=el("div",null,"ob-result-grid");
       for(const [number,title] of [[concepts.length,"基础概念"],[foundation?.content.relations.length||0,"定义关系"],[sourceCount,"已读取资料"],[mapped,"已映射概念"]]){
         const card=el("div");card.append(el("strong",String(number)),el("span",title));grid.append(card);
       }
       result.append(grid,el("p",`${state.model.keySaved?"模型密钥已保存":"模型已配置"} · ${state.model.model}`,"ob-muted"));
       if(concepts.length>mapped)result.append(el("p",`${concepts.length-mapped} 个概念尚未连接真实业务数据。可以先使用基础定义，稍后继续接入与映射。`,"ob-note"));
-      if(!sourceCount&&!liveCount)result.append(el("p","还未接入企业来源，当前结果来自选定模板或已有定义。","ob-muted"));
+      if(!sourceCount&&!liveCount)result.append(el("p","还未接入企业来源。行业参考已保存；接入结构化数据后再构建本体。","ob-muted"));
       for(const progress of [state.automaticBuild,state.automaticApiBuild].filter(Boolean)){
         if(progress.pending)result.append(el("p",`仍有 ${progress.pending} 项来源正在等待或进行本体构建。`,"ob-note"));
         for(const error of progress.errors||[])result.append(el("p",`${error.title}：${error.message}`,"ob-note"));

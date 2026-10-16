@@ -282,6 +282,11 @@ body.haizhi-glass .os-management :is(.live-legacy, .live-card) {
 }
 body.haizhi-glass .os-management :is(summary, .source-meta, .live-lead) { color: var(--glass-muted); }
 body.haizhi-glass .os-management .quiet-button { color: #416591; border-color: #d2e0f2; }
+body.haizhi-glass .mutation-receipt { position: sticky; top: 0; z-index: 20; padding: 12px 16px; border-radius: 14px; color: #315b92; background: #edf4ff; border: 1px solid #c5d8f1; }
+body.haizhi-glass .mutation-receipt[role="alert"] { color: #9c304a; background: #fff0f3; border-color: #ecc4cf; }
+body.haizhi-glass .os-local-card { max-height: calc(100% - var(--os-composer-height,180px) - 200px); display: flex; flex-direction: column; overflow: hidden; }
+body.haizhi-glass .os-local-card > header, body.haizhi-glass .os-local-actions { flex: 0 0 auto; }
+body.haizhi-glass .os-local-summary { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 
 /* Keep the task entrance clear of the graph's moving composer. */
 body.haizhi-glass .is-ontology-space .agent-task-status {
@@ -305,6 +310,8 @@ body.haizhi-glass .is-ontology-space .agent-task-status button { min-height: 28p
 body.haizhi-glass .is-ontology-space:has(.agent-task-status:not([hidden])) .os-legend { bottom: 110px; }
 
 @media (min-width: 721px) {
+  body.haizhi-glass .is-ontology-space .interaction[data-mode="history"] .os-chat-metrics { display: none; }
+  body.haizhi-glass .is-ontology-space .interaction[data-mode="history"] .dialogue { max-height: 20dvh; }
   body.haizhi-glass .is-ontology-space[data-ontology-stage="local"] .os-local-card {
     left: auto;
     transform: none;
@@ -505,6 +512,20 @@ body.haizhi-glass .is-ontology-space:has(.agent-task-status:not([hidden])) .os-l
   body.haizhi-glass .is-ontology-space .interaction[data-mode="history"] .composer-note { max-height: 28px; overflow-y: auto; line-height: 14px; }
   body.haizhi-glass .is-ontology-space .interaction[data-mode="history"] .composer textarea { max-height: 42px; }
   body.haizhi-glass .is-ontology-space .interaction[data-mode="history"] .os-chat-footer { flex: none; margin-top: 6px; }
+}
+
+@media (max-width: 720px) {
+  body.haizhi-glass .os-inspector { top: calc(var(--os-mobile-controls-height) + 8px); display: block; overflow-y: auto; }
+  body.haizhi-glass .os-inspector-head { position: sticky; top: -15px; z-index: 5; background: #f1f5fc; padding-top: 8px; }
+  body.haizhi-glass .os-inspector-body { overflow: visible; }
+  body.haizhi-glass .os-inspector .os-fan { display: block; position: relative; inset: auto; max-height: none; overflow: visible; animation: none; pointer-events: auto; margin-bottom: 10px; }
+  body.haizhi-glass .os-inspector .os-fan[hidden] { display: none; }
+  body.haizhi-glass .os-fan-lines { display: none; }
+  body.haizhi-glass .os-fan-groups { position: static; width: auto; transform: none; display: flex; flex-direction: row; gap: 5px; overflow-x: auto; }
+  body.haizhi-glass .os-fan-group { flex: 0 0 auto; padding: 6px 9px; gap: 5px; border-radius: 12px; }
+  body.haizhi-glass .os-fan-group strong { font-size: 14px; }
+  body.haizhi-glass .os-fan-leaves { position: static; display: flex; width: auto; max-height: 110px; gap: 5px; padding: 6px 0; }
+  body.haizhi-glass .os-fan-leaf { flex: 0 0 auto; }
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {

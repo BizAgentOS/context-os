@@ -6,9 +6,9 @@ import { tmpdir } from "node:os";
 import type { AddressInfo } from "node:net";
 import { createServer } from "../../src/agent/server.ts";
 import type { AgentDriver } from "../../src/agent/runtime.ts";
+import { seedFoundation } from "./program-foundation-fixture.ts";
 
-// 待迁移：本测试从空本体起步，由对话/文档/网页/知识库新建概念。基础本体改由规则构建后，需改为在规则建好的结构上修正；其中验证的引用与治理机制仍在产品中。
-test.skip("uploaded enterprise text is read before citation and its versioned excerpt reopens after replacement and restart", async () => {
+test("uploaded enterprise text is read before citation and its versioned excerpt reopens after replacement and restart", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-foundation-docs-"));
   const original =
     "# 澄川热力\n澄川热力为居民提供供热服务。\n客服部门受理居民投诉。\n";
@@ -28,7 +28,7 @@ test.skip("uploaded enterprise text is read before citation and its versioned ex
       assert.equal(excerpt.text, original);
       assert.equal(excerpt.coverage.complete, true);
       const draft = {
-        baseVersion: 0,
+        baseVersion: ((await request.onTool("foundation_read", {})) as any).current.version,
         enterprise: { name: "澄川热力", evidenceRefs: ["doc-1"] },
         concepts: [
           {
@@ -68,8 +68,9 @@ test.skip("uploaded enterprise text is read before citation and its versioned ex
         "foundation_propose",
         draft,
       )) as any;
-      assert.equal(candidate.content.evidence[0].sourceVersion, 1);
-      assert.equal(candidate.content.evidence[0].kind, "document");
+      assert.deepEqual(candidate.content.concepts.map((item: any) => [item.id, item.origin]), [["resident", "program"]]);
+      assert.equal(candidate.content.evidence.find((item: any) => item.id === "doc-1").sourceVersion, 1);
+      assert.equal(candidate.content.evidence.find((item: any) => item.id === "doc-1").kind, "document");
       saved = true;
       return { text: "资料候选已保存。", sessionId: "docs", runId: "docs" };
     },
@@ -77,6 +78,12 @@ test.skip("uploaded enterprise text is read before citation and its versioned ex
     async close() {},
   };
   let service = await createServer({ directory, driver });
+  seedFoundation(service.app.memory, service.app.foundation, {
+    enterprise: "澄川热力",
+    concepts: [
+      { id: "resident", name: "居民", description: "来自居民表的记录，业务含义待核对。" },
+    ],
+  });
   const start = async () => {
     await new Promise<void>((resolve) =>
       service.server.listen(0, "127.0.0.1", resolve),
@@ -124,7 +131,7 @@ test.skip("uploaded enterprise text is read before citation and its versioned ex
     });
     await service.app.idle();
     const evidence = await api(
-      `/api/foundation/evidence?foundationId=${current.id}&version=2&evidenceId=doc-1`,
+      `/api/foundation/evidence?foundationId=${current.id}&version=${current.version}&evidenceId=doc-1`,
     );
     assert.equal(evidence.sourceId, sourceId);
     assert.equal(evidence.sourceVersion, 1);
@@ -141,8 +148,7 @@ test.skip("uploaded enterprise text is read before citation and its versioned ex
   }
 });
 
-// 待迁移：本测试从空本体起步，由对话/文档/网页/知识库新建概念。基础本体改由规则构建后，需改为在规则建好的结构上修正；其中验证的引用与治理机制仍在产品中。
-test.skip("document changes retain prior meaning as a conflict; fresh user choice resolves it on the same foundation", async () => {
+test("document changes retain prior meaning as a conflict; fresh user choice resolves it on the same foundation", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-doc-conflict-"));
   let checked = 0;
   let sourceId = "";
@@ -165,7 +171,7 @@ test.skip("document changes retain prior meaning as a conflict; fresh user choic
         unknowns: [],
         conflicts: [],
       };
-      if (!before.current) {
+      if (checked === 0) {
         draft.concepts = [
           {
             id: "customer",
@@ -248,6 +254,12 @@ test.skip("document changes retain prior meaning as a conflict; fresh user choic
     async close() {},
   };
   const service = await createServer({ directory, driver });
+  seedFoundation(service.app.memory, service.app.foundation, {
+    enterprise: "澄川热力",
+    concepts: [
+      { id: "customer", name: "客户", description: "来自客户表的记录，业务含义待核对。" },
+    ],
+  });
   try {
     await service.app.canvasMessage({
       page: "setup",
@@ -260,7 +272,7 @@ test.skip("document changes retain prior meaning as a conflict; fresh user choic
     await service.app.canvasFoundationAdopt({
       page: "setup",
       id: foundation.id,
-      version: 1,
+      version: foundation.version,
     });
     await service.app.canvasUpload({
       page: "setup",
@@ -273,7 +285,8 @@ test.skip("document changes retain prior meaning as a conflict; fresh user choic
       2,
       JSON.stringify(service.app.canvasState().messages),
     );
-    assert.equal(service.app.canvasState().foundation.adopted!.version, 4);
+    const afterDocument = service.app.canvasState().foundation.adopted!;
+    assert.equal(afterDocument.version, foundation.version + 3);
     assert.equal((service.app.canvasState().foundation.adopted!.content.concepts as any[])[0].description, "接受供热服务的居民");
     const selected = service.app.canvasContext({
       page: "ontology",
@@ -285,7 +298,7 @@ test.skip("document changes retain prior meaning as a conflict; fresh user choic
             spaceId: service.app.canvasState().workspaceId,
             kind: "foundation_concept",
             id: foundation.id,
-            version: 4,
+            version: afterDocument.version,
             member: "customer",
           },
         ],
@@ -318,7 +331,7 @@ test.skip("document changes retain prior meaning as a conflict; fresh user choic
     const accepted = await service.app.canvasFoundationAdopt({
       page: "setup",
       id: foundation.id,
-      version: 5,
+      version: service.app.canvasState().foundation.current!.version,
     });
     assert.equal(
       (accepted.foundation.adopted!.content.concepts as any[])[0].id,
@@ -335,7 +348,7 @@ test.skip("document changes retain prior meaning as a conflict; fresh user choic
     await service.app.canvasFoundationAdopt({
       page: "setup",
       id: foundation.id,
-      version: 7,
+      version: service.app.canvasState().foundation.current!.version,
     });
     await service.app.canvasMessage({
       page: "setup",
@@ -348,7 +361,7 @@ test.skip("document changes retain prior meaning as a conflict; fresh user choic
       service.app.canvasFoundationAdopt({
         page: "setup",
         id: foundation.id,
-        version: 9,
+        version: service.app.canvasState().foundation.current!.version,
       }),
       /冲突/,
     );
@@ -358,8 +371,7 @@ test.skip("document changes retain prior meaning as a conflict; fresh user choic
   }
 });
 
-// 待迁移：本测试从空本体起步，由对话/文档/网页/知识库新建概念。基础本体改由规则构建后，需改为在规则建好的结构上修正；其中验证的引用与治理机制仍在产品中。
-test.skip("bad text fails explicitly and bounded document reads cannot cite unread tail or adopt after source replacement", async () => {
+test("bad text fails explicitly and bounded document reads cannot cite unread tail or adopt after source replacement", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-doc-boundary-"));
   let checked = 0;
   let replacement = false;
@@ -415,7 +427,7 @@ test.skip("bad text fails explicitly and bounded document reads cannot cite unre
       assert.equal(part.coverage.complete, false);
       assert.equal(part.coverage.nextOffset, 20);
       const draft = {
-        baseVersion: 0,
+        baseVersion: ((await request.onTool("foundation_read", {})) as any).current.version,
         enterprise: { name: "澄川热力", evidenceRefs: ["d1"] },
         concepts: [
           {
@@ -456,6 +468,12 @@ test.skip("bad text fails explicitly and bounded document reads cannot cite unre
     async close() {},
   };
   const service = await createServer({ directory, driver });
+  seedFoundation(service.app.memory, service.app.foundation, {
+    enterprise: "澄川热力",
+    concepts: [
+      { id: "resident", name: "居民", description: "来自居民表的记录，业务含义待核对。" },
+    ],
+  });
   try {
     await service.app.canvasUpload({
       page: "setup",
@@ -523,7 +541,7 @@ test.skip("bad text fails explicitly and bounded document reads cannot cite unre
       }),
       /资料已更新/,
     );
-    assert.equal(service.app.canvasState().foundation.adopted?.version, 2);
+    assert.equal(service.app.canvasState().foundation.adopted?.version, candidate.version);
     reread = true;
     await service.app.canvasMessage({
       page: "setup",

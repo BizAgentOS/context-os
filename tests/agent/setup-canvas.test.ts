@@ -7,9 +7,9 @@ import type { AddressInfo } from "node:net";
 import { createServer } from "../../src/agent/server.ts";
 import { seedHeatingDemo } from "../../src/demo/heating-seed.ts";
 import type { AgentDriver } from "../../src/agent/runtime.ts";
+import { seedFoundation } from "./program-foundation-fixture.ts";
 
-// 待迁移：本测试从空本体起步，由对话/文档/网页/知识库新建概念。基础本体改由规则构建后，需改为在规则建好的结构上修正；其中验证的引用与治理机制仍在产品中。
-test.skip("one setup page saves company facts, reads a source and stays open after completion", async () => {
+test("one setup page saves company facts, reads a source and stays open after completion", async () => {
   const directory = mkdtempSync(join(tmpdir(), "dataengine-setup-"));
   let runs = 0;
   const driver: AgentDriver = {
@@ -49,7 +49,7 @@ test.skip("one setup page saves company facts, reads a source and stays open aft
       assert.equal(input.mode, "automatic-document-ontology");
       const part = await request.onTool("foundation_document_read", { sourceId: input.sources[0].id }) as any;
       await request.onTool("foundation_propose", {
-        baseVersion: 0, enterprise: {name: "澄川热力", evidenceRefs: ["doc"]},
+        baseVersion: ((await request.onTool("foundation_read", {})) as any).current.version, enterprise: {name: "澄川热力", evidenceRefs: ["doc"]},
         concepts: [{id: "resident", name: "居民", description: "供热客户", evidenceRefs: ["doc"]}], relations: [],
         evidence: [{id: "doc", kind: "document", readId: part.readId, quote: part.text}], unknowns: [], conflicts: []
       });
@@ -100,6 +100,12 @@ test.skip("one setup page saves company facts, reads a source and stays open aft
     const navigation = await post("/api/canvas/navigate", { page: "sources" });
     assert.equal(navigation.currentPage, "setup");
     assert.equal(navigation.setupSection, "sources");
+    seedFoundation(service.app.memory, service.app.foundation, {
+      enterprise: "澄川热力",
+      concepts: [
+        { id: "resident", name: "居民", description: "来自居民表的记录，业务含义待核对。" },
+      ],
+    });
     await post("/api/canvas/upload", {
       page: "setup",
       name: "业务.md",
@@ -110,6 +116,7 @@ test.skip("one setup page saves company facts, reads a source and stays open aft
     assert.equal(final.currentPage, "setup");
     assert.equal(final.sources.length, 1);
     assert.equal(final.foundation.current.status, "adopted");
+    assert.deepEqual(final.foundation.current.content.concepts.map((item: any) => [item.id, item.origin]), [["resident", "program"]]);
     assert.equal(final.automaticBuild.status, "completed");
     assert.equal(
       final.messages.filter((m: { role: string }) => m.role === "user").length,

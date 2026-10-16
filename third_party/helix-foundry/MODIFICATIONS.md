@@ -96,3 +96,26 @@ snapshot manifest. Snapshot checks and consumer reads carry incomplete coverage 
 claiming full-source completeness. New merge properties are named relative to the retained ADE
 primary mapping and avoid existing property names. Unsupported candidates are reported as
 not included in object queries or release consumption.
+
+
+## Discovery review and legacy migration follow-up (2026-10-17, unreleased)
+
+`src/engine/helix-discovery.ts` additionally indexes ordinary high-cardinality VARCHAR columns for
+review-only overlap checks. These columns cannot create identities or executable links. At least three
+shared normalized distinct values and 80% distinct overlap on one side are required for a review lead;
+low-cardinality status vocabularies are not promoted by this path. Reviews carry dataset/column references
+and measured counts, not raw values. Email equality alone no longer creates a cross-system identity merge.
+Existing non-email key discovery remains in place.
+
+`withoutImplied` preserves the exact direct link and two-hop path it actually removed, with the
+row-comparison counts. ADE reports these as review items rather than inferring a missing business
+relationship from a diagram. English table-derived names produce actionable naming reviews; confirmation
+can rename a concept without changing its source-based ADE identity. No AI naming step was imported.
+`ProgramBuilds` persists these reviews and `helix-projection.ts` attaches them to all involved concepts.
+
+During rule reconstruction, ADE creates a new candidate that replaces legacy interpretation-built
+concepts, relations and their mappings. Existing program concepts keep later human/Agent wording edits.
+The candidate reports retired definitions and old version references; adoption does not rewrite historical
+artifacts or published consumer definitions. This migration is ADE integration behavior, not an upstream
+Helix store change. Regression tests exercise real snapshot queries, candidate/check/adopt boundaries,
+and historical release consumers without invoking a model.

@@ -120,7 +120,7 @@ export class LiveMemory {
   overview() {
     return {
       connections: this.sources.list(),
-      models: this.repo.listArtifacts("live_ontology"),
+      models: this.repo.listArtifacts("live_ontology").map(a => ({...a, ...this.adoptionState(a)})),
       consumers: this.repo.listArtifacts("live_consumer").map((a) => ({
         ...a,
         content: Object.fromEntries(
@@ -146,6 +146,16 @@ export class LiveMemory {
   }
   private definition(a: Artifact) {
     return a.content as unknown as Definition;
+  }
+  private adoptionState(a: Artifact) {
+    if (a.status !== "candidate") return {canAdopt:false, adoptionReason:null};
+    try {
+      this.checkConnections(this.definition(a));
+      this.checkExecutionBase(a.content.base);
+      return {canAdopt:true, adoptionReason:null};
+    } catch (error) {
+      return {canAdopt:false, adoptionReason:(error as Error).message};
+    }
   }
   private active() {
     return this.repo
@@ -239,6 +249,7 @@ export class LiveMemory {
           conceptId: t.conceptId!,
           modelId: a.id,
           modelVersion: a.version,
+          ...this.adoptionState(a),
           type: t.name,
           status: reason ? "unavailable" : a.status,
           reason,
@@ -296,7 +307,18 @@ export class LiveMemory {
     const base = this.active();
     assertSnapshotImpact(await this.snapshotImpact(base ? this.definition(base) : null, content as { types: Data[]; relations: Data[] }));
     assertActive();
-    return this.repo.putArtifact({kind:"live_ontology",title:String(content.purpose),status:"candidate",content},context,operationId);
+    // A complete mapping proposal replaces only the earlier proposal from this execution.
+    // Older turns and adopted/released models remain separate; old versions stay readable.
+    const scope = context ? { taskId: context.taskId, executionId: context.executionId } : undefined;
+    const previous = scope ? this.repo.listArtifacts("live_ontology").find(a =>
+      a.status === "candidate" &&
+      JSON.stringify(a.content.proposalScope) === JSON.stringify(scope) &&
+      JSON.stringify(a.content.base) === JSON.stringify(content.base)) : undefined;
+    return this.repo.putArtifact({
+      ...(previous ? { id: previous.id, expectedVersion: previous.version } : {}),
+      kind:"live_ontology", title:String(content.purpose), status:"candidate",
+      content: { ...content, ...(scope ? { proposalScope: scope } : {}) },
+    },context,operationId);
   }
   /** Once the data program is in use, a revision may only use data it has processed: datasets it
    *  snapshotted for discovery, or bindings it compiled. Data reaches mappings through the program. */

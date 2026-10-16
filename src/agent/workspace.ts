@@ -326,6 +326,10 @@ export class Workspace {
       })),
       models: this.repo.listArtifacts("ontology").map(summarize),
       outlines: this.repo.listArtifacts("ontology_outline").map(summarize),
+      industryReferences: this.repo.listArtifacts("industry_reference").slice(0, 1).map((a) => ({
+        ...summarize(a), enterpriseName: a.content.enterpriseName, purpose: "naming_reference",
+        instructions: "用 memory_read 按引用读取所选行业术语；只辅助已有概念的名称和说明，不作为企业事实或结构创建依据。",
+      })),
       verifications: this.repo.listArtifacts("verification").map((a) => ({
         ...summarize(a),
         hasNewerSources: Object.entries(

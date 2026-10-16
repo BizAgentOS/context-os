@@ -167,6 +167,9 @@ export class KodaXDriver implements AgentDriver {
           surface: "dataengine",
         });
     request.onSession(session.id);
+    let usedTool = false;
+    let textAfterTool = "";
+    const toolBoundary = () => { usedTool = true; textAfterTool = ""; };
     const allowed = new Set([
       ...request.tools.map((t) => t.name),
       ...(request.nativeTools ?? []),
@@ -180,6 +183,7 @@ export class KodaXDriver implements AgentDriver {
       id: string,
       args: Record<string, unknown> = {},
     ) => {
+      toolBoundary();
       request.onEvent("operation.started", { name: id });
       try {
         const result = await assertExternal().call(id, args);
@@ -227,6 +231,7 @@ export class KodaXDriver implements AgentDriver {
           return externalResult(id, args);
         if (provider !== "mcp" || !allowed.has(id) || this.stopping)
           throw new Error("当前运行不允许这个操作");
+        toolBoundary();
         request.onEvent("operation.started", { name: id });
         try {
           const result = await request.onTool(id, args);
@@ -251,6 +256,7 @@ export class KodaXDriver implements AgentDriver {
       { sessionId: session.id },
       (event) => {
         const payload = event.payload as Record<string, unknown>;
+        if (event.type === "tool.started") toolBoundary();
         if (event.type === "tool.started" || event.type === "tool.finished") {
           const detail = (payload.tool ?? payload.result) as
             { name?: string } | undefined;
@@ -276,8 +282,10 @@ export class KodaXDriver implements AgentDriver {
         if (
           event.type === "assistant.delta" &&
           typeof payload.text === "string"
-        )
+        ) {
+          textAfterTool += payload.text;
           request.onEvent("assistant.delta", { text: payload.text });
+        }
         if (event.type === "run.progress" && payload.kind === "iteration_start")
           request.onEvent("run.progress", { iteration: Number(payload.iter) });
       },
@@ -327,7 +335,9 @@ export class KodaXDriver implements AgentDriver {
       return {
         sessionId: session.id,
         runId: this.handle.runId,
-        text: result.result?.lastText ?? "",
+        // lastText may refer to narration before the final tool call (for example at maxIter).
+        // Only text produced after that call can be the user-facing answer.
+        text: usedTool ? textAfterTool : result.result?.lastText ?? "",
         ...(failed
           ? {
               error:

@@ -355,6 +355,14 @@ async function refresh(bootstrap = false) {
 }
 async function mutate(path, body, after, onError) {
   if (ui.requesting) return false;
+  const dialog = [...document.querySelectorAll("dialog[open]")].at(-1);
+  let receipt;
+  const controls = dialog ? [...dialog.querySelectorAll("button,input,select,textarea")].map(control => [control, control.disabled]) : [];
+  if (dialog) {
+    receipt = dialog.querySelector(":scope > .mutation-receipt") || node("p", "mutation-receipt");
+    receipt.setAttribute("role", "status"); receipt.textContent = "正在处理，请稍候…"; dialog.prepend(receipt);
+    dialog.setAttribute("aria-busy", "true"); controls.forEach(([control]) => control.disabled = true);
+  }
   ui.requesting = true;
   ui.generation += 1;
   errorMessage();
@@ -363,12 +371,15 @@ async function mutate(path, body, after, onError) {
     const result = await api(path, body);
     if (after) after(result);
     applySnapshot(result);
+    if (receipt) receipt.textContent = path.endsWith("/adopt") ? "已采用，当前定义已更新。关闭后重新打开可查看最新版本。" : "操作已完成。";
     return true;
   } catch (error) {
+    if (receipt) {receipt.setAttribute("role", "alert"); receipt.textContent = error.message;}
     onError?.(error);
     errorMessage(error.message);
     return false;
   } finally {
+    dialog?.removeAttribute("aria-busy"); controls.forEach(([control, disabled]) => control.disabled = disabled);
     ui.requesting = false;
     updateComposer();
   }
@@ -411,6 +422,10 @@ function render() {
 function canvasFingerprint() {
   const refs = (items) =>
     items.map((item) => `${item.id}:${item.version}:${item.status}`);
+  if (ui.page === "ontology" && !ui.detail && !shareMode && !state.demo) {
+    // The Three scene depends on semantic data, not polling/task/dialog state.
+    return JSON.stringify({page:ui.page, foundation:state.foundation});
+  }
   return JSON.stringify({
     page: ui.page,
     onboarding: state.onboarding,
@@ -444,9 +459,10 @@ function canvasFingerprint() {
 }
 function renderCanvas(force = false) {
   const fingerprint = canvasFingerprint();
-  if (!force && fingerprint === ui.canvasKey) return;
+  if (!force && fingerprint === ui.canvasKey) {$("#canvas").firstElementChild?.updateStatus?.(state); return;}
   ui.canvasKey = fingerprint;
   const spatial = ui.page === "ontology" && !ui.detail && !shareMode && !state.demo;
+  if (!spatial) for (const dialog of $$("dialog.os-management[open]")) dialog.close();
   $(".canvas-app").classList.toggle("is-ontology-space", spatial);
   for (const element of $$(".os-chat-metrics,.os-chat-footer")) element.hidden = !spatial;
   $("#canvas").firstElementChild?.dispose?.();
@@ -562,24 +578,26 @@ function renderCanvas(force = false) {
             },
           }),
       };
-      const workspace = renderFoundationWorkspace(state.foundation, foundationActions);
-      const full = node("details", "live-legacy");
-      full.append(
-        node("summary", "", "完整基础定义与采用操作"),
-        foundationPanel(),
-      );
-      canvas.replaceChildren(renderOntologyBoard(workspace, full, live, foundationActions));
+      canvas.replaceChildren(renderOntologyBoard(foundationActions));
     } else canvas.replaceChildren(live);
   } else if (ui.page === "ontology") canvas.replaceChildren(renderOntology());
   else canvas.replaceChildren(renderConsumption());
 
   renderAttention(canvas);
 }
-function renderOntologyBoard(workspace, full, operations, actions) {
+function renderOntologyBoard(actions) {
+  const managementContent = () => {
   const management = node("div");
   const directory = node("details", "live-legacy");
-  directory.append(node("summary", "", "定义与映射目录"), workspace);
-  management.append(directory, full, operations);
+  directory.append(node("summary", "", "定义与映射目录"), renderFoundationWorkspace(state.foundation, actions));
+  const full = node("details", "live-legacy");
+  full.append(node("summary", "", "完整基础定义与采用操作"), foundationPanel());
+  management.append(directory, full, renderLiveWorkspace("ontology", state.live, {
+    api, mutate, showCredential, selections:ui.graphSelections, onSelectContext:selectLiveContext, onSaved:refresh,
+  }));
+  return management;
+  };
+  const objectContent = () => {
   const objects = node("div", "ontology-board-objects");
   let loaded = false;
   const loadObjects = () => {
@@ -609,6 +627,8 @@ function renderOntologyBoard(workspace, full, operations, actions) {
     };
     picker.onchange = show; show();
   };
+  loadObjects(); return objects;
+  };
   return renderOntologySpace(state.foundation, {
     ...actions,
     automaticBuild: state.automaticBuild,
@@ -617,11 +637,27 @@ function renderOntologyBoard(workspace, full, operations, actions) {
     retryBuild: () => mutate("/api/canvas/foundation/automatic", {}),
     engine: state.engine,
     programBuild: () => showEngineBuilds(state, {...dataActions(),management:()=>document.querySelector(".os-definition-entry")?.click()}),
-    management,
-    objects: () => {loadObjects(); return objects;},
-    evidence: renderEvidenceWorkspace(state, {api, mutate}),
+    management: managementContent,
+    objects: objectContent,
+    evidence: () => renderEvidenceWorkspace(state, {api, mutate}),
     onLayout: updateOntologyComposer,
+    onSelection: followOntologySelection,
   });
+}
+function followOntologySelection(artifact, target, guard) {
+  if (ui.page !== "ontology" || (ui.focus && ui.focus.source !== "viewport")) return;
+  if (!target) {
+    ui.dismissedSelection = null;
+    if (ui.focus?.source === "viewport") {
+      ui.focus = null; ui.contextRequest++; ui.contextRevision++; ui.contextResolving = false;
+      rememberDraft(); updateComposer();
+    }
+    return;
+  }
+  const key = JSON.stringify([artifact.id, artifact.version, target]);
+  if (ui.dismissedSelection === key) return;
+  ui.dismissedSelection = null;
+  void selectLiveContext(artifact, target, undefined, false, guard, "viewport");
 }
 function updateOntologyComposer({stage, stats}) {
   $(".canvas-app").dataset.ontologyStage = stage;
@@ -2466,6 +2502,7 @@ async function selectLiveContext(
   scope = { where: {}, offset: 0, limit: 20 },
   focusComposer = true,
   isCurrent = () => true,
+  source = "explicit",
 ) {
   const request = ++ui.contextRequest;
   const page = ui.page;
@@ -2496,6 +2533,7 @@ async function selectLiveContext(
       ref: resolved.target.ref,
       view: context.view,
       scope,
+      source,
     };
     ui.contextRevision += 1;
     rememberDraft();
@@ -3291,6 +3329,7 @@ function hasCanvasContent() {
       : state.consumers.length > 0;
 }
 function updateComposer() {
+  for (const control of $$("[data-busy-control]")) control.disabled = !!(state.busy || ui.requesting || control.dataset.blocked === "true");
   const input = $("#message-input");
   const busy = state.busy;
   const blocked =
@@ -3339,7 +3378,7 @@ function updateComposer() {
                 : "";
   $("#focus-context").hidden = !ui.focus;
   $("#focus-label").textContent = ui.focus
-    ? `${ui.focus.label} · 第 ${ui.focus.version} 版${ui.focus.ref ? "" : " · 整份成果"}`
+    ? `${ui.focus.source === "viewport" ? "当前浏览 · " : ""}${ui.focus.label} · 第 ${ui.focus.version} 版${ui.focus.ref ? "" : " · 整份成果"}`
     : "";
   $("#inspect-focus").hidden = !ui.focus || !!shareMode;
   $("#focus-context").dataset.kind = ui.focus?.ref?.kind || "artifact";
@@ -3367,7 +3406,7 @@ new ResizeObserver(([entry]) => {
   resizeInput();
 }).observe($("#message-input"));
 new ResizeObserver(([entry]) => {
-  $(".canvas-app").style.setProperty("--os-composer-height", `${Math.min(entry.contentRect.height, 280)}px`);
+  $(".canvas-app").style.setProperty("--os-composer-height", `${entry.target.getBoundingClientRect().height}px`);
 }).observe($(".interaction"));
 async function sendMessage() {
   const input = $("#message-input");
@@ -3639,6 +3678,10 @@ $("#stop-button").addEventListener("click", () =>
   mutate("/api/canvas/stop", { page: ui.page }),
 );
 $("#clear-focus").addEventListener("click", () => {
+  if (ui.focus?.source === "viewport") {
+    const {kind, member} = ui.focus.ref;
+    ui.dismissedSelection = JSON.stringify([ui.focus.id, ui.focus.version, {kind, member}]);
+  }
   ui.focus = null;
   ui.contextRequest += 1;
   ui.contextResolving = false;
