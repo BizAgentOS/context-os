@@ -117,7 +117,7 @@ export class SourceConnections {
   ): Promise<T> {
     const client = new Client({
       name: "dataengine-source",
-      version: "0.2.2",
+      version: "0.2.3",
     });
     const transport = new StreamableHTTPClientTransport(new URL(config.url), {
       requestInit: {

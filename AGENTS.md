@@ -23,7 +23,7 @@
 
 ## 当前范围与开发方式
 
-当前版本 0.2.2：数据、本体、发布与接入三页工作台，结构化来源同步为快照，Helix 全量发现与检查，发布锁定快照；本次修复快照保留、覆盖及旧发布接入等 7 项问题。范围与验收看 [0.2.x 设计](docs/features/v0.2.0.md)、[功能台账](docs/FEATURE_LIST.md)和[整体验收](docs/experiment/ENGINE_WORKBENCH.md)。v0.1.0 未单独发布，002、004、005、006、019 仍未完成，台账保留。保持本地单企业实验范围，按当前授权任务推进，不自动展开全部路线图。
+当前版本 0.2.3：数据、本体、发布与接入三页工作台，结构化来源同步为快照，基础本体由 Helix 规则构建、内部 Agent 只修正，发布锁定快照；已知问题见 [ISSUES](docs/ISSUES.md)。范围与验收看 [0.2.x 设计](docs/features/v0.2.0.md)、[功能台账](docs/FEATURE_LIST.md)和[整体验收](docs/experiment/ENGINE_WORKBENCH.md)。v0.1.0 未单独发布，002、004、005、006、019 仍未完成，台账保留。保持本地单企业实验范围，按当前授权任务推进，不自动展开全部路线图。
 
 使用项目内 `.agents/skills/` 的开发技能，来源固定在 [.agents/CODINGSKILLS.md](.agents/CODINGSKILLS.md)。产品运行身份位于 `config/agent/`，运行 Skill 位于 `config/skills/`；它们与本文件、开发技能和 `docs/` 规格是不同角色，不能把设计文档自动装入模型。
 
