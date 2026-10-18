@@ -90,7 +90,25 @@
 
 ## 实际恢复状态
 
+### 11:06 中途状态（历史，已恢复）
+
 11:06 重启后按正式重试接口恢复，但任务随后收到暂停操作，当前基础 v20、4/5 文档已完成，重绑尚未采用。数据已保存，等待用户确认继续，未将旧映射可查询声称为当前版本绑定成功。
+
+### 用户确认继续后的最终状态（2026-10-18）
+
+通过正式重试接口继续，映射先恢复到 v20，最后一份交付纪要完成后基础采用 v22，执行映射再次校验并采用，精确引用该 v22。最终工作区空闲，没有排队、运行中或失败的自动任务：8/8 结构化来源、5/5 文档全部 completed，13 个源文件均 ready。
+
+- 当前基础：`9acf01ac-4b89-4c72-a19f-f5c65ad77656` v22，adopted，企业“星桥软件”。
+- 当前执行模型：`2a11105c-7b38-46fd-bd6d-6809bdd6a027` v2，adopted，绑定上述基础 v22；8 个程序概念、8 条关系全部 bound。
+- 8 类对象全量查询共 58 条，覆盖完整、各类身份唯一；人员 13、团队 8、账号 14、产品 3、项目 2、版本 3、需求 5、任务 10。
+- 8 条已生成关系逐条实际查询成功；在最终模型重新查通 `FP-TASK-3203 → FP-REQ-3201 → FP-3.2 → FLOWPILOT`，以及需求负责人 `cx_pm`、人员 SB005 所属 TEAM-FLOWPILOT。
+- 13 个已保存来源的 raw SHA-256 与原输入逐个一致，磁盘样本也未变化；未混入未来更新批次。
+- 负责人、日期及定义措辞差异留下 8 个未解决冲突、10 个未知项；后续文档未覆盖已保留的定义，不等于这些业务问题已被解决。第 2–5 项关系发现/身份对应缺口仍存在。
+- 页面已切到本体，服务保留在 `http://127.0.0.1:8798/`；当前消费者数量为 0，没有发布数据或创建外部接入。
+
+最终查询脚本全部断言通过。此处 v22 为工作区本体版本，产品包与发布 Tag 仍为 v0.2.3；本轮代码修复提交 `aa1aa51` 未发布。
+
+独立复核再次核对两份最终回执及原始文件，并将查询得到的 58 条对象每个原始 CSV 字段逐值比较，全部一致。各类查询返回的模型及基础版本均为最终版本，0 项阻断；剩余发现规则缺口仍按 ISSUE-016 保留。
 
 ## 本地证据
 
@@ -100,11 +118,15 @@
 - `starbridge-rebuild-import.json`：13 个源文件及哈希。
 - `starbridge-rebuild-structured.json`：文档补充前的程序构建回执。
 - `starbridge-rebuild-verification.json`：58 个对象与已生成关系的实际查询结果。
+- `starbridge-rebuild-baseline-verification.json`：最终续验前保存的旧查询回执，保留历史对照。
+- `starbridge-rebuild-final.json`、`starbridge-rebuild-final-query.log`：最终 v22 的完整画布状态和通过日志；最终业务链包含在 verification.json 中。
 - `starbridge-rebuild-chain.json`：指定业务对象的关联链查询结果。
 - `starbridge-rebuild-after-fix.json`：企业身份恢复的程序构建回执。
 - `starbridge-rebuild-before-rebind-fix.json`：文档已补充但映射尚未跟随的真实状态。
 - `starbridge-rebuild-all-check.log`、`starbridge-rebind-final.log`、`starbridge-rebuild-snapshots-final.log`：最终检查日志。
 
 最终验证脚本另要求 5 份文档、8 个结构化来源全部完成，所有概念与关系映射绑定当前已采用基础版本；当前仍在未绑定断言失败，未覆盖之前通过的 v18 对象查询回执。
+
+**上述段落为暂停时的历史结果。续验完成后全部断言通过，旧查询回执已另存 baseline-verification.json，verification.json 现为最终 v22 查询结果。**
 
 浏览器旧标签为已停止服务的错误页；Computer Use 读取该标签被浏览器协议策略拒绝。本轮先以正式管理接口和领域查询验收，未将其声称为浏览器验收通过。
