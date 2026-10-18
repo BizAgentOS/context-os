@@ -65,11 +65,13 @@ export function renderFoundation(
                 ? `${evidence.title} · 公开网页 · 已读取 ${new Date(evidence.readAt).toLocaleString("zh-CN")} · ${evidence.coverage?.complete ? "该次已读完整正文" : "部分正文，覆盖不完整"} · 适用时间未说明`
                 : evidence.kind === "document"
                   ? `${evidence.title} · v${evidence.sourceVersion} · 已读取 ${new Date(evidence.readAt).toLocaleString("zh-CN")} · 适用时间未说明`
-                  : `用户陈述 · ${new Date(evidence.capturedAt).toLocaleString("zh-CN")} · 适用时间未说明`,
+                  : evidence.kind === "profile"
+                    ? `人工确认的企业档案 · v${evidence.sourceVersion} · ${new Date(evidence.capturedAt).toLocaleString("zh-CN")} · 适用时间未说明`
+                    : `用户陈述 · ${new Date(evidence.capturedAt).toLocaleString("zh-CN")} · 适用时间未说明`,
           ),
         );
         if (
-          ["document", "web", "knowledge"].includes(evidence.kind) &&
+          ["document", "web", "knowledge", "profile"].includes(evidence.kind) &&
           locate
         ) {
           if (evidence.kind === "web") {
@@ -82,7 +84,7 @@ export function renderFoundation(
           const open = el(
             "button",
             "quiet-button",
-            evidence.kind === "web" ? "查看当时网页片段" : "定位资料片段",
+            evidence.kind === "web" ? "查看当时网页片段" : evidence.kind === "profile" ? "查看当时企业档案" : "定位资料片段",
           );
           open.type = "button";
           const result = el("div", "foundation-excerpt");

@@ -10,6 +10,7 @@ import type { DatasetContent, Snapshots } from "../data/snapshots.ts";
 import { entityColumns, ontologyBundle, type Bundle, type Resource, type SuggestedOntology } from "./helix-discovery.ts";
 import { discoverFromSnapshots } from "./snapshot-discovery.ts";
 import { describeReport, validateDefinition } from "./validation.ts";
+import { confirmedEnterpriseEvidence, isUnknownEnterprise } from "../agent/foundation-evidence.ts";
 
 const identifier = z.string().trim().min(1).max(200);
 const buildInput = z.object({ operationId: identifier, sourceIds: z.array(identifier).max(100).optional(), expectedFoundationVersion: z.number().int().nonnegative().optional(), autoAdopt: z.boolean().default(false) }).strict();
@@ -48,6 +49,16 @@ function alignTypes(types: Data[], modelRelations: Data[], concepts: Data[]) {
     for (const relation of modelRelations) for (const end of ["from", "to"]) if (relation[end] === type.name) relation[end] = concept.name;
     types[index] = { ...type, name: concept.name, description: concept.description };
   }
+}
+
+function enterpriseIdentity(previous: Data | undefined, profile: Artifact | undefined, evidence: Data[]): Data {
+  const enterprise = previous ?? { name: "未设置企业", evidenceRefs: [] };
+  // A rebuild can fill an explicitly unknown identity, but never rename an established enterprise.
+  if (!isUnknownEnterprise(enterprise)) return enterprise;
+  const confirmed = confirmedEnterpriseEvidence(profile);
+  if (!confirmed) return enterprise;
+  if (!evidence.some(item => item.id === confirmed.id)) evidence.push(jsonData(confirmed));
+  return { name: confirmed.quote, evidenceRefs: [confirmed.id] };
 }
 
 export class ProgramBuilds {
@@ -325,7 +336,7 @@ export class ProgramBuilds {
     if (concepts.length > MAX_FOUNDATION_CONCEPTS || types.length > MAX_MODEL_TYPES) throw new Error(`生成结果有 ${concepts.length} 个概念、${types.length} 个映射，超过当前 ${MAX_FOUNDATION_CONCEPTS}/${MAX_MODEL_TYPES} 的执行契约。请缩小来源范围，程序没有截断或覆盖既有定义。`);
     if (!types.length) return null;
     const profile = this.memory.listArtifacts("profile")[0];
-    const enterprise = previous?.enterprise ?? { name: "未设置企业", evidenceRefs: [] };
+    const enterprise = enterpriseIdentity(previous?.enterprise as Data | undefined, profile, evidence);
     const foundation = jsonData({ ...previous, enterprise, concepts, relations, evidence, unknowns: dataArray(previous?.unknowns), conflicts: dataArray(previous?.conflicts),
       adoptedVersion: base.adopted?.version ?? null, profileRef: ref(profile), documentVersions: previous?.documentVersions ?? {}, operation: { hash: fingerprint([concepts, relations, types]) },
       method: { name: "helix-program-discovery", sourceCommit: "00d7927d7c08e16c58316e006959f052427e7fa1" },
@@ -510,7 +521,7 @@ export class ProgramBuilds {
     if (concepts.length > MAX_FOUNDATION_CONCEPTS || types.length > MAX_MODEL_TYPES) throw new Error(`生成结果有 ${concepts.length} 个概念、${types.length} 个映射，超过当前 ${MAX_FOUNDATION_CONCEPTS}/${MAX_MODEL_TYPES} 的执行契约。请缩小来源范围，程序没有截断或覆盖既有定义。`);
     if (!types.length) return null;
     const profile = this.memory.listArtifacts("profile")[0];
-    const enterprise = (previous?.enterprise ?? { name: "未设置企业", evidenceRefs: [] }) as Data;
+    const enterprise = enterpriseIdentity(previous?.enterprise as Data | undefined, profile, evidence);
     const unknowns = dataArray(previous?.unknowns);
     // Retired definitions keep their full evidence in history, not as dependencies of
     // this new version. Governance explanations and program provenance remain live references.

@@ -15,7 +15,7 @@ import {
 import { randomUUID, createHash } from "node:crypto";
 import { z } from "zod";
 import type { MemoryStore } from "./memory.ts";
-import type { DomainTool, WriteContext } from "./contracts.ts";
+import type { Artifact, Data, DomainTool, WriteContext } from "./contracts.ts";
 import type { FeishuSourceOrigin } from "./feishu-documents.ts";
 
 const identifier = z.string().min(1).max(200);
@@ -40,7 +40,8 @@ export const foundationEvidenceInput = z.union([
 export type EvidenceInput = z.infer<typeof foundationEvidenceInput>;
 export interface FoundationEvidence {
   id: string;
-  kind: "user-statement" | "document" | "web" | "knowledge" | "api";
+  kind: "user-statement" | "profile" | "document" | "web" | "knowledge" | "api";
+  statementKey?: string;
   apiSnapshot?: {text: string; coverage: unknown};
   knowledgeSnapshot?: KnowledgeSnapshot;
   connectionVersion?: number;
@@ -110,6 +111,20 @@ export const foundationDocumentTool: DomainTool = {
   inputSchema: z.toJSONSchema(readSchema),
 };
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
+
+export const isUnknownEnterprise = (enterprise: { name?: unknown; evidenceRefs?: unknown } | null | undefined) =>
+  enterprise?.name === "未设置企业" && Array.isArray(enterprise.evidenceRefs) && enterprise.evidenceRefs.length === 0;
+
+/** A saved confirmation is versioned profile evidence, never an invented chat quote. */
+export function confirmedEnterpriseEvidence(profile: Artifact | undefined): FoundationEvidence | null {
+  if (profile?.kind !== "profile") return null;
+  const statement = (profile.content.statements as Data[] | undefined)?.find(item => item.key === "company.name" && item.userEdited === true);
+  if (typeof statement?.text !== "string" || !statement.text.trim()) return null;
+  return { id: `profile_${hash(`${profile.id}:${profile.version}:company.name`).slice(0, 24)}`,
+    kind: "profile", sourceId: profile.id, sourceVersion: profile.version, statementKey: "company.name",
+    title: "人工确认的企业名称", quote: statement.text, sourceHash: hash(JSON.stringify(statement)),
+    capturedAt: profile.createdAt, validTime: "unknown" };
+}
 
 /** Receipts belong to one host run, never to model supplied flags or global cache. */
 export class FoundationDocuments {
@@ -214,6 +229,15 @@ export class FoundationDocuments {
     };
   }
   locate(evidence: FoundationEvidence) {
+    if (evidence.kind === "profile") {
+      if (!evidence.sourceId || !evidence.sourceVersion) throw new Error("缺少企业档案依据版本");
+      const profile = this.memory.getArtifact(evidence.sourceId, evidence.sourceVersion);
+      const captured = confirmedEnterpriseEvidence(profile);
+      if (!captured || captured.statementKey !== evidence.statementKey || captured.quote !== evidence.quote || captured.sourceHash !== evidence.sourceHash)
+        throw new Error("保存的企业档案版本与依据不一致，无法定位原文");
+      return { ...evidence, start: 0, end: captured.quote.length, currentSourceVersion: this.memory.getArtifact(profile.id).version,
+        text: captured.quote, excerptStart: 0, excerptEnd: captured.quote.length };
+    }
     if (evidence.kind === "api") {
       const connection = this.memory.getArtifact(evidence.sourceId!);
       return {...locateApi(evidence), connectionStatus: connection.status, currentConnectionVersion: connection.version};

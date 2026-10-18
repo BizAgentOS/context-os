@@ -10,8 +10,9 @@ import { providers } from "../../src/agent/runtime.ts";
 import { createServer as createAppServer } from "../../src/agent/server.ts";
 
 async function fixture() {
-  let broken = false, emptySales = false, block: Promise<void> | undefined, entered: (() => void) | undefined, modelCalls = 0;
+  let broken = false, emptySales = false, block: Promise<void> | undefined, entered: (() => void) | undefined, modelCalls = 0, reads = 0, failAt: number | undefined;
   const server = createServer(async (req, res) => {
+    if (++reads === failAt) broken = true;
     entered?.(); if (block) await block;
     res.setHeader("content-type", "application/json");
     if (broken) {res.writeHead(503).end(); return;}
@@ -27,7 +28,7 @@ async function fixture() {
   const app = new AgentApplication(directory, driver);
   const config = {name: "门店 API", protocol: "http", url: `http://127.0.0.1:${(server.address() as {port:number}).port}`,
     capabilities: [{name: "stores", path: "/stores", fields: ["id", "name", "company"], idField: "id", filters: {id: "id"}, totalPath: "total"}]};
-  return {app, config, directory, driver, calls: () => modelCalls, breakSource: () => {broken = true;}, restoreSource: () => {broken = false;}, emptySales: () => {emptySales = true;},
+  return {app, config, directory, driver, calls: () => modelCalls, breakSource: () => {broken = true;}, restoreSource: () => {broken = false; failAt = undefined;}, failAfterReads: (count: number) => { failAt = reads + count; }, emptySales: () => {emptySales = true;},
     pause() {let release!: () => void; const started = new Promise<void>(resolve => {entered = resolve;}); block = new Promise<void>(resolve => {release = resolve;}); return {started, release: () => {block = undefined; entered = undefined; release();}};},
     async close() {await app.close(); await new Promise<void>(resolve => server.close(() => resolve())); rmSync(directory, {recursive: true, force: true});} };
 }
@@ -138,6 +139,174 @@ test("source queue reports pending foundation review without automatically adopt
     assert.equal(f.app.programBuilds.overview().candidate!.status, "checked");
     assert.equal(f.calls(), 0);
   } finally {await f.close();}
+});
+
+test("an adopted semantic revision rebinds the existing execution model while preserving unresolved business conflicts", async () => {
+  const f = await fixture();
+  try {
+    await f.app.live.sources.connect(f.config); await f.app.idle();
+    const before = f.app.foundation.read().adopted!, oldModel = f.app.live.overview().models.find(item => item.status === "adopted")!;
+    const concept = (before.content.concepts as any[])[0];
+    const task = f.app.memory.createTask("补充门店业务说明"), message = f.app.memory.addMessage(task.id, "user", "门店是销售服务网点。营业状态在资料和系统间尚不一致，需要保留双方依据。");
+    const context = f.app.memory.beginExecution(task.id);
+    const candidate = f.app.foundation.propose({ baseVersion: before.version, enterprise: before.content.enterprise,
+      concepts: [{ id: concept.id, name: "门店", description: "销售服务网点。", evidenceRefs: ["business-context"] }], relations: [],
+      evidence: [{ id: "business-context", messageId: message.id, quote: message.content }], unknowns: [],
+      conflicts: [{ id: "operating-status", description: "营业状态在资料和系统间不一致。", evidenceRefs: ["business-context"] }],
+    }, context, "business-context", "test-method", undefined, { lockStructure: true });
+    const revised = f.app.foundation.adopt(candidate.id, candidate.version, { automatic: true });
+    f.app.memory.endExecution(context);
+    const builds = f.app.programBuilds.overview().jobs.length;
+    f.app.startAutomaticBuild(); await f.app.idle();
+
+    assert.equal(f.app.canvasState().automaticApiBuild.status, "completed", JSON.stringify(f.app.canvasState().automaticApiBuild));
+    assert.deepEqual(f.app.foundation.read().adopted, revised, "rebinding must not revise or resolve the adopted foundation");
+    assert.equal(f.app.programBuilds.overview().jobs.length, builds, "rebinding must not run structural discovery again");
+    const model = f.app.live.overview().models.find(item => item.status === "adopted")!;
+    assert.deepEqual(model.content.foundationRef, { id: revised.id, version: revised.version });
+    assert.deepEqual((model.content.types as any[])[0].fields, (oldModel.content.types as any[])[0].fields);
+    assert.equal((model.content.types as any[])[0].name, "门店");
+    assert.equal((f.app.foundation.view().adopted!.content.concepts as any[])[0].mappingStatus, "bound");
+    assert.equal((await f.app.live.query({ modelId: model.id, conceptId: concept.id })).items[0].name, "东城店");
+    assert.equal(f.calls(), 0);
+  } finally { await f.close(); }
+});
+
+function adoptBusinessConflict(app: AgentApplication) {
+  const before = app.foundation.read().adopted!;
+  const task = app.memory.createTask("记录业务口径差异"), message = app.memory.addMessage(task.id, "user", "系统中的营业状态和资料描述不一致，保留双方依据待核对。");
+  const context = app.memory.beginExecution(task.id);
+  try {
+    const candidate = app.foundation.propose({ baseVersion: before.version, enterprise: before.content.enterprise, concepts: [], relations: [],
+      evidence: [{ id: "status-conflict", messageId: message.id, quote: message.content }], unknowns: [],
+      conflicts: [{ id: "status-conflict", description: "营业状态来源不一致。", evidenceRefs: ["status-conflict"] }],
+    }, context, "status-conflict", "test-method", undefined, { lockStructure: true });
+    return app.foundation.adopt(candidate.id, candidate.version, { automatic: true });
+  } finally { app.memory.endExecution(context); }
+}
+
+test("a failed rebind runs once per baseline, preserves other completed sources, and explicit retry recovers", async () => {
+  const f = await fixture();
+  try {
+    await f.app.live.sources.connect(f.config); await f.app.idle();
+    await f.app.live.sources.connect({ ...f.config, name: "另一业务来源" }); await f.app.idle();
+    const revised = adoptBusinessConflict(f.app);
+    const builds = f.app.programBuilds.overview().jobs.length;
+    f.breakSource(); f.app.startAutomaticBuild(); await f.app.idle();
+    const failed = f.app.canvasState().automaticApiBuild;
+    assert.equal(failed.completed, 1);
+    assert.equal(failed.errors.length, 1);
+    const jobs = f.app.memory.listArtifacts("api_build");
+    f.app.startAutomaticBuild(); await f.app.idle();
+    f.app.startAutomaticBuild(); await f.app.idle();
+    assert.deepEqual(f.app.memory.listArtifacts("api_build"), jobs, "the same failed baseline must not consume another completed source");
+    f.restoreSource(); f.app.retryAutomaticBuild(); await f.app.idle();
+    assert.equal(f.app.canvasState().automaticApiBuild.completed, 2);
+    assert.equal(f.app.canvasState().automaticApiBuild.status, "completed");
+    assert.deepEqual(f.app.foundation.read().adopted, revised);
+    assert.equal(f.app.programBuilds.overview().jobs.length, builds);
+  } finally { await f.close(); }
+});
+
+test("retry recovers persisted rebind-only failures for all still-mapped sources without rediscovery", async () => {
+  const f = await fixture();
+  try {
+    await f.app.live.sources.connect(f.config); await f.app.idle();
+    await f.app.live.sources.connect({ ...f.config, name: "另一业务来源" }); await f.app.idle();
+    const revised = adoptBusinessConflict(f.app), builds = f.app.programBuilds.overview().jobs.length;
+    // The pre-fix queue persisted this state after trying each completed source in turn.
+    for (const job of f.app.memory.listArtifacts("api_build")) f.app.memory.putArtifact({ ...job, expectedVersion: job.version, status: "failed",
+      content: { ...job.content, rebindOnly: true, error: "现有工作版本存在未解决冲突，请通过助手修复后再采用" } });
+    f.app.retryAutomaticBuild(); await f.app.idle();
+    assert.equal(f.app.canvasState().automaticApiBuild.completed, 2);
+    assert.equal(f.app.canvasState().automaticApiBuild.status, "completed");
+    assert.deepEqual(f.app.foundation.read().adopted, revised);
+    assert.equal(f.app.programBuilds.overview().jobs.length, builds);
+    assert.equal(f.app.memory.listArtifacts("api_build").filter(job => job.status === "running").length, 0);
+  } finally { await f.close(); }
+});
+
+test("rebind preserves a usable pending mapping and full structural rebuilds still reject unresolved conflicts", async () => {
+  const f = await fixture();
+  try {
+    await f.app.live.sources.connect(f.config); await f.app.idle();
+    const revised = adoptBusinessConflict(f.app);
+    const model = f.app.live.overview().models.find(item => item.status === "adopted")!;
+    const pending = await f.app.live.propose({ foundationRef: { id: revised.id, version: revised.version }, baseModelRef: { id: model.id, version: model.version },
+      purpose: "人工待审映射", rationale: "采用前保留原映射", types: model.content.types, relations: model.content.relations });
+    f.app.startAutomaticBuild(); await f.app.idle();
+    assert.match(f.app.canvasState().automaticApiBuild.errors[0].message, /待采用的执行映射/);
+    assert.equal(f.app.live.candidate(pending.id, pending.version).id, pending.id);
+    assert.equal(f.app.live.overview().models.find(item => item.status === "adopted")!.id, model.id);
+    const full = await f.app.programBuilds.build({ operationId: "full-with-conflict", autoAdopt: true });
+    assert.notEqual(full.content.outcome, "adopted");
+    assert.match(String((f.app.programBuilds.overview().candidate!.content.checks as any).description), /未解决冲突/);
+    assert.deepEqual(f.app.foundation.read().adopted, revised);
+  } finally { await f.close(); }
+});
+
+test("a rebind whose final source read fails discards only its own candidate and retries after recovery", async () => {
+  const f = await fixture();
+  try {
+    await f.app.live.sources.connect(f.config); await f.app.idle();
+    const revised = adoptBusinessConflict(f.app);
+    f.failAfterReads(2); // Preparing the mapping succeeds; the adoption reread fails.
+    f.app.startAutomaticBuild(); await f.app.idle();
+    assert.equal(f.app.canvasState().automaticApiBuild.status, "failed");
+    assert.equal(f.app.live.overview().models.filter(item => item.status === "discarded").length, 1);
+    assert.equal(f.app.live.overview().models.filter(item => item.status === "candidate").length, 0);
+    f.restoreSource(); f.app.retryAutomaticBuild(); await f.app.idle();
+    assert.equal(f.app.canvasState().automaticApiBuild.status, "completed");
+    assert.deepEqual(f.app.foundation.read().adopted, revised);
+  } finally { await f.close(); }
+});
+
+test("automatic rebinding rejects an adopted structural change instead of extending the old mapping", async () => {
+  const f = await fixture();
+  try {
+    await f.app.live.sources.connect(f.config); await f.app.idle();
+    const before = f.app.foundation.read().adopted!, model = f.app.live.overview().models.find(item => item.status === "adopted")!;
+    const task = f.app.memory.createTask("历史结构修订"), message = f.app.memory.addMessage(task.id, "user", "人员和门店是两个独立概念。");
+    const context = f.app.memory.beginExecution(task.id);
+    try {
+      const candidate = f.app.foundation.propose({ baseVersion: before.version, enterprise: before.content.enterprise,
+        concepts: [{ id: "separate-person", name: "人员", description: "独立的人员记录。", evidenceRefs: ["structure"] }], relations: [],
+        evidence: [{ id: "structure", messageId: message.id, quote: message.content }], unknowns: [], conflicts: [],
+      }, context, "structure", "test-method");
+      f.app.foundation.adopt(candidate.id, candidate.version);
+    } finally { f.app.memory.endExecution(context); }
+    f.app.startAutomaticBuild(); await f.app.idle();
+    assert.equal(f.app.canvasState().automaticApiBuild.status, "failed");
+    assert.match(f.app.canvasState().automaticApiBuild.errors[0].message, /结构已变化/);
+    assert.equal(f.app.live.overview().models.find(item => item.status === "adopted")!.id, model.id);
+  } finally { await f.close(); }
+});
+
+test("rebind coordination follows a narrowed adopted model and never completes a source it no longer covers", async () => {
+  const f = await fixture();
+  try {
+    const retainedSource = await f.app.live.sources.connect(f.config); await f.app.idle();
+    const removedSource = await f.app.live.sources.connect({ ...f.config, name: "销售来源", capabilities: [{ ...f.config.capabilities[0], name: "sales", path: "/sales" }] });
+    await f.app.idle();
+    const model = f.app.live.overview().models.find(item => item.status === "adopted")!;
+    const smaller = await f.app.live.propose({ foundationRef: model.content.foundationRef, baseModelRef: { id: model.id, version: model.version },
+      purpose: "仅保留门店", rationale: "缩小执行范围", types: (model.content.types as any[]).filter(type => type.sourceId === retainedSource.id), relations: [] });
+    await f.app.live.adopt(smaller.id, smaller.version);
+    const revised = adoptBusinessConflict(f.app);
+    f.app.startAutomaticBuild(); await f.app.idle();
+    const rebound = f.app.live.overview().models.find(item => item.status === "adopted")!;
+    assert.deepEqual(rebound.content.foundationRef, { id: revised.id, version: revised.version });
+    assert.equal((rebound.content.types as any[]).length, 1);
+    assert.equal(f.app.memory.listArtifacts("api_build").filter(job => job.status === "running").length, 0);
+
+    const oldJob = f.app.memory.listArtifacts("api_build").find(job => job.content.sourceId === removedSource.id)!;
+    f.app.memory.putArtifact({ ...oldJob, expectedVersion: oldJob.version, status: "failed", content: { ...oldJob.content, rebindOnly: true } });
+    f.app.retryAutomaticBuild(); await f.app.idle();
+    const retried = f.app.memory.getArtifact(oldJob.id);
+    assert.equal(retried.status, "failed");
+    assert.match(String(retried.content.error), /未映射/);
+    assert.equal(f.app.live.overview().models.find(item => item.status === "adopted")!.id, rebound.id);
+  } finally { await f.close(); }
 });
 
 test("HTTP and CSV management endpoints construct without model credentials and preserve results across restart", async () => {

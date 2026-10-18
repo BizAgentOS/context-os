@@ -5,6 +5,7 @@ import type { MemoryStore } from "./memory.ts";
 import type { FoundationService } from "./foundation.ts";
 import { Workspace } from "./workspace.ts";
 import { industryPacks } from "./industry-packs.ts";
+import { isUnknownEnterprise } from "./foundation-evidence.ts";
 
 const companySchema = z.object({
   name: z.string().trim().min(2).max(200), industry: z.string().max(100),
@@ -83,7 +84,8 @@ export class Onboarding {
         throw new Error("官网地址应为不含凭据的 HTTP/HTTPS 地址");
     }
     const current = this.foundation.read().current;
-    if (current && (current.content.enterprise as Data).name !== company.name) throw new Error("已有本体属于另一企业名称，请先在本体工作区处理名称纠正");
+    const enterprise = current?.content.enterprise as Data | undefined;
+    if (enterprise && !isUnknownEnterprise(enterprise) && enterprise.name !== company.name) throw new Error("已有本体属于另一企业名称，请先在本体工作区处理名称纠正");
     this.memory.atomic(() => {
       const workspace = new Workspace(this.memory);
       const values = { "company.name": company.name, "company.industry": pack.name, "company.business": company.business,
@@ -91,7 +93,7 @@ export class Onboarding {
       for (const [key,value] of Object.entries(values)) {
         if (key === "company.business") workspace.clearOptionalProfile("business");
         const existing = (this.memory.listArtifacts("profile")[0]?.content.statements as Data[] | undefined)?.find(item => item.key === key);
-        if (value && existing?.text !== value) workspace.editProfile(key,value);
+        if (value && (existing?.text !== value || (key === "company.name" && existing?.userEdited !== true))) workspace.editProfile(key,value);
         else if (!value && existing) workspace.clearOptionalProfile(key);
       }
       this.save({ ...state, flow: "legacy", company, active: true, step: body.stay === true ? 2 : 3 });

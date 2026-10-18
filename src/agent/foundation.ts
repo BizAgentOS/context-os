@@ -6,6 +6,7 @@ import {
   foundationDocumentTool,
   foundationEvidenceInput,
   verifyFoundationEvidence,
+  isUnknownEnterprise,
   type FoundationEvidence,
 } from "./foundation-evidence.ts";
 import { createHash } from "node:crypto";
@@ -268,8 +269,8 @@ export class FoundationService {
     checkRefs(input.enterprise.evidenceRefs);
     // Program discovery may begin without an enterprise profile. Retaining that
     // explicitly unknown identity must not block an unrelated concept repair.
-    const previousUnknown = previous?.enterprise.name === "未设置企业" && previous.enterprise.evidenceRefs.length === 0;
-    const retainsUnknown = previousUnknown && input.enterprise.name === previous.enterprise.name && input.enterprise.evidenceRefs.length === 0;
+    const previousUnknown = isUnknownEnterprise(previous?.enterprise);
+    const retainsUnknown = previousUnknown && input.enterprise.name === previous?.enterprise.name && input.enterprise.evidenceRefs.length === 0;
     if (
       !retainsUnknown &&
       !input.enterprise.evidenceRefs.some((ref) =>

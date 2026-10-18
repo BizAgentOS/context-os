@@ -24,6 +24,12 @@ export class AutomaticApi {
     for (const job of this.jobs().filter(item => item.status === "running")) this.update(job, "queued", {error: null, recovered: true});
   }
   private jobs() {return this.memory.listArtifacts("api_build");}
+  private covers(model: Artifact, source: Artifact) {
+    const bindings = (model.content.types as Data[]).flatMap(type => [type, ...((type.supplements ?? []) as Data[])]);
+    const mapped = (binding: Data) => source.kind === "source_connection" ? binding.sourceId === source.id
+      : (this.memory.getArtifact(String(binding.sourceId)).content.localSource as Data | undefined)?.id === source.id;
+    return recordCaps(source).every(cap => bindings.some(binding => mapped(binding) && binding.capability === cap.name));
+  }
   private update(job: Artifact, status: string, extra: Data = {}) {
     const current = this.memory.getArtifact(job.id);
     return this.memory.putArtifact({...current, expectedVersion: current.version, status, content: {...current.content, ...extra}});
@@ -35,7 +41,17 @@ export class AutomaticApi {
     this.memory.putArtifact({kind: "api_build", title: source.title, status: "queued", content: {sourceId: source.id, sourceVersion: source.version, attempts: 0, ...(trigger ? {trigger} : {})}});
   }
   enqueueUpload(source: Artifact) { if (source.kind === "source" && source.content.format === "csv") this.enqueue(source); }
-  retry() {for (const job of this.jobs().filter(item => item.status === "failed")) this.update(job, "queued", {error: null});}
+  retry() {
+    let rebindQueued = false;
+    for (const job of this.jobs().filter(item => item.status === "failed")) {
+      const source = this.memory.getArtifact(String(job.content.sourceId));
+      if (source.status !== "ready" || source.version !== job.content.sourceVersion) { this.update(job, "superseded"); continue; }
+      // One complete-model rebind recovers every source it still covers.
+      if (job.content.rebindOnly && rebindQueued) continue;
+      if (job.content.rebindOnly) rebindQueued = true;
+      this.update(job, "queued", {error: null, rebindAttempt: null});
+    }
+  }
   pending() {
     for (const job of this.jobs()) {
       const source = this.memory.getArtifact(String(job.content.sourceId));
@@ -48,10 +64,65 @@ export class AutomaticApi {
     const foundationRef = ref(this.foundation.read().adopted);
     const model = this.live.overview().models.find(item => item.status === "adopted");
     if (foundationRef && model && !same(model.content.foundationRef, foundationRef)) {
-      const completed = this.jobs().find(job => job.status === "completed");
+      const baseline = { foundationRef, modelRef: ref(model) };
+      if (this.jobs().some(job => job.status === "failed" && job.content.rebindOnly && same(job.content.rebindAttempt, baseline))) return undefined;
+      const completed = this.jobs().find(job => job.status === "completed" && this.covers(model, this.memory.getArtifact(String(job.content.sourceId))));
       if (completed) return this.update(completed, "queued", {error: null, rebindOnly: true});
     }
     return undefined;
+  }
+
+  /** Follow an already adopted semantic revision without discovering or changing data structure. */
+  private async rebind(context: WriteContext, operationId: string, assertCurrent: () => void) {
+    const foundation = this.foundation.read().adopted;
+    const model = this.live.overview().models.find(item => item.status === "adopted");
+    if (!foundation || !model || !model.content.foundationRef) throw new Error("没有可重新绑定的已采用本体与执行映射");
+    const priorRef = model.content.foundationRef as Data;
+    const prior = this.memory.getArtifact(String(priorRef.id), Number(priorRef.version));
+    const shape = (artifact: Artifact) => ({ enterprise: (artifact.content.enterprise as Data).name,
+      concepts: (artifact.content.concepts as Data[]).map(item => ({ id: item.id, origin: item.origin, programSource: item.programSource })).sort((a,b) => String(a.id).localeCompare(String(b.id))),
+      relations: (artifact.content.relations as Data[]).map(item => ({ id: item.id, from: item.from, to: item.to })).sort((a,b) => String(a.id).localeCompare(String(b.id))) });
+    if (!same(shape(prior), shape(foundation))) throw new Error("基础本体的企业身份或结构已变化，需要按数据重新构建；不能自动重绑旧映射");
+    for (const conflict of foundation.content.conflicts as Data[]) {
+      if (conflict.resolvedBy || !conflict.retained || !conflict.proposed) continue;
+      const before = conflict.retained as Data, after = conflict.proposed as Data;
+      if (["id", "from", "to", "programSource"].some(key => !same(before[key] ?? null, after[key] ?? null)))
+        throw new Error("未解决冲突涉及本体结构，需要先核对；不能自动重新绑定");
+    }
+    let ownCandidate: string | undefined;
+    const assertValid = () => {
+      assertCurrent();
+      if (!same(ref(this.foundation.read().current), ref(foundation)) || this.foundation.read().current?.status !== "adopted" ||
+          !same(ref(this.live.overview().models.find(item => item.status === "adopted")), ref(model))) throw new Error("本体或执行映射已变化，请重新绑定");
+      if (this.live.overview().models.some(item => item.status === "candidate" && item.id !== ownCandidate && item.canAdopt))
+        throw new Error("已有待采用的执行映射，请先处理该候选；自动重绑不会覆盖它");
+      for (const type of model.content.types as Data[]) for (const binding of [type, ...((type.supplements ?? []) as Data[])])
+        this.live.sources.capability(String(binding.sourceId), String(binding.capability), Number((model.content.connections as Data)[String(binding.sourceId)]));
+    };
+    assertValid();
+    if (same(model.content.foundationRef, ref(foundation))) return { foundation, model };
+    const concepts = foundation.content.concepts as Data[], relations = foundation.content.relations as Data[];
+    const types = (model.content.types as Data[]).map(type => {
+      const concept = concepts.find(item => item.id === type.conceptId)!;
+      return { ...type, name: concept.name, description: concept.description };
+    });
+    const mappedRelations = (model.content.relations as Data[]).map(relation => {
+      const semantic = relations.find(item => item.id === relation.relationId)!;
+      return { ...relation, name: semantic.name, from: concepts.find(item => item.id === semantic.from)!.name, to: concepts.find(item => item.id === semantic.to)!.name };
+    });
+    const candidate = await this.live.propose({ foundationRef: ref(foundation), baseModelRef: ref(model), purpose: model.content.purpose,
+      types, relations: mappedRelations, rationale: "沿已采用本体重新核对原执行映射；保留业务冲突，不更改身份、来源、字段或关联键。" }, context, operationId, assertValid);
+    ownCandidate = candidate.id;
+    try {
+      assertValid();
+      const adopted = await this.live.adopt(candidate.id, candidate.version, save => this.memory.atomic(() => { assertValid(); return save(); }));
+      return { foundation, model: adopted };
+    } catch (error) {
+      const pending = this.memory.getArtifact(candidate.id);
+      if (pending.status === "candidate" && pending.version === candidate.version)
+        this.memory.putArtifact({ ...pending, expectedVersion: pending.version, status: "discarded" });
+      throw error;
+    }
   }
   view(_configured: boolean) {
     const jobs = this.jobs().filter(job => {
@@ -78,9 +149,28 @@ export class AutomaticApi {
     try {
       assertCurrent();
       const attempts = Number(job.content.attempts ?? 0) + 1;
-      this.update(job, "running", {attempts, error: null});
+      this.update(job, "running", {attempts, error: null, ...(job.content.rebindOnly ? { rebindAttempt: { foundationRef: ref(this.foundation.read().adopted), modelRef: ref(this.live.overview().models.find(item => item.status === "adopted")) } } : {})});
       await this.programBuilds.idle();
       assertCurrent();
+      if (job.content.rebindOnly) {
+        const currentModel = this.live.overview().models.find(item => item.status === "adopted");
+        if (!currentModel || !this.covers(currentModel, source)) throw new Error("当前连接仍有记录能力未映射，不能通过重新绑定报告全部生效");
+        const rebound = await this.rebind(context, `rebind:${job.id}:${attempts}`, assertCurrent);
+        assertCurrent();
+        this.memory.atomic(() => {
+          assertCurrent();
+          if (!this.covers(rebound.model, source)) throw new Error("当前连接仍有记录能力未映射，不能报告全部生效");
+          for (const prior of this.jobs().filter(item => item.id === job.id || (item.content.rebindOnly && ["failed", "queued"].includes(item.status)))) {
+            const input = this.memory.getArtifact(String(prior.content.sourceId));
+            if (input.status === "ready" && input.version === prior.content.sourceVersion && this.covers(rebound.model, input))
+              this.update(prior, "completed", {error: null, rebindOnly: false, rebindAttempt: null, modelRef: ref(rebound.model), foundationRef: ref(rebound.foundation)});
+          }
+          this.memory.attachArtifact(context.taskId, rebound.foundation); this.memory.attachArtifact(context.taskId, rebound.model);
+          const message = "已按当前本体重新校验并绑定原有执行映射；未解决的业务冲突继续保留。";
+          this.memory.addMessage(context.taskId, "assistant", message); this.memory.complete(context, [rebound.foundation.id, rebound.model.id], message);
+        });
+        return;
+      }
       const run = await this.programBuilds.build({operationId: `api:${job.id}:${attempts}`, sourceIds: [source.id], autoAdopt: true}, assertCurrent);
       assertCurrent();
       this.update(job, "running", {engineJobRef: ref(run)});
