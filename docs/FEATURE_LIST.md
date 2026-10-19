@@ -1,6 +1,8 @@
 # DataEngine Feature List
 
-Last Updated: 2026-10-17
+Last Updated: 2026-10-19
+
+**2026-10-19 v0.3.0 规划登记：**用户确认 Fabric IQ 对照与产品全面体检后的方向，将全部改进定义为开发版本 v0.3.0，登记 FEATURE_036—068（33 项，分 M0 清理与对齐、M1 核心闭环、M2 问答、M3 数据接入、M4 试点准入五个里程碑）。目标设计见 [v0.3.0 目标产品蓝图](features/v0.3.0-blueprint.md)，Feature、票与依赖见 [v0.3.0 设计与任务](features/v0.3.0.md)。本次只登记范围与拆票，全部为 Planned，未开工、未改代码、未改变既有 Feature 状态或版本号。
 
 **2026-10-17 修复补记（未发布）：**在 v0.2.3 基线上处理 [ISSUE-001—012](ISSUES.md)：运行结束交付、同一运行候选版本、场景/弹窗反馈与引用、旧解读结构迁移、发现/命名待核对，以及行业包仅作名称说明参考；恢复 14 项程序结构后的资料修订测试。验证范围与未完成的浏览器/全量结果见[本轮验收](experiment/ISSUES_2026_10_17.md)。没有新建 Feature、调整既有完成/首次发布状态、更新版本号或发布 Tag；ISSUE-013 仍需用户处理凭据与额度。
 
@@ -21,10 +23,10 @@ Last Updated: 2026-10-17
 ## Version Info
 
 - **Current Release:** v0.2.3（2026-10-16，本地 Tag `v0.2.3`）。v0.2.2 于 2026-10-15 发布（本地 Tag `v0.2.2`）。v0.2.0 于 2026-10-14 发布（提交 `930b10e`，Tag `v0.2.0`）。
-- **Planned Version:** 下一版本待定。v0.1.0 保留历史功能与验收记录。
+- **Planned Version:** v0.3.0（2026-10-19 登记，FEATURE_036—068，全部 Planned）。v0.1.0 保留历史功能与验收记录。
 - **版本状态:** 计划于 v0.2.0 的 11 项全部完成：025—030 随 v0.2.0 发布，031—035 随 v0.2.1 发布；v0.2.2 为这些能力的修复发布。v0.1.0 未单独发布，002、004、005、006、019 仍未完成，继续保留。
 - **状态规则:** `Planned → InProgress → Completed`；`Released` 仅填写实际发布版本。
-- **设计:** [v0.2.0 设计与开发步骤](features/v0.2.0.md)；[v0.1.0 历史](features/v0.1.0.md)。
+- **设计:** [v0.3.0 设计与任务](features/v0.3.0.md)及[目标产品蓝图](features/v0.3.0-blueprint.md)；[v0.2.0 设计与开发步骤](features/v0.2.0.md)；[v0.1.0 历史](features/v0.1.0.md)。
 - **范围:** [产品目标](PRODUCT.md)与 [MVP 目标](MVP.md)。
 
 ## Version Summary
@@ -33,6 +35,7 @@ Last Updated: 2026-10-17
 |---|---|---:|---:|---:|---:|
 | v0.1.0 | InProgress | 2 | 3 | 19 | 19/24 |
 | v0.2.0 | Released | 0 | 0 | 11 | 11/11 |
+| v0.3.0 | Planned | 33 | 0 | 0 | 0/33 |
 
 本表按计划批次统计。v0.2.2 为已发布能力的 PATCH 修复版本，不新增或重复计算 Feature。
 
@@ -79,6 +82,39 @@ Last Updated: 2026-10-17
 | 033 | 执行验证与 Agent 辅助构建 | Enhancement | High | Completed | v0.2.0 | 032 | [设计](features/v0.2.0.md#feature-033) |
 | 034 | 发布锁定数据与快照消费 | Enhancement | High | Completed | v0.2.0 | 031、033 | [设计](features/v0.2.0.md#feature-034) |
 | 035 | 快照三页界面与整链验收 | Enhancement | High | Completed | v0.2.0 | 031—034 | [设计](features/v0.2.0.md#feature-035) |
+| 036 | 主文档、ADR 与提示词对齐 | Internal | High | Planned | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-036) |
+| 037 | 界面去内部化与交互止血 | Enhancement | High | Planned | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-037) |
+| 038 | 读取合同对齐 | Enhancement | High | Planned | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-038) |
+| 039 | 冻结旧消费接口 | Refactor | High | Planned | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-039) |
+| 040 | 分层语义模型 | Refactor | High | Planned | v0.3.0 | 036 | [设计](features/v0.3.0.md#feature-040) |
+| 041 | 统一变更流程与自动采用规则 | Enhancement | High | Planned | v0.3.0 | 040 | [设计](features/v0.3.0.md#feature-041) |
+| 042 | 关系发现修复与身份对应 | Enhancement | High | Planned | v0.3.0 | 040、041 | [设计](features/v0.3.0.md#feature-042) |
+| 043 | 文档补充、证据库与待裁决 | Enhancement | High | Planned | v0.3.0 | 041、044 | [设计](features/v0.3.0.md#feature-043) |
+| 044 | 待处理中心 | New | High | Planned | v0.3.0 | 041；界面依赖 048 | [设计](features/v0.3.0.md#feature-044) |
+| 045 | 首次构建批量业务命名 | New | High | Planned | v0.3.0 | 041、044、047 | [设计](features/v0.3.0.md#feature-045) |
+| 046 | Agent 面板与结构化消息 | Enhancement | High | Planned | v0.3.0 | 036、041、049 | [设计](features/v0.3.0.md#feature-046) |
+| 047 | 会话、上下文与执行分池 | Enhancement | High | Planned | v0.3.0 | 036、037 | [设计](features/v0.3.0.md#feature-047) |
+| 048 | 构建模式与工具收敛 | Refactor | High | Planned | v0.3.0 | 041、046 | [设计](features/v0.3.0.md#feature-048) |
+| 049 | 事件推送与前端模块化 | Refactor | High | Planned | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-049) |
+| 050 | 本体页重构 | Enhancement | High | Planned | v0.3.0 | 040、044、046 | [设计](features/v0.3.0.md#feature-050) |
+| 051 | 查询层扩展与执行资源 | Enhancement | High | Planned | v0.3.0 | 038、040 | [设计](features/v0.3.0.md#feature-051) |
+| 052 | 问答模式与回答卡 | New | High | Planned | v0.3.0 | 046、047、051 | [设计](features/v0.3.0.md#feature-052) |
+| 053 | 答案联动可视化 | New | High | Planned | v0.3.0 | 050、052 | [设计](features/v0.3.0.md#feature-053) |
+| 054 | 缺口单与问答到修复交接 | New | High | Planned | v0.3.0 | 044、048、052 | [设计](features/v0.3.0.md#feature-054) |
+| 055 | 发布与接入页重构与对外接口扩展 | Enhancement | High | Planned | v0.3.0 | 039、041、051、052 | [设计](features/v0.3.0.md#feature-055) |
+| 056 | 首次使用流程 | Enhancement | High | Planned | v0.3.0 | 045、052 | [设计](features/v0.3.0.md#feature-056) |
+| 057 | 表格文件接入 | Enhancement | High | Planned | v0.3.0 | 037 | [设计](features/v0.3.0.md#feature-057) |
+| 058 | 只读数据库连接器 | New | High | Planned | v0.3.0 | 037 | [设计](features/v0.3.0.md#feature-058) |
+| 059 | API 连接器增强 | Enhancement | High | Planned | v0.3.0 | 037 | [设计](features/v0.3.0.md#feature-059) |
+| 060 | 定时与增量同步、质量熔断 | New | High | Planned | v0.3.0 | 041、044 | [设计](features/v0.3.0.md#feature-060) |
+| 061 | 数据页重构 | Enhancement | High | Planned | v0.3.0 | 037、060 | [设计](features/v0.3.0.md#feature-061) |
+| 062 | 飞书多维表格与 PDF/DOCX | Enhancement | High | Planned | v0.3.0 | 043、060 | [设计](features/v0.3.0.md#feature-062) |
+| 063 | 凭据加密、数据保留与备份恢复 | Enhancement | High | Planned | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-063) |
+| 064 | 成本上限与角色权限 | New | High | Planned | v0.3.0 | 041、046 | [设计](features/v0.3.0.md#feature-064) |
+| 065 | 指标引用 | New | High | Planned | v0.3.0 | 040、041、052 | [设计](features/v0.3.0.md#feature-065) |
+| 066 | 持久层优化与规模验收集 | Internal | High | Planned | v0.3.0 | 040、057—060 | [设计](features/v0.3.0.md#feature-066) |
+| 067 | 演示与分享走正式路径、旧接口下线 | Refactor | High | Planned | v0.3.0 | 039、049、050 | [设计](features/v0.3.0.md#feature-067) |
+| 068 | v0.3.0 整链验收 | Internal | High | Planned | v0.3.0 | 036—067 | [设计](features/v0.3.0.md#feature-068) |
 
 此表保留已有能力与票的实际完成记录，计数不代表新 MVP 体验的完成比例。本轮按 [MVP 完成条件](MVP.md)及 FEATURE_012—016 的任务依赖验收。006、远程 MCP 服务和旧票中尚未覆盖的完整回归/恢复保留为后续工作，不因范围调整标为完成。
 
@@ -474,3 +510,333 @@ Last Updated: 2026-10-17
 - **Description:** 数据、本体、发布三页展示快照、发现依据、验证与数据差异，完成整链和浏览器验收。
 - **Blocked by:** 031—034
 - **Design:** [FEATURE_035](features/v0.2.0.md#feature-035)。
+
+### 036: 主文档、ADR 与提示词对齐
+
+- **Status:** Planned
+- **Category / Priority:** Internal / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 主文档按蓝图同步，新增 ADR-005—008；提示词按身份/通用规则重写，清理冲突 Skill，增加提示词—工具—页面名称一致性检查。
+- **Blocked by:** 无。
+- **Design:** [FEATURE_036](features/v0.3.0.md#feature-036)。
+
+### 037: 界面去内部化与交互止血
+
+- **Status:** Planned
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 开发者视图之外不显示 JSON、UUID 与内部字段；三页共用来源投影；删除口令采用；对话历史不再物理删除；修正发布页引导。
+- **Blocked by:** 无。
+- **Design:** [FEATURE_037](features/v0.3.0.md#feature-037)。
+
+### 038: 读取合同对齐
+
+- **Status:** Planned
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 工作区默认读已采用快照，实时为显式选择；结果附读取模式、版本、数据截至与覆盖；工具说明由执行合同生成。
+- **Blocked by:** 无。
+- **Design:** [FEATURE_038](features/v0.3.0.md#feature-038)。
+
+### 039: 冻结旧消费接口
+
+- **Status:** Planned
+- **Category / Priority:** Refactor / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** v1/v2/v3 与旧数据集工作台冻结为只读，对外只保留发布 + 接入方 + v4/MCP；移除 Agent 旧接入工具。
+- **Blocked by:** 无。
+- **Design:** [FEATURE_039](features/v0.3.0.md#feature-039)。
+
+### 040: 分层语义模型
+
+- **Status:** Planned
+- **Category / Priority:** Refactor / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 语义层（实体、属性、关系类型）与绑定层分离，稳定 ID、复合身份、中间表；存量迁移，旧发布可读。
+- **Blocked by:** 036。
+- **Design:** [FEATURE_040](features/v0.3.0.md#feature-040)。
+
+### 041: 统一变更流程与自动采用规则
+
+- **Status:** Planned
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 程序/人/Agent 变更统一提议、复验、采用；拒绝指纹；自动采用只限首次构建与同结构重绑；工作版组合；治理决定进入发布。
+- **Blocked by:** 040。
+- **Design:** [FEATURE_041](features/v0.3.0.md#feature-041)。
+
+### 042: 关系发现修复与身份对应
+
+- **Status:** Planned
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 修复唯一外键、责任字段、自引用发现；身份规则 same_as/belongs_to 与记录级决定；去冗余与活动流改为提议。
+- **Blocked by:** 040、041。
+- **Design:** [FEATURE_042](features/v0.3.0.md#feature-042)。
+
+### 043: 文档补充、证据库与待裁决
+
+- **Status:** Planned
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 文档按批次产生一个工作版；依据外置证据库；冲突与未知进入待裁决；取消整体拒绝上限。
+- **Blocked by:** 041、044。
+- **Design:** [FEATURE_043](features/v0.3.0.md#feature-043)。
+
+### 044: 待处理中心
+
+- **Status:** Planned
+- **Category / Priority:** New / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 结构变更、命名、待裁决、缺口、数据问题集中为一个队列，服务端统一计数，取代分散采用入口。
+- **Blocked by:** 041；界面依赖 048。
+- **Design:** [FEATURE_044](features/v0.3.0.md#feature-044)。
+
+### 045: 首次构建批量业务命名
+
+- **Status:** Planned
+- **Category / Priority:** New / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 首次构建后由 Agent 提出整套中文名称、别名与说明，作为一项命名变更由用户确认。
+- **Blocked by:** 041、044、047。
+- **Design:** [FEATURE_045](features/v0.3.0.md#feature-045)。
+
+### 046: Agent 面板与结构化消息
+
+- **Status:** Planned
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 三页统一面板；执行卡、变更清单、决定卡、Markdown；停止与超时部分完成回执；成本显示。
+- **Blocked by:** 036、041、049。
+- **Design:** [FEATURE_046](features/v0.3.0.md#feature-046)。
+
+### 047: 会话、上下文与执行分池
+
+- **Status:** Planned
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 会话长期保存；模型上下文由摘要与近期窗口组成并设上限；交互与后台分池；页面状态前端化。
+- **Blocked by:** 036、037。
+- **Design:** [FEATURE_047](features/v0.3.0.md#feature-047)。
+
+### 048: 构建模式与工具收敛
+
+- **Status:** Planned
+- **Category / Priority:** Refactor / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 工具按模式选择；统一提议、复验、预览、待处理、决定工具；Agent 只提议不采用结构；下线旧工具。
+- **Blocked by:** 041、046。
+- **Design:** [FEATURE_048](features/v0.3.0.md#feature-048)。
+
+### 049: 事件推送与前端模块化
+
+- **Status:** Planned
+- **Category / Priority:** Refactor / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** SSE 事件替代全量轮询与整页重建；前端拆分模块；删除旧四页渲染路径。
+- **Blocked by:** 无。
+- **Design:** [FEATURE_049](features/v0.3.0.md#feature-049)。
+
+### 050: 本体页重构
+
+- **Status:** Planned
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 图 + 详情侧栏 + 待处理队列；首屏待处理与下一步；删除四个弹窗入口；图状态编码与业务化详情。
+- **Blocked by:** 040、044、046。
+- **Design:** [FEATURE_050](features/v0.3.0.md#feature-050)。
+
+### 051: 查询层扩展与执行资源
+
+- **Status:** Planned
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 过滤、排序、多跳、自引用路径、聚合由语义层编译执行；快照读取接入执行器；补充来源批量匹配。
+- **Blocked by:** 038、040。
+- **Design:** [FEATURE_051](features/v0.3.0.md#feature-051)。
+
+### 052: 问答模式与回答卡
+
+- **Status:** Planned
+- **Category / Priority:** New / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 只读问答工具与三种数据视图；结构化回答卡与答不出原因；本体页默认问答；建议切换卡。
+- **Blocked by:** 046、047、051。
+- **Design:** [FEATURE_052](features/v0.3.0.md#feature-052)。
+
+### 053: 答案联动可视化
+
+- **Status:** Planned
+- **Category / Priority:** New / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 回答驱动本体图与详情侧栏：路径高亮、结果集、聚合分组、缺失关系标记。
+- **Blocked by:** 050、052。
+- **Design:** [FEATURE_053](features/v0.3.0.md#feature-053)。
+
+### 054: 缺口单与问答到修复交接
+
+- **Status:** Planned
+- **Category / Priority:** New / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 问答答不出时创建缺口单，转构建模式修复，采用后问答复问确认。
+- **Blocked by:** 044、048、052。
+- **Design:** [FEATURE_054](features/v0.3.0.md#feature-054)。
+
+### 055: 发布与接入页重构与对外接口扩展
+
+- **Status:** Planned
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 差异按对象列出；检查规则；接入方流程与试问；对外 MCP 增加遍历、聚合、检索。
+- **Blocked by:** 039、041、051、052。
+- **Design:** [FEATURE_055](features/v0.3.0.md#feature-055)。
+
+### 056: 首次使用流程
+
+- **Status:** Planned
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 模型 → 来源 → 构建 → 命名 → 本体页 → 示例问题，10 分钟内得到第一个正确答案。
+- **Blocked by:** 045、052。
+- **Design:** [FEATURE_056](features/v0.3.0.md#feature-056)。
+
+### 057: 表格文件接入
+
+- **Status:** Planned
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** Excel 多 sheet、多编码与多分隔符 CSV，上传上限提高到 100MB。
+- **Blocked by:** 037。
+- **Design:** [FEATURE_057](features/v0.3.0.md#feature-057)。
+
+### 058: 只读数据库连接器
+
+- **Status:** Planned
+- **Category / Priority:** New / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** MySQL、PostgreSQL 只读连接，选择表接入并形成快照。
+- **Blocked by:** 037。
+- **Design:** [FEATURE_058](features/v0.3.0.md#feature-058)。
+
+### 059: API 连接器增强
+
+- **Status:** Planned
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 分页策略、OAuth2 令牌刷新、嵌套展开、内网放行、有限重试、MCP 目录分页。
+- **Blocked by:** 037。
+- **Design:** [FEATURE_059](features/v0.3.0.md#feature-059)。
+
+### 060: 定时与增量同步、质量熔断
+
+- **Status:** Planned
+- **Category / Priority:** New / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 按周期自动同步，增量、断点续传与重试；质量异常的新快照不生效并进入待处理。
+- **Blocked by:** 041、044。
+- **Design:** [FEATURE_060](features/v0.3.0.md#feature-060)。
+
+### 061: 数据页重构
+
+- **Status:** Planned
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 按表格/文档/指标分类，三档状态、一个主动作、数据截至；详情一步可见字段与样本。
+- **Blocked by:** 037、060。
+- **Design:** [FEATURE_061](features/v0.3.0.md#feature-061)。
+
+### 062: 飞书多维表格与 PDF/DOCX
+
+- **Status:** Planned
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 飞书多维表格作为表格来源；PDF、DOCX 作为文档来源。
+- **Blocked by:** 043、060。
+- **Design:** [FEATURE_062](features/v0.3.0.md#feature-062)。
+
+### 063: 凭据加密、数据保留与备份恢复
+
+- **Status:** Planned
+- **Category / Priority:** Enhancement / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 凭据统一加密保存；快照与原文保留策略；一键备份与恢复。
+- **Blocked by:** 无。
+- **Design:** [FEATURE_063](features/v0.3.0.md#feature-063)。
+
+### 064: 成本上限与角色权限
+
+- **Status:** Planned
+- **Category / Priority:** New / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 模型用量与上限；决定记录操作者；管理员、维护者、查看者三种角色。
+- **Blocked by:** 041、046。
+- **Design:** [FEATURE_064](features/v0.3.0.md#feature-064)。
+
+### 065: 指标引用
+
+- **Status:** Planned
+- **Category / Priority:** New / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 指标挂到实体与属性，问答与对外可读指标并说明口径与版本。
+- **Blocked by:** 040、041、052。
+- **Design:** [FEATURE_065](features/v0.3.0.md#feature-065)。
+
+### 066: 持久层优化与规模验收集
+
+- **Status:** Planned
+- **Category / Priority:** Internal / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 成果索引与大内容外置；发现过程优化；企业真实形态规模验收集作为发布门槛。
+- **Blocked by:** 040、057—060。
+- **Design:** [FEATURE_066](features/v0.3.0.md#feature-066)。
+
+### 067: 演示与分享走正式路径、旧接口下线
+
+- **Status:** Planned
+- **Category / Priority:** Refactor / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 演示与离线分享使用正式渲染；经用户确认后移除 v1/v2/v3 接口。
+- **Blocked by:** 039、049、050。
+- **Design:** [FEATURE_067](features/v0.3.0.md#feature-067)。
+
+### 068: v0.3.0 整链验收
+
+- **Status:** Planned
+- **Category / Priority:** Internal / High
+- **Planned / Released:** v0.3.0 / —
+- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Description:** 星桥与留出样本整链验收，记录成功指标基线与未覆盖项。
+- **Blocked by:** 036—067。
+- **Design:** [FEATURE_068](features/v0.3.0.md#feature-068)。
