@@ -1,4 +1,5 @@
 import { historicalConsumption, LegacyConsumptionFrozen } from "../live/legacy-consumption.ts";
+import { sourceSummary } from "./source-summary.ts";
 import {ConsumerMigrations} from "../live/consumer-migrations.ts";
 import { OpenApiImports } from "../live/openapi-import.ts";
 import {ConsumerViews} from "../live/consumer-views.ts";
@@ -278,6 +279,7 @@ export async function createServer(
           );
       }
       if (request.method === "GET") {
+        if (url.pathname === "/api/sources/summary") { send(200, sourceSummary(app.memory)); return; }
         if (url.pathname === "/api/engine") { send(200, app.programBuilds.overview()); return; }
         if (url.pathname === "/api/data") { send(200, app.snapshots.overview()); return; }
         if (url.pathname === "/api/data/preview") {
@@ -319,6 +321,10 @@ export async function createServer(
               url.searchParams.get("evidenceId") ?? "",
             ),
           );
+          return;
+        }
+        if (url.pathname === "/api/canvas/messages") {
+          send(200, app.canvasMessages(url.searchParams));
           return;
         }
         if (url.pathname === "/api/canvas/history") {

@@ -48,7 +48,7 @@ test("separate A to B to A writes stay distinct while consecutive retries return
   }
 });
 
-test("an explicit chat adoption uses the waiting version; stale adoption keeps the pending decision", async () => {
+test("free text never adopts a waiting candidate; explicit decisions validate the waiting version", async () => {
   const directory = mkdtempSync(join(tmpdir(), "dataengine-adoption-"));
   let candidate: Artifact;
   let asking = true;
@@ -103,33 +103,16 @@ test("an explicit chat adoption uses the waiting version; stale adoption keeps t
     }) as unknown as Artifact;
     const first = await app.message({ text: "检查模型" });
     await app.idle();
-    asking = false;
-    await assert.rejects(
-      app.message({
-        taskId: first.task.id,
-        text: "采用这版",
-        focusId: draft.id,
-        focusVersion: draft.version,
-      }),
-      /当前引用.*待决定/,
-    );
-    assert.equal(app.state().task?.status, "waiting");
+    await app.message({ taskId: first.task.id, text: "采用这版", messageId: "chat-is-not-a-decision" });
+    await app.idle();
     assert.equal(app.memory.getArtifact(candidate.id).status, "candidate");
-    await app.message({
-      taskId: first.task.id,
-      text: "采用这版",
-      messageId: "adopt-once",
-    });
+    await assert.rejects(app.decision({ taskId: first.task.id, candidateId: candidate.id, version: draft.version, decision: "adopt" }), /当前等待/);
+    assert.equal(app.state().task?.status, "waiting");
+    asking = false;
+    await app.decision({ taskId: first.task.id, candidateId: candidate.id, version: candidate.version, decision: "adopt" });
     await app.idle();
     const adopted = app.memory.getArtifact(candidate.id);
     assert.equal(adopted.status, "adopted");
-    await app.message({
-      taskId: first.task.id,
-      text: "采用这版",
-      messageId: "adopt-once",
-    });
-    await app.idle();
-    assert.equal(app.memory.getArtifact(candidate.id).version, adopted.version);
     workspace.upload("tickets.csv", "id,status\nT1,open\nT2,closed\n");
     const objects = app.objectDetails(
       new URLSearchParams({

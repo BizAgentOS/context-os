@@ -1,8 +1,9 @@
+import { safeText, displayValue, technicalDetails } from "./ui-display.js";
 import { renderFusionEvidence, createSupplementEditor } from "./fusion.js";
 const el = (tag, text, cls = "") => {
   const node = document.createElement(tag);
   node.className = cls;
-  if (text !== undefined) node.textContent = text;
+  if (text !== undefined) node.textContent = safeText(text);
   return node;
 };
 const button = (text, action) => {
@@ -47,7 +48,7 @@ export function previewBinding(concept, binding, api) {
       output.replaceChildren(
         el(
           "p",
-          `${binding.status === "adopted" ? "已采用映射" : "候选预览"} · 概念 ${ref.conceptId} · 基础版本 ${ref.foundationVersion}`,
+          `${binding.status === "adopted" ? "已采用映射" : "候选预览"} · 业务对象 · 本体版本 ${ref.foundationVersion}`,
           "source-meta",
         ),
       );

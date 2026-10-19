@@ -1,10 +1,11 @@
+import { safeText } from "./ui-display.js";
 const SVG_NS = "http://www.w3.org/2000/svg";
 let graphSequence = 0;
 
 function element(tag, className, text) {
   const item = document.createElement(tag);
   item.className = className;
-  if (text !== undefined) item.textContent = text;
+  if (text !== undefined) item.textContent = safeText(text);
   return item;
 }
 
@@ -298,7 +299,7 @@ export function createMemoryGraph({
       const label = element("button", "memory-graph-relation", edge.label);
       label.type = "button";
       label.dataset.edgeId = String(edge.id);
-      label.title = `${nodeById.get(edge.from).label} → ${edge.label} → ${nodeById.get(edge.to).label}`;
+      label.title = safeText(`${nodeById.get(edge.from).label} → ${edge.label} → ${nodeById.get(edge.to).label}`);
       label.setAttribute("aria-label", `查看关系 ${label.title}`);
       label.style.left = `${labelPoint.x}px`;
       label.style.top = `${labelPoint.y}px`;
@@ -335,7 +336,7 @@ export function createMemoryGraph({
     if (node.kind) button.dataset.kind = node.kind;
     button.style.left = `${point.x}px`;
     button.style.top = `${point.y}px`;
-    button.title = [node.label, node.subtitle].filter(Boolean).join(" · ");
+    button.title = safeText([node.label, node.subtitle].filter(Boolean).join(" · "));
     button.setAttribute("aria-label", `查看 ${button.title}`);
     button.append(element("span", "memory-graph-node-label", node.label));
     if (node.subtitle)

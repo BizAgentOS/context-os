@@ -502,6 +502,19 @@ export class MemoryStore implements Repository {
       .map((row) => parse<Message>(row));
   }
 
+  /** Stable backward pagination; model context retention is independent of storage. */
+  messagePage(taskId: string, { before, limit = 40 }: { before?: string; limit?: number } = {}) {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
+      throw new Error("无效的消息分页大小");
+    const cursor = before ? this.db.prepare("SELECT rowid FROM messages WHERE id=? AND task_id=?").get(before, taskId) as { rowid: number } | undefined : undefined;
+    if (before && !cursor) throw new Error("消息分页位置不存在或属于其他会话");
+    const rows = cursor
+      ? this.db.prepare("SELECT body FROM messages WHERE task_id=? AND rowid<? ORDER BY rowid DESC LIMIT ?").all(taskId, cursor.rowid, limit + 1)
+      : this.db.prepare("SELECT body FROM messages WHERE task_id=? ORDER BY rowid DESC LIMIT ?").all(taskId, limit + 1);
+    const messages = rows.slice(0, limit).map(row => parse<Message>(row)).reverse();
+    return { messages, nextBefore: rows.length > limit ? messages[0].id : null };
+  }
+
   trimMessages(taskId: string, limit = 12, characterLimit = 12000): Message[] {
     const messages = this.messages(taskId);
     let count = 0;
@@ -514,10 +527,6 @@ export class MemoryStore implements Repository {
       count++;
       size += message.content.length;
     }
-    const ids = new Set(retained.map((message) => message.id));
-    const remove = this.db.prepare("DELETE FROM messages WHERE id=?");
-    for (const message of messages)
-      if (!ids.has(message.id)) remove.run(message.id);
     return retained;
   }
 

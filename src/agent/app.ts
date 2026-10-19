@@ -1,6 +1,7 @@
 import { freezeLegacyConsumption } from "../live/legacy-consumption.ts";
 import { z } from "zod";
 import { readingDescription, workspaceReadModeSchema } from "../live/reading-contract.ts";
+import { sourceSummary } from "./source-summary.ts";
 import {ConsumerMigrations,consumerMigrationTools} from "../live/consumer-migrations.ts";
 import {ConsumerViews,consumerViewTools} from "../live/consumer-views.ts";
 import { MappingChanges, mappingChangeTools } from "../live/mapping-changes.ts";
@@ -263,7 +264,7 @@ export class AgentApplication {
       task,
       tasks,
       artifacts: this.memory.listArtifacts(),
-      messages: task ? this.memory.messages(task.id) : [],
+      messages: task ? this.memory.messagePage(task.id).messages : [],
       events: task ? this.memory.events(task.id) : [],
       busy: !!this.active || this.modelTest,
       streaming: task?.id === this.active?.context.taskId ? this.streaming : "",
@@ -723,6 +724,16 @@ export class AgentApplication {
     };
   }
 
+  canvasMessages(params: URLSearchParams) {
+    const page = this.canvasPage(params.get("page") ?? undefined);
+    const taskId = this.canvasProgress().taskIds[page];
+    if (!taskId) return { messages: [], nextBefore: null };
+    return this.memory.messagePage(taskId, {
+      before: params.get("before") ?? undefined,
+      limit: Number(params.get("limit") ?? 40),
+    });
+  }
+
   canvasState(value?: unknown) {
     const page = this.canvasPage(value);
     const progress = this.canvasProgress();
@@ -761,7 +772,7 @@ export class AgentApplication {
       streaming: task?.id === this.active?.context.taskId ? this.streaming : "",
       messages: task
         ? this.memory
-            .messages(task.id)
+            .messagePage(task.id).messages
             .map(({ id, role, content, workContext }) => ({
               id,
               role,
@@ -769,6 +780,7 @@ export class AgentApplication {
               ...(workContext ? { workContext } : {}),
             }))
         : [],
+      messagePage: task ? { nextBefore: this.memory.messagePage(task.id).nextBefore } : { nextBefore: null },
       prompt: String(
         pending?.question ??
           (!this.model().configured
@@ -788,6 +800,7 @@ export class AgentApplication {
       verifications: this.memory.listArtifacts("verification"),
       live: this.live.overview(),
       sourcePolicies: this.memory.listArtifacts("source_policy"),
+      sourceSummary: sourceSummary(this.memory),
       sourcePolicyFields: Object.fromEntries(
         sources.map((source) => [
           source.id,
@@ -954,72 +967,6 @@ export class AgentApplication {
         throw new Error("消息标识已使用");
       return this.canvasState();
     }
-    if (
-      task.pending?.foundationId &&
-      /^(?:采用这版|采用这版基础定义|确认采用|采用当前候选|采用这个候选|我确认采用这版)[。！!]?$/u.test(
-        text,
-      )
-    ) {
-      const selected = workContext?.target?.ref ?? focus;
-      if (
-        selected &&
-        (selected.id !== task.pending.foundationId ||
-          selected.version !== task.pending.version)
-      )
-        throw new Error("当前引用与待决定的基础版本不同，请重新查看");
-      return this.canvasFoundationAdopt(
-        {
-          page,
-          id: task.pending.foundationId,
-          version: task.pending.version,
-        },
-        { id: messageId, text, binding, workContext },
-      );
-    }
-    if (
-      task.pending?.candidateId &&
-      /^(?:采用这版|确认采用|采用当前候选|采用这个候选|我确认采用这版)[。！!]?$/u.test(
-        text,
-      )
-    ) {
-      const selected = workContext?.target?.ref ?? focus;
-      if (
-        selected &&
-        (selected.id !== task.pending.candidateId ||
-          selected.version !== task.pending.version)
-      )
-        throw new Error(
-          "当前引用与待决定的候选版本不同，请打开具体候选后再决定",
-        );
-      await this.stopActive("正在保存你的决定。");
-      if (
-        this.memory.getArtifact(String(task.pending.candidateId)).kind ===
-        "live_ontology"
-      )
-        return this.canvasDecision(
-          {
-            page,
-            candidateId: task.pending.candidateId,
-            version: task.pending.version,
-            decision: "adopt",
-          },
-          { id: messageId, text, binding, workContext },
-        );
-      this.memory.addMessage(
-        task.id,
-        "user",
-        text,
-        messageId,
-        binding,
-        workContext,
-      );
-      return this.canvasDecision({
-        page,
-        candidateId: task.pending.candidateId,
-        version: task.pending.version,
-        decision: "adopt",
-      });
-    }
     await this.stopActive("已收到新的输入。");
     if (body.refreshSources === true)
       this.memory.clearInvestigation(
@@ -1114,6 +1061,7 @@ export class AgentApplication {
       workContext?: ResolvedWorkContext;
     },
   ): Promise<ReturnType<AgentApplication["canvasState"]>> {
+    if (!message && body.messageId !== undefined) message = { id: string(body.messageId, "消息标识"), text: "采用这版本体。" };
     if (this.modelTest) throw new Error("正在测试连接，请稍后处理");
     const page = this.canvasPage(body.page);
     const candidateId = string(body.candidateId, "候选");
@@ -1219,6 +1167,7 @@ export class AgentApplication {
     )
       throw new Error("请在企业与数据或本体工作区查看该候选");
     if (this.modelTest) throw new Error("正在测试连接，请稍后处理");
+    if (!message && body.messageId !== undefined) message = { id: string(body.messageId, "消息标识"), text: "采用这版基础定义。" };
     const id = string(body.id, "基础候选");
     const version = Number(body.version);
     await this.stopActive("正在保存你的基础定义决定。");
@@ -1462,35 +1411,12 @@ export class AgentApplication {
       typeof body.taskId === "string"
         ? this.memory.getTask(body.taskId)
         : this.memory.createTask(text.slice(0, 160));
-    const adoptsCandidate =
-      task.pending?.candidateId &&
-      /^(?:采用这版|确认采用|采用当前候选|采用这个候选|我确认采用这版)[。！!]?$/u.test(
-        text,
-      );
-    if (
-      adoptsCandidate &&
-      focus &&
-      (focus.id !== task.pending!.candidateId ||
-        focus.version !== task.pending!.version)
-    ) {
-      const reason = "当前引用与待决定的候选版本不同，请打开具体候选后再决定";
-      this.memory.restoreWaiting(task.id, task.pending!, reason);
-      throw new Error(reason);
-    }
     const message = this.memory.addMessage(task.id, "user", text, messageId);
     if (text === "使用最新资料继续") {
       this.memory.clearInvestigation(
         task.id,
         "用户明确要求使用最新资料与本体继续。",
       );
-    }
-    if (adoptsCandidate && task.pending) {
-      return this.decision({
-        taskId: task.id,
-        candidateId: task.pending.candidateId,
-        version: task.pending.version,
-        decision: "adopt",
-      });
     }
     if (!this.model().configured) {
       this.memory.pauseTask(task.id, "请先配置模型，消息和资料已保存。");

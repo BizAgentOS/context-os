@@ -1,7 +1,9 @@
+import { safeText, fieldLabel } from "./ui-display.js";
+
 const el = (tag, text, cls = "") => {
   const n = document.createElement(tag);
   n.className = cls;
-  if (text !== undefined) n.textContent = text;
+  if (text !== undefined) n.textContent = safeText(text);
   return n;
 };
 const button = (text, fn) => {
@@ -47,14 +49,14 @@ export function renderFusionEvidence(evidence) {
     for (const [field, cell] of Object.entries(object.properties)) {
       const card = el("section", undefined, "live-card");
       card.append(
-        el("h4", `${field} · ${states[cell.status]}`),
+        el("h4", `${field === "$id" ? "对象编号" : fieldLabel(field)} · ${states[cell.status]}`),
         el("p", cell.value === null ? "当前没有可确认值" : String(cell.value)),
       );
       for (const e of cell.evidence)
         card.append(
           el(
             "p",
-            `${e.eligible ? "有效匹配" : "候选，未用于确定值"}：${e.value === null ? "空值" : String(e.value)} · ${e.sourceTitle || e.sourceId} / ${e.capability} · 记录 ${e.recordId} · 字段 ${e.field} · ${e.readAt}`,
+            `${e.eligible ? "有效匹配" : "候选，未用于确定值"}：${e.value === null ? "空值" : String(e.value)} · ${e.sourceTitle || "对应来源"} · 记录 ${e.recordId} · 属性 ${e.field === "$id" ? "对象编号" : fieldLabel(e.field)} · ${e.readAt}`,
             "source-meta",
           ),
         );

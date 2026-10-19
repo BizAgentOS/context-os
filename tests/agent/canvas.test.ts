@@ -297,17 +297,9 @@ test("each page has bounded chat and a fresh model context while saved enterpris
       await app.idle();
     }
     const canvas = app.canvasState();
-    assert(canvas.messages.length <= 12);
-    assert(
-      canvas.messages.reduce(
-        (sum, message) => sum + message.content.length,
-        0,
-      ) <= 12000,
-    );
-    assert(
-      !canvas.messages.some((message) => message.id === "first-user-fact"),
-    );
-    assert.equal(app.memory.getMessage("first-user-fact"), null);
+    assert(canvas.messages.length <= 40);
+    assert(canvas.messages.some(message => message.id === "first-user-fact"));
+    assert.equal(app.memory.getMessage("first-user-fact")?.content, "澄川热力");
     assert.equal(app.memory.listTasks().length, 1);
     const latestInput = JSON.parse(requests.at(-1)!.input);
     assert(latestInput.recentMessages.length <= 12);
@@ -319,7 +311,7 @@ test("each page has bounded chat and a fresh model context while saved enterpris
     assert(requests.every((request) => request.sessionId === undefined));
     assert.match(JSON.stringify(canvas.profile), /澄川热力/);
     assert.match(JSON.stringify(canvas.profile), /first-user-fact/);
-    // Network retries stay idempotent even after the old raw message is discarded.
+    // Network retries stay idempotent after the model history window has moved.
     await app.canvasMessage({
       page: "company",
       text: "澄川热力",

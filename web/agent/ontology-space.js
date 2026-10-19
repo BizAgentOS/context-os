@@ -1,8 +1,9 @@
+import { safeText, technicalDetails } from "./ui-display.js";
 import { buildOntologyGraph, createOntologyNavigation } from "./ontology-space-model.js";
 import { createOntologyScene } from "./ontology-scene.js";
 
 const el = (tag, cls = "", text = "") => {
-  const node = document.createElement(tag); node.className = cls; node.textContent = text; return node;
+  const node = document.createElement(tag); node.className = cls; node.textContent = safeText(text); return node;
 };
 // Reuse the application's existing icon set.
 const icon = name => {
@@ -11,7 +12,7 @@ const icon = name => {
   const use = document.createElementNS(svg.namespaceURI, "use"); use.setAttribute("href", `#i-${name}`); svg.append(use); return svg;
 };
 const button = (label, action, symbol, cls = "os-button") => {
-  const node = el("button", cls); node.type = "button"; node.title = label; node.setAttribute("aria-label", label);
+  const node = el("button", cls); node.type = "button"; node.title = safeText(label); node.setAttribute("aria-label", safeText(label));
   if (symbol) node.append(icon(symbol)); else node.textContent = label;
   node.onclick = action; return node;
 };
@@ -25,7 +26,7 @@ const memberLine = m => m.anchor ? `主来源 · ${m.rows} 条` : m.via ? `${m.m
 const linkLine = l => `${l.name} · ${l.matchedRows}/${l.totalRows} 条匹配 · ${linkEvidence(l.evidence)}${l.caseInsensitive ? " · 忽略大小写" : ""}${l.executable ? "" : " · 待核对"}`;
 const review = helix => [...helix.notes.map(n => ({label: n.text, sub: noteKind(n.kind)})), ...helix.issues.map(i => ({label: i.message, sub: severity(i.severity)}))];
 
-export function renderOntologySpace(value, {selections, read, select, management, objects, evidence, onLayout, onSelection, automaticBuild, automaticApiBuild, connectModel, retryBuild, engine, programBuild}) {
+export function renderOntologySpace(value, {selections, read, select, management, objects, evidence, onLayout, onSelection, automaticBuild, automaticApiBuild, connectModel, retryBuild, engine, programBuild, sourceSummary}) {
   const root = el("section", "ontology-space"); root.setAttribute("aria-label", "三维本体空间");
   const versions = [value?.current, value?.adopted].filter((item, i, all) => item && all.findIndex(other => other?.version === item.version) === i);
   const saved = selections.get("ontology-space");
@@ -36,12 +37,13 @@ export function renderOntologySpace(value, {selections, read, select, management
   const content = el("div", "os-scene-host");
   const top = el("header", "os-header");
   const identity = el("div", "os-identity");
-  const eyebrow = el("p", "os-eyebrow", "ONTOLOGY EXPLORER");
+  const eyebrow = el("p", "os-eyebrow", "本体");
   const title = el("h1", "", artifact?.content.enterprise?.name || "企业本体");
   const version = el("select", "os-version"); version.setAttribute("aria-label", "本体版本");
   for (const item of versions) {const option = el("option", "", `v${item.version} · ${item.status === "adopted" ? "已采用" : "候选待核对"}`); option.value = item.version; version.append(option);}
   version.value = artifact?.version || ""; version.hidden = !artifact;
   identity.append(eyebrow, title, version);
+  if (!artifact?.content.helix) identity.append(el("p", "os-muted", `${sourceSummary?.total ?? 0} 个已接入来源`));
   const progressHost = el("div"); identity.append(progressHost);
   function updateProgress(automaticBuild, automaticApiBuild) {
   progressHost.replaceChildren();
@@ -67,7 +69,7 @@ export function renderOntologySpace(value, {selections, read, select, management
   if (helixSummary) {
     const {stats, notes, unplaced} = helixSummary;
     const line = el("div", "os-helix-summary");
-    line.append(el("span", "", `${stats.tables} 张表 · ${stats.sources} 个来源 → ${stats.entities} 个实体 · ${stats.links} 条关联`));
+    line.append(el("span", "", `${stats.tables} 张表 · ${sourceSummary?.total ?? stats.sources} 个已接入来源 → ${stats.entities} 个实体 · ${stats.links} 条关联`));
     const worth = notes.filter(n => n.kind !== "merged");
     if (notes.length || unplaced.length) {
       const dialog = el("dialog", "live-dialog os-management"); dialog.setAttribute("aria-label", "程序构建说明");
@@ -151,7 +153,7 @@ export function renderOntologySpace(value, {selections, read, select, management
   const local = el("section", "os-local-card"); local.hidden = true; local.setAttribute("aria-label", "当前概念概览");
   const inspector = el("aside", "os-inspector"); inspector.hidden = true; inspector.setAttribute("aria-label", "本体内容详情");
   const inspectorHead = el("header", "os-inspector-head");
-  inspectorHead.append(el("span", "os-eyebrow", "ONTOLOGY INSIGHT"), button("关闭详情", () => {nav.back(); renderView();}, "close"));
+  inspectorHead.append(el("span", "os-eyebrow", "本体详情"), button("关闭详情", () => {nav.back(); renderView();}, "close"));
   const inspectorBody = el("div", "os-inspector-body"); inspectorBody.setAttribute("aria-live", "polite");
   inspector.append(inspectorHead, inspectorBody);
   const fan = el("div", "os-fan"); fan.hidden = true;
@@ -278,7 +280,7 @@ export function renderOntologySpace(value, {selections, read, select, management
     if (!bindings.length) section.append(el("p", "os-muted", "尚未建立执行映射，暂无可查询的实际对象。"));
     for (const binding of bindings) {
       const row = el("article", "os-evidence-card");
-      row.append(el("strong", "", binding.sourceId || `映射 v${binding.modelVersion}`), el("p", "", `${binding.status === "adopted" ? "已采用" : "候选 / 不可用"} · ${binding.capability || ""}`));
+      row.append(el("strong", "", sourceSummary?.sources.find(s => s.id === binding.sourceId)?.title || `数据对应 v${binding.modelVersion}`), el("p", "", `${binding.status === "adopted" ? "已采用" : "候选 / 不可用"} · ${binding.capability || ""}`));
       if (binding.reason) row.append(el("p", "", binding.reason));
       for (const [property, field] of Object.entries(binding.fields || {})) row.append(el("p", "", `${property} ← ${field}`));
       section.append(row);

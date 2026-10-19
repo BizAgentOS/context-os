@@ -1,8 +1,9 @@
 import { renderFusionEvidence } from "./fusion.js";
+import { safeText, displayValue, fieldLabel, technicalDetails } from "./ui-display.js";
 const el = (tag, text, cls = "") => {
   const n = document.createElement(tag);
   n.className = cls;
-  if (text !== undefined) n.textContent = text;
+  if (text !== undefined) n.textContent = safeText(text);
   return n;
 };
 const button = (text, action) => {
@@ -42,18 +43,21 @@ function table(items) {
     t = el("table");
   const keys = [...new Set(items.flatMap((x) => Object.keys(x)))];
   const head = el("tr");
-  for (const key of keys) head.append(el("th", key));
+  for (const key of keys) head.append(el("th", propertyLabel(key)));
   t.append(head);
   for (const item of items) {
     const row = el("tr");
     for (const key of keys)
-      row.append(el("td", item[key] === null ? "—" : String(item[key] ?? "")));
+      row.append(el("td", item[key] == null ? "—" : displayValue(item[key])));
     t.append(row);
   }
   wrap.append(t);
   return wrap;
 }
 const meta = (text) => el("p", text, "source-meta");
+const propertyLabel = key => key === "$id" ? "对象编号" : fieldLabel(key);
+const filterSummary = where => Object.entries(where || {}).map(([key, value]) => `${propertyLabel(key)}为${displayValue(value)}`).join("，") || "无额外筛选";
+const originalQuote = text => { const quote = document.createElement("blockquote"); quote.textContent = text; return quote; };
 const status = { collected: "选取范围已读", partial: "有缺口或冲突" };
 function renderPacket(view) {
   const a = view.artifact,
@@ -78,7 +82,7 @@ function renderPacket(view) {
   const q = p.request.objects;
   root.append(
     meta(
-      `对象范围：${q.type || q.conceptId} · ${q.id || "当前分页集合"} · offset ${q.offset ?? 0} / limit ${q.limit} · 筛选 ${JSON.stringify(q.where || {})} · 字段 ${q.fields.join("、")}`,
+      `对象范围：${q.type || "所选实体"} · ${q.id || "当前分页集合"} · 从第 ${(q.offset ?? 0) + 1} 条起，最多 ${q.limit} 条 · ${filterSummary(q.where)} · 属性 ${q.fields.map(propertyLabel).join("、")}`,
     ),
   );
   if (p.request.objects.relation)
@@ -106,7 +110,7 @@ function renderPacket(view) {
     );
     section.append(
       meta(
-        `来源 ${doc.sourceTitle || doc.request.sourceId} · ${doc.request.sourceId} / ${doc.request.capability} · 连接 v${doc.request.connectionVersion} · 请求片段 ${doc.request.segmentId} / ${doc.request.revision} · offset ${doc.request.offset ?? 0} / limit ${doc.request.limit}`,
+        `来源 ${doc.sourceTitle || "所选文档来源"} · 来源第 ${doc.request.connectionVersion} 版 · 片段修订 ${doc.request.revision} · 从第 ${(doc.request.offset ?? 0) + 1} 个字符起，最多 ${doc.request.limit} 个字符`,
       ),
     );
     if (doc.status === "read") {
@@ -114,17 +118,13 @@ function renderPacket(view) {
       const excerpt = el("details");
       excerpt.append(
         el("summary", `查看全部已读片段（${r.text.length}字符）`),
-        el("blockquote", r.text),
+        originalQuote(r.text),
       );
       section.append(
-        el(
-          "blockquote",
-          r.text.slice(0, 180) +
-            (r.text.length > 180 ? "…（预览，可展开）" : ""),
-        ),
+        originalQuote(r.text.slice(0, 180) + (r.text.length > 180 ? "…（预览，可展开）" : "")),
         excerpt,
         meta(
-          `文档 ${r.documentId} / 片段 ${r.segmentId} · ${r.revision} · 字符 ${r.start}–${r.end} / ${r.coverage.totalCharacters} · ${r.coverage.complete ? "片段完整" : "部分片段，未读部分未知"} · ${r.readAt}`,
+          `片段修订 ${r.revision} · 字符 ${r.start}–${r.end} / ${r.coverage.totalCharacters} · ${r.coverage.complete ? "片段完整" : "部分片段，未读部分未知"} · ${r.readAt}`,
         ),
       );
     } else section.append(el("p", doc.error));
@@ -141,10 +141,10 @@ function renderPacket(view) {
     );
     section.append(
       meta(
-        `来源 ${metric.sourceTitle || metric.request.sourceId} · ${metric.request.sourceId} / ${metric.request.capability} · 连接 v${metric.request.connectionVersion}`,
+        `来源 ${metric.sourceTitle || "所选指标来源"} · 来源第 ${metric.request.connectionVersion} 版`,
       ),
       meta(
-        `请求期间 ${metric.request.start} 至 ${metric.request.end}（结束日不含） · 筛选 ${JSON.stringify(metric.request.where || {})} · offset ${metric.request.offset ?? 0} / limit ${metric.request.limit}`,
+        `请求期间 ${metric.request.start} 至 ${metric.request.end}（结束日不含） · ${filterSummary(metric.request.where)} · 从第 ${(metric.request.offset ?? 0) + 1} 条起，最多 ${metric.request.limit} 条`,
       ),
       meta(
         `维度绑定：${metric.dimensionBindings.map((b) => b.dimension + " → " + b.property).join("、") || "无，仅作背景"}`,
@@ -190,6 +190,7 @@ function renderPacket(view) {
     } else section.append(el("p", metric.error));
     root.append(section);
   }
+  root.append(technicalDetails(p));
   return root;
 }
 export function renderEvidenceWorkspace(state, { api, mutate }) {
@@ -280,18 +281,17 @@ function createForm(live, api, mutate, inspect) {
     ]),
   );
   const objectId = input(fields, "对象编号（留空读取前5条）");
-  const property = input(fields, "读取业务属性（逗号分隔，包含 $id）");
+  const property = input(fields, "读取业务属性（逗号分隔；自动包含对象编号）");
   property.required = true;
   const changeType = () => {
     const t = models[Number(object.value)].type;
     property.value = [
-      "$id",
       ...new Set([
         ...Object.keys(t.fields),
         ...(t.supplements || []).flatMap((s) => Object.keys(s.fields)),
       ]),
-    ]
-      .slice(0, 20)
+    ].filter(name => name !== "$id")
+      .slice(0, 19)
       .join(", ");
   };
   object.onchange = changeType;
@@ -353,7 +353,7 @@ function createForm(live, api, mutate, inspect) {
       );
       docMeta.textContent = `目录本页 ${r.coverage.shown} 条，${r.coverage.complete ? "当前目录完整" : "不是全量目录；可由助手继续分页定位"}。取证最多读取所选片段前4000字符。`;
     } catch (e) {
-      docMeta.textContent = e.message;
+      docMeta.textContent = safeText(e.message);
     } finally {
       if (generation === docGeneration) docLoading = false;
     }
@@ -370,13 +370,13 @@ function createForm(live, api, mutate, inspect) {
       );
       if (generation !== metricGeneration) return;
       definition = r;
-      definitionInfo.textContent = `${r.definition.name} · ${r.definition.unit} · ${r.definition.grain} · ${r.definition.timeZone} · ${r.definition.description}`;
+      definitionInfo.textContent = safeText(`${r.definition.name} · ${r.definition.unit} · ${r.definition.grain === "month" ? "月" : "日"} · ${r.definition.timeZone} · ${r.definition.description}`);
       options(binding, [
         ["", "仅作背景指标"],
         ...r.definition.dimensions.map((x) => [x.name, x.label]),
       ]);
     } catch (e) {
-      definitionInfo.textContent = e.message;
+      definitionInfo.textContent = safeText(e.message);
     } finally {
       if (generation === metricGeneration) metricLoading = false;
     }
@@ -405,10 +405,10 @@ function createForm(live, api, mutate, inspect) {
         modelVersion: selected.model.version,
         type: selected.type.name,
         ...(objectId.value.trim() ? { id: objectId.value.trim() } : {}),
-        fields: property.value
+        fields: [...new Set(["$id", ...property.value
           .split(/[,，]/)
           .map((x) => x.trim())
-          .filter(Boolean),
+          .filter(Boolean)])],
         limit: 5,
       },
       documents: [
@@ -445,7 +445,7 @@ function createForm(live, api, mutate, inspect) {
         void inspect({ id: r.saved.id, version: r.saved.version });
       },
       (e) => {
-        output.textContent = e.message;
+        output.textContent = safeText(e.message);
       },
     );
     if (!ok) {

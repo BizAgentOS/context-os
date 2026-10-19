@@ -1,3 +1,4 @@
+import { safeText, displayValue, fieldLabel, technicalDetails } from "./ui-display.js";
 import { element as el, action } from "./connection-ui.js";
 export { el, action };
 export const ref = value => ({id:value.id, version:value.version});
@@ -18,8 +19,8 @@ export async function transact(root, output, task) {
   if(root.dataset.busy==="true")return;
   root.dataset.busy="true";root.setAttribute("aria-busy","true");
   const controls=[...root.querySelectorAll("button,input,textarea,select")];const states=controls.map(c=>c.disabled);controls.forEach(c=>c.disabled=true);
-  output.textContent="正在处理…";
-  try {await task();}catch(error){if(root.isConnected)output.textContent=error.message;}
+  delete output.dataset.error; output.textContent="正在处理…";
+  try {await task();}catch(error){if(root.isConnected){output.dataset.error="true";output.textContent=safeText(error.message);};}
   finally {root.dataset.busy="false";root.setAttribute("aria-busy","false");controls.forEach((c,i)=>c.disabled=states[i]);root.dispatchEvent(new Event("transactionend"));}
 }
 export function field(parent,title,value="",multiline=false) {
@@ -32,8 +33,8 @@ export function check(parent,title,description="",checked=false) {
 }
 export function table(rows, columns) {
   const wrap=el("div",null,"engine-table"),t=el("table"),head=el("thead"),hr=el("tr");
-  for(const [label] of columns)hr.append(el("th",label));head.append(hr);t.append(head);
-  const body=el("tbody");for(const item of rows){const row=el("tr");for(const [,read] of columns){const value=read(item);row.append(el("td",value==null?"—":typeof value==="object"?JSON.stringify(value):String(value)));}body.append(row);}t.append(body);wrap.append(t);
+  for(const [label] of columns)hr.append(el("th",fieldLabel(label)));head.append(hr);t.append(head);
+  const body=el("tbody");for(const item of rows){const row=el("tr");for(const [,read] of columns){const value=read(item);row.append(el("td",value==null?"—":displayValue(value)));}body.append(row);}t.append(body);wrap.append(t);
   if(!rows.length)wrap.append(el("p","当前范围没有记录","engine-muted"));return wrap;
 }
 export function issues(parent,items=[],ask) {
@@ -47,7 +48,7 @@ export function diffTable(items=[],afterLabel="工作版本",names={}) {
   Object.assign(labels,{coverage:"来源覆盖",total:"来源总行数",complete:"覆盖完整"});
   const value=(v,key)=>v==null?"—":Array.isArray(v)?v.length?v.map(x=>value(x)).join("；"):"无":typeof v==="object"?v.name?`${v.name}${v.description?`：${v.description}`:""}`:Object.entries(v).filter(([k])=>!hidden.has(k)).map(([k,x])=>`${names[k]||labels[k]||k}：${value(x,k)}`).join("；"):typeof v==="boolean"?key==="complete"?(v?"是":"否"):v?"支持":"不支持":names[v]||labels[v]||time(String(v))||String(v);
   const wrap=el("div");wrap.append(table(items.filter(i=>!hidden.has(i.path.split("/").filter(Boolean).at(-1))),[["内容",i=>i.path.split("/").filter(Boolean).map(p=>names[p]||labels[p]||p).join(" / ")],["变化",i=>({added:"新增",removed:"删除",changed:"修改"}[i.kind]||i.kind)],["原版本",i=>value(i.before,i.path.split("/").at(-1))],[afterLabel,i=>value(i.after,i.path.split("/").at(-1))]]));
-  if(items.length){const raw=el("details");raw.append(el("summary","完整变更记录"),el("pre",JSON.stringify(items,null,2),"engine-raw-diff"));wrap.append(raw);}return wrap;
+  if(items.length)wrap.append(technicalDetails(items));return wrap;
 }
 export const statusOf = {added:"新增",removed:"删除",changed:"有变化",unchanged:"未变化",unavailable:"无法比较"};
 /** Row-level data changes per pinned dataset, compared by source identity. */
@@ -64,6 +65,7 @@ export function snapshotReport(parent,report) {
   parent.append(el("h3",report.coverage?.complete===true?"全量快照检查":"快照检查（仅可用范围）"),table(rows,[["检查",c=>c.name],["结果",c=>!c.passed?"未通过":c.severity==="warning"?"需留意":"通过"],["说明",c=>c.detail]]));
 }
 export function downloadConfig(parent,config,key="") {
-  const area=el("textarea",null,"engine-config");area.readOnly=true;area.spellcheck=false;area.setAttribute("aria-label","接入配置");area.value=typeof config==="string"?config:JSON.stringify(config,null,2);parent.append(area);
+  const area=el("textarea",null,"engine-config");area.classList.add("technical-information");area.readOnly=true;area.spellcheck=false;area.setAttribute("aria-label","接入配置");area.value=typeof config==="string"?config:JSON.stringify(config,null,2);parent.append(area);
+  parent.append(action("下载配置",()=>{const url=URL.createObjectURL(new Blob([area.value],{type:"application/json"}));const link=document.createElement("a");link.href=url;link.download="ade-connection.json";link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}));
   const notice=message(parent);parent.append(action("复制配置",async()=>{try{await navigator.clipboard.writeText(area.value);notice.textContent="已复制配置。";}catch{area.focus();area.select();notice.textContent="请复制已选中的配置。";}}));return area;
 }

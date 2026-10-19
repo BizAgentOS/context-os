@@ -8,10 +8,11 @@ import { renderLiveObjects } from "./live-objects.js";
 import { renderFusionEvidence } from "./fusion.js";
 import { renderMetricInspector } from "./metrics.js";
 import { renderDefinitionGraph } from "./ontology-workspace.js";
+import { safeText, displayValue, fieldLabel, technicalDetails } from "./ui-display.js";
 const el = (tag, cls = "", text) => {
   const n = document.createElement(tag);
   n.className = cls;
-  if (text !== undefined) n.textContent = text;
+  if (text !== undefined) n.textContent = safeText(text);
   return n;
 };
 const button = (text, fn) => {
@@ -26,11 +27,11 @@ function table(items) {
   if (items.length) {
     const keys = Object.keys(items[0]);
     const head = el("tr");
-    keys.forEach((k) => head.append(el("th", "", k)));
+    keys.forEach((k) => head.append(el("th", "", k === "$id" ? "对象编号" : fieldLabel(k))));
     t.append(head);
     for (const item of items) {
       const row = el("tr");
-      keys.forEach((k) => row.append(el("td", "", String(item[k] ?? "—"))));
+      keys.forEach((k) => row.append(el("td", "", item[k] == null ? "—" : displayValue(item[k]))));
       t.append(row);
     }
   } else wrap.append(el("p", "", "当前范围没有记录"));
@@ -475,10 +476,11 @@ export function renderLiveWorkspace(
           "p",
           "source-meta",
           `${model.status === "adopted"
-            ? (model.id === currentModel?.id ? "当前采用映射" : "历史采用映射") + " · 按需读取源系统"
-            : "待确认 · 结构检查通过，业务含义仍需确认"} · v${model.version} · ${model.id}`,
+            ? (model.id === currentModel?.id ? "当前采用映射" : "历史采用映射") + " · 查询默认使用已采用快照"
+            : "待确认 · 结构检查通过，业务含义仍需确认"} · v${model.version}`,
         ),
         el("p", "", `建模时的依据：${model.content.rationale}`),
+        technicalDetails({ id: model.id, version: model.version, connections: model.content.connections }),
       );
       const cite = async (target, scope, dialog) => {
         if (await onSelectContext?.(model, target, scope)) {

@@ -1,7 +1,9 @@
+import { safeText, displayValue, fieldLabel, technicalDetails } from "./ui-display.js";
+
 export const el = (tag, text = "", cls = "") => {
   const n = document.createElement(tag);
   n.className = cls;
-  n.textContent = text;
+  n.textContent = safeText(text);
   return n;
 };
 export const btn = (text, fn) => {
@@ -113,7 +115,7 @@ export function openCorrection(model, api, initial = {}, after = () => {}) {
       inspectCorrection(r.saved, api, after);
     } catch (e) {
       if (dialog.isConnected)
-        status.textContent = `尚未确认保存结果：${e.message}；原输入保留，可按原请求重试`;
+        status.textContent = safeText(`尚未确认保存结果：${e.message}；原输入保留，可按原请求重试`);
     } finally {
       inputs.forEach((n) => (n.disabled = false));
       save.disabled = false;
@@ -134,7 +136,7 @@ export function inspectCorrection(initial, api, after = () => {}) {
         "h3",
         `${record.title} · ${states[record.status]} · v${record.version}`,
       ),
-      el("p", `变更引用：${record.id}`),
+      el("p", `纠正记录 · 第 ${record.version} 版`),
       el("p", `执行映射 v${t.modelVersion} · 责任主体 ${c.responsible}`),
       el(
         "p",
@@ -152,7 +154,10 @@ export function inspectCorrection(initial, api, after = () => {}) {
     const evidence = el("details");
     evidence.append(
       el("summary", "查看原值与读取依据"),
-      el("pre", JSON.stringify(c.snapshot, null, 2), "source-meta"),
+      el("p", `原关系返回 ${c.snapshot.before.items.length} 个对象 · ${c.snapshot.before.coverage?.complete ? "读取范围完整" : "部分结果"}`, "source-meta"),
+      ...c.snapshot.before.items.map(item => el("p", Object.entries(item).map(([key, value]) => `${key === "$id" ? "对象编号" : fieldLabel(key)}：${displayValue(value)}`).join("；"))),
+      el("p", `读取于 ${(c.snapshot.before.reads || []).map(read => read.readAt).join(" / ") || "未记录"}`, "source-meta"),
+      technicalDetails(c.snapshot),
     );
     content.append(evidence);
     if (c.check)
@@ -189,7 +194,7 @@ export function inspectCorrection(initial, api, after = () => {}) {
         if (dialog.isConnected) draw();
       } catch (e) {
         if (dialog.isConnected)
-          status.textContent = `未完成：${e.message}。记录保留，请按最新来源重新提议或取消候选。`;
+          status.textContent = safeText(`未完成：${e.message}。记录保留，请按最新来源重新提议或取消候选。`);
       } finally {
         buttons.forEach((b) => (b.disabled = false));
       }
@@ -255,7 +260,7 @@ export function renderCorrections(model, { api }) {
         );
     } catch (e) {
       if (panel.isConnected && request === generation)
-        list.textContent = `读取失败：${e.message}`;
+        list.textContent = safeText(`读取失败：${e.message}`);
     }
   };
   panel.append(

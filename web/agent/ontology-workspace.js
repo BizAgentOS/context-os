@@ -1,9 +1,10 @@
+import { safeText } from "./ui-display.js";
 import { createMemoryGraph } from "./memory-graph.js";
 
 function el(tag, className = "", text) {
   const item = document.createElement(tag);
   item.className = className;
-  if (text !== undefined) item.textContent = String(text);
+  if (text !== undefined) item.textContent = safeText(text);
   return item;
 }
 function action(text, callback, className = "quiet-button") {
@@ -456,7 +457,7 @@ export function renderObjectGraph(artifact, options) {
           });
         }
       }
-      summary.textContent = `${root.type} · ${root.id} 的直接关联${omitted ? " · 仅展示前 20 个对象" : ` · ${entities.size} 个对象`}`;
+      summary.textContent = safeText(`${root.type} · ${root.id} 的直接关联${omitted ? " · 仅展示前 20 个对象" : ` · ${entities.size} 个对象`}`);
       const nodes = [...entities.values()].map((entity) => ({
         id: objectKey(entity),
         label: objectLabel(entity),

@@ -120,9 +120,8 @@ test("a real Skill and quoted conversation refine the rule-built foundation whil
       fault.exec(`CREATE TRIGGER reject_foundation_decision BEFORE INSERT ON messages
         WHEN NEW.id='foundation-adoption' BEGIN SELECT RAISE(ABORT, 'decision save failed'); END;`);
       await assert.rejects(
-        api("/api/canvas/message", {
-          page: "setup",
-          text: "采用这版",
+        api("/api/canvas/foundation/adopt", {
+          ...decision,
           messageId: "foundation-adoption",
         }),
         /decision save failed/,
@@ -132,9 +131,8 @@ test("a real Skill and quoted conversation refine the rule-built foundation whil
     } finally {
       fault.close();
     }
-    const adopted = await api("/api/canvas/message", {
-      page: "setup",
-      text: "采用这版",
+    const adopted = await api("/api/canvas/foundation/adopt", {
+      ...decision,
       messageId: "foundation-adoption",
     });
     assert.equal(
@@ -147,9 +145,8 @@ test("a real Skill and quoted conversation refine the rule-built foundation whil
       ).length,
       1,
     );
-    await api("/api/canvas/message", {
-      page: "setup",
-      text: "采用这版",
+    await api("/api/canvas/foundation/adopt", {
+      ...decision,
       messageId: "foundation-adoption",
     });
     assert.equal(adopted.foundation.adopted.status, "adopted");

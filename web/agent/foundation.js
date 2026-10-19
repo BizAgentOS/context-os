@@ -1,8 +1,9 @@
+import { safeText, displayValue, technicalDetails } from "./ui-display.js";
 import { bindConcept, previewBinding } from "./foundation-bindings.js";
 const el = (tag, className, text) => {
   const element = document.createElement(tag);
   element.className = className;
-  if (text) element.textContent = text;
+  if (text) element.textContent = safeText(text);
   return element;
 };
 

@@ -166,6 +166,7 @@ body.haizhi-glass .engine-table :is(th, td) { border-color: var(--glass-line); }
 body.haizhi-glass .engine-check small { color: var(--glass-muted); }
 body.haizhi-glass .engine-issue-error .engine-badge { color: #b42b4b; border-color: #e7bac5; background: #faedf1; }
 body.haizhi-glass .engine-message:not(:empty) { color: #96334c; border-color: #e9c6cf; background: #fff2f4dd; border-radius: 14px; }
+body.haizhi-glass .engine-message:not(:empty):not([data-error="true"]) { color: #264568; border-color: #c9d9ed; background: #edf5ffdd; }
 body.haizhi-glass .release-overview > .engine-panel:first-child { background: linear-gradient(120deg, #f3f7fff0, #e9f0fcbb); }
 
 /* One shared, inline assistant. Material changes do not change its presentation mode. */

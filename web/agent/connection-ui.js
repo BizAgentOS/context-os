@@ -1,7 +1,8 @@
+import { safeText } from "./ui-display.js";
 export function element(tag, text, className = "") {
   const node = document.createElement(tag);
   node.className = className;
-  if (text !== undefined && text !== null) node.textContent = text;
+  if (text !== undefined && text !== null) node.textContent = safeText(text);
   return node;
 }
 

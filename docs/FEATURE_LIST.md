@@ -22,10 +22,12 @@ Last Updated: 2026-10-19
 
 **2026-10-19 开工：**根据用户本轮开发授权开始 M0（036—039）；其余按依赖推进，未发布。
 
+**2026-10-19 M0 验收：**036—039 完成并分别本地提交；完整 277 项测试、快照整链、真实 KodaX 修订 / 查询、桌面与窄屏验证通过。版本保持 v0.2.3，未发布；M1—M4 的其余 29 项仍 Planned。证据及模型读取限制见[M0 验收](experiment/V030_M0_2026_10_19.md)。
+
 ## Version Info
 
 - **Current Release:** v0.2.3（2026-10-16，本地 Tag `v0.2.3`）。v0.2.2 于 2026-10-15 发布（本地 Tag `v0.2.2`）。v0.2.0 于 2026-10-14 发布（提交 `930b10e`，Tag `v0.2.0`）。
-- **Planned Version:** v0.3.0（2026-10-19 登记，FEATURE_036—068；036—039 已开工）。v0.1.0 保留历史功能与验收记录。
+- **Planned Version:** v0.3.0（2026-10-19 登记，FEATURE_036—068；M0 已验收，后续 29 项 Planned）。v0.1.0 保留历史功能与验收记录。
 - **版本状态:** 计划于 v0.2.0 的 11 项全部完成：025—030 随 v0.2.0 发布，031—035 随 v0.2.1 发布；v0.2.2 为这些能力的修复发布。v0.1.0 未单独发布，002、004、005、006、019 仍未完成，继续保留。
 - **状态规则:** `Planned → InProgress → Completed`；`Released` 仅填写实际发布版本。
 - **设计:** [v0.3.0 设计与任务](features/v0.3.0.md)及[目标产品蓝图](features/v0.3.0-blueprint.md)；[v0.2.0 设计与开发步骤](features/v0.2.0.md)；[v0.1.0 历史](features/v0.1.0.md)。
@@ -37,7 +39,7 @@ Last Updated: 2026-10-19
 |---|---|---:|---:|---:|---:|
 | v0.1.0 | InProgress | 2 | 3 | 19 | 19/24 |
 | v0.2.0 | Released | 0 | 0 | 11 | 11/11 |
-| v0.3.0 | InProgress | 29 | 1 | 3 | 3/33 |
+| v0.3.0 | InProgress | 29 | 0 | 4 | 4/33 |
 
 本表按计划批次统计。v0.2.2 为已发布能力的 PATCH 修复版本，不新增或重复计算 Feature。
 
@@ -85,7 +87,7 @@ Last Updated: 2026-10-19
 | 034 | 发布锁定数据与快照消费 | Enhancement | High | Completed | v0.2.0 | 031、033 | [设计](features/v0.2.0.md#feature-034) |
 | 035 | 快照三页界面与整链验收 | Enhancement | High | Completed | v0.2.0 | 031—034 | [设计](features/v0.2.0.md#feature-035) |
 | 036 | 主文档、ADR 与提示词对齐 | Internal | High | Completed | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-036) |
-| 037 | 界面去内部化与交互止血 | Enhancement | High | InProgress | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-037) |
+| 037 | 界面去内部化与交互止血 | Enhancement | High | Completed | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-037) |
 | 038 | 读取合同对齐 | Enhancement | High | Completed | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-038) |
 | 039 | 冻结旧消费接口 | Refactor | High | Completed | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-039) |
 | 040 | 分层语义模型 | Refactor | High | Planned | v0.3.0 | 036 | [设计](features/v0.3.0.md#feature-040) |
@@ -526,13 +528,14 @@ Last Updated: 2026-10-19
 
 ### 037: 界面去内部化与交互止血
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** Enhancement / High
 - **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / —
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / 2026-10-19
 - **Description:** 开发者视图之外不显示 JSON、UUID 与内部字段；三页共用来源投影；删除口令采用；对话历史不再物理删除；修正发布页引导。
 - **Blocked by:** 无。
 - **Design:** [FEATURE_037](features/v0.3.0.md#feature-037)。
+- **Verification:** [M0 隔离验收](experiment/V030_M0_2026_10_19.md)，历史保留 / 分页、聊天不能采用、统一来源投影、开发者开关及 1440 / 390px 检查通过。
 
 ### 038: 读取合同对齐
 

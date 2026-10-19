@@ -280,9 +280,8 @@ test("adopted foundation concepts bind a checked execution subset, retain unboun
     assert.equal((await api()).pending.candidateId, proposed.id);
     unavailable = true;
     await assert.rejects(
-      api("/api/canvas/message", {
-        page: "setup",
-        text: "采用这版",
+      api("/api/canvas/decision", {
+        page: "setup", candidateId: proposed.id, version: proposed.version, decision: "adopt",
         messageId: "binding-adopt",
       }),
     );
@@ -296,9 +295,8 @@ test("adopted foundation concepts bind a checked execution subset, retain unboun
       fault.exec(`CREATE TRIGGER reject_binding_decision BEFORE INSERT ON messages
         WHEN NEW.id='binding-adopt' BEGIN SELECT RAISE(ABORT, 'decision save failed'); END;`);
       await assert.rejects(
-        api("/api/canvas/message", {
-          page: "setup",
-          text: "采用这版",
+        api("/api/canvas/decision", {
+          page: "setup", candidateId: proposed.id, version: proposed.version, decision: "adopt",
           messageId: "binding-adopt",
         }),
         /decision save failed/,
@@ -314,9 +312,8 @@ test("adopted foundation concepts bind a checked execution subset, retain unboun
     } finally {
       fault.close();
     }
-    const adoption = await api("/api/canvas/message", {
-      page: "setup",
-      text: "采用这版",
+    const adoption = await api("/api/canvas/decision", {
+      page: "setup", candidateId: proposed.id, version: proposed.version, decision: "adopt",
       messageId: "binding-adopt",
     });
     const saved = adoption.live.models.find((m: any) => m.id === proposed.id);

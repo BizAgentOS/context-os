@@ -1,3 +1,4 @@
+import { safeText } from "./ui-display.js";
 import * as THREE from "three";
 import { computeOntologyLayout } from "./ontology-space-model.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -212,14 +213,14 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
     label.dataset.nodeKey = item.key;
     if (item.kind === "concept") {
       label.dataset.neighborCount = String(connections);
-      label.title = `${item.name} · ${connections} 个关联节点，外圈密度随关联数量增加`;
+      label.title = `${safeText(item.name)} · ${connections} 个关联节点，外圈密度随关联数量增加`;
     }
-    label.setAttribute("aria-label", `${item.kind === "concept" ? "查看概念" : "查看依据"}：${item.name}`);
-    const name = document.createElement("strong"); name.textContent = item.name;
+    label.setAttribute("aria-label", `${item.kind === "concept" ? "查看概念" : "查看依据"}：${safeText(item.name)}`);
+    const name = document.createElement("strong"); name.textContent = safeText(item.name);
     if (item.kind === "evidence") {
       const category = {web: "网页依据", document: "资料依据", user: "用户陈述"}[item.item.kind] || "定义依据";
       name.textContent = `${category} ${String(graph.evidence.indexOf(item.item) + 1).padStart(2, "0")}`;
-      label.title = item.name;
+      label.title = safeText(item.name);
     }
     const caption = document.createElement("span"); caption.textContent = item.kind !== "concept" ? "说明依据" : item.item.helix
       ? `${item.item.helix.entity.rows} 条记录 · ${item.item.helix.entity.members.length > 1 ? `合并 ${item.item.helix.entity.members.length} 源` : "单一来源"}`
@@ -240,9 +241,9 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
     const pulse = new THREE.Mesh(sphereGeometry, material(new THREE.MeshBasicMaterial({color, transparent: true, opacity: .8})));
     pulse.scale.setScalar(edge.kind === "relation" ? 2.2 : 1.3); world.add(pulse);
     const label = document.createElement("button"); label.type = "button"; label.className = "os-edge-label";
-    label.textContent = edge.name; label.hidden = true;
+    label.textContent = safeText(edge.name); label.hidden = true;
     if (edge.kind === "relation") {
-      label.setAttribute("aria-label", `查看关系：${edge.name}`);
+      label.setAttribute("aria-label", `查看关系：${safeText(edge.name)}`);
       label.onclick = event => {event.stopPropagation(); onActivate(edge.key);}; labels.append(label);
     }
     return {edge, line, pulse, positions, label, offset: index * .19};

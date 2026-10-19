@@ -1,3 +1,4 @@
+import { developerView, setDeveloperView, safeText, displayValue, fieldLabel, technicalDetails } from "./ui-display.js";
 import { renderEngineWorkspace, openSource as openEngineSource, showEngineBuilds } from "./engine-workspace.js";
 import { renderReleaseWorkspace } from "./release-workspace.js";
 import { dialog as engineDialog } from "./engine-ui.js";
@@ -146,6 +147,7 @@ const state = {
   automaticBuild: null,
   automaticApiBuild: null,
   engine: null,
+  data: null,
   agentTask: null,
   evidence: [],
   outlines: [],
@@ -157,6 +159,8 @@ const state = {
   accessLogs: [],
   pending: null,
   demo: null,
+  sourceSummary: { sources: [], total: 0, counts: {} },
+  messagePage: { nextBefore: null },
   live: { connections: [], models: [], consumers: [], audit: [] },
 };
 initialAccess = "";
@@ -192,7 +196,7 @@ const ui = {
 function node(tag, className = "", text) {
   const element = document.createElement(tag);
   if (className) element.className = className;
-  if (text !== undefined && text !== null) element.textContent = String(text);
+  if (text !== undefined && text !== null) element.textContent = safeText(text);
   return element;
 }
 function icon(name) {
@@ -215,8 +219,8 @@ function button(label, className, action, iconName) {
 function plain(value) {
   if (value === null || value === undefined || value === "") return "未提供";
   if (typeof value === "boolean") return value ? "是" : "否";
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value);
+  if (typeof value === "object") return displayValue(value);
+  return safeText(value);
 }
 function label(key) {
   return fieldLabels[key] || key.replace(/^company\./, "");
@@ -309,6 +313,14 @@ function applySnapshot(snapshot) {
     : ui.page;
   const previousPage = ui.page;
   changePage(target);
+  if (target === previousPage && snapshot.workspaceId === state.workspaceId && snapshot.messages) {
+    const newest = new Set(snapshot.messages.map(m => m.id));
+    const earlier = state.messages.filter(m => !newest.has(m.id));
+    if (earlier.length) {
+      snapshot.messages = [...earlier, ...snapshot.messages];
+      snapshot.messagePage = state.messagePage;
+    }
+  }
   for (const key of Object.keys(state)) {
     if (Object.hasOwn(snapshot, key)) state[key] = snapshot[key];
   }
@@ -395,7 +407,7 @@ async function navigate(page) {
 const capabilityPanel = createCapabilitiesPanel(api, () => renderCanvas(true));
 
 function render() {
-  capabilityPanel.button.hidden = !!shareMode || !!state.demo;
+  capabilityPanel.button.hidden = !!shareMode || !!state.demo || !developerView();
   $("#demo-badge").hidden = !state.demo;
   $("#demo-badge").title = shareMode
     ? "虚构热力企业的离线快照，可直接浏览；示例问答不调用 AI，也不修改数据。"
@@ -424,7 +436,7 @@ function canvasFingerprint() {
     items.map((item) => `${item.id}:${item.version}:${item.status}`);
   if (ui.page === "ontology" && !ui.detail && !shareMode && !state.demo) {
     // The Three scene depends on semantic data, not polling/task/dialog state.
-    return JSON.stringify({page:ui.page, foundation:state.foundation});
+    return JSON.stringify({page:ui.page, foundation:state.foundation, sourceSummary:state.sourceSummary});
   }
   return JSON.stringify({
     page: ui.page,
@@ -432,6 +444,7 @@ function canvasFingerprint() {
     model: state.model,
     onboardingMessages: state.onboarding?.active ? [state.messages.at(-1), state.streaming] : null,
     profile: state.profile && `${state.profile.id}:${state.profile.version}`,
+    sourceSummary: state.sourceSummary,
     sources: refs(state.sources),
     live: state.live,
     ontologies: refs(state.ontologies),
@@ -607,6 +620,7 @@ function renderOntologyBoard(actions) {
     connectModel: openSettings,
     retryBuild: () => mutate("/api/canvas/foundation/automatic", {}),
     engine: state.engine,
+    sourceSummary: state.sourceSummary,
     programBuild: () => showEngineBuilds(state, {...dataActions(),management:()=>document.querySelector(".os-definition-entry")?.click()}),
     management: managementContent,
     objects: objectContent,
@@ -1842,7 +1856,7 @@ function renderConsumerConnection(consumer) {
             : "先读取可用对象定义，再按类型、编号或关系查询。两个接口都使用此调用方的 API Key。",
         ),
       );
-      const pre = node("pre", "request-example", code);
+      const pre = node("pre", "request-example technical-information", code);
       pre.tabIndex = 0;
       pre.setAttribute(
         "aria-label",
@@ -2545,7 +2559,7 @@ async function inspectContext(context, page = ui.page) {
         ),
       );
       const details = node("dl", "memory-properties");
-      for (const [key, item] of Object.entries(value.target.definition)) {
+      for (const [key, item] of Object.entries(value.target.definition).filter(([key]) => ["name", "description", "from", "to", "type", "property", "title", "fields", "fromField", "toField"].includes(key))) {
         const row = node("div");
         row.append(
           node(
@@ -2572,13 +2586,13 @@ async function inspectContext(context, page = ui.page) {
         );
         details.append(row);
       }
-      body.append(details);
+      body.append(details, technicalDetails(value.target.definition));
     }
     body.append(
       node(
         "p",
         "source-meta",
-        `范围：${Object.keys(context.scope.where).length ? JSON.stringify(context.scope.where) : "无额外筛选"} · 从第 ${context.scope.offset + 1} 条起，最多 ${context.scope.limit} 条`,
+        `范围：${Object.keys(context.scope.where).length ? displayValue(context.scope.where) : "无额外筛选"} · 从第 ${context.scope.offset + 1} 条起，最多 ${context.scope.limit} 条`,
       ),
     );
     if (value.result) {
@@ -3217,13 +3231,30 @@ function renderDialogue() {
   const visible = lines;
   $("#history-label").textContent = state.busy ? "对话记录 · 正在处理…" : "对话记录";
   $("#chat-activity").hidden = !state.busy;
-  const fingerprint = JSON.stringify(visible);
+  const fingerprint = JSON.stringify([visible, state.messagePage]);
   if (ui.dialogueKey === fingerprint) return;
   ui.dialogueKey = fingerprint;
   const container = $("#dialogue");
   const followLatest = container.scrollHeight - container.scrollTop - container.clientHeight < 48;
   const previousScroll = container.scrollTop;
   container.replaceChildren();
+  if (state.messagePage?.nextBefore) {
+    const before = state.messagePage.nextBefore, page = ui.page;
+    container.append(button("加载更早消息", "quiet-button", async event => {
+      const load = event.currentTarget; load.disabled = true;
+      const height = container.scrollHeight, scroll = container.scrollTop;
+      try {
+        const older = await api(`/api/canvas/messages?page=${page}&before=${encodeURIComponent(before)}`);
+        if (ui.page !== page) return;
+        const ids = new Set(state.messages.map(m => m.id));
+        state.messages = [...older.messages.filter(m => !ids.has(m.id)), ...state.messages];
+        state.messagePage = { nextBefore: older.nextBefore };
+        renderDialogue();
+        container.scrollTop = scroll + container.scrollHeight - height;
+      } catch (error) { errorMessage(error.message); }
+      finally { if (load.isConnected) load.disabled = false; }
+    }));
+  }
   if (!visible.length) container.append(node("p", "dialogue-empty", "还没有对话，从下面介绍你的企业开始。"));
   visible.forEach((message, index) => {
     const distance = visible.length - 1 - index;
@@ -3236,6 +3267,7 @@ function renderDialogue() {
       `dialogue-line ${message.role} ${age}${message.streaming ? " streaming" : ""}`,
     );
     line.append(node("span", "message-text", text));
+    if (/`{3,}json/.test(text)) line.append(technicalDetails({ text: message.content }));
     if (message.workContext?.target) {
       const ref = message.workContext.target;
       line.append(
@@ -3540,6 +3572,7 @@ function openSettings() {
   $("#key-note").textContent = "密钥保存在本机服务端，刷新或重启后保留，直到主动删除。";
   $("#delete-model-key").hidden = !model.configured;
   $("#settings-status").hidden = true;
+  $("#developer-view-input").checked = developerView();
   $("#settings-dialog").showModal();
 }
 function settingsStatus(message) {
@@ -3667,6 +3700,11 @@ $("#upload-button").addEventListener("click", () => $("#file-input").click());
 $("#file-input").addEventListener("change", (event) =>
   uploadFile(event.target.files[0]),
 );
+$("#developer-view-input").addEventListener("change", event => {
+  setDeveloperView(event.target.checked);
+  ui.canvasKey = ""; ui.dialogueKey = "";
+  render();
+});
 $("#open-settings").addEventListener("click", openSettings);
 $("#close-settings").addEventListener("click", () =>
   $("#settings-dialog").close(),

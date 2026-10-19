@@ -1,4 +1,7 @@
 import { el, btn, modal, field } from "./relation-corrections.js";
+import { safeText, displayValue, fieldLabel, technicalDetails } from "./ui-display.js";
+
+const describeRows = rows => rows.map(row => Object.entries(row).map(([key, value]) => `${key === "$id" ? "对象编号" : fieldLabel(key)}：${displayValue(value)}`).join("；")).join("\n") || "无对象";
 const drafts = new Map();
 const states = {
   candidate: "候选",
@@ -150,7 +153,7 @@ function openChange(model, live, api, saved) {
           };
           label.append(
             check,
-            document.createTextNode(`${r.id} · v${r.version} · ${r.status}`),
+            document.createTextNode(safeText(`${r.id} · v${r.version} · ${states[r.status] || "已保存"}`)),
           );
           issueList.append(label);
         }
@@ -161,7 +164,7 @@ function openChange(model, live, api, saved) {
         );
     })
     .catch((e) => {
-      if (d.isConnected) issueList.textContent = `问题读取失败：${e.message}`;
+      if (d.isConnected) issueList.textContent = safeText(`问题读取失败：${e.message}`);
     });
   const payload = () => {
     const r = options[Number(choice.value)];
@@ -225,7 +228,7 @@ function openChange(model, live, api, saved) {
       }
     } catch (e) {
       if (d.isConnected)
-        status.textContent = `尚未确认保存：${e.message}。草稿保留，可按原请求重试。`;
+        status.textContent = safeText(`尚未确认保存：${e.message}。草稿保留，可按原请求重试。`);
     } finally {
       form
         .querySelectorAll("input,textarea,select,button")
@@ -247,22 +250,23 @@ export function inspectChange(initial, api, saved) {
         "h3",
         `${record.title} · ${states[record.status]} · v${record.version}`,
       ),
-      el("p", `变更引用：${record.id} · v${record.version}`),
-      el("p", `基线：${c.baseRef.id} · v${c.baseRef.version}`),
+      el("p", `修订记录 · 第 ${record.version} 版`),
+      el("p", `所依据的映射 · 第 ${c.baseRef.version} 版`),
       el("p", `理由：${c.draft.reason}`),
       el("p", `提交者依据：${c.draft.evidence}`),
       el("p", `责任主体：${c.responsible}`),
     );
     content.append(
       el("h3", "规则差异"),
-      el(
-        "pre",
-        `${c.diff.path.join(" / ")}\n原值：${JSON.stringify(c.diff.before)}\n新值：${JSON.stringify(c.diff.after)}`,
-      ),
+      el("p", c.diff.path.map(part => part === "primary" ? "主来源" : fieldLabel(part)).join(" / ")),
+      el("p", `原规则：${displayValue(c.diff.before)}`),
+      el("p", `新规则：${displayValue(c.diff.after)}`),
+      technicalDetails(c.diff),
     );
     const full = impact.snapshotCheck;
     if (full?.status === "checked") {
-      const metrics = (m) => (m ? Object.entries(m).map(([k, v]) => `${k} ${v}`).join("，") : "");
+      const metricLabels = { rows: "行数", nulls: "空值", duplicates: "重复", total: "总数", matched: "匹配数", fanout: "多匹配数", cardinality: "关联数量" };
+      const metrics = m => m ? Object.entries(m).filter(([key]) => metricLabels[key]).map(([key, value]) => `${metricLabels[key]} ${displayValue(value)}`).join("，") : "";
       content.append(
         el("h3", full.coverageAfter?.complete === true ? "全量快照检查" : "快照检查（仅可用范围）"),
         el(
@@ -296,8 +300,8 @@ export function inspectChange(initial, api, saved) {
       const details = el("details");
       details.append(
         el("summary", `${s.id} · ${s.changed ? "有变化" : "当前样本无变化"}`),
-        el("p", `原值：${JSON.stringify(s.before.items)}`),
-        el("p", `新值：${JSON.stringify(s.after.items)}`),
+        el("p", `原值：${describeRows(s.before.items)}`),
+        el("p", `新值：${describeRows(s.after.items)}`),
         el(
           "p",
           `原关系/对象范围${s.before.coverage.complete ? "完整" : "不完整"}；新范围${s.after.coverage.complete ? "完整" : "不完整"}`,
@@ -307,11 +311,9 @@ export function inspectChange(initial, api, saved) {
       const evidence = el("details");
       evidence.append(
         el("summary", "读取依据与冲突"),
-        el(
-          "pre",
-          JSON.stringify({ before: s.before, after: s.after }, null, 2),
-          "source-meta",
-        ),
+        el("p", `原值读取于 ${(s.before.reads || []).map(read => read.readAt).join(" / ") || "未记录"}；新值读取于 ${(s.after.reads || []).map(read => read.readAt).join(" / ") || "未记录"}`, "source-meta"),
+        el("p", "原值与新值分别保留当时读取范围；有冲突或缺失时不能当作已确认业务事实。", "source-meta"),
+        technicalDetails({ before: s.before, after: s.after }),
       );
       details.append(evidence);
       content.append(details);
@@ -377,7 +379,7 @@ export function inspectChange(initial, api, saved) {
         if (d.isConnected) draw();
       } catch (e) {
         if (d.isConnected)
-          status.textContent = `未确认完成：${e.message}。保留原回执，可重试原请求或重新读取记录。`;
+          status.textContent = safeText(`未确认完成：${e.message}。保留原回执，可重试原请求或重新读取记录。`);
       } finally {
         buttons.forEach((b) => (b.disabled = false));
       }
@@ -433,7 +435,7 @@ export function renderMappingChanges(model, { api, live, onSaved }) {
         list.append(el("p", "仅列出最近40份修订记录。", "source-meta"));
     } catch (e) {
       if (panel.isConnected && request === generation)
-        list.textContent = `读取失败：${e.message}`;
+        list.textContent = safeText(`读取失败：${e.message}`);
     }
   };
   panel.append(
