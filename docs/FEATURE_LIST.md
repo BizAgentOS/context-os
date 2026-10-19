@@ -20,10 +20,12 @@ Last Updated: 2026-10-19
 
 **2026-09-11 Agent 产品文档整理：**参考 KodaX-Space 的职责分层，建立[文档中心](README.md)、当前 Agent 契约、KodaX 接入记录、内置 Skill 和 ADR；旧 Agent 设计归档。三页需求和十八张票、依赖与状态不变。
 
+**2026-10-19 开工：**根据用户本轮开发授权开始 M0（036—039）；其余按依赖推进，未发布。
+
 ## Version Info
 
 - **Current Release:** v0.2.3（2026-10-16，本地 Tag `v0.2.3`）。v0.2.2 于 2026-10-15 发布（本地 Tag `v0.2.2`）。v0.2.0 于 2026-10-14 发布（提交 `930b10e`，Tag `v0.2.0`）。
-- **Planned Version:** v0.3.0（2026-10-19 登记，FEATURE_036—068，全部 Planned）。v0.1.0 保留历史功能与验收记录。
+- **Planned Version:** v0.3.0（2026-10-19 登记，FEATURE_036—068；036—039 已开工）。v0.1.0 保留历史功能与验收记录。
 - **版本状态:** 计划于 v0.2.0 的 11 项全部完成：025—030 随 v0.2.0 发布，031—035 随 v0.2.1 发布；v0.2.2 为这些能力的修复发布。v0.1.0 未单独发布，002、004、005、006、019 仍未完成，继续保留。
 - **状态规则:** `Planned → InProgress → Completed`；`Released` 仅填写实际发布版本。
 - **设计:** [v0.3.0 设计与任务](features/v0.3.0.md)及[目标产品蓝图](features/v0.3.0-blueprint.md)；[v0.2.0 设计与开发步骤](features/v0.2.0.md)；[v0.1.0 历史](features/v0.1.0.md)。
@@ -35,7 +37,7 @@ Last Updated: 2026-10-19
 |---|---|---:|---:|---:|---:|
 | v0.1.0 | InProgress | 2 | 3 | 19 | 19/24 |
 | v0.2.0 | Released | 0 | 0 | 11 | 11/11 |
-| v0.3.0 | Planned | 33 | 0 | 0 | 0/33 |
+| v0.3.0 | InProgress | 29 | 3 | 1 | 1/33 |
 
 本表按计划批次统计。v0.2.2 为已发布能力的 PATCH 修复版本，不新增或重复计算 Feature。
 
@@ -82,10 +84,10 @@ Last Updated: 2026-10-19
 | 033 | 执行验证与 Agent 辅助构建 | Enhancement | High | Completed | v0.2.0 | 032 | [设计](features/v0.2.0.md#feature-033) |
 | 034 | 发布锁定数据与快照消费 | Enhancement | High | Completed | v0.2.0 | 031、033 | [设计](features/v0.2.0.md#feature-034) |
 | 035 | 快照三页界面与整链验收 | Enhancement | High | Completed | v0.2.0 | 031—034 | [设计](features/v0.2.0.md#feature-035) |
-| 036 | 主文档、ADR 与提示词对齐 | Internal | High | Planned | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-036) |
-| 037 | 界面去内部化与交互止血 | Enhancement | High | Planned | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-037) |
-| 038 | 读取合同对齐 | Enhancement | High | Planned | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-038) |
-| 039 | 冻结旧消费接口 | Refactor | High | Planned | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-039) |
+| 036 | 主文档、ADR 与提示词对齐 | Internal | High | Completed | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-036) |
+| 037 | 界面去内部化与交互止血 | Enhancement | High | InProgress | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-037) |
+| 038 | 读取合同对齐 | Enhancement | High | InProgress | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-038) |
+| 039 | 冻结旧消费接口 | Refactor | High | InProgress | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-039) |
 | 040 | 分层语义模型 | Refactor | High | Planned | v0.3.0 | 036 | [设计](features/v0.3.0.md#feature-040) |
 | 041 | 统一变更流程与自动采用规则 | Enhancement | High | Planned | v0.3.0 | 040 | [设计](features/v0.3.0.md#feature-041) |
 | 042 | 关系发现修复与身份对应 | Enhancement | High | Planned | v0.3.0 | 040、041 | [设计](features/v0.3.0.md#feature-042) |
@@ -513,40 +515,41 @@ Last Updated: 2026-10-19
 
 ### 036: 主文档、ADR 与提示词对齐
 
-- **Status:** Planned
+- **Status:** Completed
 - **Category / Priority:** Internal / High
 - **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / 2026-10-19
 - **Description:** 主文档按蓝图同步，新增 ADR-005—008；提示词按身份/通用规则重写，清理冲突 Skill，增加提示词—工具—页面名称一致性检查。
 - **Blocked by:** 无。
 - **Design:** [FEATURE_036](features/v0.3.0.md#feature-036)。
+- **Verification:** [M0 隔离验收](experiment/V030_M0_2026_10_19.md)，提示词一致性、29 项相关回归、真实模型修订与查询；当前保持单一模式。
 
 ### 037: 界面去内部化与交互止血
 
-- **Status:** Planned
+- **Status:** InProgress
 - **Category / Priority:** Enhancement / High
 - **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / —
 - **Description:** 开发者视图之外不显示 JSON、UUID 与内部字段；三页共用来源投影；删除口令采用；对话历史不再物理删除；修正发布页引导。
 - **Blocked by:** 无。
 - **Design:** [FEATURE_037](features/v0.3.0.md#feature-037)。
 
 ### 038: 读取合同对齐
 
-- **Status:** Planned
+- **Status:** InProgress
 - **Category / Priority:** Enhancement / High
 - **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / —
 - **Description:** 工作区默认读已采用快照，实时为显式选择；结果附读取模式、版本、数据截至与覆盖；工具说明由执行合同生成。
 - **Blocked by:** 无。
 - **Design:** [FEATURE_038](features/v0.3.0.md#feature-038)。
 
 ### 039: 冻结旧消费接口
 
-- **Status:** Planned
+- **Status:** InProgress
 - **Category / Priority:** Refactor / High
 - **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / —
 - **Description:** v1/v2/v3 与旧数据集工作台冻结为只读，对外只保留发布 + 接入方 + v4/MCP；移除 Agent 旧接入工具。
 - **Blocked by:** 无。
 - **Design:** [FEATURE_039](features/v0.3.0.md#feature-039)。

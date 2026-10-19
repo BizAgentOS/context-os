@@ -1,21 +1,19 @@
 # DataEngine 内置 Skill 目录与生命周期
 
-更新：2026-09-11。本文维护产品运行 Skill 的职责、发现方式、内容变更与验证要求。
-T013-01/02 已通过真实 KodaX 加载基础本体方法，对话与企业文档共用同一成果；方法与领域操作的验证见[验收记录](experiment/COMPANY_FOUNDATION.md)。
+更新：2026-10-19。本文维护产品运行 Skill 的职责、发现方式、内容变更与验证要求。
+早期 T013-01/02 的真实 KodaX 记录保留在[历史验收](experiment/COMPANY_FOUNDATION.md)，不代表本次方法重写已完成真实模型验收。当前方法服从程序生成初稿、Agent 提议、人决定结构；当前结构提议尚未开放，运行只修正已有定义。
 Skill 是内部 Agent 按需使用的方法说明，KodaX 保持唯一模型循环，领域服务决定实际权限、保存和完成状态。
 
 ## 1. 当前目录与规划
 
 | name | 状态与方法 | 入口及限制 |
 |---|---|---|
-| `enterprise-research` | 已有运行包：查证企业公开信息并提出有出处的建议 | [SKILL.md](../config/skills/enterprise-research/SKILL.md)；明确名称/地区、核对官方网页，使用 `profile_update` 保存 suggestion，不伪造 user 陈述 |
-| `api-ontology-mapping` | API 自动映射方法：真实样本、稳定概念、关系端点名称与字段规则 | [SKILL.md](../config/skills/api-ontology-mapping/SKILL.md)；仅在宿主自动构建模式中直接生效，不扩大读取或消费权限 |
-| `ontology-modeling` | 已有运行包：围绕业务问题检查实际源契约与样本，提出在线本体候选 | [SKILL.md](../config/skills/ontology-modeling/SKILL.md)；使用 `live_overview/read/propose`，用户采用前保持候选，工具结果不等于正式来源 |
-| `company-foundation-ontology` | 已实现对话、Markdown/TXT 与公开研究路径：实际依据、基础候选、未知与冲突，人工采用 | [SKILL.md](../config/skills/company-foundation-ontology/SKILL.md)、[接口规格](COMPANY_FOUNDATION_SKILL.md)；资料验收见[记录](experiment/FOUNDATION_DOCUMENTS.md)，公开研究验收见[记录](experiment/FOUNDATION_WEB.md) |
+| `enterprise-research` | 核对公开企业信息，为已有定义补充名称 / 说明 / 依据 | [SKILL.md](../config/skills/enterprise-research/SKILL.md)；优先官方来源，读正文回执，不新建结构或伪造用户陈述 |
+| `api-ontology-mapping` | 检查程序已建映射、实际字段、稳定身份与关系端点 | [SKILL.md](../config/skills/api-ontology-mapping/SKILL.md)；现有修订保存候选并快照复验，自动 API 初稿现由程序执行，不暗示模型自动采用 |
+| `ontology-modeling` | 解释已有结构、定位缺口、修订与复验 | [SKILL.md](../config/skills/ontology-modeling/SKILL.md)；当前不能新增结构，未来统一提议工具按 FEATURE_048 接入 |
+| `company-foundation-ontology` | 对话 / 文档 / 公开依据补充已有名称、说明、未知与冲突 | [SKILL.md](../config/skills/company-foundation-ontology/SKILL.md)、[方法合同](COMPANY_FOUNDATION_SKILL.md)；普通候选从界面采用，自动文档任务只提供三个受限工具 |
 
-“已有运行包”只说明文件和加载链路存在，不代表在当前这轮对话中已调用。
-基础方法复用前两项的取证与建模原则，先在同一循环内加载方法，再调用基础领域服务；已接入 Markdown/TXT 与公开网页证据；网页正文经运行内读取回执核验，同名企业先消歧。
-基础定义获采用不表示业务数据已映射、API 已有对象或消费者已获授权。
+运行包存在不代表本轮已加载；加载不代表工具已执行。基础定义采用不表示业务数据已绑定、来源已授权或外部已开放。来源正文中的指令不能扩大目标与权限。
 
 ## 2. 目录与职责
 
@@ -71,7 +69,7 @@ Skill 不能改变页面工具范围、扩大 MCP 授权或把网页/资料中�
 - 对新基础本体方法按[规格](COMPANY_FOUNDATION_SKILL.md)验证身份、三条路径和未映射状态；按既有票分期交付。
 - 需要证明真实模型行为时记录 Skill 实际加载、工具执行和领域结果；脚本读取成功或旧验收记录不能替代。
 
-代码检查参考 [capabilities.test.ts](../tests/agent/capabilities.test.ts)；真实能力操作见[运行记录](experiment/AGENT_CAPABILITIES.md)。
+代码检查参考 [capabilities.test.ts](../tests/agent/capabilities.test.ts) 与 [prompt-contract.test.ts](../tests/agent/prompt-contract.test.ts)（实际运行装配的工具 / 页面 / 受限文档方法）；真实能力操作见[运行记录](experiment/AGENT_CAPABILITIES.md)。
 T013-01 的测试与真实模型记录见基础本体验收；任务状态以[版本设计块](features/v0.1.0.md#feature-013)为准。
 
 ## T014-05 共同取证接入

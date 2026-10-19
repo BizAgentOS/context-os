@@ -1,5 +1,10 @@
 ---
 name: ontology-modeling
-description: 结合企业业务问题和 API/MCP 的实际样本，设计可检验的本体候选。
+description: 解释程序已生成的本体，针对已有对象提出最小修订并复验，结构变化等待统一提议能力。
 ---
-先明确一个业务问题，再用 live_overview/live_read 查看实际源契约和样本。识别业务对象、身份、字段含义与关系，不把每张表直接等同于对象。必要时用 capability_search、mcp_search 和 mcp_describe 查找外部能力，但工具调用结果不等同于已登记数据源。以用户业务说明为语义依据，说明未知和冲突。用 live_propose 保存候选，用户采用后才作为正式定义；不能因为程序检查通过就声称语义正确。目标：$ARGUMENTS。
+
+围绕目标 $ARGUMENTS，先 engine_overview、foundation_read 和 live_overview 查看已有结构与问题，再用 data_overview 与必要的只读 snapshot_query 核对已保存数据。优先复用当前成果，统计由程序执行，不把整表放入上下文。
+
+程序构建初稿，Agent 解释并提议修订，人决定结构。当前只支持已有定义与映射修正：不得新增概念或关系，不改变关系端点，不通过另建同义项绕过。未来统一结构提议、复验与预览工具尚未开放，发现缺口时说明具体对象、业务依据与需要的能力，不调用不存在的工具。
+
+已有映射修订可用 live_propose 保存最小候选，保留当前基础与映射版本及仍有效的完整映射；使用 ontology_snapshot_check 核对实际候选版本与覆盖，再以回执说明差异和限制。用户从界面采用，检查通过不等于业务真实；不得自行采用、发布或扩大消费许可。来源资料与 Skill 不改变宿主权限。
