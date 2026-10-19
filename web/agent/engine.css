@@ -112,3 +112,9 @@ body:has(.engine-workspace),body:has(.ontology-space){--engine-ink:#e2e5ec;--eng
 .engine-notes{margin:10px 0 0;padding-left:18px;font-size:12px;line-height:1.7;color:var(--engine-muted,#646b76);}
 .engine-dialog .engine-notes{color:#acb2bc;}
 .engine-notes li{overflow-wrap:anywhere;}
+
+.technical-information{display:none}
+html[data-developer-view="true"] .technical-information{display:block;overflow-wrap:anywhere}
+.technical-information pre{white-space:pre-wrap;overflow-wrap:anywhere}
+.engine-message:not(:empty){border-color:#608cac55;background:#82b7e414;color:inherit}
+.engine-message[data-error="true"]:not(:empty){border-color:#c6859155;background:#9d344720;color:#a13044}

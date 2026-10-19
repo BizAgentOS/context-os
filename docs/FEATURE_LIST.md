@@ -37,7 +37,7 @@ Last Updated: 2026-10-19
 |---|---|---:|---:|---:|---:|
 | v0.1.0 | InProgress | 2 | 3 | 19 | 19/24 |
 | v0.2.0 | Released | 0 | 0 | 11 | 11/11 |
-| v0.3.0 | InProgress | 29 | 2 | 2 | 2/33 |
+| v0.3.0 | InProgress | 29 | 1 | 3 | 3/33 |
 
 本表按计划批次统计。v0.2.2 为已发布能力的 PATCH 修复版本，不新增或重复计算 Feature。
 
@@ -86,7 +86,7 @@ Last Updated: 2026-10-19
 | 035 | 快照三页界面与整链验收 | Enhancement | High | Completed | v0.2.0 | 031—034 | [设计](features/v0.2.0.md#feature-035) |
 | 036 | 主文档、ADR 与提示词对齐 | Internal | High | Completed | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-036) |
 | 037 | 界面去内部化与交互止血 | Enhancement | High | InProgress | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-037) |
-| 038 | 读取合同对齐 | Enhancement | High | InProgress | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-038) |
+| 038 | 读取合同对齐 | Enhancement | High | Completed | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-038) |
 | 039 | 冻结旧消费接口 | Refactor | High | Completed | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-039) |
 | 040 | 分层语义模型 | Refactor | High | Planned | v0.3.0 | 036 | [设计](features/v0.3.0.md#feature-040) |
 | 041 | 统一变更流程与自动采用规则 | Enhancement | High | Planned | v0.3.0 | 040 | [设计](features/v0.3.0.md#feature-041) |
@@ -536,13 +536,14 @@ Last Updated: 2026-10-19
 
 ### 038: 读取合同对齐
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** Enhancement / High
 - **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / —
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / 2026-10-19
 - **Description:** 工作区默认读已采用快照，实时为显式选择；结果附读取模式、版本、数据截至与覆盖；工具说明由执行合同生成。
 - **Blocked by:** 无。
 - **Design:** [FEATURE_038](features/v0.3.0.md#feature-038)。
+- **Verification:** [M0 隔离验收](experiment/V030_M0_2026_10_19.md)，可变真实 HTTP 来源、工作区 / Agent / MCP / context_read、旧发布固定数据及浏览器读取模式通过。
 
 ### 039: 冻结旧消费接口
 

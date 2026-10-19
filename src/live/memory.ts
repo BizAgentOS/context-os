@@ -19,6 +19,8 @@ import type {
   DomainTool,
 } from "../agent/contracts.ts";
 
+import { readModeSchema, readingConsistency, readingDescription, multipleSourceTimes, type ReadMode, type ReadingReceipt, type SourceReading } from "./reading-contract.ts";
+
 const name = z.string().trim().min(1).max(200);
 const foundationRefSchema = z
   .object({ id: name, version: z.number().int().positive() })
@@ -77,6 +79,7 @@ const querySchema = z
   .object({
     modelId: name,
     modelVersion: z.number().int().positive().optional(),
+    readMode: readModeSchema.optional(),
     type: name.optional(),
     conceptId: name.optional(),
     id: name.optional(),
@@ -95,8 +98,6 @@ class Denied extends Error {}
 /** Snapshot versions a release locks, keyed by pinKey(connectionId, capability). */
 export type SnapshotPins = Record<string, string>;
 export const pinKey = (sourceId: string, capability: string) => `${sourceId}\u0000${capability}`;
-const pinnedConsistency = (d: Definition, pins: SnapshotPins) =>
-  d.types.every(t => [t, ...(t.supplements ?? [])].every(b => pins[pinKey(b.sourceId, b.capability)])) ? "pinned_snapshot" : "pinned_snapshot_with_on_demand";
 /** Refuses a revision whose full-snapshot check could not run or newly fails; an unavailable check (no snapshot service) passes. */
 export function assertSnapshotImpact(impact: Data | undefined) {
   if (impact?.status === "error") throw new Error(`全量快照检查未能完成（${impact.message}），未通过`);
@@ -104,6 +105,7 @@ export function assertSnapshotImpact(impact: Data | undefined) {
   if (newErrors.length) throw new Error(`修订在全量快照上引入新的问题：${newErrors.join("、")}；请调整后重新提出`);
 }
 export interface PinnedReader {
+  bindingDataset?(sourceId: string, capability: string): Artifact | undefined;
   readPinned(snapshotId: string, cap: Capability, binding: { sourceId: string; connectionVersion: number }, where: Data, offset: number, limit: number):
     ReturnType<SourceConnections["readRecords"]>;
 }
@@ -147,6 +149,56 @@ export class LiveMemory {
   }
   private definition(a: Artifact) {
     return a.content as unknown as Definition;
+  }
+  /** Resolve once per query so a concurrent synchronization cannot mix adopted snapshot versions. */
+  private resolvePins(d: Definition, mode: ReadMode, pins?: SnapshotPins): SnapshotPins {
+    if (mode === "live") return {};
+    if (mode === "release_pinned") return { ...pins };
+    const active: SnapshotPins = {};
+    for (const t of d.types) for (const b of [t, ...(t.supplements ?? [])]) {
+      const dataset = this.snapshots?.bindingDataset?.(b.sourceId, b.capability);
+      if (!dataset || dataset.content.materialization === "live") continue;
+      if (!dataset.content.activeVersion) throw new Error(`「${dataset.title}」没有已采用快照，请先同步或显式选择实时读取`);
+      active[pinKey(b.sourceId, b.capability)] = String(dataset.content.activeVersion);
+    }
+    return active;
+  }
+  readCapability(modelId: string, modelVersion: number, sourceId: string, capability: string, readMode: ReadMode = "active_snapshot") {
+    const model = this.model(modelId);
+    if (model.version !== modelVersion) throw new Error("本体版本已变化，请重新读取目标");
+    const d = this.definition(model);
+    return this.sourcesFor(this.resolvePins(d, readMode)).capability(sourceId, capability, d.connections[sourceId]);
+  }
+  private receipt(model: Artifact, readMode: ReadMode, reads: Array<{ sourceId: string; capability: string; readAt: string; historicalReplay: boolean; snapshotId?: string; coverage?: Data }>): ReadingReceipt {
+    const d = this.definition(model), names = new Map(this.sources.list().map(s => [s.id, s.title]));
+    const sources: SourceReading[] = reads.map(r => {
+      const dataset = this.snapshots?.bindingDataset?.(r.sourceId, r.capability);
+      return { id: r.sourceId, name: names.get(r.sourceId) ?? "来源", capability: r.capability,
+        readMode: r.snapshotId ? "snapshot" : "live", datasetId: dataset?.id ?? null,
+        snapshotId: r.snapshotId ?? null, dataAsOf: r.readAt, coverage: r.coverage ?? null, status: "read" };
+    });
+    return { readMode, versions: { ontology: d.foundationRef ?? null, mapping: { id: model.id, version: model.version } },
+      sources, consistency: readingConsistency(readMode, sources), multiSourceTime: multipleSourceTimes };
+  }
+  /** Discovery describes the same routing used by query(), without fetching source values. */
+  describeReading(modelId: string, type: string, pins?: SnapshotPins, mode: ReadMode = "active_snapshot", fields?: string[]) {
+    const model = this.model(modelId), d = this.definition(model);
+    const selectedMode = pins !== undefined ? "release_pinned" : mode;
+    const selected = this.resolvePins(d, selectedMode, pins);
+    const target = d.types.find(t => t.name === type);
+    if (!target) throw new Error("业务类型不存在");
+    const sources: SourceReading[] = [target, ...(target.supplements ?? []).filter(s => !fields || Object.keys(s.fields).some(field => fields.includes(field)))].map(b => {
+      const dataset = this.snapshots?.bindingDataset?.(b.sourceId, b.capability);
+      const snapshotId = selected[pinKey(b.sourceId, b.capability)] ?? null;
+      const snapshot = snapshotId ? this.repo.getArtifact(snapshotId) : null;
+      return { id: b.sourceId, name: this.sources.list().find(s => s.id === b.sourceId)?.title ?? "来源", capability: b.capability,
+        readMode: snapshotId ? "snapshot" : "live", datasetId: dataset?.id ?? null, snapshotId,
+        dataAsOf: snapshot ? String(snapshot.content.syncedAt) : null,
+        coverage: snapshot ? snapshot.content.coverage as Data ?? null : null };
+    });
+    return { readMode: selectedMode, versions: { ontology: d.foundationRef ?? null, mapping: { id: model.id, version: model.version } }, sources,
+      consistency: readingConsistency(selectedMode, sources), multiSourceTime: multipleSourceTimes,
+      description: readingDescription(selectedMode, sources) };
   }
   private adoptionState(a: Artifact) {
     if (a.status !== "candidate") return {canAdopt:false, adoptionReason:null};
@@ -536,7 +588,8 @@ export class LiveMemory {
     previewDefinition?: Data,
     fixedSemantic = false,
     pins?: SnapshotPins,
-  ): Promise<{
+    reading?: { readMode: ReadMode; pins: SnapshotPins },
+  ): Promise<ReadingReceipt & {
     model: { id: string; version: number };
     type: string;
     items: Data[];
@@ -548,6 +601,7 @@ export class LiveMemory {
       complete: boolean;
       sourceComplete?: boolean;
       snapshotTotal?: number;
+      uncoveredProperties?: string[];
     };
     reads: {
       sourceId: string;
@@ -555,6 +609,8 @@ export class LiveMemory {
       capability: string;
       readAt: string;
       historicalReplay: boolean;
+      snapshotId?: string;
+      coverage?: Data;
     }[];
     conceptRef?: {
       foundationId: string;
@@ -571,7 +627,12 @@ export class LiveMemory {
     if (args.modelVersion !== undefined && args.modelVersion !== model.version)
       throw new Error("本体版本已变化，请重新读取目标");
     const d = this.definition(model);
-    const src = this.sourcesFor(pins);
+    const readMode = reading?.readMode ?? (pins !== undefined ? "release_pinned" : args.readMode ?? "active_snapshot");
+    if (readMode === "release_pinned" && pins === undefined) throw new Error("release_pinned 需要发布固定的快照范围");
+    if (pins !== undefined && args.readMode && args.readMode !== "release_pinned") throw new Error("发布读取不能覆盖固定读取模式");
+    const selectedPins = reading?.pins ?? this.resolvePins(d, readMode, pins);
+    const src = this.sourcesFor(selectedPins);
+    const receipt = (reads: Parameters<LiveMemory["receipt"]>[2]) => this.receipt(model, readMode, reads);
     const assertValid = () => {
       assertActive();
       this.checkConnections(d, undefined, fixedSemantic, src);
@@ -638,6 +699,7 @@ export class LiveMemory {
           correctionTarget,
           correction.content.targetIds as string[],
           assertValid,
+          { readMode, pins: selectedPins, fixedSemantic },
         );
         if (snapshot.fingerprint !== correction.content.fingerprint)
           throw new Error("局部纠正依赖的源事实已变化，请重新检查关系纠正");
@@ -693,7 +755,11 @@ export class LiveMemory {
             originalIds: snapshot.before.items.map((r) => r.$id),
             condition: "model_and_source_snapshot_unchanged",
           },
-          consistency: "on_demand_not_atomic",
+          ...receipt([
+            ...snapshot.origin.reads,
+            ...snapshot.before.reads,
+            ...snapshot.targets.flatMap(r => r.reads),
+          ]),
         };
       }
       const value = origin.items[0][sourceField(rel.fromField)];
@@ -703,6 +769,7 @@ export class LiveMemory {
         {
           modelId: model.id,
           modelVersion: model.version,
+          readMode,
           type: rel.to,
           where: { [rel.toField]: value },
           fields: args.fields,
@@ -713,12 +780,13 @@ export class LiveMemory {
         applyCorrections,
         previewDefinition,
         fixedSemantic,
-        pins,
+        readMode === "release_pinned" ? selectedPins : undefined,
+        { readMode, pins: selectedPins },
       );
       this.checkConnections(d, undefined, fixedSemantic, src);
       if (this.repo.getArtifact(model.id).version !== model.version)
         throw new Error("本体版本已变化，请重新读取目标");
-      return { ...result, relationOrigin:{type:type.name,id:String(origin.items[0][cap.idField])}, reads: [origin.provenance, ...result.reads] };
+      return { ...result, relationOrigin:{type:type.name,id:String(origin.items[0][cap.idField])}, reads: [origin.provenance, ...result.reads], ...receipt([origin.provenance, ...result.reads]) };
     }
     const fields = args.fields ?? ["$id", ...propertyNames(type)];
     for (const f of fields)
@@ -746,6 +814,20 @@ export class LiveMemory {
           assertValid,
         )
       : null;
+    const readReceipt = receipt(fusion?.reads ?? [result.provenance]);
+    const missingReads = (fusion?.evidence ?? []).flatMap(object => object.matches)
+      .filter(match => !readReceipt.sources.some(source => source.id === match.sourceId && source.capability === match.capability));
+    for (const match of missingReads) {
+      if (readReceipt.sources.some(source => source.id === match.sourceId && source.capability === match.capability)) continue;
+      const dataset = this.snapshots?.bindingDataset?.(match.sourceId, match.capability);
+      const snapshotId = selectedPins[pinKey(match.sourceId, match.capability)] ?? null;
+      readReceipt.sources.push({ id: match.sourceId, name: this.sources.list().find(source => source.id === match.sourceId)?.title ?? "来源",
+        capability: match.capability, readMode: snapshotId ? "snapshot" : "live", datasetId: dataset?.id ?? null, snapshotId,
+        dataAsOf: null, coverage: null, status: match.status === "unavailable" ? "unavailable" : "not_read" });
+    }
+    readReceipt.consistency = readingConsistency(readMode, readReceipt.sources);
+    const uncoveredProperties = [...new Set((fusion?.evidence ?? []).flatMap(object => Object.entries(object.properties)
+      .filter(([, property]) => ["uncertain", "missing"].includes(property.status)).map(([field]) => field)))];
     return {
       model: { id: model.id, version: model.version },
       type: type.name,
@@ -764,9 +846,9 @@ export class LiveMemory {
         result.items.map((row) =>
           Object.fromEntries(fields.map((f) => [f, row[sourceField(f)]])),
         ),
-      coverage: result.coverage,
+      coverage: { ...result.coverage, ...(uncoveredProperties.length ? { uncoveredProperties } : {}) },
       reads: fusion?.reads ?? [result.provenance],
-      consistency: pins ? pinnedConsistency(d, pins) : "on_demand_not_atomic",
+      ...readReceipt,
     };
   }
   /** Full-snapshot checks of a base and a revised definition: what the revision changes across all records, not only samples. */
@@ -788,17 +870,18 @@ export class LiveMemory {
   /** Source access for one read: pinned bindings come from their locked snapshot, others from the live source. */
   private sourcesFor(pins?: SnapshotPins): Pick<SourceConnections, "capability" | "readRecords" | "list"> {
     const reader = this.snapshots;
-    if (!pins || !reader || !Object.keys(pins).length) return this.sources;
+    if (pins && Object.keys(pins).length && !reader) throw new Error("快照读取服务不可用");
     const sources = this.sources;
     return {
       list: () => sources.list(),
-      capability: (id: string, capability: string, version?: number) => pins[pinKey(id, capability)] && version !== undefined
+      capability: (id: string, capability: string, version?: number) => pins?.[pinKey(id, capability)] && version !== undefined
         ? sources.pinnedCapability(id, capability, version) : sources.capability(id, capability, version),
       readRecords: async (id: string, capability: string, where: Data = {}, offset = 0, limit = 20, version?: number) => {
-        const snapshotId = pins[pinKey(id, capability)];
-        if (!snapshotId || version === undefined) return sources.readRecords(id, capability, where, offset, limit, version);
-        const { cap } = sources.pinnedCapability(id, capability, version);
-        return reader.readPinned(snapshotId, cap, { sourceId: id, connectionVersion: version }, where, offset, limit);
+        const snapshotId = pins?.[pinKey(id, capability)];
+        const page = snapshotId && version !== undefined
+          ? await reader!.readPinned(snapshotId, sources.pinnedCapability(id, capability, version).cap, { sourceId: id, connectionVersion: version }, where, offset, limit)
+          : await sources.readRecords(id, capability, where, offset, limit, version);
+        return { ...page, provenance: { ...page.provenance, coverage: page.coverage } };
       },
     } as Pick<SourceConnections, "capability" | "readRecords" | "list">;
   }
@@ -1038,7 +1121,7 @@ export const liveTools: DomainTool[] = [
   ),
   tool(
     "live_query",
-    "按 modelId/modelVersion 与 conceptId（基础概念稳定 id）或 type 查询当前源对象及关系，返回同一 conceptRef、读取时间、覆盖范围；必须填 conceptId 或 type；查询 relation 时必须填起点 id。id 对应返回对象的 $id，不是业务编号；不能把对象 ID 填入业务属性 where，where 还必须被主来源 filters 支持。fields 可以选择主来源与 supplements 中的业务属性，选中对象的请求不得省略用户要求的融合属性。融合查询每页最多20对象，返回 evidence 的逐属性状态/出处与匹配覆盖；null可能是缺失/冲突/未确定，不等于零。只允许主来源且无重叠的属性过滤。候选查询仅为预览；不能声称历史快照或完整跨源一致性。",
+    `${readingDescription("active_snapshot")} 按 modelId/modelVersion 与 conceptId（基础概念稳定 id）或 type 查询对象及关系，返回同一 conceptRef、读取时间、覆盖范围；必须填 conceptId 或 type；查询 relation 时必须填起点 id。id 对应返回对象的 $id，不是业务编号；不能把对象 ID 填入业务属性 where，where 还必须被主来源 filters 支持。fields 可以选择主来源与 supplements 中的业务属性，选中对象的请求不得省略用户要求的融合属性。融合查询每页最多20对象，返回 evidence 的逐属性状态/出处与匹配覆盖；null可能是缺失/冲突/未确定，不等于零。只允许主来源且无重叠的属性过滤。候选查询仅为预览；依据回执区分快照与实时来源，不声称完整跨源一致性。`,
     querySchema,
   ),
 

@@ -1,3 +1,4 @@
+import { readingDescription } from "./reading-contract.ts";
 import type { Data } from "../agent/contracts.ts";
 
 /** This catalog drives HTTP documentation and the stdio bridge. */
@@ -18,7 +19,7 @@ export const consumerOperations = [
     name: "query_objects",
     path: "/v3/objects",
     description:
-      "Read permitted objects or a named relation. Fields refer to the target type and must include $id. Source readings are not atomic. Use viewVersion from catalog to pin this investigation; it is required after migration.",
+      `Read permitted objects or a named relation. Fields refer to the target type and must include $id. ${readingDescription("live")} Use viewVersion from catalog to pin this investigation; it is required after migration.`,
     parameters: ["type", "id", "relation", "fields", "offset", "limit", "viewVersion"],
   },
   {
@@ -117,7 +118,11 @@ export function consumerConnection(
       items: { type: "array", maxItems: 20, items: { oneOf: objectVariants } },
       coverage,
       relationEvidenceRef: reference,
-      consistency: { enum: ["on_demand_not_atomic", "pinned_snapshot", "pinned_snapshot_with_on_demand"] },
+      readMode: { enum: ["active_snapshot", "live", "release_pinned"] },
+      versions: { type: "object" },
+      sources: { type: "array", items: { type: "object", properties: { id: reference, snapshotId: { type: ["string", "null"] }, dataAsOf: { type: ["string", "null"], format: "date-time" }, readMode: { enum: ["snapshot", "live"] }, coverage: { type: ["object", "null"] } } } },
+      multiSourceTime: { type: "string" },
+      consistency: { enum: ["on_demand_not_atomic", "pinned_snapshot", "pinned_snapshot_with_on_demand", "active_snapshot", "active_snapshot_with_live"] },
       reads: {
         type: "array",
         items: {

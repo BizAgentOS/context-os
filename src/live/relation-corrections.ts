@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import type { LiveMemory } from "./memory.ts";
+import type { LiveMemory, SnapshotPins } from "./memory.ts";
+import type { ReadMode } from "./reading-contract.ts";
 import type { MemoryStore } from "../agent/memory.ts";
 import type {
   Artifact,
@@ -61,8 +62,9 @@ export async function captureRelation(
   target: CorrectionTarget,
   targetIds: string[],
   assertActive: () => void,
+  reading?: { readMode: ReadMode; pins: SnapshotPins; fixedSemantic: boolean },
 ) {
-  const model = live.assertModel(target.modelId, target.modelVersion);
+  const model = live.assertModel(target.modelId, target.modelVersion, reading?.fixedSemantic ?? false, reading?.pins);
   if (model.status !== "adopted")
     throw new Error("局部纠正需要已采用的执行映射");
   const relation = (model.content.relations as Data[]).find(
@@ -76,11 +78,16 @@ export async function captureRelation(
         modelId: target.modelId,
         modelVersion: target.modelVersion,
         type,
+        ...(reading ? { readMode: reading.readMode } : {}),
         limit: 20,
         ...args,
       },
       assertActive,
       false,
+      undefined,
+      reading?.fixedSemantic ?? false,
+      reading?.readMode === "release_pinned" ? reading.pins : undefined,
+      reading,
     );
     assertActive();
     if (
@@ -115,7 +122,7 @@ export async function captureRelation(
       throw new Error("请使用目标对象的规范编号，禁止别名重复");
     targets.push(result);
   }
-  live.assertModel(target.modelId, target.modelVersion);
+  live.assertModel(target.modelId, target.modelVersion, reading?.fixedSemantic ?? false, reading?.pins);
   assertActive();
   const evidenceIdentity = (result: typeof origin) =>
     result.evidence

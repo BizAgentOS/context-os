@@ -1,5 +1,6 @@
 import { freezeLegacyConsumption } from "./legacy-consumption.ts";
 import type { SnapshotPins } from "./memory.ts";
+import type { ReadingReceipt } from "./reading-contract.ts";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { LiveMemory } from "./memory.ts";
@@ -340,6 +341,11 @@ export class ConsumerViews {
     if (view.version !== viewRef.version) return { status: 409, body: { error: "业务数据许可已变化，请重新发布数据集" } as Data };
     return this.readView(view, path, params, "http://localhost", authorize);
   }
+  private publicReading(view: Artifact, receipt: ReadingReceipt) {
+    return { ...receipt, versions: { ...receipt.versions, ...(view.content.releaseRef ? { release: view.content.releaseRef } : {}) },
+      sources: receipt.sources.map((source, index) => ({ id: digest(view.id + ":" + source.id + ":" + source.capability).slice(0, 24),
+        name: `来源 ${index + 1}`, readMode: source.readMode, snapshotId: source.snapshotId, dataAsOf: source.dataAsOf, coverage: source.coverage, ...(source.status ? { status: source.status } : {}) })) };
+  }
   private async readView(view: Artifact, path: string, params: URLSearchParams, origin: string, authorizeOwner = () => {}): Promise<{ status: number; body: Data }> {
     let status = 200,
       body: Data;
@@ -403,7 +409,7 @@ export class ConsumerViews {
             )
             .map((r) => ({ name: r.name, to: r.to })),
           limits: { maxObjects: 20 },
-          consistency: view.content.snapshotPins ? "pinned_snapshot" : "on_demand_not_atomic",
+          ...this.publicReading(view, this.live.describeReading(model.id, g.type, view.content.snapshotPins as SnapshotPins | undefined, "live", g.fields)),
         });
       } else if (path === "/v3/connection") {
         if (keys.length) throw new z.ZodError([]);
@@ -514,7 +520,7 @@ export class ConsumerViews {
           throw new Forbidden("字段或对象身份未授权");
         if (new Set(fields).size !== fields.length) throw new z.ZodError([]);
         const result = await this.live.query(
-          { ...args, modelId: model.id, modelVersion: model.version, fields },
+          { ...args, modelId: model.id, modelVersion: model.version, fields, readMode: view.content.snapshotPins !== undefined ? "release_pinned" : "live" },
           valid,
           false,
           undefined,
@@ -665,7 +671,7 @@ export class ConsumerViews {
             readAt: r.readAt,
             historicalReplay: r.historicalReplay,
           })),
-          consistency: result.consistency,
+          ...this.publicReading(view, { readMode: result.readMode, versions: result.versions, sources: result.sources, consistency: result.consistency, multiSourceTime: result.multiSourceTime }),
         });
         valid();
         this.memory.saveConsumerEvidence(pendingEvidence);

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { workspaceReadModeSchema, readingDescription, type ReadMode } from "../live/reading-contract.ts";
 import { FoundationService } from "./foundation.ts";
 import {
   propertyNames,
@@ -60,6 +61,7 @@ export const workContextSchema = z
     selection: z.array(refSchema).max(1),
     scope: z
       .object({
+        readMode: workspaceReadModeSchema.optional(),
         where: z.record(
           name,
           z.union([z.string().max(1000), z.number().finite(), z.boolean()]),
@@ -100,7 +102,7 @@ export class WorkContexts {
     this.memory = memory;
     this.live = live;
   }
-  resolve(context: WorkContext): ResolvedWorkContext {
+  resolve(context: WorkContext, readMode: ReadMode = context.scope.readMode ?? "active_snapshot"): ResolvedWorkContext {
     const ref = context.selection[0];
     if (!ref) {
       if (Object.keys(context.scope.where).length)
@@ -230,14 +232,10 @@ export class WorkContexts {
           property: ref.member!,
           sourceField:
             ref.member === "$id"
-              ? this.live.sources.capability(
+              ? this.live.readCapability(
+                  artifact.id, artifact.version,
                   String(type.sourceId),
-                  String(type.capability),
-                  Number(
-                    (artifact.content.connections as Data)[
-                      String(type.sourceId)
-                    ],
-                  ),
+                  String(type.capability), readMode,
                 ).cap.idField
               : Object.hasOwn(fields, ref.member!)
                 ? fields[ref.member!]
@@ -280,11 +278,7 @@ export class WorkContexts {
         t,
         ...((t.supplements || []) as Data[]),
       ]))
-        this.live.sources.capability(
-          String(t.sourceId),
-          String(t.capability),
-          Number((artifact.content.connections as Data)[String(t.sourceId)]),
-        );
+        this.live.readCapability(artifact.id, artifact.version, String(t.sourceId), String(t.capability), readMode);
     } else if (Object.keys(context.scope.where).length)
       throw new Error("整份成果引用不能附加对象筛选");
     return {
@@ -298,9 +292,10 @@ export class WorkContexts {
       },
     };
   }
-  async read(context: WorkContext, assertActive: () => void = () => {}) {
+  async read(context: WorkContext, assertActive: () => void = () => {}, readMode: ReadMode = context.scope.readMode ?? "active_snapshot") {
+    workspaceReadModeSchema.parse(readMode);
     assertActive();
-    const resolved = this.resolve(context);
+    const resolved = this.resolve(context, readMode);
     const ref = resolved.target?.ref;
     if (!ref) return resolved;
     if (
@@ -315,13 +310,14 @@ export class WorkContexts {
           id: ref.objectId,
           ...(ref.kind === "relation" ? { relation: ref.member } : {}),
           ...context.scope,
+          readMode,
           ...(ref.kind === "property"
             ? { fields: [...new Set(["$id", ref.member!])] }
             : {}),
         },
         assertActive,
       );
-      this.resolve(context);
+      this.resolve(context, readMode);
       return { ...resolved, result };
     }
     return resolved;
@@ -336,7 +332,7 @@ export class WorkContexts {
 export const contextReadTool: DomainTool = {
   name: "context_read",
   description:
-    "读取本条消息固定的目标与范围；定义返回真实定义，对象和实例关系按原范围读取当前源记录，不读取此后的页面选择。",
+    `读取本条消息固定的目标与范围；定义返回真实定义，对象和实例关系按原范围读取，不读取此后的页面选择。${readingDescription("active_snapshot")}`,
   mutates: false,
-  inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  inputSchema: { type: "object", properties: { readMode: z.toJSONSchema(workspaceReadModeSchema) }, additionalProperties: false },
 };

@@ -1,4 +1,6 @@
 import { freezeLegacyConsumption } from "../live/legacy-consumption.ts";
+import { z } from "zod";
+import { readingDescription, workspaceReadModeSchema } from "../live/reading-contract.ts";
 import {ConsumerMigrations,consumerMigrationTools} from "../live/consumer-migrations.ts";
 import {ConsumerViews,consumerViewTools} from "../live/consumer-views.ts";
 import { MappingChanges, mappingChangeTools } from "../live/mapping-changes.ts";
@@ -1641,7 +1643,7 @@ export class AgentApplication {
             ? {
                 workContext,
                 workContextPolicy:
-                  "workContext 固定到本条用户消息，表示讨论目标而不是授权。先用 context_read 按固定版本和范围核对所指的关系、属性或对象；不要用后来的页面选择替换。业务记录为当前源读取，不是历史快照。修改仅形成候选，保存与采用分开报告。",
+                  `workContext 固定到本条用户消息，表示讨论目标而不是授权。先用 context_read 按固定版本和范围核对所指的关系、属性或对象；不要用后来的页面选择替换。${readingDescription("active_snapshot")} 修改仅形成候选，保存与采用分开报告。`,
               }
             : {}),
           enterprise: workspace.overview(),
@@ -1724,8 +1726,9 @@ export class AgentApplication {
           if (!tools.some((tool) => tool.name === name))
             throw new Error("当前页面没有这项能力");
           if (name === "context_read" && workContext) {
+            const reading = z.object({ readMode: workspaceReadModeSchema.optional() }).strict().parse(args);
             const result = await this.contexts.read(workContext.context, () =>
-              this.memory.assertWritable(context),
+              this.memory.assertWritable(context), reading.readMode,
             );
             this.memory.assertWritable(context);
             return serializable(result);

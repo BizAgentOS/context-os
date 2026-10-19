@@ -1,10 +1,11 @@
+import { safeText, displayValue, technicalDetails } from "./ui-display.js";
 import { openCorrection } from "./relation-corrections.js";
 import { createMemoryGraph } from "./memory-graph.js";
 import { renderFusionEvidence } from "./fusion.js";
 const el = (tag, cls = "", text = "") => {
   const n = document.createElement(tag);
   n.className = cls;
-  n.textContent = text;
+  n.textContent = safeText(text);
   return n;
 };
 const button = (text, fn) => {
@@ -35,6 +36,14 @@ export function renderLiveObjects(model, { api, select, selections }) {
     types.append(o);
   }
   types.value = saved.type;
+  const readModes = el("select");
+  readModes.setAttribute("aria-label", "读取模式");
+  for (const [value, label] of [["active_snapshot", "已采用快照"], ["live", "实时来源"]]) {
+    const option = el("option", "", label);
+    option.value = value;
+    readModes.append(option);
+  }
+  readModes.value = saved.readMode || "active_snapshot";
   const idInput = el("input");
   idInput.setAttribute("aria-label", "按对象编号查找");
   idInput.placeholder = "对象编号（留空分页浏览）";
@@ -42,7 +51,7 @@ export function renderLiveObjects(model, { api, select, selections }) {
   const queryForm = el("form", "live-actions");
   const submit = button("读取对象", () => {});
   submit.type = "submit";
-  queryForm.append(types, idInput, submit);
+  queryForm.append(types, readModes, idInput, submit);
   const graphButton = button("关联图", () => {
     saved.mode = "graph";
     draw();
@@ -80,20 +89,32 @@ export function renderLiveObjects(model, { api, select, selections }) {
       modelId: model.id,
       modelVersion: model.version,
       type,
+      readMode: saved.readMode || "active_snapshot",
       limit: 20,
       ...args,
     });
   const title = (e) => `${e.type} · ${e.row.$id}`;
-  const metadata = (r) =>
-    `返回 ${r.items.length} 条 · 总数 ${r.coverage.total ?? "未知"} · ${r.coverage.complete ? "本次范围完整" : "分页或覆盖不完整"} · 各源按需读取，非同时点快照`;
+  const modeLabel = mode => ({ active_snapshot: "已采用快照", live: "实时来源", release_pinned: "发布固定快照" })[mode] || "未报告读取模式";
+  const asOf = value => value ? new Date(value).toLocaleString("zh-CN") : "尚未读取";
+  const metadata = (r) => {
+    const times = [...new Set((r.sources || []).map(source => source.dataAsOf).filter(Boolean))];
+    const freshness = times.length === 1 ? `数据截至 ${asOf(times[0])}` : times.length ? "数据截至时间按来源显示" : "数据截至时间未报告";
+    const mixed = (r.sources || []).some(source => source.readMode === "live") && (r.sources || []).some(source => source.readMode === "snapshot");
+    return `${modeLabel(r.readMode)}${mixed ? "（含实时来源）" : ""} · ${freshness} · 返回 ${r.items.length} 条 · 总数 ${r.coverage.total ?? "未知"} · ${r.coverage.complete ? "本次范围完整" : "分页或覆盖不完整"}`;
+  };
   function provenance(parent, r) {
     const d = el("details");
     d.append(
       el("summary", "", "本次读取来源与范围"),
       el("p", "source-meta", metadata(r)),
     );
-    for (const read of r.reads || [])
-      d.append(el("pre", "source-meta", JSON.stringify(read, null, 2)));
+    const sources = r.sources || (r.reads || []).map(read => ({ name: "来源", readMode: read.historicalReplay ? "snapshot" : "live", dataAsOf: read.readAt, coverage: read.coverage }));
+    for (const source of sources) {
+      const coverage = source.coverage;
+      d.append(el("p", "source-meta", `${source.name} · ${source.readMode === "snapshot" ? "快照" : "实时读取"}${source.status === "unavailable" ? "（读取失败）" : source.status === "not_read" ? "（未读取）" : ""} · 数据截至 ${asOf(source.dataAsOf)}${coverage ? ` · 本次 ${coverage.shown ?? coverage.rows ?? "未知"} 条 / 总数 ${coverage.total ?? "未知"} · ${coverage.complete ? "本次范围完整" : "覆盖不完整"}` : ""}`));
+    }
+    if (r.multiSourceTime) d.append(el("p", "muted", r.multiSourceTime));
+    d.append(technicalDetails({ readMode: r.readMode, versions: r.versions, sources: r.sources, reads: r.reads, coverage: r.coverage }));
     parent.append(d);
   }
   async function attach(target, requestScope, guard = () => true) {
@@ -102,7 +123,7 @@ export function renderLiveObjects(model, { api, select, selections }) {
     await select(
       model,
       target,
-      requestScope,
+      { ...requestScope, readMode: saved.readMode || "active_snapshot" },
       () => valid(tick) && dt === detailGeneration && guard(),
     );
   }
@@ -121,7 +142,7 @@ export function renderLiveObjects(model, { api, select, selections }) {
     relation = null;
     selected = null;
 
-    summary.textContent = "正在读取当前源对象…";
+    summary.textContent = `正在读取${modeLabel(saved.readMode || "active_snapshot")}对象…`;
     pager.replaceChildren();
     view.replaceChildren();
     detail.replaceChildren();
@@ -332,23 +353,9 @@ export function renderLiveObjects(model, { api, select, selections }) {
     }
     const type = model.content.types.find((t) => t.name === entity.type);
     const mapping = el("details");
-    mapping.append(
-      el("summary", "", "对象字段映射"),
-      el(
-        "pre",
-        "source-meta",
-        JSON.stringify(
-          {
-            sourceId: type.sourceId,
-            capability: type.capability,
-            fields: type.fields,
-            supplements: type.supplements || [],
-          },
-          null,
-          2,
-        ),
-      ),
-    );
+    mapping.append(el("summary", "", "对象属性与来源"));
+    for (const property of Object.keys(type.fields || {})) mapping.append(el("p", "source-meta", `${property}：来自已关联的数据来源`));
+    mapping.append(technicalDetails(type));
     detail.append(mapping);
     provenance(detail, r);
     const links = model.content.relations.filter((l) => l.from === entity.type);
@@ -454,6 +461,7 @@ export function renderLiveObjects(model, { api, select, selections }) {
   queryForm.onsubmit = (e) => {
     e.preventDefault();
     saved.type = types.value;
+    saved.readMode = readModes.value;
     saved.id = idInput.value.trim();
     load(0);
   };
@@ -461,6 +469,10 @@ export function renderLiveObjects(model, { api, select, selections }) {
     saved.type = types.value;
     saved.id = "";
     idInput.value = "";
+    load(0);
+  };
+  readModes.onchange = () => {
+    saved.readMode = readModes.value;
     load(0);
   };
   queueMicrotask(() => load(saved.offset || 0));

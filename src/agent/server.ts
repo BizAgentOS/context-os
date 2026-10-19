@@ -28,6 +28,7 @@ const staticFiles: Record<string, { file: string; type: string }> = {
   "/glass-theme.css": {file:"glass-theme.css",type:"text/css; charset=utf-8"},
   "/glass-ontology.css": {file:"glass-ontology.css",type:"text/css; charset=utf-8"},
   "/engine.css": {file:"engine.css",type:"text/css; charset=utf-8"},
+  "/ui-display.js": { file:"ui-display.js", type:"text/javascript; charset=utf-8" },
   "/engine-ui.js": {file:"engine-ui.js",type:"text/javascript; charset=utf-8"},
   "/engine-workspace.js": {file:"engine-workspace.js",type:"text/javascript; charset=utf-8"},
   "/release-workspace.js": {file:"release-workspace.js",type:"text/javascript; charset=utf-8"},
@@ -744,7 +745,7 @@ export async function createServer(
           result = app.canvasContext(body);
           break;
         case "/api/canvas/context/read":
-          result = await app.contexts.read(app.canvasContext(body).context);
+          result = await app.contexts.read(app.canvasContext(body).context, undefined, body.readMode as "active_snapshot" | "live" | undefined);
           break;
         case "/api/canvas/message":
           result = await queue(() => app.canvasMessage(body));
