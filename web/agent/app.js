@@ -1,9 +1,15 @@
+import { createSessions } from "./sessions.js";
+import { createWorkspaceStore, connectWorkspaceEvents, createScopeQueue } from "./workspace-store.js";
+import { createAgentPanel } from "./agent-panel.js";
+import { createTaskCenter } from "./task-center.js";
+import { renderPendingCenter } from "./pending-center.js";
+import { createDataProfile } from "./data-profile.js";
+import { renderSharedAccess } from "./share-workspace.js";
 import { developerView, setDeveloperView, safeText, displayValue, fieldLabel, technicalDetails } from "./ui-display.js";
 import { renderEngineWorkspace, openSource as openEngineSource, showEngineBuilds } from "./engine-workspace.js";
 import { renderReleaseWorkspace } from "./release-workspace.js";
 import { dialog as engineDialog } from "./engine-ui.js";
 import { renderOnboarding } from "./onboarding.js";
-import { renderEnterpriseProfile } from "./enterprise-profile.js";
 import { renderDatasetWorkspace } from "./dataset-workspace.js";
 import { renderEvidenceWorkspace } from "./evidence.js";
 import { renderFoundationWorkspace } from "./foundation-workspace.js";
@@ -16,7 +22,7 @@ import {
   renderObjectGraph,
 } from "./ontology-workspace.js";
 import { renderLiveWorkspace } from "./live-workspace.js";
-import { createDraftStore, parseLegacyDrafts } from "./drafts.js";
+import { createDraftStore } from "./drafts.js";
 import { createShareMode } from "./share-mode.js";
 
 const shareMode = createShareMode(document);
@@ -161,6 +167,9 @@ const state = {
   demo: null,
   sourceSummary: { sources: [], total: 0, counts: {} },
   messagePage: { nextBefore: null },
+  session: null,
+  currentSessionId: null,
+  pools: { interactive: [], background: { active: null, queued: [] } },
   live: { connections: [], models: [], consumers: [], audit: [] },
 };
 initialAccess = "";
@@ -185,13 +194,64 @@ const ui = {
   ontologyView: "definitions",
   definitionId: null,
   graphSelections: new Map(),
-  consumerPanels: new Map(),
-  canvasKey: "",
+  canvasDirty: true,
   dialogueKey: "",
   chatMode: "compact",
   pendingMessage: null,
   settingsBusy: false,
 };
+
+const workspace = createWorkspaceStore(state);
+const { renderDialogue } = createAgentPanel({ state, ui, $, node, button, api, hasCanvasContent, inspectContext, errorMessage });
+const { renderAgentTask } = createTaskCenter({ state, ui, $, node, button, navigate, setChatMode, dataActions, openDefinitions, isOnboarding: () => onboardingDialog?.open });
+const { renderDataProfile } = createDataProfile({ state, ui, $, pageLabels, node, button, api, mutate, navigate, draftKey, applySnapshot, label, openStatement, resizeInput, rememberDraft, openComposer, foundationPanel, shareMode, showCredential, renderSources, renderCanvas, startOnboarding, setFocus, errorMessage, updateComposer });
+function openDefinitions() { $("#canvas").firstElementChild?.openDefinitions?.(); }
+let sessions, disconnectEvents;
+function snapshotPath(scope) {
+  const params = new URLSearchParams({ page: ui.page });
+  if (state.currentSessionId) params.set("sessionId", state.currentSessionId);
+  if (scope) params.set("scope", scope);
+  return `/api/snapshot?${params}`;
+}
+async function switchSession(id) {
+  rememberDraft();
+  const generation = ++ui.sessionGeneration;
+  state.currentSessionId = id; state.messages = []; state.messagePage = { nextBefore: null }; state.streaming = "";
+  ui.dialogueKey = "";
+  restoreDraft(ui.drafts.get(draftKey()) ?? ui.draftStore?.read(draftKey()));
+  try { sessionStorage.setItem(`dataengine:session:${state.workspaceId}`, id); } catch {}
+  sessions?.render(); renderDialogue(); updateComposer();
+  const snapshot = await api(snapshotPath("agent"));
+  if (generation === ui.sessionGeneration) { applySnapshot(snapshot, "agent"); sessions?.render(); }
+}
+const scopeUpdates = createScopeQueue(async scope => {
+  if (scope === "sessions") { await sessions?.load(); return; }
+  const sessionId = state.currentSessionId, generation = ui.generation, sessionGeneration = ui.sessionGeneration, pageGeneration = ui.pageGeneration;
+  const snapshot = await api(snapshotPath(scope));
+  if (sessionId !== state.currentSessionId || generation !== ui.generation || sessionGeneration !== ui.sessionGeneration || pageGeneration !== ui.pageGeneration) { scopeUpdates.add([scope]); return; }
+  applySnapshot(snapshot, scope); sessions?.render();
+  if ($("#request-error").dataset.connection === "true") { errorMessage(); delete $("#request-error").dataset.connection; }
+}, error => errorMessage(error.message));
+async function initializeEvents() {
+  if (!sessions) {
+    ui.sessionGeneration = 0;
+    sessions = createSessions({ state, api, switchSession, error: errorMessage, host: $(".interaction") });
+    await sessions.load();
+    await switchSession(state.currentSessionId);
+  }
+  disconnectEvents?.();
+  disconnectEvents = connectWorkspaceEvents({ cursor: ui.eventCursor,
+    onEvent: event => {
+      if (event.type === "delta") {
+        if (event.sessionId !== state.currentSessionId) return;
+        state.streaming += event.text || ""; state.busy = true; renderDialogue(); updateComposer(); return;
+      }
+      scopeUpdates.add(event.scopes || []);
+    },
+    onCorrect: () => { void refresh(); scopeUpdates.add(["data", "ontology", "release", "agent", "sessions"]); },
+    onError: error => { $("#request-error").dataset.connection = "true"; errorMessage(error.message); },
+  });
+}
 
 function node(tag, className = "", text) {
   const element = document.createElement(tag);
@@ -231,10 +291,10 @@ function errorMessage(message = "") {
   $("#request-error").textContent = message;
   $("#request-error").hidden = !message;
 }
-async function api(path, body) {
+async function api(path, body, method) {
   if (shareMode) return shareMode.request(path, body);
   const response = await fetch(path, {
-    method: body === undefined ? "GET" : "POST",
+    method: method || (body === undefined ? "GET" : "POST"),
     headers: {
       ...(state.token ? { "X-DataEngine-Token": state.token } : {}),
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
@@ -252,23 +312,27 @@ async function api(path, body) {
     });
   return data;
 }
+function draftKey(page = ui.page) { return `${state.currentSessionId || "default"}:${page}`; }
 function rememberDraft() {
+  const key = draftKey();
   const text = $("#message-input").value;
-  if (ui.drafts.get(ui.page)?.text !== text) ui.draftRef.revision += 1;
+  if (ui.drafts.get(key)?.text !== text) ui.draftRef.revision += 1;
   const draft = {
     draftRef: { ...ui.draftRef },
     contextRevision: ui.contextRevision,
     text,
     focus: ui.focus,
     pendingMessage: ui.pendingMessage,
+    nextRefreshSources: ui.nextRefreshSources === true,
   };
-  ui.drafts.set(ui.page, draft);
-  ui.draftStore?.save(ui.page, draft);
+  ui.drafts.set(draftKey(), draft);
+  ui.draftStore?.save(draftKey(), draft);
 }
 function restoreDraft(draft) {
   $("#message-input").value = draft?.text || "";
   ui.focus = draft?.focus || null;
   ui.pendingMessage = draft?.pendingMessage || null;
+  ui.nextRefreshSources = draft?.nextRefreshSources === true;
   ui.draftRef = draft?.draftRef || { id: crypto.randomUUID(), revision: 0 };
   ui.contextRevision = draft?.contextRevision || 0;
   ui.contextRequest += 1;
@@ -278,80 +342,66 @@ function changePage(page) {
   if (ui.page === page) return;
   rememberDraft();
   ui.page = page;
-  const draft = ui.drafts.get(page) ?? ui.draftStore?.read(page);
+  ui.pageGeneration = (ui.pageGeneration || 0) + 1;
+  const draft = ui.drafts.get(draftKey(page)) ?? ui.draftStore?.read(draftKey(page)) ?? ui.draftStore?.read(page);
   restoreDraft(draft);
   ui.detail = null;
   ui.detailRequest += 1;
-  ui.canvasKey = "";
+  ui.canvasDirty = true;
   ui.dialogueKey = "";
   $("#canvas").scrollTop = 0;
   resizeInput();
 }
-function applySnapshot(snapshot) {
-  if (
-    !shareMode &&
-    snapshot.workspaceId &&
-    snapshot.workspaceId !== state.workspaceId
-  ) {
+function applySnapshot(snapshot, scope) {
+  if (!snapshot || typeof snapshot !== "object") return;
+  const firstLoad = !ui.initialized;
+  if (!shareMode && snapshot.workspaceId && snapshot.workspaceId !== state.workspaceId) {
     ui.drafts.clear();
     try {
-      ui.draftStore = createDraftStore(localStorage, snapshot.workspaceId, () =>
-        errorMessage("浏览器无法保存草稿，请复制内容后再关闭页面。"),
-      );
+      ui.draftStore = createDraftStore(localStorage, snapshot.workspaceId, () => errorMessage("浏览器无法保存草稿，请复制内容后再关闭页面。"));
       ui.importedDrafts = ui.draftStore.read("legacy") || [];
-      const draft = ui.draftStore.read(snapshot.currentPage);
-      ui.page = snapshot.currentPage;
-      restoreDraft(draft);
-      if (draft) ui.drafts.set(ui.page, draft);
-      resizeInput();
-    } catch {
-      errorMessage("浏览器无法保存草稿，请复制内容后再关闭页面。");
-    }
+      const savedPage = sessionStorage.getItem(`dataengine:page:${snapshot.workspaceId}`);
+      ui.page = pageLabels[savedPage] ? savedPage : "setup";
+      const savedSession = sessionStorage.getItem(`dataengine:session:${snapshot.workspaceId}`);
+      state.currentSessionId = savedSession || snapshot.currentSessionId || null;
+    } catch { errorMessage("浏览器无法保存草稿，请复制内容后再关闭页面。"); }
   }
-  const target = pageLabels[snapshot.currentPage]
-    ? snapshot.currentPage
-    : ui.page;
-  const previousPage = ui.page;
-  changePage(target);
-  if (target === previousPage && snapshot.workspaceId === state.workspaceId && snapshot.messages) {
-    const newest = new Set(snapshot.messages.map(m => m.id));
-    const earlier = state.messages.filter(m => !newest.has(m.id));
-    if (earlier.length) {
-      snapshot.messages = [...earlier, ...snapshot.messages];
-      snapshot.messagePage = state.messagePage;
-    }
+  const agentKeys = ["session", "currentSessionId", "messages", "messagePage", "streaming", "busy", "pending", "prompt"];
+  if (!shareMode && state.currentSessionId && snapshot.currentSessionId && snapshot.currentSessionId !== state.currentSessionId)
+    snapshot = Object.fromEntries(Object.entries(snapshot).filter(([key]) => !agentKeys.includes(key)));
+  if (snapshot.messages && (!snapshot.currentSessionId || snapshot.currentSessionId === state.currentSessionId)) {
+    const newest = new Set(snapshot.messages.map(message => message.id));
+    const earlier = state.messages.filter(message => !newest.has(message.id));
+    if (earlier.length) { snapshot.messages = [...earlier, ...snapshot.messages]; snapshot.messagePage = state.messagePage; }
   }
-  for (const key of Object.keys(state)) {
-    if (Object.hasOwn(snapshot, key)) state[key] = snapshot[key];
-  }
-  if (snapshot.page && snapshot.page !== ui.page) {
-    state.messages = [];
-    state.streaming = "";
-    state.pending = null;
-    state.prompt = "";
-    if (previousPage !== ui.page) setTimeout(() => refresh(), 0);
-  }
-  const firstLoad = !ui.initialized;
+  const pageFields = ui.page === "setup" ? ["sources", "sourceSummary", "data", "engine", "profile"] : ui.page === "ontology" ? ["foundation", "sourceSummary"] : ["consumers", "accessLogs"];
+  if (firstLoad || Object.keys(snapshot).some(key => pageFields.includes(key))) ui.canvasDirty = true;
+  workspace.patch(snapshot);
+  if (snapshot.eventCursor) ui.eventCursor = snapshot.eventCursor;
+  if (shareMode && snapshot.currentPage) changePage(snapshot.currentPage);
   ui.initialized = true;
-  if (firstLoad && state.setupSection === "sources") ui.enterpriseTab = "sources";
+  if (firstLoad) {
+    const draft = ui.draftStore?.read(draftKey()) ?? ui.draftStore?.read(ui.page);
+    restoreDraft(draft); if (draft) ui.drafts.set(draftKey(), draft); resizeInput();
+    if (state.setupSection === "sources") ui.enterpriseTab = "sources";
+  }
+  if (scope) workspace.emit(scope, snapshot);
   render();
-  if (firstLoad && ui.page === "setup" && state.setupSection === "sources")
-    document
-      .getElementById("setup-sources")
-      ?.scrollIntoView({ block: "start" });
 }
 async function refresh(bootstrap = false) {
   if (ui.polling || ui.requesting) return;
   ui.polling = true;
   const generation = ui.generation;
+  const sessionGeneration = ui.sessionGeneration, pageGeneration = ui.pageGeneration;
   try {
     const snapshot = await api(
       bootstrap || !state.token
         ? "/api/canvas/bootstrap"
-        : `/api/canvas?page=${encodeURIComponent(ui.page)}`,
+        : shareMode ? `/api/canvas?page=${encodeURIComponent(ui.page)}` : snapshotPath(),
     );
-    if (generation !== ui.generation) return;
+    if (generation !== ui.generation || sessionGeneration !== ui.sessionGeneration || pageGeneration !== ui.pageGeneration) return;
     applySnapshot(snapshot);
+    if (!shareMode && bootstrap) await initializeEvents();
     if ($("#request-error").dataset.connection === "true") {
       errorMessage();
       delete $("#request-error").dataset.connection;
@@ -365,8 +415,10 @@ async function refresh(bootstrap = false) {
     ui.polling = false;
   }
 }
-async function mutate(path, body, after, onError) {
+async function mutate(path, body, after, onError, detached = {}) {
   if (ui.requesting) return false;
+  const origin = { sessionId: state.currentSessionId, page: ui.page, sessionGeneration: ui.sessionGeneration, pageGeneration: ui.pageGeneration, draftKey: draftKey() };
+  const current = () => origin.sessionId === state.currentSessionId && origin.page === ui.page && origin.sessionGeneration === ui.sessionGeneration && origin.pageGeneration === ui.pageGeneration;
   const dialog = [...document.querySelectorAll("dialog[open]")].at(-1);
   let receipt;
   const controls = dialog ? [...dialog.querySelectorAll("button,input,select,textarea")].map(control => [control, control.disabled]) : [];
@@ -380,15 +432,15 @@ async function mutate(path, body, after, onError) {
   errorMessage();
   updateComposer();
   try {
-    const result = await api(path, body);
-    if (after) after(result);
-    applySnapshot(result);
+    const result = await api(path, path.startsWith("/api/canvas/") && body ? { ...body, sessionId: body.sessionId || state.currentSessionId } : body);
+    if (current()) { after?.(result); applySnapshot(result); }
+    else detached.after?.(result, origin);
     if (receipt) receipt.textContent = path.endsWith("/adopt") ? "已采用，当前定义已更新。关闭后重新打开可查看最新版本。" : "操作已完成。";
     return true;
   } catch (error) {
     if (receipt) {receipt.setAttribute("role", "alert"); receipt.textContent = error.message;}
-    onError?.(error);
-    errorMessage(error.message);
+    if (current()) { onError?.(error); errorMessage(error.message); }
+    else detached.error?.(error, origin);
     return false;
   } finally {
     dialog?.removeAttribute("aria-busy"); controls.forEach(([control, disabled]) => control.disabled = disabled);
@@ -397,12 +449,13 @@ async function mutate(path, body, after, onError) {
   }
 }
 async function navigate(page) {
-  if (page === ui.page || ui.requesting) return;
-  const ok = await mutate("/api/canvas/navigate", { page });
-  if (ok && ["company", "sources"].includes(page))
-    document
-      .getElementById(`setup-${page}`)
-      ?.scrollIntoView({ block: "start" });
+  if (["company", "sources"].includes(page)) { ui.enterpriseTab = page; page = "setup"; }
+  if (!pageLabels[page]) return;
+  if (page === ui.page) return;
+  changePage(page);
+  if (shareMode) { applySnapshot(await api("/api/canvas/navigate", { page })); return; }
+  try { sessionStorage.setItem(`dataengine:page:${state.workspaceId}`, page); } catch {}
+  render(); await refresh();
 }
 const capabilityPanel = createCapabilitiesPanel(api, () => renderCanvas(true));
 
@@ -418,7 +471,6 @@ function render() {
     const page = control.dataset.page;
     const entry = state.pages.find((item) => item.id === page);
     control.disabled =
-      ui.requesting ||
       (page !== "setup" && !entry?.available && page !== ui.page);
     control.textContent = pageLabels[page];
     if (page === ui.page) control.setAttribute("aria-current", "page");
@@ -431,143 +483,37 @@ function render() {
   renderAgentTask();
   updateComposer();
 }
-function canvasFingerprint() {
-  const refs = (items) =>
-    items.map((item) => `${item.id}:${item.version}:${item.status}`);
-  if (ui.page === "ontology" && !ui.detail && !shareMode && !state.demo) {
-    // The Three scene depends on semantic data, not polling/task/dialog state.
-    return JSON.stringify({page:ui.page, foundation:state.foundation, sourceSummary:state.sourceSummary});
-  }
-  return JSON.stringify({
-    page: ui.page,
-    onboarding: state.onboarding,
-    model: state.model,
-    onboardingMessages: state.onboarding?.active ? [state.messages.at(-1), state.streaming] : null,
-    profile: state.profile && `${state.profile.id}:${state.profile.version}`,
-    sourceSummary: state.sourceSummary,
-    sources: refs(state.sources),
-    live: state.live,
-    ontologies: refs(state.ontologies),
-    foundation: state.foundation,
-    automaticBuild: state.automaticBuild,
-    automaticApiBuild: state.automaticApiBuild,
-    engine: state.engine,
-    evidence: refs(state.evidence),
-    outlines: refs(state.outlines),
-    verifications: refs(state.verifications),
-    sourcePolicies: refs(state.sourcePolicies),
-    sourcePolicyFields: state.sourcePolicyFields,
-    attention: state.attention,
-    ontologyView: ui.ontologyView,
-    definitionId: ui.definitionId,
-    consumers: refs(state.consumers),
-    accessLogs: ui.page === "consumption" ? state.accessLogs : [],
-    pending: state.pending,
-    prompt: state.prompt,
-    detail: ui.detail?.key,
-    deciding:
-      ["setup", "ontology", "consumption"].includes(ui.page) &&
-      (state.busy || ui.requesting),
-  });
-}
 function renderCanvas(force = false) {
-  const fingerprint = canvasFingerprint();
-  if (!force && fingerprint === ui.canvasKey) {$("#canvas").firstElementChild?.updateStatus?.(state); return;}
-  ui.canvasKey = fingerprint;
-  const spatial = ui.page === "ontology" && !ui.detail && !shareMode && !state.demo;
-  if (!spatial) for (const dialog of $$("dialog.os-management[open]")) dialog.close();
+  const canvas = $("#canvas"), current = canvas.firstElementChild;
+  if (ui.detail) return;
+  const samePage = ui.renderedPage === ui.page;
+  if (!force && !ui.canvasDirty && samePage && current) { current.updateStatus?.(state); return; }
+  ui.canvasDirty = false;
+  if (samePage && current?.updateWorkspace?.(state) !== false && current?.updateWorkspace) return;
+  const scroll = samePage ? canvas.scrollTop : 0;
+  const spatial = ui.page === "ontology" && !shareMode && !state.demo;
   $(".canvas-app").classList.toggle("is-ontology-space", spatial);
   for (const element of $$(".os-chat-metrics,.os-chat-footer")) element.hidden = !spatial;
-  $("#canvas").firstElementChild?.dispose?.();
+  current?.dispose?.();
   if (spatial && ["compact", "collapsed"].includes(ui.chatMode)) setChatMode("composer");
-  if (ui.detail) {
-    if (ui.detail.kind === "consumer") {
-      const consumer = state.consumers.find(
-        (item) => item.id === ui.detail.consumerId,
-      );
-      if (consumer) {
-        const scroll = $("#canvas").scrollTop;
-        const input = document.activeElement?.matches(
-          ".consumer-clone-form input",
-        )
-          ? document.activeElement
-          : null;
-        const selection = input && {
-          name: input.name,
-          start: input.selectionStart,
-          end: input.selectionEnd,
-        };
-        $("#canvas").replaceChildren(renderConsumerDetail(consumer));
-        if (selection) {
-          const restored = $$(".consumer-clone-form input").find(
-            (item) => item.name === selection.name,
-          );
-          restored?.focus({ preventScroll: true });
-          restored?.setSelectionRange(selection.start, selection.end);
-        }
-        $("#canvas").scrollTop = scroll;
-      }
-    }
-    return;
-  }
-  const canvas = $("#canvas");
   if (ui.page === "setup") canvas.replaceChildren(renderSetup());
-  else if (ui.page === "consumption" && !shareMode && !state.demo) canvas.replaceChildren(renderReleaseWorkspace(state, {
-    api, ontology: () => navigate("ontology"), ask: askAssistant,
-    onChanged: () => { if(ui.page === "consumption") renderCanvas(true); },
-
+  else if (ui.page === "consumption") canvas.replaceChildren(shareMode || state.demo ? renderSharedAccess(state) : renderReleaseWorkspace(state, {
+    api, events: workspace, ontology: () => navigate("ontology"), ask: askAssistant,
+    onChanged: () => { if (ui.page === "consumption") renderCanvas(true); },
   }));
-  else if (!shareMode && !state.demo) {
-    const livePage = ui.page;
-    const live = renderLiveWorkspace(ui.page, state.live, {
-      api,
-      mutate,
-      showCredential,
-      selections: ui.graphSelections,
-      onSelectContext: selectLiveContext,
-      onSaved: () => { if (ui.page === livePage) refresh(); },
-    });
-    const legacy =
-      ui.page === "ontology"
-        ? state.ontologies.length || state.outlines.length
-        : state.consumers.length;
-    if (legacy) {
-      const details = node("details", "live-legacy");
-      details.append(
-        node("summary", "", "查看已有文件实验"),
-        ui.page === "ontology" ? renderOntology() : renderConsumption(),
-      );
-      live.append(details);
-    }
-    if (ui.page === "ontology") {
-      const foundationActions = {
-        selections: ui.graphSelections,
-        select: (model, target, isCurrent, focusComposer = false) =>
-          selectLiveContext(model, target, undefined, focusComposer, isCurrent),
-        read: (model, target) =>
-          api("/api/canvas/context/read", {
-            page: "ontology",
-            context: {
-              ...currentWorkContext(),
-              view: "ontology.definitions",
-              selection: [
-                {
-                  spaceId: state.workspaceId,
-                  id: model.id,
-                  version: model.version,
-                  ...target,
-                },
-              ],
-              scope: { where: {}, offset: 0, limit: 20 },
-            },
-          }),
-      };
-      canvas.replaceChildren(renderOntologyBoard(foundationActions));
-    } else canvas.replaceChildren(live);
-  } else if (ui.page === "ontology") canvas.replaceChildren(renderOntology());
-  else canvas.replaceChildren(renderConsumption());
-
+  else if (shareMode || state.demo) canvas.replaceChildren(renderOntology());
+  else canvas.replaceChildren(renderOntologyBoard({
+    selections: ui.graphSelections,
+    select: (model, target, isCurrent, focusComposer = false) => selectLiveContext(model, target, undefined, focusComposer, isCurrent),
+    read: (model, target) => api("/api/canvas/context/read", { page: "ontology", context: {
+      ...currentWorkContext(), view: "ontology.definitions",
+      selection: [{ spaceId: state.workspaceId, id: model.id, version: model.version, ...target }],
+      scope: { where: {}, offset: 0, limit: 20 },
+    }}),
+  }));
+  ui.renderedPage = ui.page;
   renderAttention(canvas);
+  canvas.scrollTop = scroll;
 }
 function renderOntologyBoard(actions) {
   const managementContent = () => {
@@ -621,7 +567,7 @@ function renderOntologyBoard(actions) {
     retryBuild: () => mutate("/api/canvas/foundation/automatic", {}),
     engine: state.engine,
     sourceSummary: state.sourceSummary,
-    programBuild: () => showEngineBuilds(state, {...dataActions(),management:()=>document.querySelector(".os-definition-entry")?.click()}),
+    programBuild: () => showEngineBuilds(state, {...dataActions(),management:openDefinitions}),
     management: managementContent,
     objects: objectContent,
     evidence: () => renderEvidenceWorkspace(state, {api, mutate}),
@@ -683,7 +629,7 @@ function askAssistant(text) {
   const input=$("#message-input");input.value=input.value.trim()?`${input.value}\n${text}`:text;
   rememberDraft();resizeInput();openComposer();
 }
-function dataActions() {return {api,apply:applySnapshot,upload:()=>$("#file-input").click(),refresh,ask:askAssistant,ontology:()=>navigate("ontology")};}
+function dataActions() {return {api,events:workspace,apply:applySnapshot,upload:()=>$("#file-input").click(),refresh,ask:askAssistant,ontology:()=>navigate("ontology")};}
 let onboardingDialog;
 let onboardingWorkspace;
 let onboardingClosing = false;
@@ -767,187 +713,15 @@ function syncOnboarding() {
   onboardingDialog.closeButton.disabled = onboardingClosing;
 }
 function renderSetup() {
-  if (shareMode || state.demo) return renderLegacySetup();
+  if (shareMode || state.demo) return renderDataProfile();
   const workspace = renderEngineWorkspace(state, {...dataActions(),
     initialize: !state.onboarding?.completedAt || state.onboarding?.active ? () => startOnboarding() : null,
     advanced: () => {
     const dialog = engineDialog("企业资料与已有连接", true);
-    dialog.body.append(renderLegacySetup());
+    dialog.body.append(renderDataProfile());
     dialog.addEventListener("close", () => dialog.body.firstElementChild?.dispose?.());
   }});
   return workspace;
-}
-function renderLegacySetup() {
-  const changeTab = async (tab) => {
-    ui.enterpriseTab = tab;
-    renderCanvas(true);
-    document.querySelector(".ep-tab.active")?.focus({ preventScroll: true });
-    if (!shareMode) await mutate("/api/canvas/navigate", {
-      page: "setup", section: tab === "sources" ? "sources" : "company",
-    });
-    if (ui.page === "setup" && ui.enterpriseTab === tab && !ui.detail)
-      document.querySelector(".ep-tab.active")?.focus({ preventScroll: true });
-  };
-  const { root: section, sources } = renderEnterpriseProfile(state, {
-    tab: ui.enterpriseTab, readonly: shareMode, label, edit: openStatement,
-    api: !shareMode && !state.demo ? api : null,
-    onImportSaved: applySnapshot,
-    upload: () => $("#file-input").click(),
-    changeTab,
-    ask: (text) => {
-      const input = $("#message-input");
-      input.value = input.value.trim() ? `${input.value}\n${text}` : text;
-      rememberDraft();
-      resizeInput();
-      openComposer();
-    },
-    ontology: () => mutate("/api/canvas/navigate", { page: "ontology" }),
-    foundation: !shareMode && !state.demo ? foundationPanel : null,
-  });
-  if (!shareMode && !state.demo) {
-    const initialize = button("完善初始化 →", "ob-reopen", () => startOnboarding(initialize));
-    section.prepend(initialize);
-    sources.append(
-      renderLiveWorkspace("sources", state.live, {
-        api,
-        onImportSaved: applySnapshot,
-        onConnectionsChanged: () => renderCanvas(true),
-        mutate,
-        showCredential,
-      }),
-    );
-    const files = node("section", "data-files");
-    files.append(
-      node(
-        "h2",
-        "",
-        `文件资料${state.sources.length ? ` · ${state.sources.length} 份` : ""}`,
-      ),
-    );
-    files.append(button("上传资料", "quiet-button", () => $("#file-input").click()));
-    files.append(
-      state.sources.length
-        ? renderSources()
-        : node("p", "muted", "可通过底部附件接入 CSV、Markdown 或 TXT。"),
-    );
-    sources.append(files);
-  } else sources.append(renderSources());
-  if (!shareMode && !state.demo) {
-    const evidence = node("details", "data-evidence");
-    evidence.append(node("summary", "", "跨来源共同取证"), renderEvidenceWorkspace(state, { api, mutate }));
-    sources.append(evidence);
-  }
-  if (!shareMode && (state.legacyHistory.length || ui.importedDrafts.length)) {
-    const history = node("details", "setup-history");
-    history.append(node("summary", "", "升级前保留的内容"));
-    for (const entry of state.legacyHistory) {
-      const title = entry.section === "company" ? "企业信息" : "数据接入";
-      const content = node("div", "legacy-history-content");
-      const open = button(`查看${title}旧记录`, "quiet-button", async () => {
-        try {
-          const result = await api(
-            `/api/canvas/history?section=${entry.section}`,
-          );
-          content.replaceChildren();
-          if (result.task.pending)
-            content.append(
-              node("p", "", `待确认：${result.task.pending.question}`),
-            );
-          for (const message of result.messages)
-            content.append(
-              node(
-                "p",
-                "",
-                `${message.role === "user" ? "你" : "助手"}：${message.content}`,
-              ),
-            );
-          if (!result.messages.length)
-            content.append(
-              node("p", "", "没有保留的聊天消息；已保存内容继续可用。"),
-            );
-        } catch (error) {
-          errorMessage(error.message);
-        }
-      });
-      history.append(
-        open,
-        node("p", "muted", entry.pending?.question || entry.nextStep),
-        content,
-      );
-    }
-    for (const draft of ui.importedDrafts.filter((item) => item.text)) {
-      const title = { company: "企业信息", sources: "数据接入", ...pageLabels }[
-        draft.page
-      ];
-      const item = node("details", "legacy-draft");
-      item.append(
-        node("summary", "", `${title}旧草稿`),
-        node("p", "", draft.text),
-        button("放入输入框", "quiet-button", async () => {
-          const target = ["company", "sources"].includes(draft.page)
-            ? "setup"
-            : draft.page;
-          const existing =
-            target === ui.page
-              ? { text: $("#message-input").value }
-              : (ui.drafts.get(target) ?? ui.draftStore?.read(target));
-          if (existing?.text?.trim())
-            return errorMessage(
-              `${pageLabels[target]}已有草稿，请先保存或清空，再恢复旧草稿。`,
-            );
-          if (
-            target !== ui.page &&
-            !(await mutate("/api/canvas/navigate", { page: target }))
-          )
-            return;
-          $("#message-input").value = draft.text;
-          ui.focus = null;
-          ui.pendingMessage = null;
-          rememberDraft();
-          resizeInput();
-          updateComposer();
-          openComposer();
-        }),
-      );
-      history.append(item);
-    }
-    sources.append(history);
-  }
-  if (!shareMode) {
-    const file = node("input");
-    file.type = "file";
-    file.accept = "application/json,.json";
-    file.hidden = true;
-    file.addEventListener("change", async () => {
-      try {
-        const selected = file.files[0];
-        if (!selected) return;
-        if (selected.size > 100000) throw new Error("草稿文件过大。");
-        const drafts = parseLegacyDrafts(await selected.text());
-        // Retain previously imported text; importing again never replaces it.
-        for (const draft of drafts)
-          if (
-            !ui.importedDrafts.some(
-              (item) => item.page === draft.page && item.text === draft.text,
-            )
-          )
-            ui.importedDrafts.push(draft);
-        ui.draftStore?.save("legacy", ui.importedDrafts);
-        renderCanvas(true);
-      } catch (error) {
-        errorMessage(error.message);
-      }
-    });
-    sources.append(
-      button("导入旧版草稿", "quiet-button import-drafts", () => file.click()),
-      file,
-    );
-  }
-  for (const heading of sources.querySelectorAll("h1")) {
-    const replacement = node("h2", heading.className, heading.textContent);
-    heading.replaceWith(replacement);
-  }
-  return section;
 }
 function emptyCanvas(fallback) {
   const section = node("section", "empty-canvas");
@@ -1543,875 +1317,13 @@ function openVerification(record) {
 }
 function renderAttention(canvas) {
   if (shareMode || canvas.querySelector(".ontology-space")) return;
-  const entries = (state.attention || []).filter(
-    (item) =>
-      item.page === ui.page &&
-      !(
-        ui.page === "ontology" &&
-        ui.ontologyView === "verification" &&
-        item.kind.startsWith("verification_")
-      ),
-  );
-  if (!entries.length) return;
-  const section = node("aside", "attention-list");
-  section.setAttribute("aria-label", "待处理的企业记忆");
-  section.append(node("h2", "subsection-title", "待处理"));
-  for (const entry of entries) {
-    const row = button("", "attention-item", () => {
-      const artifact = [
-        ...state.sources,
-        ...state.ontologies,
-        ...state.outlines,
-        ...state.verifications,
-      ].find((item) => item.id === entry.artifactId);
-      if (artifact?.kind === "source") openSource(artifact);
-      else if (artifact?.kind === "verification") openVerification(artifact);
-      else {
-        if (artifact) setFocus(artifact);
-        $("#message-input").value = entry.detail || entry.title;
-        resizeInput();
-        openComposer();
-      }
-    });
-    row.append(node("strong", "", entry.title));
-    if (entry.detail && entry.detail !== entry.title)
-      row.append(node("span", "", entry.detail));
-    section.append(row);
-  }
-  canvas.querySelector("section")?.append(section);
-}
-const consumerStatuses = {
-  draft: "待启用",
-  active: "已启用",
-  revoked: "已停用",
-};
-function consumerName(consumer) {
-  return consumer.content.name || consumer.title || "调用方";
-}
-function consumerPanel(consumer) {
-  const key = `${consumer.id}:${consumer.version}`;
-  if (!ui.consumerPanels.has(key)) {
-    ui.consumerPanels.set(key, {
-      connectionOpen: false,
-      connection: null,
-      connectionBusy: false,
-      connectionError: "",
-      connectionTab: "mcp",
-      copyStatus: "",
-      preview: null,
-      previewBusy: false,
-      previewError: "",
-      publishBusy: false,
-      cloneOpen: false,
-      cloneName: "",
-      clonePurpose: "",
-      notice: "",
-      grantsOpen: false,
-    });
-  }
-  return ui.consumerPanels.get(key);
-}
-function consumerScreenCurrent(consumer, request) {
-  return (
-    ui.page === "consumption" &&
-    ui.detail?.consumerId === consumer.id &&
-    (request === undefined || request === ui.detailRequest) &&
-    state.consumers.some(
-      (item) => item.id === consumer.id && item.version === consumer.version,
-    )
-  );
-}
-function changedConsumerSources(consumer) {
-  const model = state.ontologies.find(
-    (item) =>
-      item.id === consumer.content.modelId &&
-      item.version === consumer.content.modelVersion,
-  );
-  if (!model) return null;
-  const ids = new Set((model.content.types || []).map((type) => type.sourceId));
-  return state.sources.filter(
-    (source) =>
-      ids.has(source.id) &&
-      source.version >
-        Number(consumer.content.sourceVersions?.[source.id] || 0),
-  );
-}
-function consumerDataLabel(consumer) {
-  if (consumer.status === "draft") return "确认范围后启用";
-  if (consumer.status === "revoked") return "已停止数据访问";
-  const changed = changedConsumerSources(consumer);
-  if (changed?.length) return `${changed.length} 份资料有更新，待发布`;
-  return changed ? "已发布的数据与当前资料一致" : "可检查并发布数据更新";
-}
-function renderConsumption(onOpen = openConsumer) {
-  if (
-    !state.consumers.length &&
-    !state.ontologies.some((item) => item.status === "adopted")
-  ) {
-    const section = node("section", "empty-canvas");
-    const content = node("div");
-    content.append(
-      node("h1", "", "让合适的应用，使用合适的企业记忆。"),
-      node("p", "empty-note", "先建立并采用本体，再确认每个调用方的可读范围。"),
-      button("查看本体", "quiet-button", () => navigate("ontology")),
-    );
-    section.append(content);
-    return section;
-  }
-  if (!state.consumers.length)
-    return emptyCanvas("哪个 Agent 需要使用这些企业记忆？");
-  const section = node("section", "consumption-canvas");
-  section.append(
-    heading(
-      "连接与使用企业记忆",
-      "让外部 Agent 按明确范围读取企业对象。资料持续维护，检查后发布给调用方。",
-    ),
-  );
-  const connections = node("div", "consumer-connections");
-  const memory = node("div", "memory-origin");
-  memory.append(
-    node("span", "memory-origin-label", "企业记忆"),
-    node("h2", "", companyName()),
-    node(
-      "p",
-      "memory-origin-description",
-      `本体定义业务含义
-数据持续补充与更新`,
-    ),
-  );
-  const bridge = node("div", "consumer-bridge");
-  bridge.append(
-    node("strong", "", "MCP / HTTP API"),
-    node("span", "", "独立密钥 · 按范围只读"),
-  );
-  const consumers = node("div", "consumer-list");
-  const order = { active: 0, draft: 1, revoked: 2 };
-  const ordered = [...state.consumers].sort(
-    (a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3),
-  );
-  for (const consumer of ordered) {
-    const card = button("", "consumer-card", () => onOpen(consumer));
-    card.dataset.consumerId = consumer.id;
-    card.dataset.status = consumer.status;
-    const title = node("div", "consumer-card-heading");
-    title.append(
-      node("h2", "", consumerName(consumer)),
-      node("span", "consumer-status", consumerStatuses[consumer.status] || ""),
-    );
-    card.append(title);
-    if (consumer.status === "revoked") {
-      consumers.append(card);
-      continue;
-    }
-    if (consumer.content.purpose)
-      card.append(node("p", "consumer-purpose", consumer.content.purpose));
-    card.append(
-      node(
-        "p",
-        "consumer-types",
-        (consumer.content.grants || []).map((grant) => grant.type).join(" · "),
-      ),
-      node("p", "consumer-data-label", consumerDataLabel(consumer)),
-      node(
-        "span",
-        "consumer-version-label",
-        `本体 v${consumer.content.modelVersion} · 数据 v${consumer.version}`,
-      ),
-    );
-    consumers.append(card);
-  }
-  connections.append(memory, bridge, consumers);
-  section.append(connections);
-  section.append(
-    node(
-      "p",
-      "consumption-local-note",
-      shareMode
-        ? "此页展示接入方式、读取范围与示例调用记录。离线文件不开放实际连接，也不包含密钥。"
-        : "当前是本机实验：支持本机 Agent 的 MCP 配置，或可访问此服务的 HTTP 客户端。",
-    ),
-  );
-  if (state.accessLogs.length)
-    section.append(
-      node("h2", "subsection-title", shareMode ? "示例调用记录" : "最近调用"),
-      renderAccessLogs(state.accessLogs.slice(0, 5)),
-    );
-  return section;
-}
-function renderGrants(consumer) {
-  const container = node("div", "grant-list");
-  for (const grant of consumer.content.grants || []) {
-    const row = node("section", "grant");
-    row.append(node("h3", "", grant.type));
-    const fields = node("div", "grant-fields");
-    for (const field of grant.fields || [])
-      fields.append(node("span", "", label(field)));
-    row.append(fields);
-    if (grant.relations?.length)
-      row.append(
-        node(
-          "p",
-          "grant-relations",
-          `可访问关系：${grant.relations.join("、")}`,
-        ),
-      );
-    container.append(row);
-  }
-  return container;
-}
-async function loadConsumerConnection(consumer) {
-  const panel = consumerPanel(consumer);
-  panel.connectionOpen = !panel.connectionOpen;
-  renderCanvas(true);
-  if (!panel.connectionOpen || panel.connection || panel.connectionBusy) return;
-  panel.connectionBusy = true;
-  panel.connectionError = "";
-  const request = ui.detailRequest;
-  renderCanvas(true);
-  try {
-    const connection = await api("/api/consumers/connection");
-    if (consumerScreenCurrent(consumer, request)) panel.connection = connection;
-  } catch (error) {
-    if (consumerScreenCurrent(consumer, request))
-      panel.connectionError = error.message;
-  } finally {
-    panel.connectionBusy = false;
-    if (consumerScreenCurrent(consumer)) renderCanvas(true);
-  }
-}
-function consumerConnectionText(consumer, panel) {
-  if (panel.connectionTab === "mcp")
-    return JSON.stringify(panel.connection.mcp, null, 2);
-  const objects = new URL(panel.connection.http.objects);
-  if (consumer.content.grants?.[0]?.type)
-    objects.searchParams.set("type", consumer.content.grants[0].type);
-  return `GET ${panel.connection.http.schema}
-Authorization: Bearer <本调用方 API Key>
-
-GET ${objects.href}
-Authorization: Bearer <本调用方 API Key>`;
-}
-async function copyConsumerConnection(consumer, text, success) {
-  const panel = consumerPanel(consumer);
-  const request = ui.detailRequest;
-  try {
-    await navigator.clipboard.writeText(text);
-    if (consumerScreenCurrent(consumer, request)) panel.copyStatus = success;
-  } catch {
-    if (consumerScreenCurrent(consumer, request))
-      panel.copyStatus = "浏览器未允许复制，请选中配置文字复制。";
-  }
-  if (consumerScreenCurrent(consumer, request)) renderCanvas(true);
-}
-function renderConsumerConnection(consumer) {
-  const panel = consumerPanel(consumer);
-  const section = node("section", "consumer-connection-panel");
-  const heading = node("div", "consumer-section-heading");
-  const text = node("div");
-  text.append(
-    node("h2", "subsection-title", "接入你的 Agent"),
-    node(
-      "p",
-      "detail-note",
-      "支持 MCP 的 Agent 添加配置；其他应用通过 HTTP API 读取相同的授权内容。",
-    ),
-  );
-  const toggle = button(
-    panel.connectionOpen ? "收起配置" : "接入配置",
-    "quiet-button",
-    () => loadConsumerConnection(consumer),
-  );
-  toggle.setAttribute("aria-expanded", String(panel.connectionOpen));
-  heading.append(text, toggle);
-  section.append(heading);
-  if (panel.connectionOpen) {
-    const box = node("div", "connection-config");
-    if (panel.connectionBusy)
-      box.append(node("p", "detail-note", "正在读取接入配置…"));
-    else if (panel.connectionError)
-      box.append(node("p", "detail-note", panel.connectionError));
-    else if (panel.connection) {
-      const tabs = node("nav", "view-tabs connection-tabs");
-      tabs.setAttribute("aria-label", "接入方式");
-      for (const [id, name] of [
-        ["mcp", "MCP 配置"],
-        ["http", "HTTP API"],
-      ]) {
-        const tab = button(name, "view-tab", () => {
-          panel.connectionTab = id;
-          panel.copyStatus = "";
-          renderCanvas(true);
-        });
-        tab.setAttribute("aria-pressed", String(panel.connectionTab === id));
-        tabs.append(tab);
-      }
-      const code = consumerConnectionText(consumer, panel);
-      box.append(
-        tabs,
-        node(
-          "p",
-          "detail-note",
-          panel.connectionTab === "mcp"
-            ? "将配置加入本机 Agent，填入此调用方启用时获得的 API Key。连接后可了解对象定义、查询对象及授权关系。"
-            : "先读取可用对象定义，再按类型、编号或关系查询。两个接口都使用此调用方的 API Key。",
-        ),
-      );
-      const pre = node("pre", "request-example technical-information", code);
-      pre.tabIndex = 0;
-      pre.setAttribute(
-        "aria-label",
-        panel.connectionTab === "mcp" ? "MCP 接入配置" : "HTTP 请求示例",
-      );
-      const actions = node("div", "connection-copy-actions");
-      actions.append(
-        button(
-          panel.connectionTab === "mcp" ? "复制 MCP 配置" : "复制请求示例",
-          "quiet-button",
-          () =>
-            copyConsumerConnection(
-              consumer,
-              code,
-              "已复制，请替换 API Key 占位文字。",
-            ),
-        ),
-        button("复制 API 地址", "quiet-button", () =>
-          copyConsumerConnection(
-            consumer,
-            panel.connection.http.objects,
-            "已复制对象接口地址。",
-          ),
-        ),
-      );
-      box.append(pre, actions);
-      if (panel.copyStatus) {
-        const status = node("p", "detail-note", panel.copyStatus);
-        status.setAttribute("role", "status");
-        box.append(status);
-      }
-      box.append(
-        node(
-          "p",
-          "detail-note",
-          "每个调用方使用自己的密钥。这里显示配置模板，已有密钥不会再次展示；需要新密钥时可创建独立接入。",
-        ),
-      );
-      if (panel.connection.localOnly)
-        box.append(
-          node(
-            "p",
-            "detail-note",
-            "当前 MCP 桥接程序在本机运行，需要 DataEngine 服务保持开启。云端 Agent 尚不能直接连接此本机地址。",
-          ),
-        );
-    } else
-      box.append(
-        button("读取接入配置", "quiet-button", () => {
-          panel.connectionOpen = false;
-          loadConsumerConnection(consumer);
-        }),
-      );
-    section.append(box);
-  }
-  return section;
-}
-async function checkConsumerData(consumer) {
-  const panel = consumerPanel(consumer);
-  if (panel.previewBusy || ui.requesting) return;
-  panel.previewBusy = true;
-  panel.previewError = "";
-  panel.preview = null;
-  panel.notice = "";
-  const request = ui.detailRequest;
-  renderCanvas(true);
-  try {
-    const preview = await api("/api/consumers/data-preview", {
-      id: consumer.id,
-      version: consumer.version,
-    });
-    if (consumerScreenCurrent(consumer, request)) panel.preview = preview;
-  } catch (error) {
-    if (consumerScreenCurrent(consumer, request))
-      panel.previewError = error.message;
-  } finally {
-    panel.previewBusy = false;
-    if (consumerScreenCurrent(consumer)) renderCanvas(true);
-  }
-}
-async function publishConsumerData(consumer) {
-  const panel = consumerPanel(consumer);
-  const preview = panel.preview;
-  if (
-    !preview?.valid ||
-    !preview.changedSources?.length ||
-    panel.publishBusy ||
-    ui.requesting
-  )
-    return;
-  panel.publishBusy = true;
-  renderCanvas(true);
-  const completed = await mutate(
-    "/api/consumers/data-publish",
-    {
-      id: consumer.id,
-      version: consumer.version,
-      sourceVersions: preview.nextSourceVersions,
-    },
-    (result) => {
-      const next = result.consumers?.find((item) => item.id === consumer.id);
-      if (next)
-        ui.consumerPanels.set(`${next.id}:${next.version}`, {
-          ...panel,
-          preview: null,
-          previewBusy: false,
-          previewError: "",
-          publishBusy: false,
-          notice:
-            "数据已发布。此调用方下一次请求将读取新数据，原密钥继续有效。",
-        });
-    },
-  );
-  panel.publishBusy = false;
-  if (!completed && consumerScreenCurrent(consumer)) renderCanvas(true);
-}
-function renderConsumerData(consumer) {
-  const panel = consumerPanel(consumer);
-  const section = node("section", "consumer-data-panel");
-  const heading = node("div", "consumer-section-heading");
-  const text = node("div");
-  text.append(
-    node("h2", "subsection-title", "持续更新的数据"),
-    node("p", "detail-note", consumerDataLabel(consumer)),
-  );
-  const check = button(
-    panel.previewBusy ? "正在检查…" : "检查数据更新",
-    "quiet-button",
-    () => checkConsumerData(consumer),
-  );
-  check.disabled =
-    panel.previewBusy || panel.publishBusy || ui.requesting || state.busy;
-  heading.append(text);
-  if (!shareMode) heading.append(check);
-  section.append(heading);
-  const current = node("div", "consumer-data-current");
-  current.append(
-    node("span", "", `已发布数据 v${consumer.version}`),
-    node("span", "", `本体 v${consumer.content.modelVersion}`),
-  );
-  if (consumer.content.dataPublishedAt)
-    current.append(
-      node(
-        "span",
-        "",
-        `发布于 ${accessTime(consumer.content.dataPublishedAt)}`,
-      ),
-    );
-  section.append(
-    current,
-    node(
-      "p",
-      "detail-note",
-      "先在数据页补充或更新资料，再检查并发布。发布保留原密钥、本体定义和访问范围；后续请求读取新数据，旧结果仍保留原来的依据。",
-    ),
-  );
-  if (shareMode) {
-    const flow = node("div", "share-update-flow");
-    for (const step of ["更新资料", "检查变化", "确认发布", "Agent 读取新版本"])
-      flow.append(node("span", "", step));
-    section.append(
-      flow,
-      node(
-        "p",
-        "detail-note",
-        "这里展示产品中的更新流程。当前 HTML 保留导出时的数据快照，不会自动更新。",
-      ),
-    );
-    return section;
-  }
-  if (panel.previewError)
-    section.append(node("p", "consumer-update-status", panel.previewError));
-  if (panel.notice) {
-    const notice = node("p", "consumer-update-status", panel.notice);
-    notice.setAttribute("role", "status");
-    section.append(notice);
-  }
-  if (panel.preview) {
-    const preview = panel.preview;
-    const box = node("div", "consumer-update-preview");
-    const changes = preview.changedSources || [];
-    for (const source of changes) {
-      const row = node("div", "consumer-source-change");
-      row.append(
-        node("span", "", source.title),
-        node("span", "", `v${source.fromVersion} → v${source.toVersion}`),
-      );
-      box.append(row);
-    }
-    if (!preview.valid) {
-      box.append(
-        node("p", "consumer-update-status", "暂时不能发布，请先修正以下问题。"),
-      );
-      for (const error of preview.errors || [])
-        box.append(
-          node(
-            "p",
-            "detail-note",
-            typeof error === "string" ? error : plain(error),
-          ),
-        );
-    } else if (!changes.length)
-      box.append(
-        node(
-          "p",
-          "consumer-update-status",
-          "检查完成，当前没有需要发布的数据更新。",
-        ),
-      );
-    else {
-      box.append(
-        node(
-          "p",
-          "detail-note",
-          "已检查对象映射与访问范围。确认后，这组资料版本一起生效。",
-        ),
-      );
-      const publish = button(
-        panel.publishBusy ? "正在发布…" : "发布给此调用方",
-        "primary-button",
-        () => publishConsumerData(consumer),
-      );
-      publish.disabled = panel.publishBusy || ui.requesting || state.busy;
-      box.append(publish);
-    }
-    section.append(box);
-  }
-  section.append(
-    node(
-      "p",
-      "detail-note",
-      "字段或关系的含义发生变化时，需要回到本体页确认新定义，再单独调整授权。当前不自动同步，也不开放外部写入。",
-    ),
-  );
-  return section;
-}
-function renderConsumerClone(consumer) {
-  const panel = consumerPanel(consumer);
-  const section = node("section", "consumer-clone-panel");
-  const toggle = button(
-    panel.cloneOpen ? "收起独立接入" : "创建同范围的独立接入",
-    "quiet-button",
-    () => {
-      panel.cloneOpen = !panel.cloneOpen;
-      if (panel.cloneOpen) panel.grantsOpen = true;
-      renderCanvas(true);
-    },
-  );
-  toggle.setAttribute("aria-expanded", String(panel.cloneOpen));
-  toggle.disabled = ui.requesting || state.busy;
-  section.append(toggle);
-  if (!panel.cloneOpen) return section;
-  const form = node("form", "consumer-clone-form");
-  form.append(
-    node(
-      "p",
-      "detail-note",
-      "为另一个 Agent 创建单独的身份和密钥。沿用上面的可读范围，提交后先确认，再启用。新接入从本体保存时的数据起步，启用后可检查并发布资料更新。",
-    ),
-  );
-  for (const [field, title, placeholder, max] of [
-    ["cloneName", "调用方名称", "例如：供热客服 Agent", 120],
-    ["clonePurpose", "使用目的", "例如：查询投诉和回访，辅助客服答复", 500],
-  ]) {
-    const label = node("label", "consumer-form-label");
-    label.append(node("span", "", title));
-    const input = node("input");
-    input.name = field;
-    input.required = true;
-    input.maxLength = max;
-    input.placeholder = placeholder;
-    input.value = panel[field];
-    input.addEventListener("input", () => {
-      panel[field] = input.value;
-    });
-    label.append(input);
-    form.append(label);
-  }
-  const submit = node("button", "primary-button", "创建接入草稿");
-  submit.type = "submit";
-  submit.disabled = ui.requesting || state.busy;
-  form.append(submit);
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    if (!panel.cloneName.trim() || !panel.clonePurpose.trim()) return;
-    const request = ui.detailRequest;
-    await mutate(
-      "/api/consumers/prepare",
-      {
-        templateId: consumer.id,
-        templateVersion: consumer.version,
-        name: panel.cloneName.trim(),
-        purpose: panel.clonePurpose.trim(),
-      },
-      (result) => {
-        if (
-          result.preparedConsumerId &&
-          consumerScreenCurrent(consumer, request)
-        ) {
-          ui.detail = {
-            key: `consumer:${result.preparedConsumerId}`,
-            kind: "consumer",
-            consumerId: result.preparedConsumerId,
-          };
-          ui.detailRequest += 1;
-          $("#canvas").scrollTop = 0;
-        }
-      },
-    );
-  });
-  section.append(form);
-  return section;
-}
-function renderShareConnection() {
-  const section = node("section", "share-connection");
-  section.append(node("h2", "subsection-title", "接入方式"));
-  const methods = node("div", "share-connection-methods");
-  for (const [name, description] of [
-    ["MCP", "Agent 先了解获准读取的对象、字段和关系，再查询企业记忆。"],
-    [
-      "HTTP API",
-      "应用直接读取授权范围内的对象，通过数据版本判断内容是否更新。",
-    ],
-  ]) {
-    const method = node("div", "share-connection-method");
-    method.append(node("h3", "", name), node("p", "", description));
-    methods.append(method);
-  }
-  section.append(methods);
-  return section;
-}
-function renderConsumerDetail(consumer) {
-  const section = detailFrame(consumerName(consumer), closeDetail, "返回连接");
-  section.classList.add("consumer-detail");
-  const title = section.querySelector(".canvas-heading > div");
-  if (consumer.content.purpose)
-    title.append(node("p", "", consumer.content.purpose));
-  const actions = node("div", "detail-heading-actions");
-  actions.append(
-    node(
-      "span",
-      "consumer-detail-status",
-      consumerStatuses[consumer.status] || "",
-    ),
-  );
-  const adjust = button("调整范围", "quiet-button", () =>
-    adjustArtifact(consumer, consumerName(consumer)),
-  );
-  adjust.disabled = ui.requesting || state.busy;
-  if (!shareMode) actions.append(adjust);
-  section.querySelector(".canvas-heading").append(actions);
-  if (consumer.status === "active") {
-    section.append(
-      shareMode ? renderShareConnection() : renderConsumerConnection(consumer),
-      renderConsumerData(consumer),
-    );
-    const grants = node("details", "consumer-grants-disclosure");
-    const panel = consumerPanel(consumer);
-    grants.open = shareMode || panel.grantsOpen;
-    grants.addEventListener("toggle", () => {
-      panel.grantsOpen = grants.open;
-    });
-    grants.append(
-      node(
-        "summary",
-        "",
-        `可读取的内容 · ${consumer.content.grants?.length || 0} 类对象`,
-      ),
-      renderGrants(consumer),
-      node(
-        "p",
-        "detail-note",
-        "只允许读取这里列出的对象、字段和关系。来源原文不对调用方开放。",
-      ),
-    );
-    section.append(grants);
-    if (!shareMode) section.append(renderConsumerClone(consumer));
-  } else {
-    section.append(
-      node("h2", "subsection-title", "可读取的内容"),
-      renderGrants(consumer),
-      node(
-        "p",
-        "detail-note",
-        "只允许读取这里列出的对象、字段和关系。来源原文不对调用方开放。",
-      ),
-    );
-    if (consumer.status === "draft" && !shareMode) {
-      const decision = node("div", "consumer-decision");
-      decision.append(
-        node(
-          "p",
-          "",
-          "确认以上范围后，这个调用方才能访问企业记忆。启用时会交付一次独立密钥。",
-        ),
-      );
-      const activate = button("启用访问", "primary-button", () =>
-        activateConsumer(consumer),
-      );
-      const pending =
-        state.pending?.consumerId === consumer.id &&
-        Number(state.pending.version) === consumer.version;
-      activate.disabled = ui.requesting || state.busy || !pending;
-      if (pending) decision.append(activate);
-      else
-        decision.append(
-          button("通过对话确认范围", "quiet-button", () =>
-            adjustArtifact(consumer, consumerName(consumer)),
-          ),
-        );
-      section.append(decision);
-    } else if (consumer.status === "revoked")
-      section.append(
-        node("p", "consumer-revoked", "访问已停用，原来的密钥不再有效。"),
-      );
-  }
-  section.append(
-    node(
-      "p",
-      "detail-note",
-      `授权依据：本体第 ${consumer.content.modelVersion} 版。新定义不会自动扩大这份授权。`,
-    ),
-    node("h2", "subsection-title", shareMode ? "示例调用记录" : "最近调用"),
-    renderAccessLogs(
-      state.accessLogs
-        .filter((log) => log.consumerId === consumer.id)
-        .slice(0, 12),
-      false,
-    ),
-  );
-  if (consumer.status === "active" && !shareMode) {
-    const revoke = button(
-      "停用访问",
-      "quiet-button consumer-revoke-action",
-      () => revokeConsumer(consumer),
-    );
-    revoke.disabled = ui.requesting;
-    section.append(revoke);
-  }
-  return section;
-}
-function openConsumer(consumer) {
-  showDetail(
-    {
-      key: `consumer:${consumer.id}`,
-      kind: "consumer",
-      consumerId: consumer.id,
-    },
-    renderConsumerDetail(consumer),
-  );
-}
-function accessTime(value) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? ""
-    : new Intl.DateTimeFormat("zh-CN", {
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: false,
-      }).format(date);
-}
-const accessReasons = {
-  ok: "请求在授权范围内完成。",
-  invalid_credential: "调用凭据无效或已停用。",
-  method_not_allowed: "只允许读取数据。",
-  unsupported_resource: "请求的入口没有开放。",
-  unsupported_parameter: "请求使用了未开放的查询方式。",
-  type_denied: "对象类型没有获得授权。",
-  identity_denied: "对象编号没有获得授权。",
-  relation_denied: "关系、目标或连接字段没有获得完整授权，或缺少起始对象编号。",
-  field_denied: "请求包含未获授权的字段。",
-  invalid_page: "分页参数需要修正。",
-  sensitive_field: "请求涉及已限制对外使用的资料字段。",
-  memory_unavailable: "授权对应的企业记忆暂时无法读取。",
-};
-function renderAccessLogs(logs, showConsumer = true) {
-  const list = node("div", "access-list");
-  if (!logs.length) {
-    list.append(
-      node(
-        "p",
-        "detail-note",
-        showConsumer ? "还没有真实调用。" : "最近的记录中没有该调用方的访问。",
-      ),
-    );
-    return list;
-  }
-  for (const log of logs) {
-    const item = node("details", "access-log");
-    const summary = node("summary");
-    const allowed = log.result === "allowed";
-    const consumer = state.consumers.find(
-      (entry) => entry.id === log.consumerId,
-    );
-    const identity =
-      log.consumerName ||
-      (consumer && consumerName(consumer)) ||
-      "未识别调用方";
-    const operation = log.operation === "read" ? "读取" : "未开放的操作";
-    const resource = [log.resource?.type, log.resource?.relation]
-      .filter(Boolean)
-      .join(" / ");
-    summary.append(
-      node(
-        "span",
-        "access-resource",
-        `${showConsumer ? `${identity} · ` : ""}${operation}${resource ? ` ${resource}` : ""}`,
-      ),
-      node("span", "access-result", allowed ? "允许" : "拒绝"),
-      node("time", "access-time", accessTime(log.at)),
-    );
-    item.append(summary);
-    const detail = node("div", "access-detail");
-    detail.append(
-      node(
-        "p",
-        "",
-        accessReasons[log.reason] ||
-          (allowed ? "请求在授权范围内完成。" : "请求未通过访问校验。"),
-      ),
-    );
-    if (log.model?.version)
-      detail.append(node("p", "", `本体第 ${log.model.version} 版`));
-    if (log.sourceVersions && typeof log.sourceVersions === "object") {
-      const sources = Object.entries(log.sourceVersions).map(
-        ([id, version]) => {
-          const source = state.sources.find((entry) => entry.id === id);
-          return `${source?.title || "来源资料"} · 第 ${version} 版`;
-        },
-      );
-      if (sources.length) detail.append(node("p", "", sources.join("、")));
-    }
-    item.append(detail);
-    list.append(item);
-  }
-  return list;
-}
-async function activateConsumer(consumer) {
-  await mutate(
-    "/api/consumers/activate",
-    { id: consumer.id, version: consumer.version },
-    (result) => {
-      if (result.credential?.apiKey)
-        showCredential(result.credential, consumerName(consumer));
-    },
-  );
-}
-async function revokeConsumer(consumer) {
-  await mutate("/api/consumers/revoke", {
-    id: consumer.id,
-    version: consumer.version,
-  });
+  const section = renderPendingCenter(state, {page: ui.page, node, button, open: entry => {
+    const artifact = [...state.sources, ...state.ontologies, ...state.outlines, ...state.verifications].find(item => item.id === entry.artifactId);
+    if (artifact?.kind === "source") openSource(artifact);
+    else if (artifact?.kind === "verification") openVerification(artifact);
+    else { if (artifact) setFocus(artifact); $("#message-input").value = entry.detail || entry.title; resizeInput(); openComposer(); }
+  }});
+  if (section) canvas.querySelector("section")?.append(section);
 }
 const credentialQueue = [];
 let credentialShowing = false;
@@ -2434,7 +1346,7 @@ function showNextCredential() {
 function closeDetail() {
   ui.detail = null;
   ui.detailRequest += 1;
-  ui.canvasKey = "";
+  ui.canvasDirty = true;
   renderCanvas(true);
   $("#canvas").scrollTop = 0;
 }
@@ -3199,108 +2111,9 @@ async function decide(artifact, decision) {
     () => {
       ui.detail = null;
       ui.detailRequest += 1;
-      ui.canvasKey = "";
+      ui.canvasDirty = true;
     },
   );
-}
-function renderDialogue() {
-  const lines = state.messages
-    .filter(
-      (message) => message.role === "user" || message.role === "assistant",
-    )
-    .map((message) => ({ ...message }));
-  if (state.streaming)
-    lines.push({
-      id: "streaming",
-      role: "assistant",
-      content: state.streaming,
-      streaming: true,
-    });
-  else if (
-    !state.busy &&
-    state.pending?.question &&
-    lines.at(-1)?.role !== "assistant"
-  )
-    lines.push({
-      id: "question",
-      role: "assistant",
-      content: state.pending.question,
-    });
-  else if (!lines.length && hasCanvasContent() && state.prompt)
-    lines.push({ id: "prompt", role: "assistant", content: state.prompt });
-  const visible = lines;
-  $("#history-label").textContent = state.busy ? "对话记录 · 正在处理…" : "对话记录";
-  $("#chat-activity").hidden = !state.busy;
-  const fingerprint = JSON.stringify([visible, state.messagePage]);
-  if (ui.dialogueKey === fingerprint) return;
-  ui.dialogueKey = fingerprint;
-  const container = $("#dialogue");
-  const followLatest = container.scrollHeight - container.scrollTop - container.clientHeight < 48;
-  const previousScroll = container.scrollTop;
-  container.replaceChildren();
-  if (state.messagePage?.nextBefore) {
-    const before = state.messagePage.nextBefore, page = ui.page;
-    container.append(button("加载更早消息", "quiet-button", async event => {
-      const load = event.currentTarget; load.disabled = true;
-      const height = container.scrollHeight, scroll = container.scrollTop;
-      try {
-        const older = await api(`/api/canvas/messages?page=${page}&before=${encodeURIComponent(before)}`);
-        if (ui.page !== page) return;
-        const ids = new Set(state.messages.map(m => m.id));
-        state.messages = [...older.messages.filter(m => !ids.has(m.id)), ...state.messages];
-        state.messagePage = { nextBefore: older.nextBefore };
-        renderDialogue();
-        container.scrollTop = scroll + container.scrollHeight - height;
-      } catch (error) { errorMessage(error.message); }
-      finally { if (load.isConnected) load.disabled = false; }
-    }));
-  }
-  if (!visible.length) container.append(node("p", "dialogue-empty", "还没有对话，从下面介绍你的企业开始。"));
-  visible.forEach((message, index) => {
-    const distance = visible.length - 1 - index;
-    const age = distance === 0 ? "latest" : distance === 1 ? "older" : "oldest";
-    const text = String(message.content)
-      .replace(/\*\*/g, "")
-      .replace(/^#{1,6}\s+/gm, "");
-    const line = node(
-      "p",
-      `dialogue-line ${message.role} ${age}${message.streaming ? " streaming" : ""}`,
-    );
-    line.append(node("span", "message-text", text));
-    if (/`{3,}json/.test(text)) line.append(technicalDetails({ text: message.content }));
-    if (message.workContext?.target) {
-      const ref = message.workContext.target;
-      line.append(
-        button(
-          `引用：${ref.label} · 第 ${ref.ref.version} 版`,
-          "message-context",
-          () =>
-            inspectContext(
-              message.workContext.context,
-              message.workContext.context.view.split(".")[0],
-            ),
-        ),
-      );
-    }
-    container.append(line);
-  });
-  container.scrollTop = followLatest ? container.scrollHeight : previousScroll;
-}
-function renderAgentTask() {
-  let host=$("#agent-task-status");
-  if(!host){host=node("aside","agent-task-status");host.id="agent-task-status";host.setAttribute("aria-label","ADE 助手任务");$(".canvas-app").append(host);}
-  const task=state.agentTask;host.hidden=!task||!!onboardingDialog?.open||!!state.demo;
-  if(host.hidden)return;
-  const key=JSON.stringify(task);if(host.dataset.key===key)return;host.dataset.key=key;host.replaceChildren();
-  const labels={queued:"等待执行",waiting:"等待输入",paused:"已暂停",running:"处理中",completed:"已完成",failed:"失败",stopped:"已停止",cancelled:"已取消",interrupted:"已中断"};
-  host.append(node("span","",`${labels[task.status]||task.status} · ${task.title||"ADE 助手"}`));
-  if(task.stage)host.append(node("small","",task.stage));
-  host.append(button("查看任务", "quiet-button",()=>{
-    const d=engineDialog(task.title||"ADE 助手任务");d.body.append(node("p","",`${labels[task.status]||task.status}${task.stage?` · ${task.stage}`:""}`));
-    if(task.error)d.body.append(node("p","request-error",typeof task.error==="string"?task.error:task.error.message));
-    for(const result of task.resultRefs||[]){d.body.append(button(result.title||`${result.kind} · v${result.version}`,"quiet-button",async()=>{d.close();if(result.kind==="data_release"||result.kind?.startsWith("release"))await navigate("consumption");else{await navigate("ontology");if(result.kind?.startsWith("engine"))showEngineBuilds(state,dataActions());else document.querySelector(".os-definition-entry")?.click();}}));}
-    d.body.append(button("查看对话", "quiet-button",async()=>{d.close();if(task.page&&task.page!==ui.page)await navigate(task.page);setChatMode("history");}));
-  }));
 }
 function setChatMode(mode) {
   ui.chatMode = mode;
@@ -3360,7 +2173,7 @@ function updateComposer() {
     ? "重试上次发送，保留原目标与原范围"
     : "发送消息";
   $("#stop-button").disabled = ui.requesting;
-  $("#upload-button").disabled = blocked || busy;
+  $("#upload-button").disabled = blocked;
   $("#upload-button").hidden = !!shareMode || ui.page === "consumption";
   $("#composer-note").textContent = shareMode
     ? "示例问答"
@@ -3388,7 +2201,6 @@ function updateComposer() {
   for (const control of $$("[data-page]")) {
     const entry = state.pages.find((page) => page.id === control.dataset.page);
     control.disabled =
-      ui.requesting ||
       (control.dataset.page !== "setup" &&
         !entry?.available &&
         control.dataset.page !== ui.page);
@@ -3447,6 +2259,7 @@ async function sendMessage() {
   if (!ui.pendingMessage?.body) {
     const body = {
       page: ui.page,
+      sessionId: state.currentSessionId,
       text,
       messageId: crypto.randomUUID(),
       ...(ui.page === "ontology" && ui.nextRefreshSources
@@ -3469,6 +2282,14 @@ async function sendMessage() {
     };
   }
   const pending = ui.pendingMessage;
+  const settleOriginal = (origin, accepted) => {
+    const draft = ui.drafts.get(origin.draftKey) ?? ui.draftStore?.read(origin.draftKey);
+    if (draft?.pendingMessage?.body?.messageId !== pending.body.messageId) return;
+    draft.pendingMessage = null;
+    if (accepted) draft.nextRefreshSources = false;
+    if (accepted && draft.draftRef?.revision === pending.draftRevision && draft.contextRevision === pending.contextRevision && draft.text.trim() === pending.text) draft.text = "";
+    ui.drafts.set(origin.draftKey, draft); ui.draftStore?.save(origin.draftKey, draft);
+  };
   rememberDraft();
   await mutate(
     "/api/canvas/message",
@@ -3497,12 +2318,16 @@ async function sendMessage() {
         rememberDraft();
       }
     },
+    {
+      after: (_result, origin) => settleOriginal(origin, true),
+      error: (error, origin) => { if (error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status)) settleOriginal(origin, false); },
+    },
   );
 }
 async function uploadFile(file) {
   if (shareMode)
     return errorMessage("离线演示只提供已保存的样本资料，不能上传或修改数据。");
-  if (!file || ui.requesting || ui.uploading || state.busy) return;
+  if (!file || ui.requesting || ui.uploading) return;
   if (ui.page === "consumption") {
     errorMessage("请返回企业与数据页接入资料。");
     return;
@@ -3532,7 +2357,7 @@ async function uploadFile(file) {
       () => {
         ui.detail = null;
         ui.detailRequest += 1;
-        ui.canvasKey = "";
+        ui.canvasDirty = true;
       },
     );
   } catch (error) {
@@ -3702,7 +2527,7 @@ $("#file-input").addEventListener("change", (event) =>
 );
 $("#developer-view-input").addEventListener("change", event => {
   setDeveloperView(event.target.checked);
-  ui.canvasKey = ""; ui.dialogueKey = "";
+  ui.canvasDirty = true; ui.dialogueKey = "";
   render();
 });
 $("#open-settings").addEventListener("click", openSettings);
@@ -3776,7 +2601,7 @@ window.addEventListener("dragenter", (event) => {
   if (!event.dataTransfer?.types.includes("Files")) return;
   event.preventDefault();
   dragDepth += 1;
-  if (!shareMode && !state.busy && !ui.requesting && ui.page !== "consumption")
+  if (!shareMode && !ui.requesting && ui.page !== "consumption")
     $("#drop-overlay").hidden = false;
 });
 window.addEventListener("dragover", (event) => {
@@ -3809,7 +2634,3 @@ if (!shareMode) {
   window.addEventListener("pagehide", rememberDraft);
 }
 refresh(true);
-if (!shareMode)
-  setInterval(() => {
-    if (!document.hidden) refresh();
-  }, 1200);

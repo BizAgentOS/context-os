@@ -24,10 +24,12 @@ Last Updated: 2026-10-19
 
 **2026-10-19 M0 验收：**036—039 完成并分别本地提交；完整 277 项测试、快照整链、真实 KodaX 修订 / 查询、桌面与窄屏验证通过。版本保持 v0.2.3，未发布；M1—M4 的其余 29 项仍 Planned。证据及模型读取限制见[M0 验收](experiment/V030_M0_2026_10_19.md)。
 
+**2026-10-19 M1 首批验收：**040 分层语义模型、047 会话 / 执行池和 049 事件推送完成隔离迁移、公共边界、真实模型及浏览器验收，完成证据见[基础批次记录](experiment/V030_M1_FOUNDATIONS_2026_10_19.md)。当前版本仍为 v0.2.3，未发布；后续从 041 统一变更继续。
+
 ## Version Info
 
 - **Current Release:** v0.2.3（2026-10-16，本地 Tag `v0.2.3`）。v0.2.2 于 2026-10-15 发布（本地 Tag `v0.2.2`）。v0.2.0 于 2026-10-14 发布（提交 `930b10e`，Tag `v0.2.0`）。
-- **Planned Version:** v0.3.0（2026-10-19 登记，FEATURE_036—068；M0 已验收，后续 29 项 Planned）。v0.1.0 保留历史功能与验收记录。
+- **Planned Version:** v0.3.0（2026-10-19 登记，FEATURE_036—068；M0 与 M1 首批已验收，其余 26 项 Planned）。v0.1.0 保留历史功能与验收记录。
 - **版本状态:** 计划于 v0.2.0 的 11 项全部完成：025—030 随 v0.2.0 发布，031—035 随 v0.2.1 发布；v0.2.2 为这些能力的修复发布。v0.1.0 未单独发布，002、004、005、006、019 仍未完成，继续保留。
 - **状态规则:** `Planned → InProgress → Completed`；`Released` 仅填写实际发布版本。
 - **设计:** [v0.3.0 设计与任务](features/v0.3.0.md)及[目标产品蓝图](features/v0.3.0-blueprint.md)；[v0.2.0 设计与开发步骤](features/v0.2.0.md)；[v0.1.0 历史](features/v0.1.0.md)。
@@ -39,7 +41,7 @@ Last Updated: 2026-10-19
 |---|---|---:|---:|---:|---:|
 | v0.1.0 | InProgress | 2 | 3 | 19 | 19/24 |
 | v0.2.0 | Released | 0 | 0 | 11 | 11/11 |
-| v0.3.0 | InProgress | 29 | 0 | 4 | 4/33 |
+| v0.3.0 | InProgress | 26 | 0 | 7 | 7/33 |
 
 本表按计划批次统计。v0.2.2 为已发布能力的 PATCH 修复版本，不新增或重复计算 Feature。
 
@@ -90,16 +92,16 @@ Last Updated: 2026-10-19
 | 037 | 界面去内部化与交互止血 | Enhancement | High | Completed | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-037) |
 | 038 | 读取合同对齐 | Enhancement | High | Completed | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-038) |
 | 039 | 冻结旧消费接口 | Refactor | High | Completed | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-039) |
-| 040 | 分层语义模型 | Refactor | High | Planned | v0.3.0 | 036 | [设计](features/v0.3.0.md#feature-040) |
+| 040 | 分层语义模型 | Refactor | High | Completed | v0.3.0 | 036 | [设计](features/v0.3.0.md#feature-040) |
 | 041 | 统一变更流程与自动采用规则 | Enhancement | High | Planned | v0.3.0 | 040 | [设计](features/v0.3.0.md#feature-041) |
 | 042 | 关系发现修复与身份对应 | Enhancement | High | Planned | v0.3.0 | 040、041 | [设计](features/v0.3.0.md#feature-042) |
 | 043 | 文档补充、证据库与待裁决 | Enhancement | High | Planned | v0.3.0 | 041、044 | [设计](features/v0.3.0.md#feature-043) |
 | 044 | 待处理中心 | New | High | Planned | v0.3.0 | 041；界面依赖 048 | [设计](features/v0.3.0.md#feature-044) |
 | 045 | 首次构建批量业务命名 | New | High | Planned | v0.3.0 | 041、044、047 | [设计](features/v0.3.0.md#feature-045) |
 | 046 | Agent 面板与结构化消息 | Enhancement | High | Planned | v0.3.0 | 036、041、049 | [设计](features/v0.3.0.md#feature-046) |
-| 047 | 会话、上下文与执行分池 | Enhancement | High | Planned | v0.3.0 | 036、037 | [设计](features/v0.3.0.md#feature-047) |
+| 047 | 会话、上下文与执行分池 | Enhancement | High | Completed | v0.3.0 | 036、037 | [设计](features/v0.3.0.md#feature-047) |
 | 048 | 构建模式与工具收敛 | Refactor | High | Planned | v0.3.0 | 041、046 | [设计](features/v0.3.0.md#feature-048) |
-| 049 | 事件推送与前端模块化 | Refactor | High | Planned | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-049) |
+| 049 | 事件推送与前端模块化 | Refactor | High | Completed | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-049) |
 | 050 | 本体页重构 | Enhancement | High | Planned | v0.3.0 | 040、044、046 | [设计](features/v0.3.0.md#feature-050) |
 | 051 | 查询层扩展与执行资源 | Enhancement | High | Planned | v0.3.0 | 038、040 | [设计](features/v0.3.0.md#feature-051) |
 | 052 | 问答模式与回答卡 | New | High | Planned | v0.3.0 | 046、047、051 | [设计](features/v0.3.0.md#feature-052) |
@@ -561,13 +563,14 @@ Last Updated: 2026-10-19
 
 ### 040: 分层语义模型
 
-- **Status:** Planned
+- **Status:** Completed
 - **Category / Priority:** Refactor / High
 - **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / 2026-10-19
 - **Description:** 语义层（实体、属性、关系类型）与绑定层分离，稳定 ID、复合身份、中间表；存量迁移，旧发布可读。
 - **Blocked by:** 036。
 - **Design:** [FEATURE_040](features/v0.3.0.md#feature-040)。
+- **Verification:** [分层与迁移](experiment/V030_040_MIGRATION_2026_10_19.md)，稳定身份、复合键 / 中间表、旧映射编辑、说明不重绑、固定发布与关系纠正回归；热力数据与实际历史发布的证据限制如实保留。
 
 ### 041: 统一变更流程与自动采用规则
 
@@ -631,13 +634,14 @@ Last Updated: 2026-10-19
 
 ### 047: 会话、上下文与执行分池
 
-- **Status:** Planned
+- **Status:** Completed
 - **Category / Priority:** Enhancement / High
 - **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / 2026-10-19
 - **Description:** 会话长期保存；模型上下文由摘要与近期窗口组成并设上限；交互与后台分池；页面状态前端化。
 - **Blocked by:** 036、037。
 - **Design:** [FEATURE_047](features/v0.3.0.md#feature-047)。
+- **Verification:** [会话与执行池](experiment/V030_047_2026_10_19.md)，长期分页、初始上下文上限、真实模型标题与同题比较、后台并行、重启 / 多标签 / 版本冲突通过。
 
 ### 048: 构建模式与工具收敛
 
@@ -651,13 +655,14 @@ Last Updated: 2026-10-19
 
 ### 049: 事件推送与前端模块化
 
-- **Status:** Planned
+- **Status:** Completed
 - **Category / Priority:** Refactor / High
 - **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / 2026-10-19
 - **Description:** SSE 事件替代全量轮询与整页重建；前端拆分模块；删除旧四页渲染路径。
 - **Blocked by:** 无。
 - **Design:** [FEATURE_049](features/v0.3.0.md#feature-049)。
+- **Verification:** [事件与前端](experiment/V030_049_2026_10_19.md)，事件重放 / 重启快照、桌面与窄屏、表单 / 滚动 / 草稿 / 晚回执、双标签及离线导出通过。
 
 ### 050: 本体页重构
 

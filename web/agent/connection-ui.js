@@ -9,7 +9,7 @@ export function element(tag, text, className = "") {
 export function action(text, callback, className = "quiet-button") {
   const button = element("button", text, className);
   button.type = "button";
-  button.addEventListener("click", callback);
+  button.onclick = callback;
   return button;
 }
 

@@ -118,3 +118,9 @@ html[data-developer-view="true"] .technical-information{display:block;overflow-w
 .technical-information pre{white-space:pre-wrap;overflow-wrap:anywhere}
 .engine-message:not(:empty){border-color:#608cac55;background:#82b7e414;color:inherit}
 .engine-message[data-error="true"]:not(:empty){border-color:#c6859155;background:#9d344720;color:#a13044}
+
+.agent-sessions { display:flex; align-items:center; gap:6px; padding:5px 10px; min-width:0; pointer-events:auto; border-radius:10px; background:rgba(250,253,255,.95); }
+.agent-sessions select { min-width:0; flex:1; max-width:240px; color:inherit; background:rgba(255,255,255,.8); border:1px solid rgba(60,80,100,.18); border-radius:7px; padding:5px 8px; }
+.agent-sessions button { font-size:12px; white-space:nowrap; padding:4px 6px; }
+.interaction[data-mode="collapsed"] .agent-sessions { display:none; }
+@media(max-width:600px) { .agent-sessions { padding:3px 5px; gap:3px; } .agent-sessions select { max-width:none; } .agent-sessions button { font-size:11px; padding:4px; } }

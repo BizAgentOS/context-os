@@ -23,9 +23,11 @@ import { DelegationDenied } from "../engine/delegations.ts";
 import { reviewVerification } from "./maintenance.ts";
 import type { AgentDriver } from "./runtime.ts";
 import { ontologySceneAsset } from "./browser-assets.ts";
+import { WorkspaceEvents, snapshotScopes } from "./workspace-events.ts";
 
 const webRoot = fileURLToPath(new URL("../../web/agent/", import.meta.url));
 const staticFiles: Record<string, { file: string; type: string }> = {
+  ...Object.fromEntries(["workspace-store", "agent-panel", "task-center", "pending-center", "data-profile", "share-workspace", "page-region", "sessions"].map(name => [`/${name}.js`, { file: `${name}.js`, type: "text/javascript; charset=utf-8" }])),
   "/glass-theme.css": {file:"glass-theme.css",type:"text/css; charset=utf-8"},
   "/glass-ontology.css": {file:"glass-ontology.css",type:"text/css; charset=utf-8"},
   "/engine.css": {file:"engine.css",type:"text/css; charset=utf-8"},
@@ -163,6 +165,7 @@ export async function createServer(
   }
   const cookieName = `dataengine_admin_${createHash("sha256").update(token).digest("hex").slice(0, 16)}`;
   const openApiImports = new OpenApiImports(app.live.sources);
+  const events = new WorkspaceEvents(app.memory.changes);
   const matchesToken = (value: unknown) => {
     if (typeof value !== "string") return false;
     const bytes = Buffer.from(value);
@@ -299,6 +302,17 @@ export async function createServer(
       if (request.method === "GET") {
         if (url.pathname === "/api/ontology/model") {
           send(200, app.live.readLayered(url.searchParams.get("id") ?? "", url.searchParams.has("version") ? Number(url.searchParams.get("version")) : undefined)); return;
+        }
+        if (url.pathname === "/api/events") {
+          const after = request.headers["last-event-id"] ?? url.searchParams.get("after");
+          events.connect(response, typeof after === "string" ? after : undefined); return;
+        }
+        if (url.pathname === "/api/snapshot") {
+          const snapshot = app.canvasState(url.searchParams.get("page") ?? undefined, url.searchParams.get("sessionId") ?? undefined);
+          const scope = url.searchParams.get("scope");
+          if (scope && !snapshotScopes[scope]) throw new Error("未知快照范围");
+          const value = scope ? Object.fromEntries(snapshotScopes[scope].filter(key => Object.hasOwn(snapshot, key)).map(key => [key, (snapshot as Record<string, unknown>)[key]])) : snapshot;
+          send(200, { ...value, eventCursor: events.cursor }); return;
         }
         if (url.pathname === "/api/sources/summary") { send(200, sourceSummary(app.memory)); return; }
         if (url.pathname === "/api/engine") { send(200, app.programBuilds.overview()); return; }
@@ -862,6 +876,7 @@ export async function createServer(
     async close() {
       if (closed) return;
       closed = true;
+      events.close();
       await new Promise<void>((resolveClose) =>
         server.close(() => resolveClose()),
       );

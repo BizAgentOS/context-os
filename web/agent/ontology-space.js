@@ -103,16 +103,18 @@ export function renderOntologySpace(value, {selections, read, select, management
   const menu = el("details", "os-menu"); menu.append(el("summary", "", "工作区"));
   const menuBody = el("div", "os-menu-body");
   function panel(label, contents) {
-    return button(label, () => {
+    const open = () => {
       menu.open = false;
       const dialog = el("dialog", "live-dialog os-management"); dialog.setAttribute("aria-label", label);
       dialog.append(el("h2", "", label), button("关闭", () => dialog.close(), "close"), typeof contents === "function" ? contents() : contents);
       // Dialogs own their lifetime. Polls and new graph versions must not discard open forms.
       dialog.addEventListener("close", () => {dialog.querySelectorAll("[data-disposable]").forEach(node => node.dispose?.()); dialog.remove();}, {once:true});
       document.body.append(dialog); dialog.showModal();
-    });
+    };
+    const entry = button(label, open); entry.openPanel = open; return entry;
   }
   const definitionEntry = panel("本体定义", management);definitionEntry.classList.add("os-definition-entry");
+  root.openDefinitions = () => definitionEntry.openPanel();
   const objectEntry = panel("实际对象", objects);objectEntry.classList.add("os-object-entry");
   const workEntries = el("nav", "os-work-entries");workEntries.setAttribute("aria-label","本体工作入口");
   workEntries.append(definitionEntry,objectEntry);
@@ -417,6 +419,11 @@ export function renderOntologySpace(value, {selections, read, select, management
   root.dispose = () => {disposed = true; generation++; controlsResize.disconnect(); narrow.removeEventListener("change", placeFan); document.removeEventListener("keydown", onKeyDown); cancelAnimationFrame(fanFrame); fanResize.disconnect(); scene?.dispose();};
   let progressKey = JSON.stringify([automaticBuild, automaticApiBuild]);
   root.updateStatus = state => {
+    const sourceLine = root.querySelector(".os-helix-summary > span");
+    if (sourceLine && helixSummary) {
+      const stats = helixSummary.stats;
+      sourceLine.textContent = `${stats.tables} 张表 · ${state.sourceSummary?.total ?? stats.sources} 个已接入来源 → ${stats.entities} 个实体 · ${stats.links} 条关联`;
+    }
     const nextKey = JSON.stringify([state.automaticBuild, state.automaticApiBuild]);
     if (nextKey !== progressKey) {progressKey = nextKey; updateProgress(state.automaticBuild, state.automaticApiBuild);}
     if (buildEntry) {
@@ -424,6 +431,13 @@ export function renderOntologySpace(value, {selections, read, select, management
       const label = count ? `构建任务 · ${count} 进行中` : "构建与修订";
       buildEntry.textContent = buildEntry.title = label; buildEntry.setAttribute("aria-label", label);
     }
+  };
+  const semanticVersion = [value?.current?.id, value?.current?.version, value?.adopted?.id, value?.adopted?.version];
+  root.updateWorkspace = state => {
+    const next = state.foundation;
+    const refs = [next?.current?.id, next?.current?.version, next?.adopted?.id, next?.adopted?.version];
+    if (refs.some((ref, index) => ref !== semanticVersion[index])) return false;
+    root.updateStatus(state); return true;
   };
   renderDirectory(); renderView(); queueMicrotask(mountScene);
   return root;

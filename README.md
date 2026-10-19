@@ -78,13 +78,13 @@ npm ci
 npm run demo
 ```
 
-打开终端给出的管理链接（默认端口 8794）。三页已填入澄川热力的企业信息、业务资料、本体与对象、业务验证和调用方，右上角标记“演示数据”，输入框提供固定的模拟问答；对象读取、证据追溯、编辑与访问限制由本地程序实际执行，不调用模型。演示状态单独保存在 `local-state/heating-demo`。详见[热力公司演示](docs/experiment/HEATING_DEMO.md)。
+打开终端给出的管理链接（默认端口 8794）。三页已填入澄川热力的企业信息、业务资料、本体与对象和业务验证，右上角标记“演示数据”，输入框提供固定的模拟问答；对象读取、证据追溯、编辑与访问限制由本地程序实际执行，不调用模型。演示状态单独保存在 `local-state/heating-demo`；新演示不预建外部调用方，接入需走正式发布流程。详见[热力公司演示](docs/experiment/HEATING_DEMO.md)。
 
 **单文件 HTML 演示**：`npm run export:html` 生成 `output/share/DataEngine-热力公司-演示.html`，下载后用浏览器离线打开；使用隔离的虚构样本，不包含当前空间凭据或用户资料。详见[分享说明](docs/experiment/SHARE_HTML.md)。
 
 **在线读取体验**：`npm run live:demo` 启动 8796 端口，两个独立热力源（投诉 API、回访 MCP）按需读取，聊天使用真实 KodaX，见[运行说明](docs/experiment/LIVE_MEMORY.md)。这是 0.1.x 时期的在线读取方式；0.2.1 起结构化来源默认同步为快照。
 
-**Agent 通用能力**：三页 Agent 已接入 KodaX 网页搜索/读取、Skill 加载、通用 MCP 发现与授权调用，以及可信业务 SDK 注册表，顶部“能力”管理配置，见[Agent 能力说明](docs/experiment/AGENT_CAPABILITIES.md)。
+**Agent 通用能力**：三页 Agent 已接入 KodaX 网页搜索/读取、Skill 加载、通用 MCP 发现与授权调用，以及可信业务 SDK 注册表，开发者视图中的顶部“能力”入口管理配置，见[Agent 能力说明](docs/experiment/AGENT_CAPABILITIES.md)。
 
 **历史验收**：此前三页融合的十八张票（T014-01 至 T016-04）已完成，覆盖统一来源目录、知识与指标取证、概念绑定、多源融合、共同取证、可视化、关系纠正、映射修订、许可消费视图与消费者迁移，验收文档在 `docs/experiment/`，汇总见[整链验收](docs/experiment/FUSION_CHAIN.md)。升级前仍打开旧页面的用户，先导出未发送草稿再重启并导入，见[三页迁移说明](docs/experiment/THREE_PAGE_MIGRATION.md)。
 
