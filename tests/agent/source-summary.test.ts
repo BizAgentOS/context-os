@@ -33,18 +33,17 @@ test("all pages share source counts, CSV aliases are deduplicated and history is
       assert.deepEqual(state.sourceSummary, summary);
     }
     await service.app.canvasNavigate({ page: "setup" });
-    const progress = service.app.memory.getCanvas()!;
-    const task = service.app.memory.createTask("历史分页");
-    service.app.memory.saveCanvas({ ...progress, taskIds: { ...progress.taskIds, setup: task.id } });
+    const session = service.app.memory.createSession("历史分页");
+    const task = service.app.memory.getTask(session.taskId);
     for (let i = 0; i < 61; i++) service.app.memory.addMessage(task.id, "user", `第 ${i} 条`, `history-${i}`);
     service.app.memory.trimMessages(task.id);
-    const state = await (await fetch(`${base}/api/canvas?page=setup`, { headers })).json() as any;
+    const state = await (await fetch(`${base}/api/canvas?page=setup&sessionId=${session.id}`, { headers })).json() as any;
     assert.equal(state.messages.length, 40);
-    const older = await (await fetch(`${base}/api/canvas/messages?page=setup&before=${state.messagePage.nextBefore}`, { headers })).json() as any;
+    const older = await (await fetch(`${base}/api/sessions/${session.id}/messages?before=${state.messagePage.nextBefore}`, { headers })).json() as any;
     assert.equal(older.messages.length, 21);
     assert.equal(older.messages[0].content, "第 0 条");
     assert.equal(older.nextBefore, null);
-    assert.equal((await fetch(`${base}/api/canvas/messages?page=setup&before=missing`, { headers })).status, 404);
+    assert.equal((await fetch(`${base}/api/sessions/${session.id}/messages?before=missing`, { headers })).status, 404);
   } finally { await service.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 

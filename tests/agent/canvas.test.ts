@@ -245,7 +245,7 @@ test("the canvas saves real company facts and remains on setup after the run set
   }
 });
 
-test("each page has bounded chat and a fresh model context while saved enterprise memory survives trimming", async () => {
+test("one cross-page conversation has bounded model context while saved enterprise memory and complete history survive", async () => {
   const directory = mkdtempSync(join(tmpdir(), "dataengine-canvas-context-"));
   const requests: RunRequest[] = [];
   const driver: AgentDriver = {
@@ -426,7 +426,7 @@ test("sources require inspected records, and the ontology page offers no tool th
     await app.idle();
     assert.equal(app.canvasState().currentPage, "setup");
     await app.canvasNavigate({ page: "ontology" });
-    assert.equal(app.canvasState().messages.length, 0);
+    assert(app.canvasState("ontology").messages.length > 0, "page navigation keeps the same conversation history");
     await app.canvasMessage({ page: "ontology", text: "建立投诉对象。" });
     await app.idle();
     // Concepts and relations come from the rules; the assistant only corrects them.

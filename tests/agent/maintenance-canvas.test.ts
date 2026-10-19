@@ -42,7 +42,7 @@ test("three pages and legacy aliases can be visited without inventing memory or 
       assert.deepEqual(state.consumers, []);
     }
     assert.equal(calls, 0);
-    assert.equal(app.memory.listTasks().length, 0);
+    assert.equal(app.memory.listTasks().length, 1, "navigation creates only an idle default conversation");
     assert.equal(app.memory.listArtifacts().length, 0);
     await app.close();
     app = new AgentApplication(directory, driver);

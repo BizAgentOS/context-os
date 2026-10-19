@@ -53,7 +53,7 @@ test("onboarding saves selected industry naming references, waits for data and p
     assert.equal(reference.status, "reference");
     assert.deepEqual(reference.content.concepts, pack.concepts.slice(0, 2).map((item: any) => ({ templateId: item.id, name: item.name, description: item.description })));
     assert.equal(service.app.memory.listArtifacts("foundation").length, 0);
-    assert.equal(service.app.memory.listTasks().length, 0, "saving reference vocabulary does not start an Agent task");
+    assert.equal(service.app.memory.listTasks().filter(task=>task.executionId).length, 0, "saving reference vocabulary does not start an Agent run");
     assert.equal(applied.data.sources.length, 0);
     assert.equal(applied.data.live.connections.length, 0);
     const repeat = await call("/api/onboarding/pack", body);

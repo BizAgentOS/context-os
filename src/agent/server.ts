@@ -278,6 +278,24 @@ export async function createServer(
             `${cookieName}=${token}; HttpOnly; SameSite=Strict; Path=/api`,
           );
       }
+      const sessionRoute=/^\/api\/sessions\/([^/]+)(\/messages)?$/.exec(url.pathname);
+      if(url.pathname==="/api/sessions"&&request.method==="GET") {
+        app.memory.defaultSession();send(200,{sessions:app.memory.listSessions(url.searchParams.get("archived")==="true")});return;
+      }
+      if(url.pathname==="/api/sessions"&&request.method==="POST") {
+        const body=await readBody(request);if(body.title!==undefined&&typeof body.title!=="string")throw new Error("会话标题应为文本");
+        send(201,{session:app.memory.createSession(body.title as string|undefined)});return;
+      }
+      if(sessionRoute&&request.method==="PATCH") {
+        if(sessionRoute[2])throw new Error("此接口仅支持读取消息");
+        const body=await readBody(request);
+        if(body.title!==undefined&&typeof body.title!=="string")throw new Error("会话标题应为文本");
+        send(200,{session:app.memory.updateSession(decodeURIComponent(sessionRoute[1]),body as {title?:string;archived?:boolean})});return;
+      }
+      if(sessionRoute&&request.method==="GET") {
+        const id=decodeURIComponent(sessionRoute[1]);
+        send(200,sessionRoute[2]?app.memory.sessionMessages(id,{before:url.searchParams.get("before")??undefined,limit:Number(url.searchParams.get("limit")??40)}):{session:app.memory.getSession(id)});return;
+      }
       if (request.method === "GET") {
         if (url.pathname === "/api/ontology/model") {
           send(200, app.live.readLayered(url.searchParams.get("id") ?? "", url.searchParams.has("version") ? Number(url.searchParams.get("version")) : undefined)); return;
@@ -335,7 +353,7 @@ export async function createServer(
           return;
         }
         if (url.pathname === "/api/canvas") {
-          send(200, app.canvasState(url.searchParams.get("page") ?? undefined));
+          send(200, app.canvasState(url.searchParams.get("page") ?? undefined,url.searchParams.get("sessionId") ?? undefined));
           return;
         }
         if (url.pathname === "/api/bootstrap") {

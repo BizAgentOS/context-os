@@ -112,7 +112,7 @@ test("navigation preserves an automatic run, and another upload is processed aft
     assert.equal(app.canvasState().automaticBuild.status, "running");
     await app.canvasUpload({page: "ontology", name: "第二份.md", content: "澄川仓配的仓库负责补货。"});
     release(); await app.idle();
-    const state = app.canvasState();
+    const state = app.canvasState("ontology");
     assert.equal(state.currentPage, "ontology");
     assert.equal(state.automaticBuild.completed, 2, JSON.stringify(state.automaticBuild));
     assert.equal((state.foundation.current!.content.concepts as any[]).length, 1, "documents add evidence, not concepts");
@@ -195,10 +195,12 @@ test("saving and testing a model connection happens before queued automatic cons
     seedStore(app);
     await app.canvasUpload({page: "setup", name: "仓配.md", content: "澄川仓配的门店负责收货。"});
     const driver = buildDriver();
-    app.driver.run = async request => {
+    const run:AgentDriver["run"] = async request => {
       if (request.title === "模型连接检查") { tested = true; return {text: "连接成功", sessionId: "test", runId: "test"}; }
       assert(tested); return driver.run(request);
     };
+    app.driver.run=run;
+    app.driver.fork=()=>({run,async stop(){},async close(){}});
     const settings = await app.configure({provider: "deepseek", model: "test", apiKey: "test-only-local-key", testConnection: true});
     assert.equal(settings.connection?.ok, true);
     await app.idle();

@@ -16,7 +16,7 @@ export function heatingDemoDriver(): AgentDriver {
     async run(request: RunRequest) {
       const context = JSON.parse(request.input);
       const question = String(context.recentMessages?.findLast((item: {role: string}) => item.role === "user")?.content ?? "");
-      const enterprise = context.enterprise;
+      const enterprise = await request.onTool("workspace_overview", {}) as any;
       const verificationPrefix = "请用已保存的本体与真实对象验证这个业务问题：";
       const isVerification = context.page === "ontology" && question.startsWith(verificationPrefix);
       const requestedQuestion = isVerification

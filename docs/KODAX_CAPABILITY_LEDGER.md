@@ -1,6 +1,6 @@
 # KodaX 能力与 DataEngine 接入台账
 
-更新：2026-09-11。用途：说明本产品实际使用哪些 KodaX 契约、由谁补齐产品职责，以及哪些能力尚未验证。
+更新：2026-10-19。用途：说明本产品实际使用哪些 KodaX 契约、由谁补齐产品职责，以及哪些能力尚未验证。
 本地核对基线为 `0b264fa6eb34668b9741af2208098d07334f61c0`；[package.json](../package.json)固定 `@kodax-ai/kodax@0.7.96-beta.2`。
 本表核对本地 adapter 与能力服务，不是完整 SDK 源码审计。T013-01 新增的基础本体方法已做真实 KodaX/DeepSeek 验证，见[基础本体验收](experiment/COMPANY_FOUNDATION.md)。
 旧官方源码核对版本与链接保存在[历史 Agent 设计](archive/AGENT_DESIGN_2026-09-07.md)；不能拿旧源码版本替代当前安装版本。
@@ -24,7 +24,7 @@
 | SDK 契约 | 本产品接入 | 代码证据 | 限制与缺口 |
 |---|---|---|---|
 | `createKodaXRuntime` | 已接入 `embedded/inline`，独立 homeDir、sessionsDir、profile | [runtime.ts](../src/agent/runtime.ts) `initialize` | 本地 Node 宿主；未建立独立进程沙箱 |
-| `sessions.create/load/delete` | 画布每轮新建并删除；旧 task 路径加载会话 | [runtime.ts](../src/agent/runtime.ts) `run`；[app.ts](../src/agent/app.ts) `run` | 页面持续状态由应用保存；无当前 UI 会话管理产品 |
+| `sessions.create/load/delete` | 每轮使用 SDK 临时会话；ADE 独立持久化长期会话与完整消息 | [runtime.ts](../src/agent/runtime.ts) `run`；[app.ts](../src/agent/app.ts) `run`；[memory.ts](../src/agent/memory.ts) | FEATURE_047 已接入新建、改名、归档与消息分页；SDK 会话不作为产品历史库 |
 | `runs.start` 与运行 handle | 已接入 `sa`、模型参数、result、usage 与失败结果 | [runtime.ts](../src/agent/runtime.ts) `run` | 只用单循环；多 Agent 模式未接入 |
 | `runs.abort`、`runtime.close` | 停止和关闭 SDK 运行 | [runtime.ts](../src/agent/runtime.ts) `stop/close` | 迟到写入拒绝、已保存成果保留由宿主实现 |
 | `events.subscribe` | 读取 assistant.delta、run.progress、工具和权限事件，结束关闭订阅 | [runtime.ts](../src/agent/runtime.ts) `subscription` | 只转换本产品需要的事件；未审查全部 SDK 事件语义 |
@@ -47,6 +47,10 @@
 
 Skill 的包目录、已安装方法与变更流程只在[内置 Skill](BUILTIN_SKILLS.md)维护。
 本产品能力工具的 `mutates: false` 不证明任意外部 MCP 调用只读；具体能力仍受独立授权和执行检查约束。
+
+### 2026-10-19 会话与执行池（FEATURE_047，未发布）
+
+宿主以 `KodaXDriver.fork(scope)` 为每个交互会话及共享后台池创建独立 embedded runtime 和停止句柄，沿现有 KodaX 工具循环执行；企业领域服务与版本校验共用。会话和历史由 ADE 持久化，SDK 会话每轮临时使用。宿主使用已安装 SDK 的 `countTokens` 估算初始系统文本与输入的 8000 token 上限；工具定义和后续工具结果不在此初始预算内。真实标题与上下文比较见[047 验收](experiment/V030_047_2026_10_19.md)，没有升级 SDK。
 
 ## 4. 属于 DataEngine 的职责
 

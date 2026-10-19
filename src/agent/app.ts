@@ -46,6 +46,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join, basename } from "node:path";
 import { FoundationService, foundationTools } from "./foundation.ts";
+import { conversationContext } from "./conversation-context.ts";
 import { MemoryStore } from "./memory.ts";
 import { Workspace, domainTools } from "./workspace.ts";
 import { LiveMemory, liveTools } from "../live/memory.ts";
@@ -174,14 +175,22 @@ export class AgentApplication {
   readonly consumption: ConsumptionService;
   readonly driver: AgentDriver;
   private actualDriver?: KodaXDriver;
-  private active?: { context: WriteContext; promise: Promise<void>; automatic?: boolean };
+  private interactions = new Map<string, {context:WriteContext;promise:Promise<void>;driver:AgentDriver}>();
+  private background?: {context:WriteContext;promise:Promise<void>;driver:AgentDriver;automatic?:boolean};
+  private poolDrivers = new Map<string, AgentDriver>();
+  private get active() { return this.interactions.values().next().value ?? this.background; }
+  private runDriver(scope: string) {
+    let driver=this.poolDrivers.get(scope);
+    if(!driver){driver=this.driver.fork?.(scope)??this.driver;this.poolDrivers.set(scope,driver);}
+    return driver;
+  }
   readonly automaticBuild: AutomaticFoundation;
   readonly automaticApiBuild: AutomaticApi;
   private automaticApiEnabled: boolean;
   private closing = false;
   private stopping = false;
   private modelTest = false;
-  private streaming = "";
+  private streams = new Map<string,string>();
   private settings: ModelSettings;
   private credentials: ModelCredentials;
   private injected: boolean;
@@ -233,7 +242,7 @@ export class AgentApplication {
     this.driver = driver ?? this.actualDriver!;
     this.automaticBuild = new AutomaticFoundation(this.memory, this.foundation, this.capabilities);
     this.automaticApiBuild = new AutomaticApi(this.memory, this.foundation, this.live, this.capabilities, this.programBuilds);
-    this.delegations = new AgentDelegations(this.memory, this.live, this.driver, {
+    this.delegations = new AgentDelegations(this.memory, this.live, ()=>this.runDriver("background"), {
       configured: () => this.model().configured,
       start: (taskId, run) => this.startDelegatedRun(taskId, run),
       stop: taskId => this.stop(taskId),
@@ -267,7 +276,7 @@ export class AgentApplication {
       messages: task ? this.memory.messagePage(task.id).messages : [],
       events: task ? this.memory.events(task.id) : [],
       busy: !!this.active || this.modelTest,
-      streaming: task?.id === this.active?.context.taskId ? this.streaming : "",
+      streaming: task ? this.streams.get(task.id) ?? "" : "",
     };
   }
 
@@ -371,21 +380,12 @@ export class AgentApplication {
     return normalizeCanvasPage(page);
   }
 
-  private canvasTask(page: CanvasPage): Task {
-    const progress = this.canvasProgress();
-    let taskId = progress.taskIds[page];
-    if (!taskId) {
-      taskId = this.memory.createTask(
-        {
-          setup: "建立企业基础与接入数据",
-          ontology: "建立本体与对象",
-          consumption: "管理企业记忆消费",
-        }[page],
-      ).id;
-      progress.taskIds[page] = taskId;
-      this.memory.saveCanvas(progress);
-    }
-    return this.memory.getTask(taskId);
+  private canvasTask(page: CanvasPage, sessionId?: string): Task {
+    const session=sessionId?this.memory.getSession(sessionId):this.memory.defaultSession();
+    if(session.archived)throw new Error("该会话已归档，请新建或恢复会话");
+    const progress=this.canvasProgress();
+    if(!sessionId&&progress.taskIds[page]!==session.taskId){progress.taskIds[page]=session.taskId;this.memory.saveCanvas(progress);}
+    return this.memory.getTask(session.taskId);
   }
 
   private canvasAttention(progress: CanvasProgress): CanvasAttention[] {
@@ -725,6 +725,7 @@ export class AgentApplication {
   }
 
   canvasMessages(params: URLSearchParams) {
+    if(params.get("sessionId")) return this.memory.sessionMessages(params.get("sessionId")!,{before:params.get("before")??undefined,limit:Number(params.get("limit")??40)});
     const page = this.canvasPage(params.get("page") ?? undefined);
     const taskId = this.canvasProgress().taskIds[page];
     if (!taskId) return { messages: [], nextBefore: null };
@@ -734,12 +735,12 @@ export class AgentApplication {
     });
   }
 
-  canvasState(value?: unknown) {
+  canvasState(value?: unknown, sessionId?: string) {
     const page = this.canvasPage(value);
     const progress = this.canvasProgress();
-    const task = progress.taskIds[page]
-      ? this.memory.getTask(progress.taskIds[page]!)
-      : null;
+    const session=sessionId?this.memory.getSession(sessionId):this.memory.defaultSession();
+    const task=this.memory.getTask(session.taskId);
+    const messagePage=this.memory.sessionMessages(session.id);
     const pending = task?.pending;
     const profile = this.memory.listArtifacts("profile")[0] ?? null;
     const sources = this.memory.listArtifacts("source");
@@ -759,7 +760,10 @@ export class AgentApplication {
       onboarding: this.onboarding.view(),
       legacyHistory: page === "setup" ? this.legacyHistory() : [],
       setupSection: setupSection(value) ?? progress.setupSection ?? "company",
-      currentPage: progress.currentPage,
+      currentPage: page,
+      session,
+      currentSessionId:session.id,
+      pools:this.pools(),
       page,
       pages: canvasPages.map((id) => ({
         id,
@@ -767,12 +771,12 @@ export class AgentApplication {
         available: true,
       })),
       model: this.model(),
-      busy: !!this.active || this.modelTest,
-      agentTask: this.agentTaskView(),
-      streaming: task?.id === this.active?.context.taskId ? this.streaming : "",
+      busy: !!task && this.interactions.has(task.id) || this.modelTest,
+      agentTask: this.agentTaskView(task.id),
+      streaming: task ? this.streams.get(task.id) ?? "" : "",
       messages: task
         ? this.memory
-            .messagePage(task.id).messages
+            .sessionMessages(session.id).messages
             .map(({ id, role, content, workContext }) => ({
               id,
               role,
@@ -780,7 +784,7 @@ export class AgentApplication {
               ...(workContext ? { workContext } : {}),
             }))
         : [],
-      messagePage: task ? { nextBefore: this.memory.messagePage(task.id).nextBefore } : { nextBefore: null },
+      messagePage:{nextBefore:messagePage.nextBefore},
       prompt: String(
         pending?.question ??
           (!this.model().configured
@@ -832,31 +836,20 @@ export class AgentApplication {
     if (body.section !== undefined && !setupSection(body.section))
       throw new Error("无效的企业与数据分区");
     const progress = this.canvasProgress();
-    // Navigation only changes the view; an in-flight message retains its original context.
-    progress.currentPage = page;
-    if (page === "setup")
-      progress.setupSection =
-        setupSection(body.page) ??
-        setupSection(body.section) ??
-        progress.setupSection ??
-        "company";
-    if (!progress.reached.includes(page)) progress.reached.push(page);
-    this.memory.saveCanvas(progress);
-    return this.canvasState(page);
+    // The caller owns its current page and selection; another tab cannot change it.
+    return {...this.canvasState(body.page, typeof body.sessionId === "string" ? body.sessionId : undefined),...(page==="setup"?{setupSection:setupSection(body.page)??setupSection(body.section)??"company"}:{})};
   }
 
   async canvasStop(body: Record<string, unknown>) {
-    if (this.active) { await this.stopActive(); return this.canvasState(body.page); }
-    const page = this.canvasPage(body.page);
-    const taskId = this.canvasProgress().taskIds[page];
-    if (taskId) await this.stop(taskId);
-    return this.canvasState(page);
+    const session=typeof body.sessionId === "string"?this.memory.getSession(body.sessionId):this.memory.defaultSession();
+    await this.stop(session.taskId);
+    return this.canvasState(body.page,session.id);
   }
 
   canvasMessageReceipt(body: Record<string, unknown>) {
     const page = this.canvasPage(body.page);
     const progress = this.canvasProgress();
-    const tasks = [
+    const tasks = typeof body.sessionId === "string" ? this.memory.getSession(body.sessionId).taskIds : [
       progress.taskIds[page],
       ...(page === "setup" ? Object.values(progress.legacyTaskIds ?? {}) : []),
     ].filter((id): id is string => !!id);
@@ -866,7 +859,7 @@ export class AgentApplication {
     );
     // Older browser drafts did not preserve a full request. Never reconstruct
     // or execute it from the user's possibly changed current selection.
-    return { ...this.canvasState(), messageReceipt: { received } };
+    return { ...this.canvasState(page,typeof body.sessionId === "string"?body.sessionId:undefined), messageReceipt: { received } };
   }
 
   canvasContext(body: Record<string, unknown>) {
@@ -912,7 +905,8 @@ export class AgentApplication {
           }) as Data)
         : undefined;
     const progress = this.canvasProgress();
-    const receiptTasks = [
+    const sessionId=typeof body.sessionId === "string"?body.sessionId:undefined;
+    const receiptTasks = sessionId?this.memory.getSession(sessionId).taskIds:[
       progress.taskIds[page],
       ...(page === "setup" ? Object.values(progress.legacyTaskIds ?? {}) : []),
     ].filter((id): id is string => !!id);
@@ -925,9 +919,7 @@ export class AgentApplication {
         binding,
       )
     )
-      return this.canvasState();
-    if (page !== progress.currentPage)
-      throw new Error("页面已变化，请回到当前页面后继续");
+      return this.canvasState(page,sessionId);
     const workContext = parsedContext
       ? this.contexts.resolve(parsedContext)
       : undefined;
@@ -956,7 +948,7 @@ export class AgentApplication {
       ].includes(focus.kind)
     )
       throw new Error("当前页面不支持此内容");
-    const task = this.canvasTask(page);
+    const task = this.canvasTask(page,sessionId);
     const previous = this.memory.getMessage(messageId);
     if (previous) {
       if (
@@ -965,9 +957,9 @@ export class AgentApplication {
         previous.role !== "user"
       )
         throw new Error("消息标识已使用");
-      return this.canvasState();
+      return this.canvasState(page,sessionId);
     }
-    await this.stopActive("已收到新的输入。");
+    if(this.interactions.has(task.id)) throw new Error("该会话已有运行，请等待结束或先停止");
     if (body.refreshSources === true)
       this.memory.clearInvestigation(
         task.id,
@@ -992,7 +984,7 @@ export class AgentApplication {
         page,
         workContext,
       );
-    return this.canvasState(page);
+    return this.canvasState(page,sessionId);
   }
 
   async prepareFeishuFoundation(body: Record<string, unknown>) {
@@ -1030,14 +1022,12 @@ export class AgentApplication {
     if (this.modelTest) throw new Error("正在测试连接，请稍后上传");
     const page = this.canvasPage(body.page);
     if (page === "consumption") throw new Error("请在企业与数据页接入资料。");
-    if (page !== this.canvasProgress().currentPage)
-      throw new Error("页面已变化，请回到当前页面后继续");
-    if (!this.active?.automatic) await this.stopActive("正在接入资料。");
+
     const artifact = new Workspace(this.memory).upload(
       string(body.name, "文件名", 180),
       typeof body.content === "string" ? body.content : "",
     );
-    const task = this.canvasTask(page);
+    const task = this.canvasTask(page,typeof body.sessionId === "string"?body.sessionId:undefined);
     if (!task.executionId) this.memory.clearInvestigation(task.id, "已接入新资料。");
     this.memory.attachArtifact(task.id, artifact);
     this.memory.addMessage(
@@ -1049,7 +1039,7 @@ export class AgentApplication {
     if (artifact.content.format === "csv") this.automaticApiBuild.enqueueUpload(artifact);
     else this.automaticBuild.enqueue(artifact);
     this.startAutomaticBuild();
-    return this.canvasState(page);
+    return this.canvasState(page,typeof body.sessionId === "string"?body.sessionId:undefined);
   }
 
   async canvasDecision(
@@ -1068,11 +1058,10 @@ export class AgentApplication {
     const isLive =
       this.memory.getArtifact(candidateId).kind === "live_ontology";
     if (
-      (page !== "ontology" && !(isLive && page === "setup")) ||
-      this.canvasProgress().currentPage !== page
+      (page !== "ontology" && !(isLive && page === "setup"))
     )
       throw new Error("请在当前企业与数据或本体页面处理候选");
-    const task = this.canvasTask(page);
+    const task = this.canvasTask(page,typeof body.sessionId === "string"?body.sessionId:undefined);
     const version = Number(body.version);
     if (
       task.pending?.candidateId !== candidateId ||
@@ -1081,10 +1070,11 @@ export class AgentApplication {
       throw new Error("该决定不对应当前等待的候选版本");
     if (!["adopt", "reject"].includes(String(body.decision)))
       throw new Error("无效的决定");
-    await this.stopActive("正在保存你的决定。");
+    if(this.interactions.has(task.id))await this.stop(task.id);
     if (body.decision === "reject")
       return this.canvasMessage({
         page,
+        sessionId:body.sessionId,
         text: "暂不采用这版，请问我最需要调整的地方。",
       });
     try {
@@ -1113,7 +1103,7 @@ export class AgentApplication {
       };
       if (isLive) await this.adoptLive(candidateId, version, finish);
       else finish(new Workspace(this.memory).adopt(candidateId, version));
-      return this.canvasState(page);
+      return this.canvasState(page,typeof body.sessionId === "string"?body.sessionId:undefined);
     } catch (error) {
       this.memory.restoreWaiting(task.id, task.pending!, this.safeError(error));
       throw error;
@@ -1162,20 +1152,20 @@ export class AgentApplication {
   ) {
     const page = this.canvasPage(body.page);
     if (
-      !["setup", "ontology"].includes(page) ||
-      this.canvasProgress().currentPage !== page
+      !["setup", "ontology"].includes(page)
     )
       throw new Error("请在企业与数据或本体工作区查看该候选");
     if (this.modelTest) throw new Error("正在测试连接，请稍后处理");
     if (!message && body.messageId !== undefined) message = { id: string(body.messageId, "消息标识"), text: "采用这版基础定义。" };
     const id = string(body.id, "基础候选");
     const version = Number(body.version);
-    await this.stopActive("正在保存你的基础定义决定。");
+    const selectedTask=this.canvasTask(page,typeof body.sessionId === "string"?body.sessionId:undefined);
+    if(this.interactions.has(selectedTask.id))await this.stop(selectedTask.id);
     return this.memory.atomic(() => {
       const before = this.foundation.view().current;
       const artifact = this.foundation.adopt(id, version);
       if (artifact.version !== before?.version) {
-        const task = this.canvasTask(page);
+        const task = selectedTask;
         this.memory.attachArtifact(task.id, artifact);
         this.memory.addMessage(
           task.id,
@@ -1202,7 +1192,7 @@ export class AgentApplication {
             this.memory.dismissPending(taskId);
         }
       }
-      return this.canvasState(page);
+      return this.canvasState(page,typeof body.sessionId === "string"?body.sessionId:undefined);
     });
   }
 
@@ -1215,8 +1205,7 @@ export class AgentApplication {
   }
 
   async revokeConsumer(body: Record<string, unknown>) {
-    if (this.canvasProgress().currentPage !== "consumption")
-      throw new Error("请在连接页停用访问");
+
     const id = string(body.id, "调用方");
     const version = Number(body.version);
     const consumer = this.consumption.revoke(id, version);
@@ -1280,100 +1269,69 @@ export class AgentApplication {
     return new Workspace(repository, context);
   }
 
+  pools() {
+    const view=(active:{context:WriteContext})=>{const task=this.memory.getTask(active.context.taskId);return {taskId:task.id,sessionId:this.memory.sessionForTask(task.id)?.id??null,status:task.status,stage:task.nextStep};};
+    const queued=this.memory.listArtifacts().filter(a=>["document_build","api_build","agent_delegation"].includes(a.kind)&&a.status==="queued").map(a=>({id:a.id,title:a.title,kind:a.kind}));
+    return {interactive:[...this.interactions.values()].map(view),background:{active:this.background?view(this.background):null,queued}};
+  }
+
   async idle() {
     do {
       this.startAutomaticBuild();
-      await this.active?.promise;
+      await Promise.all([...this.interactions.values()].map(active=>active.promise).concat(this.background?[this.background.promise]:[]));
       await this.programBuilds.idle();
-    } while (this.active);
+    } while(this.interactions.size||this.background);
   }
 
-  private agentTaskView() {
-    const progress = this.canvasProgress();
-    const task = this.active ? this.memory.getTask(this.active.context.taskId) :
-      this.memory.listTasks().find(t => Object.values(progress.taskIds).includes(t.id));
-    if (!task) return null;
-    const page = Object.entries(progress.taskIds).find(([,id]) => id === task.id)?.[0] ?? "consumption";
-    return { id: task.id, title: task.goal, status: task.status, page,
-      stage: task.nextStep, resultRefs: task.artifactRefs.map(ref => {
-        const artifact = this.memory.getArtifact(ref.id, ref.version);
-        return { ...ref, kind: artifact.kind, title: artifact.title };
-      }) };
+  private agentTaskView(taskId?:string) {
+    const task=taskId?this.memory.getTask(taskId):this.active?this.memory.getTask(this.active.context.taskId):null;
+    if(!task)return null;
+    return {id:task.id,title:task.goal,status:task.status,page:this.canvasPage(),stage:task.nextStep,resultRefs:task.artifactRefs.map(ref=>{const artifact=this.memory.getArtifact(ref.id,ref.version);return {...ref,kind:artifact.kind,title:artifact.title};})};
   }
 
-  private startDelegatedRun(taskId: string, run: (context: WriteContext) => Promise<void>) {
-    if (this.active || this.closing || this.stopping || this.modelTest || !this.model().configured) return false;
-    const context = this.memory.beginExecution(taskId);
-    const promise = Promise.resolve().then(() => run(context));
-    this.active = { context, promise };
-    void promise.finally(() => {
-      this.memory.endExecution(context);
-      if (this.active?.context.executionId === context.executionId) this.active = undefined;
-      this.startAutomaticBuild();
-    }).catch(() => {});
+  private startDelegatedRun(taskId:string,run:(context:WriteContext)=>Promise<void>) {
+    if(this.background||this.closing||this.stopping||this.modelTest||!this.model().configured)return false;
+    const context=this.memory.beginExecution(taskId),driver=this.runDriver("background");
+    const promise=Promise.resolve().then(()=>run(context));
+    this.background={context,promise,driver};
+    void promise.finally(()=>{this.memory.endExecution(context);if(this.background?.context.executionId===context.executionId)this.background=undefined;this.memory.changes.emit("change",{kind:"runtime"});this.startAutomaticBuild();}).catch(()=>{});
     return true;
   }
 
   retryAutomaticBuild() {
-    this.automaticBuild.retry();
-    this.automaticApiBuild.retry();
-    this.startAutomaticBuild(true);
-    return this.canvasState();
+    this.automaticBuild.retry();this.automaticApiBuild.retry();this.startAutomaticBuild(true);return this.canvasState();
+  }
+  get automaticRunning(){return this.background?.automatic===true;}
+
+  startAutomaticBuild(includeExisting=false) {
+    if(includeExisting)for(const source of this.memory.listArtifacts("source")){if(source.content.format==="csv")this.automaticApiBuild.enqueueUpload(source);else this.automaticBuild.enqueue(source);}
+    if(this.closing||this.stopping||this.background||this.modelTest)return;
+    if(this.delegations?.pump())return;
+    const apiJob=this.automaticApiEnabled?this.automaticApiBuild.pending():undefined;
+    const jobs=!apiJob&&this.model().configured?this.automaticBuild.pending():[];
+    if(!jobs.length&&!apiJob)return;
+    const task=this.memory.createTask(apiJob?"后台数据构建":"后台资料补充");
+    const context=this.memory.beginExecution(task.id),driver=this.runDriver("background");
+    const promise=Promise.resolve().then(()=>apiJob?this.automaticApiBuild.run(apiJob,context,driver,error=>this.safeError(error)):this.automaticBuild.run(jobs,context,driver,error=>this.safeError(error)));
+    this.background={context,promise,driver,automatic:true};
+    void promise.finally(()=>{if(this.background?.context.executionId===context.executionId)this.background=undefined;this.memory.changes.emit("change",{kind:"runtime"});this.startAutomaticBuild();}).catch(()=>{});
   }
 
-  get automaticRunning() { return this.active?.automatic === true; }
-
-  startAutomaticBuild(includeExisting = false) {
-    if (includeExisting) for (const source of this.memory.listArtifacts("source")) {
-      if (source.content.format === "csv") this.automaticApiBuild.enqueueUpload(source);
-      else this.automaticBuild.enqueue(source);
-    }
-    if (this.closing || this.stopping || this.active || this.modelTest) return;
-    if (this.delegations?.pump()) return;
-    // Structure comes from the data program first; documents then refine the concepts it built.
-    const apiJob = this.automaticApiEnabled ? this.automaticApiBuild.pending() : undefined;
-    const jobs = !apiJob && this.model().configured ? this.automaticBuild.pending() : [];
-    if (!jobs.length && !apiJob) return;
-    const task = this.canvasTask("ontology");
-    this.memory.clearInvestigation(task.id, "按当前资料自动构建本体。");
-    const context = this.memory.beginExecution(task.id);
-    const promise = Promise.resolve().then(() => apiJob
-      ? this.automaticApiBuild.run(apiJob, context, this.driver, error => this.safeError(error))
-      : this.automaticBuild.run(jobs, context, this.driver, error => this.safeError(error)));
-    this.active = { context, promise, automatic: true };
-    void promise.finally(() => {
-      if (this.active?.context.executionId === context.executionId) this.active = undefined;
-      this.startAutomaticBuild();
-    }).catch(() => {});
+  private async stopExecution(active:{context:WriteContext;promise:Promise<void>;driver:AgentDriver},reason="已暂停，已保存成果保留。") {
+    this.memory.pauseTask(active.context.taskId,reason);
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    try{await active.driver.stop();await Promise.race([active.promise,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error("运行尚未结束，请稍后继续")),10000);})]);}
+    finally{if(timer)clearTimeout(timer);}
   }
-
-  private async stopActive(reason = "已暂停，已保存成果保留。") {
-    if (!this.active) return;
-    const active = this.active;
-    this.stopping = true;
-    this.memory.pauseTask(active.context.taskId, reason);
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await this.driver.stop();
-      await Promise.race([
-        active.promise,
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(
-            () => reject(new Error("运行尚未结束，请稍后继续")),
-            10_000,
-          );
-        }),
-      ]);
-    } finally {
-      if (timer) clearTimeout(timer);
-      this.stopping = false;
-    }
+  private async stopActive(reason="已暂停，已保存成果保留。") {
+    this.stopping=true;
+    try{await Promise.all([...this.interactions.values(),...(this.background?[this.background]:[])].map(active=>this.stopExecution(active,reason)));}
+    finally{this.stopping=false;}
   }
-
-  async stop(taskId: string) {
-    if (this.active?.context.taskId === taskId) await this.stopActive();
-    else this.memory.pauseTask(taskId);
-    return { task: this.memory.getTask(taskId) };
+  async stop(taskId:string) {
+    const active=this.interactions.get(taskId)??(this.background?.context.taskId===taskId?this.background:undefined);
+    if(active)await this.stopExecution(active);
+    return {task:this.memory.getTask(taskId)};
   }
 
   async message(
@@ -1381,6 +1339,8 @@ export class AgentApplication {
   ): Promise<{ task: Task; artifact?: Artifact }> {
     if (this.modelTest) throw new Error("正在测试模型连接，请稍后发送");
     const text = string(body.text, "消息");
+    const session=typeof body.sessionId === "string"?this.memory.getSession(body.sessionId):undefined;
+    if(session?.archived)throw new Error("该会话已归档，请新建或恢复会话");
     const messageId =
       typeof body.messageId === "string"
         ? string(body.messageId, "消息标识", 150)
@@ -1390,7 +1350,8 @@ export class AgentApplication {
       if (
         previous.content !== text ||
         previous.role !== "user" ||
-        (body.taskId !== undefined && body.taskId !== previous.taskId)
+        (body.taskId !== undefined && body.taskId !== previous.taskId) ||
+        (session!==undefined&&!session.taskIds.includes(previous.taskId))
       )
         throw new Error("消息标识已使用");
       return { task: this.memory.getTask(previous.taskId) };
@@ -1406,11 +1367,12 @@ export class AgentApplication {
       typeof body.focusId === "string"
         ? this.memory.getArtifact(body.focusId, focusVersion)
         : undefined;
-    await this.stopActive("已收到新的输入，按更新后的任务继续。");
-    const task =
+
+    const task = session?this.memory.getTask(session.taskId):
       typeof body.taskId === "string"
         ? this.memory.getTask(body.taskId)
         : this.memory.createTask(text.slice(0, 160));
+    if(this.interactions.has(task.id))throw new Error("该会话已有运行，请等待结束或先停止");
     const message = this.memory.addMessage(task.id, "user", text, messageId);
     if (text === "使用最新资料继续") {
       this.memory.clearInvestigation(
@@ -1437,20 +1399,11 @@ export class AgentApplication {
     page?: CanvasPage,
     workContext?: ResolvedWorkContext,
   ) {
-    const context = this.memory.beginExecution(taskId);
-    this.streaming = "";
-    // Publish the active slot before the SDK can invoke tools or another request arrives.
-    const promise = Promise.resolve().then(() =>
-      this.run(context, input, focus, page, workContext),
-    );
-    this.active = { context, promise };
-    void promise
-      .finally(() => {
-        if (this.active?.context.executionId === context.executionId)
-          this.active = undefined;
-        this.startAutomaticBuild();
-      })
-      .catch(() => {});
+    const context=this.memory.beginExecution(taskId),driver=this.runDriver(`interactive-${this.memory.sessionForTask(taskId)?.id??taskId}`);
+    this.streams.set(taskId,"");
+    const promise=Promise.resolve().then(()=>this.run(context,input,focus,page,workContext,driver));
+    this.interactions.set(taskId,{context,promise,driver});
+    void promise.finally(()=>{if(this.interactions.get(taskId)?.context.executionId===context.executionId)this.interactions.delete(taskId);this.memory.changes.emit("change",{kind:"runtime",id:taskId});this.startAutomaticBuild();}).catch(()=>{});
   }
 
   private async run(
@@ -1459,11 +1412,13 @@ export class AgentApplication {
     focused?: Artifact,
     page?: CanvasPage,
     workContext?: ResolvedWorkContext,
+    driver:AgentDriver=this.driver,
   ) {
     const task = this.memory.getTask(context.taskId);
     const workspace = page
       ? this.canvasWorkspace(context, page)
       : new Workspace(this.memory, context);
+    const titleTool:DomainTool={name:"session_title",description:"为首轮会话生成简短标题；人工改名后不会覆盖。",mutates:true,inputSchema:objectSchema({title:{type:"string",minLength:1,maxLength:80}},["title"])};
     const tools = page
       ? [
           ...domainTools.filter((tool) =>
@@ -1500,10 +1455,11 @@ export class AgentApplication {
             ? tool.name === "release_overview"
             : tool.name !== "release_overview"),
           ...capabilityTools,
+          titleTool,
           ...controlTools.filter((tool) => tool.name === "task_ask"),
           ...(page === "consumption" ? [] : [pageCompleteTool]),
         ]
-      : [...domainTools, ...controlTools];
+      : [...domainTools, ...controlTools,titleTool];
     const executionWorkContext = workContext
       ? structuredClone(workContext.context)
       : undefined;
@@ -1538,13 +1494,30 @@ export class AgentApplication {
     let writeSequence = 0;
     const startClosing = () => {
       closingTimer ??= setTimeout(() => {
-        void this.driver.stop().catch(() => {});
+        void driver.stop().catch(() => {});
       }, 15_000);
     };
+    const session=this.memory.sessionForTask(task.id);
+    const foundation=this.foundation.view().current;
+    const activeModel=this.live.overview().models.find(model=>model.status==="adopted");
+    const statements=(this.memory.listArtifacts("profile")[0]?.content.statements??[]) as Data[];
+    const enterpriseName=String(statements.find(item=>["company.name","company_name","companyName","name","企业名称","公司名称"].includes(String(item.key)))?.text??(foundation?.content.enterprise as Data|undefined)?.name??"");
+    const compact={
+      page:page??null,
+      workSummary:{enterpriseName,workspaceVersion:activeModel?.version??foundation?.version??0,entityCount:(foundation?.content.concepts as Json[]|undefined)?.length??0,relationCount:(foundation?.content.relations as Json[]|undefined)?.length??0,pendingCount:this.canvasAttention(this.canvasProgress()).length,currentReference:workContext?.context.selection[0]??null},
+      foundation:foundation?{id:foundation.id,version:foundation.version,status:foundation.status}:null,
+      enterprise:{industryReferences:this.memory.listArtifacts("industry_reference").slice(0,1).map(({id,version,title})=>({id,version,title,purpose:"naming_reference",instructions:"按需用 memory_read 读取；只辅助命名，不是企业事实。"}))},
+      ...(workContext?{workContext,workContextPolicy:`目标固定到本条消息，先按需 context_read 核对。${readingDescription("active_snapshot")}`} :{}),
+      focus:focused?{id:focused.id,version:focused.version,title:focused.title,kind:focused.kind}:null,
+      ...(page==="setup"?{priorSections:this.legacyHistory()}:{}),
+      ...(session?.titleOrigin==="pending"?{sessionTitle:{required:true,instruction:"先调用 session_title，用首条用户目标生成简短中文标题；不要询问用户。"}}:{}),
+      input,
+    };
     try {
-      const outcome = await this.driver.run({
-        sessionId: page ? undefined : (task.sessionId ?? undefined),
-        ephemeral: !!page,
+      const prepared=conversationContext(this.memory,task.id,page?canvasSystem:system,serializable(compact) as Data);
+      this.memory.event(task.id,"context.prepared",{estimatedTokens:prepared.estimatedTokens,limit:prepared.limit,recentCount:prepared.recentCount,summaryCharacters:prepared.summaryCharacters});
+      const outcome = await driver.run({
+        ephemeral: true,
         ...(page
           ? {
               nativeTools: nativeCapabilityTools,
@@ -1554,79 +1527,7 @@ export class AgentApplication {
         title: task.goal,
         system: page ? canvasSystem : system,
         tools,
-        input: JSON.stringify({
-          ...(page
-            ? { page }
-            : {
-                task: {
-                  goal: task.goal,
-                  nextStep: task.nextStep,
-                  artifactRefs: task.artifactRefs,
-                  investigation: task.investigation ?? null,
-                },
-              }),
-          ...(workContext
-            ? {
-                workContext,
-                workContextPolicy:
-                  `workContext 固定到本条用户消息，表示讨论目标而不是授权。先用 context_read 按固定版本和范围核对所指的关系、属性或对象；不要用后来的页面选择替换。${readingDescription("active_snapshot")} 修改仅形成候选，保存与采用分开报告。`,
-              }
-            : {}),
-          enterprise: workspace.overview(),
-          foundation: this.foundation.view().current
-            ? {
-                id: this.foundation.view().current!.id,
-                version: this.foundation.view().current!.version,
-                status: this.foundation.view().current!.status,
-              }
-            : null,
-          ...(page
-            ? {
-                maintenance: {
-                  attention: this.canvasAttention(this.canvasProgress()),
-                  outlines: this.memory
-                    .listArtifacts("ontology_outline")
-                    .map(({ id, version, title, status }) => ({
-                      id,
-                      version,
-                      title,
-                      status,
-                    })),
-                  verifications: this.memory
-                    .listArtifacts("verification")
-                    .map(({ id, version, title, status }) => ({
-                      id,
-                      version,
-                      title,
-                      status,
-                    })),
-                  live: this.live.overview(),
-                  sourcePolicies: this.memory.listArtifacts("source_policy"),
-                },
-              }
-            : {}),
-          ...(page === "consumption"
-            ? {
-                consumption: {
-                  consumers: this.consumption.list(),
-                  recentAccess: this.consumption.logs(undefined, 10),
-                },
-              }
-            : {}),
-          focus: focused
-            ? {
-                id: focused.id,
-                version: focused.version,
-                title: focused.title,
-                kind: focused.kind,
-              }
-            : null,
-          ...(page === "setup" ? { priorSections: this.legacyHistory() } : {}),
-          recentMessages: page
-            ? this.memory.trimMessages(task.id)
-            : this.memory.messages(task.id).slice(-8),
-          input,
-        }),
+        input: prepared.input,
         onSession: (id) => {
           if (!page) this.memory.session(task.id, id);
         },
@@ -1637,7 +1538,8 @@ export class AgentApplication {
               this.memory.getTask(task.id).revision !== context.taskRevision
             )
               return;
-            this.streaming += String(data.text);
+            this.streams.set(task.id,(this.streams.get(task.id)??"")+String(data.text));
+            this.memory.changes.emit("change",{kind:"delta",id:task.id,sessionId:this.memory.sessionForTask(task.id)?.id??null,text:String(data.text)});
             return;
           }
           this.memory.event(task.id, kind, data);
@@ -1646,11 +1548,12 @@ export class AgentApplication {
           try {
             this.memory.assertWritable(context);
           } catch (error) {
-            void this.driver.stop().catch(() => {});
+            void driver.stop().catch(() => {});
             throw error;
           }
           if (!tools.some((tool) => tool.name === name))
             throw new Error("当前页面没有这项能力");
+          if(name==="session_title"){this.memory.assertWritable(context);const conversation=this.memory.sessionForTask(task.id);if(!conversation) return {saved:false};return serializable(this.memory.updateSession(conversation.id,{title:string(args.title,"会话标题",80)},"agent"));}
           if (name === "context_read" && workContext) {
             const reading = z.object({ readMode: workspaceReadModeSchema.optional() }).strict().parse(args);
             const result = await this.contexts.read(workContext.context, () =>
@@ -2068,12 +1971,12 @@ export class AgentApplication {
           const next = canvasPages[canvasPages.indexOf(page) + 1];
           if (page !== "setup" && next && !progress.reached.includes(next)) {
             progress.reached.push(next);
-            if (progress.currentPage === page) progress.currentPage = next;
+
           }
           this.memory.saveCanvas(progress);
         }
       }
-      this.streaming = "";
+      this.streams.delete(task.id);
     }
   }
 
@@ -2088,7 +1991,7 @@ export class AgentApplication {
 
   async upload(body: Record<string, unknown>) {
     if (this.modelTest) throw new Error("正在测试连接，请稍后上传");
-    await this.stopActive("资料已变化，将使用更新后的来源继续。");
+
     const workspace = new Workspace(this.memory);
     const artifact = workspace.upload(
       string(body.name, "文件名", 180),
@@ -2109,7 +2012,7 @@ export class AgentApplication {
     if (artifact.content.format === "csv") {
       this.automaticApiBuild.enqueueUpload(artifact);
       this.startAutomaticBuild();
-    } else if (this.model().configured) this.launch(task.id, text, artifact);
+    } else {this.automaticBuild.enqueue(artifact);this.startAutomaticBuild();}
     return { artifact, task: this.memory.getTask(task.id) };
   }
 
@@ -2229,6 +2132,8 @@ export class AgentApplication {
     this.settings = settings;
     this.memory.saveSettings({ ...this.settings });
     if (this.actualDriver) this.actualDriver.settings = this.settings;
+    for(const driver of new Set(this.poolDrivers.values()))if(driver!==this.driver)await driver.close();
+    this.poolDrivers.clear();
     const connection = body.testConnection === true ? await this.testConnection() : undefined;
     this.startAutomaticBuild();
     return { model: this.model(), ...(connection ? { connection } : {}) };
@@ -2372,6 +2277,7 @@ export class AgentApplication {
     await this.stopActive();
     await this.programBuilds.close();
     await this.snapshots.close();
+    for(const driver of new Set(this.poolDrivers.values()))if(driver!==this.driver)await driver.close();
     await this.driver.close();
     await this.capabilities.close();
     this.consumption.close();

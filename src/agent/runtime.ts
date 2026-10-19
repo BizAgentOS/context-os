@@ -35,6 +35,7 @@ export interface RunOutcome {
 }
 export interface AgentDriver {
   run(request: RunRequest): Promise<RunOutcome>;
+  fork?(scope: string): AgentDriver;
   stop(): Promise<void>;
   close(): Promise<void>;
 }
@@ -112,6 +113,10 @@ export class KodaXDriver implements AgentDriver {
       recursive: true,
       mode: 0o700,
     });
+  }
+
+  fork(scope: string): AgentDriver {
+    return new KodaXDriver(join(this.directory, "pools", scope), this.settings);
   }
 
   async initialize() {

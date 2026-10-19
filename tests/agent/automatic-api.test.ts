@@ -92,7 +92,7 @@ test("stopping the host execution rejects the late result even when the source s
   const f = await fixture(), paused = f.pause();
   try {
     await f.app.live.sources.connect(f.config); await paused.started;
-    const stopping = f.app.canvasStop({page: "ontology"}); paused.release(); await stopping; await f.app.idle();
+    const stopping = f.app.stop(f.app.pools().background.active!.taskId); paused.release(); await stopping; await f.app.idle();
     assert.equal(f.app.foundation.read().adopted, null);
     assert.equal(f.app.canvasState().live.models.filter(model => model.status === "adopted").length, 0);
   } finally {paused.release(); await f.close();}
