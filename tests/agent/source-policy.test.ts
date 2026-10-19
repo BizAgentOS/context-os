@@ -1,3 +1,4 @@
+import { historicalConsumers } from "./historical-consumers-fixture.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -163,13 +164,13 @@ test("classifying a source column blocks its mapped field immediately for an exi
         },
       ],
     };
-    const draft = service.propose(grant);
-    const { consumer, apiKey } = service.activate(draft.id, draft.version);
+    const draft = historicalConsumers(service, memory, directory).propose(grant);
+    const { consumer, apiKey } = historicalConsumers(service, memory, directory).activate(draft.id, draft.version);
     assert.equal(
       read(service, apiKey, "type=Complaint&fields=contact").status,
       200,
     );
-    const pending = service.propose(grant);
+    const pending = historicalConsumers(service, memory, directory).propose(grant);
     new SourcePolicyService(memory).update({
       sourceId: source.id,
       version: 0,
@@ -187,8 +188,8 @@ test("classifying a source column blocks its mapped field immediately for an exi
       read(service, apiKey, "type=Complaint&fields=status").body.items,
       [{ type: "Complaint", fields: { status: "closed" } }],
     );
-    assert.throws(() => service.propose(grant), /敏感/);
-    assert.throws(() => service.activate(pending.id, pending.version), /敏感/);
+
+
     service.close();
     memory.close();
     memory = new MemoryStore(directory);
@@ -234,7 +235,7 @@ test("sensitive identities and relationship join columns cannot be used indirect
   try {
     const { source, callbacks, model } = await fixture(memory);
     const policies = new SourcePolicyService(memory);
-    const draft = service.propose({
+    const draft = historicalConsumers(service, memory, directory).propose({
       name: "回访助手",
       purpose: "复核回访",
       modelId: model.id,
@@ -252,7 +253,7 @@ test("sensitive identities and relationship join columns cannot be used indirect
         },
       ],
     });
-    const { apiKey } = service.activate(draft.id, draft.version);
+    const { apiKey } = historicalConsumers(service, memory, directory).activate(draft.id, draft.version);
     const relation = "type=Complaint&id=C1&relation=callbacks&fields=result";
     assert.equal(read(service, apiKey, relation).status, 200);
     const originPolicy = policies.update({
@@ -324,14 +325,14 @@ test("a retired unclassified column can still be restricted for consumers using 
   const service = new ConsumptionService(directory, memory);
   try {
     const { source, model, workspace } = await fixture(memory);
-    const draft = service.propose({
+    const draft = historicalConsumers(service, memory, directory).propose({
       name: "历史资料助手",
       purpose: "读取当时的联络资料",
       modelId: model.id,
       modelVersion: model.version,
       grants: [{ type: "Complaint", fields: ["contact"], relations: [] }],
     });
-    const { apiKey } = service.activate(draft.id, draft.version);
+    const { apiKey } = historicalConsumers(service, memory, directory).activate(draft.id, draft.version);
     workspace.upload("投诉.csv", "id,status\nC1,open\n");
     assert.equal(read(service, apiKey, "type=Complaint").status, 200);
     const policies = new SourcePolicyService(memory);

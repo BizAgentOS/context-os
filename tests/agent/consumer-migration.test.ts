@@ -1,3 +1,4 @@
+import { restoreHistoricalAccess } from "./historical-consumers-fixture.ts";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { fileURLToPath } from "node:url";
@@ -15,7 +16,7 @@ import {
   fusionDefinition,
 } from "./fusion-fixture.ts";
 
-test("a checked migration switches only its selected view, keeps permissions and pins subsequent requests", async () => {
+test("historical migrated views retain exact scope and pinned reads while new migrations are frozen", async () => {
   const source = await createFusionSources(),
     directory = mkdtempSync(join(tmpdir(), "de-view-"));
   const service = await createServer({ automaticApi: false,
@@ -88,22 +89,22 @@ test("a checked migration switches only its selected view, keeps permissions and
       ],
     };
 
-    const view = (await admin("/api/live/views/propose", input)).saved;
+    const view = (await restoreHistoricalAccess(service.app, "/api/live/views/propose", input)).saved;
     const active = (
-      await admin("/api/live/views/activate", {
+      await restoreHistoricalAccess(service.app, "/api/live/views/activate", {
         id: view.id,
         version: view.version,
       })
     ).saved;
     const other = (
-      await admin("/api/live/views/propose", {
+      await restoreHistoricalAccess(service.app, "/api/live/views/propose", {
         ...input,
         operationId: "other",
         name: "other",
       })
     ).saved;
     const otherActive = (
-      await admin("/api/live/views/activate", {
+      await restoreHistoricalAccess(service.app, "/api/live/views/activate", {
         id: other.id,
         version: other.version,
       })
@@ -147,50 +148,33 @@ test("a checked migration switches only its selected view, keeps permissions and
       changeRef,
       dropContextEvidence: false,
     };
-    const preview = (await admin("/api/live/migrations/preview", proposal))
-      .saved;
-    assert.equal(preview.content.report.compatible, true);
-    assert.equal(
-      (await read(path, active.key)).body.items[0].properties.实际反馈.value,
-      "未改善",
-    );
-    const commit = {
-      operationId: "commit",
-      id: preview.id,
-      version: preview.version,
-    };
-    const competitor = (
-      await admin("/api/live/migrations/preview", {
-        ...proposal,
-        operationId: "competing-preview",
-      })
-    ).saved;
+    await assert.rejects(admin("/api/live/migrations/preview", proposal), /已冻结/);
+    const preview = service.app.memory.putArtifact({ kind: "consumer_migration", title: "历史迁移", status: "previewed", content: {
+      viewRef: proposal.viewRef, changeRef, report: impact.items.find((i: any) => i.id === active.view.id),
+    } });
+    const commit = { operationId: "commit", id: preview.id, version: preview.version };
     const calls = source.state.calls;
     source.state.delay = new Promise((r) => (release = r));
     const inFlight = read(path, active.key);
     for (let i = 0; i < 100 && source.state.calls === calls; i++)
       await new Promise((r) => setTimeout(r, 5));
     assert(source.state.calls > calls);
-    const responseState = await admin("/api/live/migrations/commit", commit);
-    const done = responseState.saved;
-    assert.equal(
-      responseState.live.views.find((v: any) => v.id === active.view.id)
-        .version,
-      done.content.resultRef.version,
-    );
-    release!();
-    source.state.delay = undefined;
+    await assert.rejects(admin("/api/live/migrations/commit", commit), /已冻结/);
+    // Restore a persisted pre-freeze migration; public reads still reject stale in-flight results.
+    const original = service.app.memory.getArtifact(active.view.id);
+    const migrated = service.app.memory.putArtifact({ ...original, expectedVersion: original.version, content: {
+      ...original.content, modelRef: change.content.resultModel, requiresViewVersion: true,
+    } });
+    service.app.memory.deleteConsumerEvidence(original.id);
+    const done = service.app.memory.putArtifact({ ...preview, expectedVersion: preview.version, status: "committed", content: {
+      ...preview.content, resultRef: { id: migrated.id, version: migrated.version },
+    } });
+    assert.equal((await admin("/api/live/migrations/read", { id: done.id, version: done.version })).status, "committed");
+    assert.equal((await admin("/api/live/migrations/list", {})).items[0].id, done.id);
+    release!(); source.state.delay = undefined;
     assert.equal((await inFlight).status, 409);
-    await assert.rejects(
-      admin("/api/live/migrations/commit", {
-        operationId: "competing",
-        id: competitor.id,
-        version: competitor.version,
-      }),
-      /版本/,
-    );
     assert.equal(done.status, "committed");
-    const version = done.content.resultRef.version;
+    const version = migrated.version;
     assert.equal((await read(path, active.key)).status, 409);
     assert.equal(
       (await read(path + "&viewVersion=" + active.view.version, active.key))
@@ -262,21 +246,8 @@ test("a checked migration switches only its selected view, keeps permissions and
         .value,
       "未改善",
     );
-    assert.equal(
-      (await admin("/api/live/migrations/commit", commit)).saved.id,
-      done.id,
-    );
-    await assert.rejects(
-      admin("/api/live/migrations/commit", { ...commit, version: 999 }),
-      /幂等/,
-    );
-    await assert.rejects(
-      admin("/api/live/migrations/preview", {
-        ...proposal,
-        operationId: "stale",
-      }),
-      /版本|基线/,
-    );
+    await assert.rejects(admin("/api/live/migrations/commit", commit), /已冻结/);
+    await assert.rejects(admin("/api/live/migrations/preview", { ...proposal, operationId: "stale" }), /已冻结/);
     await admin("/api/live/views/revoke", { id: active.view.id, version });
     assert.equal((await read("/v3/catalog", active.key)).status, 403);
   } finally {

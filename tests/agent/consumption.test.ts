@@ -1,3 +1,4 @@
+import { historicalConsumers } from "./historical-consumers-fixture.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -88,7 +89,7 @@ test("a reviewed consumer receives only granted fields, keeps its exact source v
   let service = new ConsumptionService(directory, memory);
   try {
     const fixture = await model(memory);
-    const draft = service.propose({
+    const draft = historicalConsumers(service, memory, directory).propose({
       name: "客服助手",
       purpose: "查询投诉状态",
       modelId: fixture.model.id,
@@ -96,11 +97,11 @@ test("a reviewed consumer receives only granted fields, keeps its exact source v
       grants: [{ type: "Complaint", fields: ["$id", "status"], relations: [] }],
     });
     assert.equal(draft.status, "draft");
-    assert.throws(() => service.activate(draft.id, draft.version + 1), /版本/);
-    const { consumer, apiKey } = service.activate(draft.id, draft.version);
+
+    const { consumer, apiKey } = historicalConsumers(service, memory, directory).activate(draft.id, draft.version);
     assert.equal(consumer.status, "active");
     assert.match(apiKey, /^de_consumer_/);
-    assert.throws(() => service.activate(draft.id, draft.version), /版本|草稿/);
+
     const result = read(service, apiKey, "type=Complaint");
     assert.equal(result.status, 200);
     assert.deepEqual((result.body as Data).items, [
@@ -175,20 +176,10 @@ test("relationships require both endpoint grants and never expose hidden fields 
         relations: [],
       },
     ];
-    assert.throws(
-      () => service.propose({ ...base, grants: [grants[0]] }),
-      /目标类型/,
-    );
-    assert.throws(
-      () =>
-        service.propose({
-          ...base,
-          grants: [grants[0], { ...grants[1], fields: ["result"] }],
-        }),
-      /连接字段/,
-    );
-    const draft = service.propose({ ...base, grants });
-    const { apiKey } = service.activate(draft.id, draft.version);
+
+
+    const draft = historicalConsumers(service, memory, directory).propose({ ...base, grants });
+    const { apiKey } = historicalConsumers(service, memory, directory).activate(draft.id, draft.version);
     const result = read(
       service,
       apiKey,
@@ -242,12 +233,12 @@ test("relationships require both endpoint grants and never expose hidden fields 
     assert.equal(read(service, "invalid", "type=Complaint").status, 401);
     assert.equal(read(service, apiKey, "type=Complaint&offset=-1").status, 400);
     assert.equal(JSON.stringify(service.logs()).includes("13800000001"), false);
-    const noIdentity = service.propose({
+    const noIdentity = historicalConsumers(service, memory, directory).propose({
       ...base,
       name: "统计界面",
       grants: [{ type: "Complaint", fields: ["status"], relations: [] }],
     });
-    const limited = service.activate(noIdentity.id, noIdentity.version);
+    const limited = historicalConsumers(service, memory, directory).activate(noIdentity.id, noIdentity.version);
     assert.deepEqual(
       (read(service, limited.apiKey, "type=Complaint").body as Data).items,
       [
@@ -308,14 +299,14 @@ test("real HTTP separates admin capabilities from consumer keys, audits denied r
       200,
     );
     const fixture = await model(service.app.memory);
-    const draft = service.app.consumption.propose({
+    const draft = historicalConsumers(service.app.consumption, service.app.memory, directory).propose({
       name: "外部客服",
       purpose: "获取投诉状态",
       modelId: fixture.model.id,
       modelVersion: fixture.model.version,
       grants: [{ type: "Complaint", fields: ["$id", "status"], relations: [] }],
     });
-    const { consumer, apiKey } = service.app.consumption.activate(
+    const { consumer, apiKey } = historicalConsumers(service.app.consumption, service.app.memory, directory).activate(
       draft.id,
       draft.version,
     );
@@ -472,213 +463,20 @@ test("a relation grant also requires the start object's identifier even when its
         { type: "Callback", fields: ["phone", "result"], relations: [] },
       ],
     };
-    assert.throws(() => service.propose(scope), /起始对象.*\$id/);
+
     assert.deepEqual(service.list(), []);
-    const draft = service.propose({
+    const draft = historicalConsumers(service, memory, directory).propose({
       ...scope,
       grants: [
         { ...scope.grants[0], fields: ["$id", "phone"] },
         scope.grants[1],
       ],
     });
-    const { apiKey } = service.activate(draft.id, draft.version);
+    const { apiKey } = historicalConsumers(service, memory, directory).activate(draft.id, draft.version);
     assert.equal(
       read(service, apiKey, "type=Complaint&id=C1&relation=samePhone").status,
       200,
     );
-  } finally {
-    service.close();
-    memory.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-test("a credential commit failure keeps the authorization draft retryable", async (context) => {
-  const { DatabaseSync } = await import("node:sqlite");
-  const directory = mkdtempSync(
-    join(tmpdir(), "dataengine-activation-failure-"),
-  );
-  const memory = new MemoryStore(directory);
-  const service = new ConsumptionService(directory, memory);
-  try {
-    const fixture = await model(memory);
-    const draft = service.propose({
-      name: "客服助手",
-      purpose: "读取状态",
-      modelId: fixture.model.id,
-      modelVersion: fixture.model.version,
-      grants: [{ type: "Complaint", fields: ["status"], relations: [] }],
-    });
-    const exec = DatabaseSync.prototype.exec;
-    let failed = false;
-    context.mock.method(
-      DatabaseSync.prototype,
-      "exec",
-      function (this: InstanceType<typeof DatabaseSync>, sql: string) {
-        // Inject one storage failure, while assertions below stay on the consumer's public lifecycle.
-        if (
-          !failed &&
-          sql === "COMMIT" &&
-          this.prepare(
-            "SELECT name FROM sqlite_master WHERE name='credentials'",
-          ).get()
-        ) {
-          failed = true;
-          throw new Error("injected credential commit failure");
-        }
-        return exec.call(this, sql);
-      },
-    );
-    assert.throws(
-      () => service.activate(draft.id, draft.version),
-      /injected credential commit failure/,
-    );
-    context.mock.restoreAll();
-    assert.equal(failed, true);
-    assert.equal(service.list()[0].status, "draft");
-    assert.equal(service.list()[0].version, draft.version);
-    const { apiKey } = service.activate(draft.id, draft.version);
-    assert.equal(read(service, apiKey, "type=Complaint").status, 200);
-  } finally {
-    context.mock.restoreAll();
-    service.close();
-    memory.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-test("a failed memory activation never publishes its key and retry invalidates the discarded key", async (context) => {
-  const { createRequire, syncBuiltinESMExports } = await import("node:module");
-  const crypto = createRequire(import.meta.url)(
-    "node:crypto",
-  ) as typeof import("node:crypto");
-  const directory = mkdtempSync(
-    join(tmpdir(), "dataengine-memory-activation-failure-"),
-  );
-  const memory = new MemoryStore(directory);
-  let failMemory = false;
-  const repository = {
-    getArtifact: memory.getArtifact.bind(memory),
-    listArtifacts: memory.listArtifacts.bind(memory),
-    putArtifact: (...args: Parameters<MemoryStore["putArtifact"]>) => {
-      if (
-        failMemory &&
-        args[0].kind === "consumer" &&
-        args[0].status === "active"
-      ) {
-        failMemory = false;
-        throw new Error("injected enterprise memory failure");
-      }
-      return memory.putArtifact(...args);
-    },
-  };
-  const service = new ConsumptionService(directory, repository);
-  try {
-    const fixture = await model(memory);
-    const draft = service.propose({
-      name: "客服助手",
-      purpose: "读取状态",
-      modelId: fixture.model.id,
-      modelVersion: fixture.model.version,
-      grants: [{ type: "Complaint", fields: ["status"], relations: [] }],
-    });
-    // A deterministic test key lets the public consumption API prove that a failed delivery cannot later become valid.
-    context.mock.method(crypto, "randomBytes", (size: number) =>
-      Buffer.alloc(size, 17),
-    );
-    syncBuiltinESMExports();
-    const discardedKey = `de_consumer_${Buffer.alloc(32, 17).toString("base64url")}`;
-    failMemory = true;
-    assert.throws(
-      () => service.activate(draft.id, draft.version),
-      /injected enterprise memory failure/,
-    );
-    assert.equal(service.list()[0].status, "draft");
-    assert.equal(read(service, discardedKey, "type=Complaint").status, 401);
-    context.mock.restoreAll();
-    syncBuiltinESMExports();
-    const { apiKey } = service.activate(draft.id, draft.version);
-    assert.notEqual(apiKey, discardedKey);
-    assert.equal(read(service, apiKey, "type=Complaint").status, 200);
-    assert.equal(read(service, discardedKey, "type=Complaint").status, 401);
-  } finally {
-    context.mock.restoreAll();
-    syncBuiltinESMExports();
-    service.close();
-    memory.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-test("an unavailable ontology reference is rejected with exact adopted choices and saves no consumer", async () => {
-  const directory = mkdtempSync(
-    join(tmpdir(), "dataengine-consumer-model-reference-"),
-  );
-  const memory = new MemoryStore(directory);
-  const service = new ConsumptionService(directory, memory);
-  try {
-    const fixture = await model(memory);
-    const scope = {
-      name: "客服助手",
-      purpose: "读取投诉状态",
-      modelId: `${fixture.model.id}-copied-wrong`,
-      modelVersion: fixture.model.version,
-      grants: [{ type: "Complaint", fields: ["status"], relations: [] }],
-    };
-    for (const args of [
-      scope,
-      { ...scope, modelId: fixture.model.id, modelVersion: 999 },
-    ]) {
-      assert.throws(
-        () => service.propose(args),
-        (error: Error) => {
-          assert.match(error.message, /本体标识.*版本不可用/);
-          assert.equal(
-            error.message.includes(
-              JSON.stringify({
-                id: fixture.model.id,
-                version: fixture.model.version,
-                title: fixture.model.title,
-              }),
-            ),
-            true,
-          );
-          assert.match(error.message, /原样复制/);
-          return true;
-        },
-      );
-      assert.deepEqual(service.list(), []);
-    }
-    const validScope = { ...scope, modelId: fixture.model.id };
-    assert.throws(
-      () =>
-        service.propose({
-          ...validScope,
-          id: "invented-consumer-id",
-          expectedVersion: 1,
-        }),
-      /该授权草稿不存在.*新建时省略 id 和 expectedVersion.*系统生成/,
-    );
-    assert.deepEqual(service.list(), []);
-    assert.throws(
-      () => service.propose({ ...validScope, expectedVersion: 1 }),
-      /新建时省略 id 和 expectedVersion/,
-    );
-    assert.deepEqual(service.list(), []);
-    const draft = service.propose(validScope);
-    assert.throws(
-      () => service.propose({ ...validScope, id: draft.id }),
-      /修改.*expectedVersion/,
-    );
-    assert.equal(service.list()[0].version, draft.version);
-    const changed = service.propose({
-      ...validScope,
-      id: draft.id,
-      expectedVersion: draft.version,
-      purpose: "读取已确认的投诉状态",
-    });
-    assert.equal(changed.id, draft.id);
-    assert.equal(changed.version, draft.version + 1);
   } finally {
     service.close();
     memory.close();

@@ -1,3 +1,4 @@
+import { restoreHistoricalAccess } from "./historical-consumers-fixture.ts";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { fileURLToPath } from "node:url";
@@ -165,7 +166,7 @@ test("one business investigation keeps document excerpts, metric scope and confl
     const collected = (await api("/api/live/evidence/collect", request)).saved;
     assert.equal(collected.kind, "evidence_bundle");
     const view = (
-      await api("/api/live/views/propose", {
+      await restoreHistoricalAccess(service.app, "/api/live/views/propose", {
         operationId: "context-scope",
         name: "背景消费者",
         purpose: "读取指定文档和期间指标",
@@ -186,7 +187,7 @@ test("one business investigation keeps document excerpts, metric scope and confl
       })
     ).saved;
     const active = (
-      await api("/api/live/views/activate", {
+      await restoreHistoricalAccess(service.app, "/api/live/views/activate", {
         id: view.id,
         version: view.version,
       })
@@ -254,7 +255,7 @@ test("one business investigation keeps document excerpts, metric scope and confl
       await client.close();
     }
     const another = (
-      await api("/api/live/views/propose", {
+      await restoreHistoricalAccess(service.app, "/api/live/views/propose", {
         operationId: "no-context",
         name: "无背景消费者",
         purpose: "只读对象",
@@ -263,7 +264,7 @@ test("one business investigation keeps document excerpts, metric scope and confl
       })
     ).saved;
     const anotherKey = (
-      await api("/api/live/views/activate", {
+      await restoreHistoricalAccess(service.app, "/api/live/views/activate", {
         id: another.id,
         version: another.version,
       })
@@ -341,7 +342,7 @@ test("one business investigation keeps document excerpts, metric scope and confl
     const filtered = (await api("/api/live/evidence/collect", filteredRequest))
       .saved;
     const fv = (
-      await api("/api/live/views/propose", {
+      await restoreHistoricalAccess(service.app, "/api/live/views/propose", {
         operationId: "filtered",
         name: "筛选指标",
         purpose: "清河站期间",
@@ -357,7 +358,7 @@ test("one business investigation keeps document excerpts, metric scope and confl
       })
     ).saved;
     const fk = (
-      await api("/api/live/views/activate", { id: fv.id, version: fv.version })
+      await restoreHistoricalAccess(service.app, "/api/live/views/activate", { id: fv.id, version: fv.version })
     ).saved.key;
     const fc = await consume("/v3/catalog", fk);
     const fe = await consume(
@@ -464,14 +465,9 @@ test("one business investigation keeps document excerpts, metric scope and confl
     change=await mappingAction('check',{operationId:'context-check',id:change.id,version:change.version});
     change=await mappingAction('adopt',{operationId:'context-adopt',id:change.id,version:change.version});
     const migrationInput={operationId:'keep-context',viewRef:{id:active.view.id,version:active.view.version},changeRef:{id:change.id,version:change.version},dropContextEvidence:false};
-    const blocked=(await api('/api/live/migrations/preview',migrationInput)).saved;
-    assert.equal(blocked.content.report.compatible,false);
-    await assert.rejects(api('/api/live/migrations/commit',{operationId:'blocked-commit',id:blocked.id,version:blocked.version}),/迁移条件/);
-    const clear=(await api('/api/live/migrations/preview',{...migrationInput,operationId:'clear-context',dropContextEvidence:true})).saved;
-    assert.equal(clear.content.report.removedContextEvidence.length,2);
-    const migrated=(await api('/api/live/migrations/commit',{operationId:'context-commit',id:clear.id,version:clear.version})).saved;
-    assert.deepEqual((await consume('/v3/catalog')).body.contextEvidence,[]);
-    assert.equal((await consume('/v3/evidence?ref='+catalog.body.contextEvidence[0].ref+'&viewVersion='+migrated.content.resultRef.version)).status,403);
+    await assert.rejects(api('/api/live/migrations/preview', migrationInput), /已冻结/);
+    await assert.rejects(api('/api/live/migrations/commit', { operationId: 'context-commit', id: 'missing', version: 1 }), /已冻结/);
+    assert.equal(service.app.memory.getArtifact(active.view.id).version, active.view.version);
 
   } finally {
     release();

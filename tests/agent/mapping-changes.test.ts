@@ -1,3 +1,4 @@
+import { restoreHistoricalAccess } from "./historical-consumers-fixture.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -146,7 +147,7 @@ test("global field revision retains shared impact, sample evidence and checked d
     );
     upstream.primary[0].status = "已办结";
     const consumer = (
-      await api("/api/live/prepare", {
+      await restoreHistoricalAccess(service.app, "/api/live/prepare", {
         name: "existing client",
         purpose: "feedback",
         modelId: base.id,
@@ -154,7 +155,7 @@ test("global field revision retains shared impact, sample evidence and checked d
       })
     ).saved;
     const activation = (
-      await api("/api/live/activate", {
+      await restoreHistoricalAccess(service.app, "/api/live/activate", {
         id: consumer.id,
         version: consumer.version,
       })

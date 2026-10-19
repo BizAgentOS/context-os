@@ -1,3 +1,4 @@
+import { restoreHistoricalAccess } from "./historical-consumers-fixture.ts";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { fileURLToPath } from "node:url";
@@ -88,24 +89,10 @@ test("permissioned evidence is bound to a view and reading, with explicit scope 
       ],
     };
 
-    await assert.rejects(
-      admin("/api/live/views/propose", {
-        ...input,
-        operationId: "bad",
-        grants: [
-          {
-            type: "投诉",
-            fields: ["$id", "状态"],
-            relations: [],
-            evidence: { fields: ["实际反馈"], relations: [] },
-          },
-        ],
-      }),
-      /证据/,
-    );
-    const draft = (await admin("/api/live/views/propose", input)).saved;
+
+    const draft = (await restoreHistoricalAccess(service.app, "/api/live/views/propose", input)).saved;
     const active = (
-      await admin("/api/live/views/activate", {
+      await restoreHistoricalAccess(service.app, "/api/live/views/activate", {
         id: draft.id,
         version: draft.version,
       })
@@ -159,14 +146,14 @@ test("permissioned evidence is bound to a view and reading, with explicit scope 
     }
     source.state.mode = "normal";
     const narrow = (
-      await admin("/api/live/views/propose", {
+      await restoreHistoricalAccess(service.app, "/api/live/views/propose", {
         ...input,
         operationId: "narrow",
         grants: [{ type: "投诉", fields: ["$id", "状态"], relations: [] }],
       })
     ).saved;
     const b = (
-      await admin("/api/live/views/activate", {
+      await restoreHistoricalAccess(service.app, "/api/live/views/activate", {
         id: narrow.id,
         version: narrow.version,
       })
@@ -257,4 +244,43 @@ test("permissioned evidence is bound to a view and reading, with explicit scope 
     await source.close();
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("v4 release connections reject evidence fields outside the granted fields without publishing partial access", async () => {
+  const { MemoryStore } = await import("../../src/agent/memory.ts");
+  const { LiveMemory } = await import("../../src/live/memory.ts");
+  const { Releases } = await import("../../src/engine/releases.ts");
+  const { OntologyDatasets } = await import("../../src/live/ontology-datasets.ts");
+  const directory = mkdtempSync(join(tmpdir(), "ade-release-evidence-scope-"));
+  const source = await createFusionSources();
+  const memory = new MemoryStore(directory), live = new LiveMemory(directory, memory);
+  const releases = new Releases(memory, live), datasets = new OntologyDatasets(memory, live);
+  const ref = (artifact: { id: string; version: number }) => ({ id: artifact.id, version: artifact.version });
+  try {
+    const foundation = memory.putArtifact({ kind: "foundation", title: "投诉本体", status: "adopted", content: {
+      enterprise: { name: "证据范围测试" }, concepts: [{ id: "complaint", name: "投诉", description: "居民投诉" }], relations: [], evidence: [], unknowns: [], conflicts: [],
+    } });
+    const primary = await live.sources.connect({ name: "primary", protocol: "http", url: source.url, capabilities: [primaryCapability] });
+    const extra = await live.sources.connect({ name: "extra", protocol: "mcp", url: source.url + "/mcp", capabilities: [supplementCapability] });
+    const definition = fusionDefinition(primary.id, extra.id);
+    const candidate = await live.propose({ ...definition, foundationRef: ref(foundation), baseModelRef: null, types: definition.types.map(type => ({ ...type, conceptId: "complaint" })) });
+    await live.adopt(candidate.id, candidate.version);
+    const checked = await releases.check({ inputHash: releases.overview().working.inputHash });
+    assert.equal(checked.status, "ready");
+    const release = releases.publish({ operationId: "publish", checkRef: ref(checked), name: "发布一" }).release;
+    const connection = { operationId: "evidence-boundary", name: "状态助手", releaseRef: ref(release), conceptIds: ["complaint"], relationIds: [], business: {
+      grants: [{ type: "投诉", fields: ["$id", "状态"], relations: [], evidence: { fields: ["实际反馈"], relations: [] } }],
+    } };
+    assert.throws(() => releases.connect(connection), /证据范围必须属于已许可字段/);
+    for (const kind of ["release_connection", "ontology_dataset", "consumer_view", "view_receipt"]) assert.equal(memory.listArtifacts(kind).length, 0, kind);
+    const allowed = releases.connect({ ...connection, business: { grants: [{ ...connection.business.grants[0], evidence: { fields: ["状态"], relations: [] } }] } });
+    const query = await datasets.handle("/v4/objects", new URLSearchParams({ type: "投诉" }), "Bearer " + allowed.key);
+    assert.equal(query.status, 200);
+    const properties = (query.body.items as any[])[0].properties;
+    assert.equal(typeof properties.状态.evidenceRef, "string");
+    assert.equal(properties.实际反馈, undefined);
+    const evidence = await datasets.handle("/v4/evidence", new URLSearchParams({ ref: properties.状态.evidenceRef }), "Bearer " + allowed.key);
+    assert.equal(evidence.status, 200);
+    assert.equal((await datasets.handle("/v4/objects", new URLSearchParams({ type: "投诉", fields: "$id,实际反馈" }), "Bearer " + allowed.key)).status, 403);
+  } finally { memory.close(); await source.close(); rmSync(directory, { recursive: true, force: true }); }
 });

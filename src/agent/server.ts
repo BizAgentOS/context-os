@@ -1,3 +1,4 @@
+import { historicalConsumption, LegacyConsumptionFrozen } from "../live/legacy-consumption.ts";
 import {ConsumerMigrations} from "../live/consumer-migrations.ts";
 import { OpenApiImports } from "../live/openapi-import.ts";
 import {ConsumerViews} from "../live/consumer-views.ts";
@@ -30,6 +31,7 @@ const staticFiles: Record<string, { file: string; type: string }> = {
   "/engine-ui.js": {file:"engine-ui.js",type:"text/javascript; charset=utf-8"},
   "/engine-workspace.js": {file:"engine-workspace.js",type:"text/javascript; charset=utf-8"},
   "/release-workspace.js": {file:"release-workspace.js",type:"text/javascript; charset=utf-8"},
+  "/history-access.js": { file: "history-access.js", type: "text/javascript; charset=utf-8" },
   "/dataset-workspace.js": { file: "dataset-workspace.js", type: "text/javascript; charset=utf-8" },
   "/ontology-space.js": { file: "ontology-space.js", type: "text/javascript; charset=utf-8" },
   "/ontology-space-model.js": { file: "ontology-space-model.js", type: "text/javascript; charset=utf-8" },
@@ -350,6 +352,11 @@ export async function createServer(
           send(200, { servers: app.capabilities.mcp.list() });
           return;
         }
+        if (url.pathname === "/api/consumers/history") {
+          send(200, historicalConsumption(app.memory, {
+            offset: Number(url.searchParams.get("offset") ?? 0), limit: Number(url.searchParams.get("limit") ?? 40),
+          })); return;
+        }
         if (url.pathname === "/api/consumers") {
           send(200, {
             consumers: app.consumption.list(),
@@ -441,6 +448,14 @@ export async function createServer(
         return;
       }
       const body = await readBody(request);
+      if (new Set([
+        "/api/consumers/prepare", "/api/consumers/activate", "/api/consumers/data-publish",
+        "/api/live/prepare", "/api/live/activate", "/api/live/views/propose", "/api/live/views/activate",
+        "/api/live/migrations/preview", "/api/live/migrations/commit", "/api/datasets/publish",
+      ]).has(url.pathname)) {
+        const error = new LegacyConsumptionFrozen();
+        send(409, { error: error.message, code: error.code }); return;
+      }
       let result: unknown;
       switch (url.pathname) {
         case "/api/engine/build":

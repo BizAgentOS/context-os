@@ -1,3 +1,4 @@
+import { historicalConsumers } from "./historical-consumers-fixture.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -208,7 +209,7 @@ test("MCP reads a heating complaint, follows its callback, and observes only pub
     assert.ok(address && typeof address !== "string");
     const model = service.app.memory.listArtifacts("ontology").find((artifact) => artifact.status === "adopted");
     assert.ok(model);
-    const draft = service.app.consumption.propose({
+    const draft = historicalConsumers(service.app.consumption, service.app.memory, directory).propose({
       name: "独立 MCP 客服助手", purpose: "按授权读取投诉与回访",
       modelId: model.id, modelVersion: model.version,
       grants: [
@@ -216,7 +217,7 @@ test("MCP reads a heating complaint, follows its callback, and observes only pub
         { type: "回访", fields: ["$id", "投诉编号", "反馈结果"], relations: [] },
       ],
     });
-    const { consumer, apiKey } = service.app.consumption.activate(draft.id, draft.version);
+    const { consumer, apiKey } = historicalConsumers(service.app.consumption, service.app.memory, directory).activate(draft.id, draft.version);
     bridge = stdioBridge(`http://127.0.0.1:${address.port}`, apiKey);
     await initialize(bridge);
     const call = async (name: string, args: Record<string, unknown> = {}) => {
@@ -245,7 +246,7 @@ test("MCP reads a heating complaint, follows its callback, and observes only pub
     assert.equal(unpublished.body.items[0].fields.反馈结果, "未改善");
     const preview = service.app.consumption.previewDataUpdate(consumer.id, consumer.version);
     assert.equal(preview.valid, true);
-    const published = service.app.consumption.publishDataUpdate(consumer.id, consumer.version, preview.nextSourceVersions);
+    const published = historicalConsumers(service.app.consumption, service.app.memory, directory).publishDataUpdate(consumer.id, consumer.version, preview.nextSourceVersions);
     const outdated = await call("query_objects", query);
     assert.equal(outdated.isError, true);
     assert.equal(outdated.body.status, 409);

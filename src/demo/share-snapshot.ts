@@ -166,7 +166,7 @@ export async function createHeatingShareSnapshot(): Promise<HeatingShareSnapshot
         },
         consumption: {
           question: "谁可以调用这些记忆？",
-          answer: `预置演示中启用的调用方是${active.map((item) => item.title).join("、")}；旧版物业查询已停用。各调用方只能读取授权对象、字段和关系，居民联系方式不对外开放。此 HTML 展示已有范围和记录，不提供真实 API 接入。`,
+          answer: active.length ? `已有演示接入：${active.map(item => item.title).join("、")}。只可读取保存的授权范围。` : "此演示没有外部接入授权。正式接入需选择发布版本并创建接入方；此 HTML 仅供离线浏览，不提供真实 API。",
         },
       },
     };

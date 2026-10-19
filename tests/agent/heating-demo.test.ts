@@ -45,8 +45,8 @@ test("heating demo opens three populated pages, runs evidence checks locally and
     await service.app.idle();
     assert.equal(service.app.memory.listArtifacts("verification").length, before + 1);
     assert.match(service.app.canvasState().messages.at(-1)!.content, /自定义问题需要接入真实模型/);
-    assert(service.app.consumption.logs().some((entry) => entry.result === "allowed"));
-    assert(service.app.consumption.logs().some((entry) => entry.result === "denied" && entry.status === 401));
+    assert.equal(service.app.consumption.list().length, 0, "fresh demos do not create frozen v1 grants");
+    assert.equal(service.app.consumption.logs().length, 0);
 
     new Workspace(service.app.memory).editProfile("company.goal", "保留这次演示中的修改");
     assert.equal(seedHeatingDemo(service.app).seeded, false);

@@ -1,3 +1,4 @@
+import { freezeLegacyConsumption } from "./legacy-consumption.ts";
 import { activeCorrection, captureRelation } from "./relation-corrections.ts";
 import {
   supplementSchema,
@@ -829,46 +830,10 @@ export class LiveMemory {
     }
     return {args, model};
   }
-  prepare(input: unknown, context?: WriteContext, operationId?: string) {
-    const {args, model} = this.validateConsumerScope(input);
-    return this.repo.putArtifact(
-      {
-        kind: "live_consumer",
-        title: args.name,
-        status: "draft",
-        content: jsonData({ ...args, modelVersion: model.version }),
-      },
-      context,
-      operationId,
-    );
-  }
-  activate(id: string, version: number) {
-    const a = this.repo.getArtifact(id);
-    if (
-      a.kind !== "live_consumer" ||
-      a.status !== "draft" ||
-      a.version !== version
-    )
-      throw new Error("调用方草稿已变化");
-    const model = this.model(String(a.content.modelId), true);
-    if (model.version !== a.content.modelVersion)
-      throw new Error("本体版本已变化");
-    this.checkConnections(this.definition(model));
-    const key = "de_live_" + randomBytes(32).toString("base64url");
-    const consumer = this.repo.putArtifact({
-      ...a,
-      expectedVersion: version,
-      status: "active",
-      content: { ...a.content, keyHash: digest(key) },
-    });
-    return {
-      consumer: {
-        ...consumer,
-        content: { ...consumer.content, keyHash: undefined },
-      },
-      key,
-    };
-  }
+  prepare(input: unknown, context?: WriteContext, operationId?: string): Artifact { return freezeLegacyConsumption(); }
+
+  activate(id: string, version: number): { consumer: Artifact; key: string } { return freezeLegacyConsumption(); }
+
   revoke(id: string, version: number) {
     const a = this.repo.getArtifact(id);
     if (a.kind !== "live_consumer") throw new Error("调用方不存在");
@@ -1076,10 +1041,5 @@ export const liveTools: DomainTool[] = [
     "按 modelId/modelVersion 与 conceptId（基础概念稳定 id）或 type 查询当前源对象及关系，返回同一 conceptRef、读取时间、覆盖范围；必须填 conceptId 或 type；查询 relation 时必须填起点 id。id 对应返回对象的 $id，不是业务编号；不能把对象 ID 填入业务属性 where，where 还必须被主来源 filters 支持。fields 可以选择主来源与 supplements 中的业务属性，选中对象的请求不得省略用户要求的融合属性。融合查询每页最多20对象，返回 evidence 的逐属性状态/出处与匹配覆盖；null可能是缺失/冲突/未确定，不等于零。只允许主来源且无重叠的属性过滤。候选查询仅为预览；不能声称历史快照或完整跨源一致性。",
     querySchema,
   ),
-  tool(
-    "live_consumer_propose",
-    "提出第三方只读调用范围，字段需含明确的 $id；用户在连接页启用，不得声称已经授权。",
-    prepareSchema,
-    true,
-  ),
+
 ];

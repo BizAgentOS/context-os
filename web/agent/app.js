@@ -502,36 +502,7 @@ function renderCanvas(force = false) {
   else if (ui.page === "consumption" && !shareMode && !state.demo) canvas.replaceChildren(renderReleaseWorkspace(state, {
     api, ontology: () => navigate("ontology"), ask: askAssistant,
     onChanged: () => { if(ui.page === "consumption") renderCanvas(true); },
-    legacy: () => {
-      const legacyDialog = engineDialog("旧版 MCP 数据集与访问范围", true);
-    const oldWorkspace = renderDatasetWorkspace(state, {
-    api,
-    ontology: () => navigate("ontology"),
-    onChanged: () => { if (ui.page === "consumption" && !ui.detail) renderCanvas(true); },
-    legacy: () => {
-      const d = document.createElement("dialog"); d.className = "live-dialog"; d.setAttribute("aria-label", "已有访问范围");
-      const content = node("div");
-      const renderExisting = () => content.replaceChildren(
-        renderLiveWorkspace("consumption", state.live, {
-          api, showCredential,
-          mutate: async (...args) => { const ok = await mutate(...args); if (d.isConnected) renderExisting(); return ok; },
-          onSaved: async () => {
-            try {
-              const snapshot = await api("/api/canvas?page=consumption");
-              if (!d.isConnected) return;
-              applySnapshot(snapshot); renderExisting();
-            } catch (error) { errorMessage(error.message); }
-          },
-        }),
-        ...(state.consumers.length ? [renderConsumption(consumer => { d.close(); openConsumer(consumer); })] : []),
-      );
-      renderExisting(); d.append(node("h2", "", "已有访问范围"), content);
-      d.addEventListener("close", () => d.remove(), { once: true }); document.body.append(d); d.showModal();
-    },
-  });
-      legacyDialog.body.append(oldWorkspace);
-      legacyDialog.addEventListener("close", () => oldWorkspace.dispose?.());
-    },
+
   }));
   else if (!shareMode && !state.demo) {
     const livePage = ui.page;

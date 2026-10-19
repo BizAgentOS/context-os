@@ -1,3 +1,4 @@
+import { freezeLegacyConsumption } from "../live/legacy-consumption.ts";
 import {ConsumerMigrations,consumerMigrationTools} from "../live/consumer-migrations.ts";
 import {ConsumerViews,consumerViewTools} from "../live/consumer-views.ts";
 import { MappingChanges, mappingChangeTools } from "../live/mapping-changes.ts";
@@ -1254,75 +1255,12 @@ export class AgentApplication {
     });
   }
 
-  prepareConsumer(body: Record<string, unknown>) {
-    if (this.canvasProgress().currentPage !== "consumption")
-      throw new Error("请在连接页创建接入");
-    if (this.active || this.modelTest)
-      throw new Error("请等待当前整理结束后再创建接入");
-    const task = this.canvasTask("consumption");
-    if (task.pending?.consumerId)
-      throw new Error("已有待确认的接入草稿，请先查看并处理该范围");
-    const template = this.memory.getArtifact(
-      string(body.templateId, "范围模板"),
-    );
-    if (
-      template.kind !== "consumer" ||
-      template.status !== "active" ||
-      template.version !== Number(body.templateVersion)
-    )
-      throw new Error("接入范围已变化，请重新查看当前启用的调用方");
-    // This host-only action copies a reviewed scope; callers cannot supply new grants.
-    // The independent draft starts from the adopted model's saved sources.
-    const draft = this.consumption.propose({
-      name: string(body.name, "Agent 名称", 120),
-      purpose: string(body.purpose, "使用目的", 600),
-      modelId: template.content.modelId,
-      modelVersion: template.content.modelVersion,
-      grants: template.content.grants,
-    });
-    this.memory.attachArtifact(task.id, draft);
-    this.memory.restoreWaiting(
-      task.id,
-      {
-        question: "请查看这份独立接入的读取范围，确认后再启用。",
-        consumerId: draft.id,
-        version: draft.version,
-      },
-      "接入范围等待确认",
-    );
-    return { ...this.canvasState("consumption"), preparedConsumerId: draft.id };
+  prepareConsumer(_body: Record<string, unknown>): never {
+    return freezeLegacyConsumption();
   }
 
-  async activateConsumer(body: Record<string, unknown>) {
-    if (this.canvasProgress().currentPage !== "consumption")
-      throw new Error("请在连接页启用访问");
-    const id = string(body.id, "调用方");
-    const version = Number(body.version);
-    const task = this.canvasTask("consumption");
-    if (task.pending?.consumerId !== id || task.pending.version !== version)
-      throw new Error("该授权不对应当前待确认版本，请查看最新范围");
-    await this.stopActive("正在保存你的授权。");
-    const result = this.consumption.activate(id, version);
-    this.memory.attachArtifact(task.id, result.consumer);
-    this.memory.dismissPending(task.id);
-    this.memory.addMessage(
-      task.id,
-      "assistant",
-      "已启用这组访问范围。接入凭据在单独的窗口中交付。",
-    );
-    this.memory.trimMessages(task.id);
-    const progress = this.canvasProgress();
-    if (!progress.completed.includes("consumption"))
-      progress.completed.push("consumption");
-    this.memory.saveCanvas(progress);
-    return {
-      ...this.canvasState("consumption"),
-      credential: {
-        consumerId: result.consumer.id,
-        apiKey: result.apiKey,
-        endpoint: "/v1/objects",
-      },
-    };
+  async activateConsumer(_body: Record<string, unknown>): Promise<never> {
+    return freezeLegacyConsumption();
   }
 
   async revokeConsumer(body: Record<string, unknown>) {
@@ -1615,15 +1553,14 @@ export class AgentApplication {
                 : []),
             ].includes(tool.name),
           ),
-          ...(page === "consumption" ? [...consumerViewTools,...consumerMigrationTools,...mappingChangeTools.filter(t=>["mapping_change_list","mapping_change_read"].includes(t.name)),...evidenceTools.filter(t=>t.name!=="evidence_collect")] : []),
+          ...(page === "consumption" ? [...consumerViewTools,...mappingChangeTools.filter(t=>["mapping_change_list","mapping_change_read"].includes(t.name)),...evidenceTools.filter(t=>t.name!=="evidence_collect")] : []),
           ...liveTools.filter(
             (tool) =>
               tool.name === "live_overview" ||
               ((page === "setup" || page === "ontology") &&
                 ["live_read", "live_propose", "live_query"].includes(
                   tool.name,
-                )) ||
-              (page === "consumption" && tool.name === "live_consumer_propose"),
+                )),
           ),
           ...(page === "setup" ? [historyReadTool] : []),
           ...(workContext?.target ? [contextReadTool] : []),
@@ -1636,7 +1573,7 @@ export class AgentApplication {
             : tool.name !== "release_overview"),
           ...capabilityTools,
           ...controlTools.filter((tool) => tool.name === "task_ask"),
-          ...(page === "consumption" ? consumptionTools : [pageCompleteTool]),
+          ...(page === "consumption" ? [] : [pageCompleteTool]),
         ]
       : [...domainTools, ...controlTools];
     const executionWorkContext = workContext

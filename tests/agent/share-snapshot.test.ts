@@ -82,7 +82,7 @@ test("offline heating snapshot preserves relations, evidence and permitted scope
   );
   assert(snapshot.pages.consumption.consumers);
   const logs = snapshot.pages.consumption.accessLogs as Data[];
-  assert(logs.some((log) => log.result === "allowed"));
-  assert(logs.some((log) => log.result === "denied"));
+  assert.equal(logs.length, 0, "an offline demo does not invent external access grants or access history");
+  assert.match(snapshot.answers.consumption.answer, /没有外部接入授权/);
   assert.match(snapshot.answers.ontology.answer, /2 条显示未改善/);
 });

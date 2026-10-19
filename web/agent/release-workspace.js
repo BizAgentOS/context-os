@@ -1,8 +1,9 @@
+import { renderHistoryAccess } from "./history-access.js";
 import { el, action, ref, when, dialog, message, transact, field, check, table, issues, diffTable, downloadConfig, dataDiffTable } from "./engine-ui.js";
 
 export function renderReleaseWorkspace(state, actions) {
   const root=el("section",null,"engine-workspace release-workspace");root.setAttribute("aria-label","发布与接入");
-  let data,disposed=false,generation=0;root.dispose=()=>{disposed=true;generation++;};
+  let data,disposed=false,generation=0,historyAccess;root.dispose=()=>{disposed=true;generation++;historyAccess?.dispose();};
   const refresh=()=>{if(disposed)actions.onChanged?.();else void load();};
   const rows=n=>n==null?"—":Number(n).toLocaleString("zh-CN");
   const snapshotTable=definition=>table(definition.snapshots||[],[["数据集",s=>data?.names?.[s.datasetId]||(s.capability==="records"?s.sourceId:`${s.sourceId} · ${s.capability}`)],["行数",s=>rows(s.rows)],["来源覆盖",s=>s.coverage?.complete===true?"完整":s.coverage?`不完整：${rows(s.coverage.rows)} / ${rows(s.coverage.total)} 行`:"未记录"],["同步时间",s=>when(s.syncedAt)],["快照版本",s=>s.snapshotId.slice(0,8)]]);
@@ -97,7 +98,7 @@ export function renderReleaseWorkspace(state, actions) {
     const connections=el("section",null,"release-connections");connections.append(el("h2",`接入方 · ${data.connections.length}`));if(!data.connections.length)connections.append(el("p","发布版本后，为每个接入方选择范围并生成独立配置。","engine-empty"));
     for(const c of data.connections){const card=el("article",null,"engine-panel release-connection"),bound=data.releases.find(r=>r.id===c.content.releaseRef.id),top=el("header");top.append(el("h3",c.title),el("span",(c.effectiveStatus||c.status)==="active"?"已启用":"已撤销","engine-badge"));card.append(top,el("p",`绑定 ${releaseName(bound)} · ${c.content.conceptIds.length} 个概念 · ${c.content.agentEnabled?"允许 Agent 委托":"只读查询"}`,"engine-muted"));const controls=el("div",null,"engine-actions");if((c.effectiveStatus||c.status)==="active"){controls.append(action("接入配置",()=>void configuration(c),"engine-primary"));if(data.releases.some(r=>r.id!==c.content.releaseRef.id))controls.append(action("切换版本",()=>upgrade(c)));controls.append(action("撤销接入",()=>revoke(c)));}card.append(controls);connections.append(card);}root.append(connections);
     const history=el("section",null,"release-history");history.append(el("h2",`版本历史 · ${data.releases.length}`));for(const r of data.releases){const entry=el("div",null,"release-history-row");entry.append(el("strong",releaseName(r)),el("span",when(r.content.publishedAt),"engine-muted"),action("查看差异与定义",()=>detail(r)));history.append(entry);}if(!data.releases.length)history.append(el("p","尚无发布记录。","engine-muted"));root.append(history);
-    const footer=el("footer",null,"engine-page-footer");footer.append(action("刷新状态",()=>void load()));if(actions.legacy)footer.append(action("查看旧版 MCP 数据集与访问范围",actions.legacy));root.append(footer);
+    const footer=el("footer",null,"engine-page-footer");footer.append(action("刷新状态",()=>void load()));root.append(footer);historyAccess?.dispose();historyAccess=renderHistoryAccess(state,{api:actions.api,onChanged:refresh});root.append(historyAccess);
   }
   async function load(){const request=++generation;try{const next=await actions.api("/api/releases");if(disposed||request!==generation)return;data=next;render();}catch(error){if(!disposed&&request===generation){root.replaceChildren(el("h1","发布与接入"),el("p",error.message,"engine-message"),action("重试读取",()=>void load()));}}}
   render();void load();return root;

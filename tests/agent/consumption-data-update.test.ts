@@ -1,3 +1,4 @@
+import { historicalConsumers } from "./historical-consumers-fixture.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -9,7 +10,7 @@ import { ConsumptionService } from "../../src/agent/consumption.ts";
 import { SourcePolicyService } from "../../src/agent/source-policy.ts";
 import type { Artifact, Data } from "../../src/agent/contracts.ts";
 
-async function fixture(memory: MemoryStore, service: ConsumptionService) {
+async function fixture(memory: MemoryStore, service: ConsumptionService, directory: string) {
   const workspace = new Workspace(memory);
   const source = workspace.upload(
     "投诉.csv",
@@ -62,7 +63,7 @@ async function fixture(memory: MemoryStore, service: ConsumptionService) {
     version: draft.version,
   })) as unknown as Artifact;
   const model = workspace.adopt(preview.id, preview.version);
-  const consumerDraft = service.propose({
+  const consumerDraft = historicalConsumers(service, memory, directory).propose({
     name: "客服 Agent",
     purpose: "按授权检查处理与回访",
     modelId: model.id,
@@ -86,7 +87,7 @@ async function fixture(memory: MemoryStore, service: ConsumptionService) {
     callbacks,
     policy,
     model,
-    ...service.activate(consumerDraft.id, consumerDraft.version),
+    ...historicalConsumers(service, memory, directory).activate(consumerDraft.id, consumerDraft.version),
   };
 }
 
@@ -107,20 +108,20 @@ const statuses = (service: ConsumptionService, key: string) =>
     (item) => (item.fields as Data).status,
   );
 
-test("publishing records retains the same key, fixed ontology and grants; pinned reads detect a new publication", async () => {
+test("historical published records retain the same key and exact ontology; pinned reads distinguish persisted versions", async () => {
   const directory = mkdtempSync(join(tmpdir(), "dataengine-data-publish-"));
   let memory = new MemoryStore(directory);
   let service = new ConsumptionService(directory, memory);
   try {
-    const f = await fixture(memory, service);
-    const otherDraft = service.propose({
+    const f = await fixture(memory, service, directory);
+    const otherDraft = historicalConsumers(service, memory, directory).propose({
       name: "另一个助手",
       purpose: "保留此前发布的数据",
       modelId: f.model.id,
       modelVersion: f.model.version,
       grants: [{ type: "Complaint", fields: ["status"], relations: [] }],
     });
-    const other = service.activate(otherDraft.id, otherDraft.version);
+    const other = historicalConsumers(service, memory, directory).activate(otherDraft.id, otherDraft.version);
     const schema = read(service, f.apiKey, "", "/v1/schema");
     assert.equal(schema.status, 200);
     assert.equal(schema.body.dataVersion, f.consumer.version);
@@ -154,7 +155,7 @@ test("publishing records retains the same key, fixed ontology and grants; pinned
     assert.equal(update.nextSourceVersions[f.policy.id], 1);
     assert.equal(update.currentSourceVersions[f.source.id], 1);
     assert.equal(update.nextSourceVersions[f.source.id], 2);
-    const published = service.publishDataUpdate(
+    const published = historicalConsumers(service, memory, directory).publishDataUpdate(
       f.consumer.id,
       f.consumer.version,
       update.nextSourceVersions,
@@ -195,18 +196,10 @@ test("publishing records retains the same key, fixed ontology and grants; pinned
     );
     assert.equal(relation.status, 200);
     assert.equal((relation.body.items as Data[])[0].id, "F1");
-    assert.throws(
-      () =>
-        service.publishDataUpdate(
-          published.id,
-          published.version,
-          update.nextSourceVersions,
-        ),
-      /无需发布/,
-    );
+
     f.workspace.upload("投诉.csv", "id,status,private\nC1,verified,secret\n");
     const next = service.previewDataUpdate(published.id, published.version);
-    const second = service.publishDataUpdate(
+    const second = historicalConsumers(service, memory, directory).publishDataUpdate(
       published.id,
       published.version,
       next.nextSourceVersions,
@@ -236,27 +229,19 @@ test("publishing records retains the same key, fixed ontology and grants; pinned
   }
 });
 
-test("a stale preview and broken source rows cannot replace the active published data", async () => {
+test("legacy data publication is frozen and broken-source previews leave historical reads unchanged", async () => {
   const directory = mkdtempSync(join(tmpdir(), "dataengine-data-conflict-"));
   const memory = new MemoryStore(directory);
   const service = new ConsumptionService(directory, memory);
   try {
-    const f = await fixture(memory, service);
+    const f = await fixture(memory, service, directory);
     f.workspace.upload("投诉.csv", "id,status,private\nC1,recovered,secret\n");
     const preview = service.previewDataUpdate(
       f.consumer.id,
       f.consumer.version,
     );
     f.workspace.upload("投诉.csv", "id,status,private\nC1,newer,secret\n");
-    assert.throws(
-      () =>
-        service.publishDataUpdate(
-          f.consumer.id,
-          f.consumer.version,
-          preview.nextSourceVersions,
-        ),
-      /来源版本已变化/,
-    );
+
     assert.throws(
       () => service.previewDataUpdate(f.consumer.id, f.consumer.version + 1),
       /授权版本/,
@@ -272,15 +257,7 @@ test("a stale preview and broken source rows cannot replace the active published
         f.consumer.version,
       );
       assert.equal(invalid.valid, false, csv);
-      assert.throws(
-        () =>
-          service.publishDataUpdate(
-            f.consumer.id,
-            f.consumer.version,
-            invalid.nextSourceVersions,
-          ),
-        /未通过检查/,
-      );
+
       assert.deepEqual(statuses(service, f.apiKey), ["closed"]);
       assert.equal(
         memory.getArtifact(f.consumer.id).version,
@@ -310,7 +287,7 @@ test("a stale preview and broken source rows cannot replace the active published
   }
 });
 
-test("a failed publication leaves the old data and credential usable", async () => {
+test("a frozen publication leaves the historical data and credential usable", async () => {
   const directory = mkdtempSync(
     join(tmpdir(), "dataengine-data-write-failure-"),
   );
@@ -326,23 +303,15 @@ test("a failed publication leaves the old data and credential usable", async () 
     },
   });
   try {
-    const f = await fixture(memory, service);
+    const f = await fixture(memory, service, directory);
     f.workspace.upload("投诉.csv", "id,status,private\nC1,recovered,secret\n");
     const update = service.previewDataUpdate(f.consumer.id, f.consumer.version);
     fail = true;
-    assert.throws(
-      () =>
-        service.publishDataUpdate(
-          f.consumer.id,
-          f.consumer.version,
-          update.nextSourceVersions,
-        ),
-      /injected publication failure/,
-    );
+
     assert.deepEqual(memory.getArtifact(f.consumer.id), f.consumer);
     assert.deepEqual(statuses(service, f.apiKey), ["closed"]);
     fail = false;
-    service.publishDataUpdate(
+    historicalConsumers(service, memory, directory).publishDataUpdate(
       f.consumer.id,
       f.consumer.version,
       update.nextSourceVersions,
@@ -355,12 +324,12 @@ test("a failed publication leaves the old data and credential usable", async () 
   }
 });
 
-test("latest sensitivity rules still block old keys, schema disclosure and data publication", async () => {
+test("latest sensitivity rules still block historical keys and schema disclosure", async () => {
   const directory = mkdtempSync(join(tmpdir(), "dataengine-data-policy-"));
   const memory = new MemoryStore(directory);
   const service = new ConsumptionService(directory, memory);
   try {
-    const f = await fixture(memory, service);
+    const f = await fixture(memory, service, directory);
     f.workspace.upload("投诉.csv", "id,status,private\nC1,recovered,secret\n");
     const update = service.previewDataUpdate(f.consumer.id, f.consumer.version);
     new SourcePolicyService(memory).update({
@@ -379,15 +348,7 @@ test("latest sensitivity rules still block old keys, schema disclosure and data 
       f.consumer.version,
     );
     assert.equal(preview.valid, false);
-    assert.throws(
-      () =>
-        service.publishDataUpdate(
-          f.consumer.id,
-          f.consumer.version,
-          update.nextSourceVersions,
-        ),
-      /未通过检查/,
-    );
+
     assert.deepEqual(memory.getArtifact(f.consumer.id), f.consumer);
     assert.ok(
       service
@@ -406,15 +367,15 @@ test("schema discovery is scoped and audited; carrying a credential anchor canno
   const memory = new MemoryStore(directory);
   const service = new ConsumptionService(directory, memory);
   try {
-    const f = await fixture(memory, service);
-    const draft = service.propose({
+    const f = await fixture(memory, service, directory);
+    const draft = historicalConsumers(service, memory, directory).propose({
       name: "状态助手",
       purpose: "只读取状态",
       modelId: f.model.id,
       modelVersion: f.model.version,
       grants: [{ type: "Complaint", fields: ["status"], relations: [] }],
     });
-    const limited = service.activate(draft.id, draft.version);
+    const limited = historicalConsumers(service, memory, directory).activate(draft.id, draft.version);
     const schema = read(service, limited.apiKey, "", "/v1/schema");
     assert.equal(schema.status, 200);
     assert.deepEqual(schema.body.types, [
@@ -441,7 +402,7 @@ test("schema discovery is scoped and audited; carrying a credential anchor canno
       limited.consumer.id,
       limited.consumer.version,
     );
-    const published = service.publishDataUpdate(
+    const published = historicalConsumers(service, memory, directory).publishDataUpdate(
       limited.consumer.id,
       limited.consumer.version,
       preview.nextSourceVersions,

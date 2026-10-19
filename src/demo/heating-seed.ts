@@ -164,41 +164,13 @@ export function seedHeatingDemo(app: AgentApplication) {
     id: verificationRecords[0].id, version: verificationRecords[0].version, status: "matches_expectation",
   });
 
-  const createConsumer = (name: string, purpose: string, grants: Data[]) => {
-    const draft = app.consumption.propose({ name, purpose, modelId: model.id, modelVersion: model.version, grants });
-    return app.consumption.activate(draft.id, draft.version);
-  };
-  const customerService = createConsumer("客服工作台", "查询投诉、维修动作和回访结果，识别仍需跟进的投诉。", [
-    { type: "投诉", fields: ["$id", "楼栋编号", "诉求", "处理状态"], relations: ["处理工单", "居民回访"] },
-    { type: "工单", fields: ["$id", "投诉编号", "处理动作", "工单状态", "完成时间"], relations: [] },
-    { type: "回访", fields: ["$id", "投诉编号", "回访时间", "反馈结果", "居民反馈"], relations: [] },
-  ]);
-  const dispatch = createConsumer("运行调度看板", "读取供热片区与楼栋台账，核对各换热站服务范围。", [
-    { type: "换热站", fields: ["$id", "名称", "服务户数", "建筑面积"], relations: ["服务小区"] },
-    { type: "小区", fields: ["$id", "名称", "站点编号", "楼栋数", "服务户数"], relations: ["包含楼栋"] },
-    { type: "楼栋", fields: ["$id", "名称", "小区编号", "户数"], relations: [] },
-  ]);
-  const retired = createConsumer("旧版物业查询", "停用的试点接入，保留历史授权和撤销后的拒绝记录。", [
-    { type: "小区", fields: ["$id", "名称"], relations: [] },
-  ]);
-  const request = (apiKey: string, query: Record<string, string>, expectedStatus: number) => {
-    const response = app.consumption.handle({ method: "GET", path: "/v1/objects", query: new URLSearchParams(query), authorization: `Bearer ${apiKey}` });
-    if (response.status !== expectedStatus) throw new Error(`演示消费校验失败：预期 ${expectedStatus}，实际 ${response.status}`);
-  };
-  request(customerService.apiKey, { type: "投诉", id: "TS002" }, 200);
-  request(customerService.apiKey, { type: "投诉", id: "TS002", relation: "居民回访" }, 200);
-  request(dispatch.apiKey, { type: "换热站", id: "Z01", relation: "服务小区" }, 200);
-  request(dispatch.apiKey, { type: "小区", id: "C03", relation: "包含楼栋" }, 200);
-  request(customerService.apiKey, { type: "投诉", fields: "联系手机" }, 403);
-  request(retired.apiKey, { type: "小区" }, 200);
-  app.consumption.revoke(retired.consumer.id, retired.consumer.version);
-  request(retired.apiKey, { type: "小区" }, 401);
-
+  // Frozen v1 contracts can be inspected in existing demo spaces. Fresh demos do not
+  // create legacy grants; release-based sharing is tracked by FEATURE_067.
   const taskIds: Partial<Record<CanvasPage, string>> = {};
   const prompts: Record<CanvasPage, string> = {
     setup: "澄川热力的企业信息和 8 份演示资料已接入。点开可查看或补充信息、原始记录与使用范围。",
     ontology: "6 类对象已经连接起来。可以从投诉查看处理工单和回访，或用一个业务问题验证定义。",
-    consumption: "2 个应用正在按授权读取企业记忆，1 个旧接入已撤销。点开调用方可查看范围和记录。",
+    consumption: "当前演示未发布或授予外部访问。正式接入需在发布与接入页选择发布版本并创建接入方。",
   };
   for (const page of Object.keys(prompts) as CanvasPage[]) {
     const task = app.memory.createTask(`热力公司演示 · ${page}`);

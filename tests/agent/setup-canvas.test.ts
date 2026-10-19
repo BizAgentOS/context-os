@@ -1,3 +1,4 @@
+import { historicalConsumers } from "./historical-consumers-fixture.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -176,14 +177,14 @@ test("legacy pages migrate once without replaying work or rewriting history and 
     const model = memory
       .listArtifacts("ontology")
       .find((item) => item.status === "adopted")!;
-    const grant = service.app.consumption.propose({
+    const grant = historicalConsumers(service.app.consumption, service.app.memory, directory).propose({
       name: "迁移验收",
       purpose: "验证旧凭据",
       modelId: model.id,
       modelVersion: model.version,
       grants: [{ type: "投诉", fields: ["$id", "处理状态"], relations: [] }],
     });
-    const credential = service.app.consumption.activate(
+    const credential = historicalConsumers(service.app.consumption, service.app.memory, directory).activate(
       grant.id,
       grant.version,
     ).apiKey;

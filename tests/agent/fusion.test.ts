@@ -1,3 +1,4 @@
+import { restoreHistoricalAccess } from "./historical-consumers-fixture.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -143,7 +144,7 @@ test("one object resolves complementary values and preserves conflict, absent, a
     );
     // Explicit grants may consume the new field, but never raw provenance or ungranted properties.
     const consumer = (
-      await api("/api/live/prepare", {
+      await restoreHistoricalAccess(service.app, "/api/live/prepare", {
         name: "客服",
         purpose: "仅反馈",
         modelId: adopted.id,
@@ -151,7 +152,7 @@ test("one object resolves complementary values and preserves conflict, absent, a
       })
     ).saved;
     const activation = (
-      await api("/api/live/activate", {
+      await restoreHistoricalAccess(service.app, "/api/live/activate", {
         id: consumer.id,
         version: consumer.version,
       })

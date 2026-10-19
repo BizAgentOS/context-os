@@ -37,7 +37,7 @@ Last Updated: 2026-10-19
 |---|---|---:|---:|---:|---:|
 | v0.1.0 | InProgress | 2 | 3 | 19 | 19/24 |
 | v0.2.0 | Released | 0 | 0 | 11 | 11/11 |
-| v0.3.0 | InProgress | 29 | 3 | 1 | 1/33 |
+| v0.3.0 | InProgress | 29 | 2 | 2 | 2/33 |
 
 本表按计划批次统计。v0.2.2 为已发布能力的 PATCH 修复版本，不新增或重复计算 Feature。
 
@@ -87,7 +87,7 @@ Last Updated: 2026-10-19
 | 036 | 主文档、ADR 与提示词对齐 | Internal | High | Completed | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-036) |
 | 037 | 界面去内部化与交互止血 | Enhancement | High | InProgress | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-037) |
 | 038 | 读取合同对齐 | Enhancement | High | InProgress | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-038) |
-| 039 | 冻结旧消费接口 | Refactor | High | InProgress | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-039) |
+| 039 | 冻结旧消费接口 | Refactor | High | Completed | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-039) |
 | 040 | 分层语义模型 | Refactor | High | Planned | v0.3.0 | 036 | [设计](features/v0.3.0.md#feature-040) |
 | 041 | 统一变更流程与自动采用规则 | Enhancement | High | Planned | v0.3.0 | 040 | [设计](features/v0.3.0.md#feature-041) |
 | 042 | 关系发现修复与身份对应 | Enhancement | High | Planned | v0.3.0 | 040、041 | [设计](features/v0.3.0.md#feature-042) |
@@ -546,13 +546,14 @@ Last Updated: 2026-10-19
 
 ### 039: 冻结旧消费接口
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** Refactor / High
 - **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / —
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / 2026-10-19
 - **Description:** v1/v2/v3 与旧数据集工作台冻结为只读，对外只保留发布 + 接入方 + v4/MCP；移除 Agent 旧接入工具。
 - **Blocked by:** 无。
 - **Design:** [FEATURE_039](features/v0.3.0.md#feature-039)。
+- **Verification:** [M0 隔离验收](experiment/V030_M0_2026_10_19.md)，旧写冻结、历史分页、来源停用 / 证据授权 / 撤销、v4 发布及浏览器检查通过。
 
 ### 040: 分层语义模型
 

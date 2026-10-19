@@ -237,8 +237,8 @@ export class Releases {
   private createDataset(args: z.infer<typeof connectSchema>, release: Artifact, operationId: string) {
     const foundationRef = ref.parse(release.content.foundationRef);
     const modelRef = args.business ? ref.parse(release.content.modelRef) : null;
-    return this.datasets.publish({ operationId, name: args.name, foundationRef, conceptIds: args.conceptIds, relationIds: args.relationIds, ...(args.business ? { business: { ...args.business, modelRef } } : {}) },
-      { fixedSemantic: true, snapshotPins: releasePins(release.content.definition as Data) });
+    return this.datasets.publishForRelease({ operationId, name: args.name, foundationRef, conceptIds: args.conceptIds, relationIds: args.relationIds, ...(args.business ? { business: { ...args.business, modelRef } } : {}) },
+      reference(release), { fixedSemantic: true, snapshotPins: releasePins(release.content.definition as Data) });
   }
   private replayConnection(result: Data) {
     const connection = this.memory.getArtifact(String((result.connectionRef as Data).id), Number((result.connectionRef as Data).version));

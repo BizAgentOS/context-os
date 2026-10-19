@@ -1,3 +1,4 @@
+import { historicalConsumers } from "./historical-consumers-fixture.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -7,7 +8,7 @@ import type { AddressInfo } from "node:net";
 import { createHeatingDemo } from "../../src/demo/server.ts";
 import { Workspace } from "../../src/agent/workspace.ts";
 
-test("independent Agent connection is reviewed and its same key sees only explicitly published records", async () => {
+test("historical HTTP access remains scoped, pinned and revocable after legacy creation freezes", async () => {
   const directory = mkdtempSync(join(tmpdir(), "dataengine-agent-connection-"));
   const service = await createHeatingDemo(directory);
   try {
@@ -39,31 +40,16 @@ test("independent Agent connection is reviewed and its same key sees only explic
     assert(!JSON.stringify(config).includes(service.adminToken));
 
     await admin("/api/canvas/navigate", { page: "consumption" });
-    const template = service.app.consumption
-      .list()
-      .find((item) => item.title === "客服工作台")!;
-    const draftState = await admin("/api/consumers/prepare", {
-      templateId: template.id,
-      templateVersion: template.version,
-      name: "测试第三方 Agent",
-      purpose: "使用已确认的客服读取范围",
-      grants: [{ type: "投诉", fields: ["联系手机"], relations: [] }],
+    const model = service.app.memory.listArtifacts("ontology").find(a => a.status === "adopted")!;
+    const draft = historicalConsumers(service.app.consumption, service.app.memory, directory).propose({
+      name: "历史第三方 Agent", purpose: "读取旧版本", modelId: model.id, modelVersion: model.version,
+      grants: [{ type: "投诉", fields: ["$id", "处理状态"], relations: ["居民回访"] }, { type: "回访", fields: ["$id", "投诉编号", "反馈结果"], relations: [] }],
     });
-    const draft = draftState.consumers.find(
-      (item: { id: string }) => item.id === draftState.preparedConsumerId,
-    );
-    assert.equal(draft.status, "draft");
-    assert.deepEqual(draft.content.grants, template.content.grants);
-    assert.equal(draftState.pending.consumerId, draft.id);
-    assert(!JSON.stringify(draftState).includes("de_consumer_"));
-    const activated = await admin("/api/consumers/activate", {
-      id: draft.id,
-      version: draft.version,
-    });
-    const credential = activated.credential.apiKey;
-    const active = activated.consumers.find(
-      (item: { id: string }) => item.id === draft.id,
-    );
+    const { consumer: active, apiKey: credential } = historicalConsumers(service.app.consumption, service.app.memory, directory).activate(draft.id, draft.version);
+    for (const path of ["/api/consumers/prepare", "/api/consumers/activate"]) {
+      const frozen = await fetch(base + path, { method: "POST", headers: { "content-type": "application/json", "x-dataengine-token": service.adminToken }, body: JSON.stringify({ id: active.id, version: active.version }) });
+      assert.equal(frozen.status, 409);
+    }
     const read = async (path: string, params: Record<string, string> = {}) => {
       const response = await fetch(
         `${base}${path}?${new URLSearchParams(params)}`,
@@ -117,29 +103,11 @@ test("independent Agent connection is reviewed and its same key sees only explic
     assert.equal(preview.valid, true);
     assert.equal(preview.changedSources.length, 1);
     assert.equal(preview.nextSourceVersions[source.id], updated.version);
-    const published = await admin("/api/consumers/data-publish", {
-      id: active.id,
-      version: active.version,
-      sourceVersions: preview.nextSourceVersions,
-    });
-    assert.deepEqual(published.consumer.content.grants, active.content.grants);
-    assert.equal(
-      published.consumer.content.modelVersion,
-      active.content.modelVersion,
-    );
+    const frozen = await fetch(base + "/api/consumers/data-publish", { method: "POST", headers: { "content-type": "application/json", "x-dataengine-token": service.adminToken }, body: JSON.stringify({ id: active.id, version: active.version, sourceVersions: preview.nextSourceVersions }) });
+    assert.equal(frozen.status, 409);
     const after = await read("/v1/objects", args);
-    assert.equal(after.status, 200);
-    assert.equal(after.body.items[0].fields.反馈结果, "已改善");
-    assert.equal(after.body.dataVersion, published.consumer.version);
-    assert.equal(
-      (
-        await read("/v1/objects", {
-          ...args,
-          dataVersion: String(active.version),
-        })
-      ).status,
-      409,
-    );
+    assert.equal(after.status, 200); assert.equal(after.body.items[0].fields.反馈结果, "未改善");
+    assert.equal(after.body.dataVersion, active.version);
     const original = service.app.objectDetails(
       new URLSearchParams({
         artifactId: String(active.content.modelId),
@@ -152,16 +120,12 @@ test("independent Agent connection is reviewed and its same key sees only explic
       (original.result as { fields: Record<string, unknown> }).fields.反馈结果,
       "未改善",
     );
-    assert.equal(
-      service.app.memory.getArtifact(template.id).version,
-      template.version,
-    );
     assert(
       !JSON.stringify(service.app.consumption.logs()).includes(credential),
     );
     await admin("/api/consumers/revoke", {
       id: active.id,
-      version: published.consumer.version,
+      version: active.version,
     });
     assert.equal((await read("/v1/schema")).status, 401);
     assert.equal((await read("/v1/objects", args)).status, 401);

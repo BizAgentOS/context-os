@@ -1,3 +1,4 @@
+import { freezeLegacyConsumption } from "./legacy-consumption.ts";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type {
@@ -225,100 +226,8 @@ export class ConsumerMigrations {
     method: "preview" | "commit",
     input: unknown,
     context?: WriteContext,
-  ) {
-    if (method === "commit" && context)
-      throw new Error("迁移提交仅由管理员确认具体预览版本");
-    const a =
-        method === "preview"
-          ? previewSchema.parse(input)
-          : actionSchema.parse(input),
-      actor = context ? `agent:${context.taskId}` : "local-admin",
-      signature = hash({ method, args: a });
-    if (context) this.memory.assertWritable(context);
-    return this.memory.atomic(() => {
-      if (context) this.memory.assertWritable(context);
-      const prior = this.previous(actor, a.operationId, signature);
-      if (prior) return prior;
-      let saved: Artifact;
-      if ("viewRef" in a) {
-        const v = this.view(a.viewRef),
-          c = this.change(a.changeRef),
-          report = this.report(v, c, a.dropContextEvidence);
-        saved = this.memory.putArtifact(
-          {
-            kind: "consumer_migration",
-            title: v.title + "迁移预览",
-            status: "previewed",
-            content: jsonData({
-              viewRef: a.viewRef,
-              changeRef: report.changeRef,
-              report,
-              fingerprint: hash(report),
-              responsible: actor,
-              createdAt: new Date().toISOString(),
-            }),
-          },
-          context,
-        );
-      } else {
-        const p = this.read({ id: a.id, version: a.version });
-        if (
-          this.memory.getArtifact(p.id).version !== p.version ||
-          p.status !== "previewed"
-        )
-          throw new Error("迁移预览版本已变化");
-        const old = p.content.report as Data,
-          v = this.view(p.content.viewRef as z.infer<typeof ref>),
-          c = this.change(p.content.changeRef as z.infer<typeof ref>),
-          report = this.report(v, c, Boolean(old.dropContextEvidence));
-        if (!report.compatible || hash(report) !== p.content.fingerprint)
-          throw new Error("迁移条件或许可已变化，请重新预览");
-        const target = this.live.assertModel(
-          (report.targetRef as Data).id as string,
-          (report.targetRef as Data).version as number,
-        );
-        const result = this.memory.putArtifact({
-          ...v,
-          expectedVersion: v.version,
-          content: {
-            ...v.content,
-            modelRef: report.targetRef,
-            semanticRef: target.content.foundationRef ?? null,
-            contextEvidence: [],
-            requiresViewVersion: true,
-            migrationRef: { id: p.id, version: p.version + 1 },
-            previousViewRef: { id: v.id, version: v.version },
-          },
-        });
-        this.memory.deleteConsumerEvidence(v.id);
-        saved = this.memory.putArtifact({
-          ...p,
-          expectedVersion: p.version,
-          status: "committed",
-          content: {
-            ...p.content,
-            resultRef: { id: result.id, version: result.version },
-            decision: {
-              actor,
-              checkedVersion: p.version,
-              at: new Date().toISOString(),
-            },
-          },
-        });
-      }
-      this.memory.putArtifact({
-        kind: "migration_receipt",
-        title: "迁移操作回执",
-        status: "saved",
-        content: {
-          actor,
-          operationId: a.operationId,
-          signature,
-          resultRef: { id: saved.id, version: saved.version },
-        },
-      });
-      return saved;
-    });
+  ): Artifact {
+    return freezeLegacyConsumption();
   }
 }
 export const consumerMigrationTools: DomainTool[] = [
@@ -328,13 +237,6 @@ export const consumerMigrationTools: DomainTool[] = [
     description:
       "按同一mapping changeRef分页读取消费视图的影响、许可兼容性和移除旧背景依据要求；不迁移任何视图。",
     inputSchema: z.toJSONSchema(impactSchema),
-  },
-  {
-    name: "consumer_migration_preview",
-    mutates: true,
-    description:
-      "为指定当前viewRef与已采用changeRef保存迁移预览；保留字段权限，旧背景依据须用户明确同意移除才填dropContextEvidence=true。只保存预览，无提交工具。",
-    inputSchema: z.toJSONSchema(previewSchema),
   },
   {
     name: "consumer_migration_list",

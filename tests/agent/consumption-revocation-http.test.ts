@@ -1,3 +1,4 @@
+import { historicalConsumers } from "./historical-consumers-fixture.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -82,14 +83,14 @@ test(
         version: candidate.version,
       })) as unknown as Artifact;
       const model = workspace.adopt(preview.id, preview.version);
-      const draft = service.app.consumption.propose({
+      const draft = historicalConsumers(service.app.consumption, service.app.memory, directory).propose({
         name: "客服助手",
         purpose: "读取投诉状态",
         modelId: model.id,
         modelVersion: model.version,
         grants: [{ type: "投诉", fields: ["状态"], relations: [] }],
       });
-      const active = service.app.consumption.activate(draft.id, draft.version);
+      const active = historicalConsumers(service.app.consumption, service.app.memory, directory).activate(draft.id, draft.version);
       assert.equal(
         (await post("/api/canvas/navigate", { page: "consumption" })).status,
         200,

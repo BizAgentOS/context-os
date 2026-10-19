@@ -1,3 +1,4 @@
+import { freezeLegacyConsumption } from "./legacy-consumption.ts";
 import type { SnapshotPins } from "./memory.ts";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -84,7 +85,20 @@ export class ConsumerViews {
       .slice(0, 40)
       .map(publicView);
   }
-  propose(input: unknown, context?: WriteContext, options: { fixedSemantic?: boolean; snapshotPins?: SnapshotPins } = {}) {
+  propose(_input: unknown, _context?: WriteContext, _options: { fixedSemantic?: boolean; snapshotPins?: SnapshotPins; releaseRef?: { id: string; version: number } } = {}): Artifact {
+    return freezeLegacyConsumption();
+  }
+  /** Only published v4 composition may create an internal business view; its credential is never exposed. */
+  createForRelease(input: unknown, releaseRef: { id: string; version: number }, options: { fixedSemantic?: boolean; snapshotPins?: SnapshotPins } = {}) {
+    const release = this.memory.getArtifact(releaseRef.id, releaseRef.version);
+    if (release.kind !== "data_release" || release.status !== "published") throw new Error("需要已发布版本");
+    const args = proposal.parse(input);
+    const modelRef = release.content.modelRef as { id: string; version: number } | null;
+    if (!modelRef || modelRef.id !== args.modelRef.id || modelRef.version !== args.modelRef.version) throw new Error("业务映射必须属于指定发布版本");
+    const draft = this.proposeInternal(input, undefined, { ...options, releaseRef });
+    return this.activateInternal({ id: draft.id, version: draft.version }).view;
+  }
+  private proposeInternal(input: unknown, context?: WriteContext, options: { fixedSemantic?: boolean; snapshotPins?: SnapshotPins; releaseRef?: { id: string; version: number } } = {}) {
     const a = proposal.parse(input),
       actor = context ? `agent:${context.taskId}` : "local-admin";
     if (context) this.memory.assertWritable(context);
@@ -174,7 +188,8 @@ export class ConsumerViews {
             relationPolicy: "source_mapping_only",
             responsible: actor,
             ...(options.fixedSemantic ? { fixedSemantic: true } : {}),
-            ...(options.snapshotPins && Object.keys(options.snapshotPins).length ? { snapshotPins: options.snapshotPins } : {}),
+            ...(options.snapshotPins !== undefined ? { snapshotPins: options.snapshotPins } : {}),
+            ...(options.releaseRef ? { releaseRef: options.releaseRef } : {}),
           }),
         },
         context,
@@ -236,7 +251,10 @@ export class ConsumerViews {
     if (m.status !== "adopted") throw new Error("需要已采用映射");
     return m;
   }
-  activate(input: unknown) {
+  activate(_input: unknown): { view: Artifact; key: string | null; keyAvailable: boolean } {
+    return freezeLegacyConsumption();
+  }
+  private activateInternal(input: unknown) {
     const r = ref.parse(input);
     return this.memory.atomic(() => {
       const a = this.view(r.id);
@@ -690,13 +708,6 @@ export class ConsumerViews {
   }
 }
 export const consumerViewTools: DomainTool[] = [
-  {
-    name: "consumer_view_propose",
-    description:
-      "为指定已采用modelRef保存v3许可消费视图草稿，明确用途、类型、主/附来源融合字段与关系。字段须含$id，关系两端及关联属性须授权。用户要求某字段依据时，必须在对应grant显式填写evidence:{fields:[该字段名],relations:[]}；只写fields不开放依据。背景证据另用contextEvidence逐份引用bundle。operationId稳定重试；真实启用及密钥仅管理员界面处理。v3只读取源映射关系，不自动发布内部局部纠正。",
-    mutates: true,
-    inputSchema: z.toJSONSchema(proposal),
-  },
   {
     name: "consumer_view_list",
     description: "读取最近40个v3消费视图与授权状态，不返回凭据。",

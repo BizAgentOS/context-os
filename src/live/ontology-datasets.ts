@@ -1,3 +1,4 @@
+import { freezeLegacyConsumption } from "./legacy-consumption.ts";
 import type { SnapshotPins } from "./memory.ts";
 import { createHash, randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -85,8 +86,16 @@ export class OntologyDatasets {
       relations: data.relations.filter(r => relationIds.includes(String(r.id))).map(r => ({ id: r.id, name: r.name, description: r.description, from: r.from, to: r.to, origin: "adopted_interpretation" })),
     };
   }
-  publish(input: unknown, options: { fixedSemantic?: boolean; snapshotPins?: SnapshotPins } = {}) {
+  publish(_input: unknown, _options: { fixedSemantic?: boolean; snapshotPins?: SnapshotPins; releaseRef?: { id: string; version: number } } = {}): { dataset: Artifact; key: string | null; keyAvailable: boolean } {
+    return freezeLegacyConsumption();
+  }
+  /** Published releases are the sole factory for new external datasets. */
+  publishForRelease(input: unknown, releaseRef: { id: string; version: number }, options: { fixedSemantic?: boolean; snapshotPins?: SnapshotPins } = {}) {
+    const release = this.memory.getArtifact(releaseRef.id, releaseRef.version);
+    if (release.kind !== "data_release" || release.status !== "published") throw new Error("需要已发布版本");
     const args = publishInput.parse(input);
+    const foundationRef = release.content.foundationRef as { id: string; version: number };
+    if (foundationRef.id !== args.foundationRef.id || foundationRef.version !== args.foundationRef.version) throw new Error("本体必须属于指定发布版本");
     const signature = digest(JSON.stringify(args));
     return this.memory.atomic(() => {
       const prior = this.memory.listArtifacts("ontology_dataset").find(a => a.content.operationId === args.operationId);
@@ -110,15 +119,14 @@ export class OntologyDatasets {
           }
         }
         const views = new ConsumerViews(this.memory, this.live);
-        const draft = views.propose({ ...args.business, operationId: "dataset:" + args.operationId, name: args.name, purpose: "MCP 本体数据集" }, undefined, options);
-        const { view } = views.activate({ id: draft.id, version: draft.version });
+        const view = views.createForRelease({ ...args.business, operationId: "dataset:" + args.operationId, name: args.name, purpose: "MCP 本体数据集" }, releaseRef, options);
         business = jsonData({ viewRef: { id: view.id, version: view.version }, ...args.business });
       }
       const key = "de_dataset_" + randomBytes(32).toString("base64url");
       const dataset = this.memory.putArtifact({
         kind: "ontology_dataset", title: args.name, status: "active",
         content: jsonData({
-          foundationRef: args.foundationRef, enterprise: (foundation.content.enterprise as Data).name,
+          releaseRef, foundationRef: args.foundationRef, enterprise: (foundation.content.enterprise as Data).name,
           ...selection, business, operationId: args.operationId, operationSignature: signature,
           keyHash: digest(key), publishedAt: new Date().toISOString(),
         }),
@@ -182,7 +190,7 @@ export class OntologyDatasets {
       if (latest.status !== "active" || latest.version !== a.version) throw new Error("数据集已停用或变化");
     };
     try {
-      const common = { datasetRef: { id: a.id, version: a.version }, foundationRef: a.content.foundationRef, name: a.title, reading: "fixed_ontology_definition" };
+      const common = { datasetRef: { id: a.id, version: a.version }, ...(a.content.releaseRef ? { releaseRef: a.content.releaseRef } : {}), foundationRef: a.content.foundationRef, name: a.title, reading: "fixed_ontology_definition" };
       const concepts = a.content.concepts as Data[], relations = a.content.relations as Data[];
       const business = a.content.business as Data | null;
       if (["/v4/types", "/v4/objects", "/v4/evidence"].includes(path)) {

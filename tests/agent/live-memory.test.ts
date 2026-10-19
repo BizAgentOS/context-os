@@ -1,3 +1,4 @@
+import { restoreHistoricalAccess } from "./historical-consumers-fixture.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -69,13 +70,13 @@ test("adopted mapping serves fresh objects to scoped consumers and rejects drift
     assert.equal(availability.canAdopt, false);
     assert.match(availability.adoptionReason!, /执行子集版本已变化/);
     await assert.rejects(live.adopt(stale.id, stale.version), /已变化/);
-    const draft = live.prepare({
+    const draft = restoreHistoricalAccess({ memory: repo, live }, "/api/live/prepare", {
       name: "客服 Agent",
       purpose: "读取回访",
       modelId: model.id,
       grants: [{ type: "回访", fields: ["$id", "结果"], relations: [] }],
-    });
-    const { key } = live.activate(draft.id, draft.version);
+    }).saved;
+    const { key } = restoreHistoricalAccess({ memory: repo, live }, "/api/live/activate", { id: draft.id, version: draft.version }).saved;
     const read = () =>
       live.handle(
         "/v2/objects",
@@ -151,7 +152,7 @@ test("HTTP and third-party MCP traverse two sources; changes remain visible afte
       await post("adopt", { id: candidate.id, version: candidate.version })
     ).saved;
     const draft = (
-      await post("prepare", {
+      await restoreHistoricalAccess(service.app, "/api/live/prepare", {
         name: "外部客服",
         purpose: "核对回访",
         modelId: model.id,
@@ -162,7 +163,7 @@ test("HTTP and third-party MCP traverse two sources; changes remain visible afte
       })
     ).saved;
     const activated = (
-      await post("activate", { id: draft.id, version: draft.version })
+      await restoreHistoricalAccess(service.app, "/api/live/activate", { id: draft.id, version: draft.version })
     ).saved;
     const key = activated.key;
     client = new Client({ name: "external-test", version: "1.0.0" });
@@ -274,13 +275,13 @@ test("revocation during an in-flight read cannot disclose the late result", asyn
       relations: [],
     });
     const model = await live.adopt(candidate.id, candidate.version);
-    const draft = live.prepare({
+    const draft = restoreHistoricalAccess({ memory: repo, live }, "/api/live/prepare", {
       name: "client",
       purpose: "read",
       modelId: model.id,
       grants: [{ type: "记录", fields: ["$id", "值"], relations: [] }],
-    });
-    const { key } = live.activate(draft.id, draft.version);
+    }).saved;
+    const { key } = restoreHistoricalAccess({ memory: repo, live }, "/api/live/activate", { id: draft.id, version: draft.version }).saved;
     blocked = true;
     const pending = live.handle(
       "/v2/objects",

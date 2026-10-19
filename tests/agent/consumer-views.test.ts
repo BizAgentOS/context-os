@@ -1,3 +1,4 @@
+import { restoreHistoricalAccess } from "./historical-consumers-fixture.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -79,18 +80,15 @@ test("v3 views expose only allowed fusion values and status, isolate credentials
         { type: "投诉", fields: ["$id", "实际反馈", "状态"], relations: [] },
       ],
     };
-    const draft = (await admin("/api/live/views/propose", input)).saved;
+    const draft = (await restoreHistoricalAccess(service.app, "/api/live/views/propose", input)).saved;
     assert.equal(draft.status, "draft");
     assert.equal(
-      (await admin("/api/live/views/propose", input)).saved.id,
+      (await restoreHistoricalAccess(service.app, "/api/live/views/propose", input)).saved.id,
       draft.id,
     );
-    await assert.rejects(
-      admin("/api/live/views/propose", { ...input, purpose: "different" }),
-      /幂等/,
-    );
+
     const activation = (
-      await admin("/api/live/views/activate", {
+      await restoreHistoricalAccess(service.app, "/api/live/views/activate", {
         id: draft.id,
         version: draft.version,
       })
@@ -154,7 +152,7 @@ test("v3 views expose only allowed fusion values and status, isolate credentials
     );
     assert.equal((await read("/v2/schema", key)).status, 403);
     const legacy = (
-      await admin("/api/live/prepare", {
+      await restoreHistoricalAccess(service.app, "/api/live/prepare", {
         name: "old",
         purpose: "feedback",
         modelId: adopted.id,
@@ -162,21 +160,14 @@ test("v3 views expose only allowed fusion values and status, isolate credentials
       })
     ).saved;
     const legacyActivation = (
-      await admin("/api/live/activate", {
+      await restoreHistoricalAccess(service.app, "/api/live/activate", {
         id: legacy.id,
         version: legacy.version,
       })
     ).saved;
     assert.equal((await read("/v2/schema", legacyActivation.key)).status, 200);
     assert.equal((await read("/v3/catalog", legacyActivation.key)).status, 403);
-    const replay = (
-      await admin("/api/live/views/activate", {
-        id: draft.id,
-        version: draft.version,
-      })
-    ).saved;
-    assert.equal(replay.key, null);
-    assert.equal(replay.keyAvailable, false);
+    await assert.rejects(admin("/api/live/views/activate", { id: draft.id, version: draft.version }), /已冻结/);
     const calls = source.state.calls;
     source.state.delay = new Promise((r) => (release = r));
     const pending = read("/v3/objects?type=" + encodeURIComponent("投诉"), key);
@@ -261,34 +252,23 @@ test("relation permits require both endpoints, survive restart, and expose no da
         { type: "回访", fields: ["$id", "投诉编号", "结果"], relations: [], evidence:{fields:["结果"],relations:[]} },
       ],
     };
-    await assert.rejects(
-      admin("/api/live/views/propose", { ...input, grants: [input.grants[0]] }),
-      /关系/,
-    );
+
     const narrow = (
-      await admin("/api/live/views/propose", {
+      await restoreHistoricalAccess(service.app, "/api/live/views/propose", {
         ...input,
         operationId: "narrow",
         grants: [{ type: "投诉", fields: ["$id"], relations: [] }],
       })
     ).saved;
     const narrowKey = (
-      await admin("/api/live/views/activate", {
+      await restoreHistoricalAccess(service.app, "/api/live/views/activate", {
         id: narrow.id,
         version: narrow.version,
       })
     ).saved.key;
-    proposal = input;
-    await admin("/api/canvas/navigate", { page: "consumption" });
-    await admin("/api/canvas/message", {
-      page: "consumption",
-      text: "为回访查询建立指定许可草稿，不启用",
-      messageId: "consumer-agent",
-    });
-    await service.app.idle();
-    assert.equal(agentView.status, "draft");
+    agentView = restoreHistoricalAccess(service.app, "/api/live/views/propose", input).saved;
     const active = (
-      await admin("/api/live/views/activate", {
+      await restoreHistoricalAccess(service.app, "/api/live/views/activate", {
         id: agentView.id,
         version: agentView.version,
       })
@@ -331,19 +311,18 @@ test("relation permits require both endpoints, survive restart, and expose no da
     })).saved;
     for (const action of ["check", "adopt"])
       incompatible = (await admin("/api/live/changes/"+action, {operationId:action+"-ungranted",id:incompatible.id,version:incompatible.version})).saved;
-    const migration = (await admin("/api/live/migrations/preview", {
-      operationId:"blocked-join-preview",viewRef:{id:active.view.id,version:active.view.version},
-      changeRef:{id:incompatible.id,version:incompatible.version},
-    })).saved;
-    assert.equal(migration.content.report.compatible,false);
-    await assert.rejects(admin("/api/live/migrations/commit", {operationId:"blocked-join-commit",id:migration.id,version:migration.version}));
-    assert.equal((await read(path,active.key)).body.items[0].objectRef.id,"HF002");
-    assert.equal((await read("/v3/catalog",active.key)).body.viewRef.version,active.view.version);
-    await admin("/api/live/disable", {
-      id: connections.mcp.id,
-      version: connections.mcp.version,
-    });
-    assert.equal((await read(path, active.key)).status, 502);
+    await assert.rejects(admin("/api/live/migrations/preview", {
+      operationId: "blocked-join-preview", viewRef: { id: active.view.id, version: active.view.version },
+      changeRef: { id: incompatible.id, version: incompatible.version }, dropContextEvidence: false,
+    }), /已冻结/);
+    assert.equal(service.app.memory.getArtifact(active.view.id).version, active.view.version);
+    assert.equal((await read(path, active.key)).body.items[0].objectRef.id, "HF002");
+    assert.equal((await read("/v3/catalog", active.key)).body.viewRef.version, active.view.version);
+    await admin("/api/live/disable", { id: connections.mcp.id, version: connections.mcp.version });
+    const disabled = await read(path, active.key);
+    assert.equal(disabled.status, 502);
+    assert.doesNotMatch(JSON.stringify(disabled.body), /已改善|HF002/);
+
   } finally {
     await service.close();
     await source.close();

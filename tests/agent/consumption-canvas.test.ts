@@ -1,3 +1,4 @@
+import { historicalConsumers } from "./historical-consumers-fixture.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -37,114 +38,27 @@ async function modelFor(app: AgentApplication) {
   return workspace.adopt(preview.id, preview.version);
 }
 
-test("the fourth canvas proposes a visible grant but only the host can enable it and disclose a credential", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "de-consumption-canvas-"));
-  let model: Artifact;
-  let draft: Artifact;
-  const requests: RunRequest[] = [];
+test("the release assistant exposes only the current release path and refuses legacy creation tools", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "ade-release-tools-"));
+  let runs = 0;
   const driver: AgentDriver = {
     async run(request) {
-      requests.push(request);
-      const input = JSON.parse(request.input);
-      assert.equal(input.page, "consumption");
-      assert.equal(request.sessionId, undefined);
-      assert(
-        !request.tools.some((tool) =>
-          [
-            "consumer_activate",
-            "consumer_revoke",
-            "profile_update",
-            "ontology_propose",
-            "report_save",
-            "page_complete",
-          ].includes(tool.name),
-        ),
-      );
-      await assert.rejects(
-        request.onTool("consumer_activate", {}),
-        /没有这项能力/,
-      );
-      draft = (await request.onTool("consumer_propose", {
-        name: "客服助手",
-        purpose: "查询处理状态",
-        modelId: model.id,
-        modelVersion: model.version,
-        grants: [{ type: "投诉", fields: ["$id", "状态"], relations: [] }],
-      })) as unknown as Artifact;
-      await request.onTool("task_ask", {
-        question: "只允许读取投诉编号与状态，启用吗？",
-        reason: "确认具体范围",
-        consumerId: draft.id,
-        version: draft.version,
-      });
-      return {
-        text: "访问范围已列在画布中，请查看后启用。",
-        runId: "consumption-proposal",
-        sessionId: "bounded-consumption",
-      };
-    },
-    async stop() {},
-    async close() {},
+      runs++;
+      for (const name of ["consumer_propose", "live_consumer_propose", "consumer_view_propose", "consumer_migration_preview"]) {
+        assert.equal(request.tools.some(tool => tool.name === name), false, name);
+        await assert.rejects(request.onTool(name, {}), /没有这项能力/);
+      }
+      assert.ok(request.tools.some(tool => tool.name === "release_overview"));
+      return { text: "请先发布版本，再创建接入方。", runId: "frozen", sessionId: "s" };
+    }, async stop() {}, async close() {},
   };
-  let app = new AgentApplication(dir, driver);
+  const app = new AgentApplication(directory, driver);
   try {
-    assert.equal(
-      app.canvasState().pages.find((page) => page.id === "consumption")
-        ?.available,
-      true,
-    );
-    assert.equal(
-      app.canvasState().pages.find((page) => page.id === "consumption")?.ready,
-      false,
-    );
-    model = await modelFor(app);
-    // Upgrade a previously saved three-page space without replacing its memory or chats.
-    const reached = app.canvasState();
-    assert.equal(
-      reached.pages.find((page) => page.id === "consumption")?.available,
-      true,
-    );
     await app.canvasNavigate({ page: "consumption" });
-    await app.canvasMessage({
-      page: "consumption",
-      text: "让客服助手查询投诉编号和状态，不给联系电话。",
-      messageId: "consumer-intent",
-    });
-    await app.idle();
-    const pending = app.canvasState();
-    assert.equal(pending.consumers[0].status, "draft");
-    assert.equal(pending.pending?.consumerId, draft!.id);
-    assert(!JSON.stringify(pending).includes("de_consumer_"));
-    await assert.rejects(
-      app.activateConsumer({ id: draft!.id, version: draft!.version + 1 }),
-      /版本|待确认/,
-    );
-    const enabled = await app.activateConsumer({
-      id: draft!.id,
-      version: draft!.version,
-    });
-    assert.match(enabled.credential.apiKey, /^de_consumer_/);
-    assert.equal(enabled.consumers[0].status, "active");
-    assert.equal(enabled.pending, null);
-    assert(
-      !JSON.stringify(app.canvasState()).includes(enabled.credential.apiKey),
-    );
-    assert(!JSON.stringify(requests).includes(enabled.credential.apiKey));
-    await app.revokeConsumer({
-      id: enabled.consumers[0].id,
-      version: enabled.consumers[0].version,
-    });
-    assert.equal(app.canvasState().consumers[0].status, "revoked");
-    assert.equal(app.memory.listTasks().length, 1);
-    await app.close();
-    app = new AgentApplication(dir, driver);
-    assert.equal(app.canvasState().page, "consumption");
-    assert.equal(app.canvasState().consumers[0].status, "revoked");
-    assert.equal(requests.length, 1);
-  } finally {
-    await app.close();
-    rmSync(dir, { recursive: true, force: true });
-  }
+    await app.canvasMessage({ page: "consumption", text: "创建旧消费授权", messageId: "legacy" });
+    await app.idle(); assert.equal(runs, 1);
+    for (const kind of ["consumer", "live_consumer", "consumer_view"]) assert.equal(app.memory.listArtifacts(kind).length, 0);
+  } finally { await app.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
 for (const stopBehavior of ["throws", "hangs"] as const) {
@@ -186,8 +100,8 @@ for (const stopBehavior of ["throws", "hangs"] as const) {
           modelVersion: model.version,
           grants: [{ type: "投诉", fields: ["$id", "状态"], relations: [] }],
         };
-        const draft = app.consumption.propose(proposal);
-        const active = app.consumption.activate(draft.id, draft.version);
+        const draft = historicalConsumers(app.consumption, app.memory, dir).propose(proposal);
+        const active = historicalConsumers(app.consumption, app.memory, dir).activate(draft.id, draft.version);
         await app.canvasMessage({
           page: "consumption",
           text: "查看当前访问情况",

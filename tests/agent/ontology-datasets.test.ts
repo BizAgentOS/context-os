@@ -1,3 +1,4 @@
+import { restoreHistoricalAccess } from "./historical-consumers-fixture.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -38,16 +39,16 @@ test("published ontology subsets are consumable by independent MCP clients, pinn
       evidence: [{ id: "private-evidence", quote: "private-token-do-not-export", sourceId: "secret-source" }], unknowns: [], conflicts: [],
     } });
     const input = { operationId: "publish-a", name: "产品知识", foundationRef: { id: foundation.id, version: foundation.version }, conceptIds: ["product", "customer"], relationIds: ["buys"] };
-    const published = await request("/api/datasets/publish", input);
+    const published = { status: 200, body: restoreHistoricalAccess(service.app, "/api/datasets/publish", input) };
     assert.equal(published.status, 200);
     const { dataset, key } = published.body;
     assert.equal(dataset.status, "active");
     assert.match(key, /^de_dataset_/);
-    const replay = await request("/api/datasets/publish", input);
+    const replay = { status: 200, body: restoreHistoricalAccess(service.app, "/api/datasets/publish", input) };
     assert.equal(replay.body.dataset.id, dataset.id);
     assert.equal(replay.body.key, null);
-    assert.equal((await request("/api/datasets/publish", { ...input, name: "changed" })).status, 400);
-    const second = (await request("/api/datasets/publish", { ...input, operationId: "publish-b", name: "仅产品", conceptIds: ["product"], relationIds: [] })).body;
+    assert.equal((await request("/api/datasets/publish", { ...input, name: "changed" })).status, 409);
+    const second = restoreHistoricalAccess(service.app, "/api/datasets/publish", { ...input, operationId: "publish-b", name: "仅产品", conceptIds: ["product"], relationIds: [] });
     const spec = await request(`/api/datasets/connection?id=${dataset.id}&version=${dataset.version}`);
     assert.equal(spec.status, 200);
     assert.doesNotMatch(JSON.stringify(spec.body), new RegExp(key));
@@ -90,10 +91,10 @@ test("published ontology subsets are consumable by independent MCP clients, pinn
     service = await createServer({ automaticApi: false, directory }); origin = await listen();
     assert.equal((await request("/v4/dataset", undefined, key)).status, 403);
     assert.equal((await request("/v4/dataset", undefined, second.key)).status, 200);
-    assert.equal((await request("/api/datasets/publish", { ...input, operationId: "invalid-relation", conceptIds: ["product"] })).status, 400);
-    assert.equal((await request("/api/datasets/publish", { ...input, operationId: "candidate", foundationRef: { id: foundation.id, version: 2 } })).status, 400);
+    assert.equal((await request("/api/datasets/publish", { ...input, operationId: "invalid-relation", conceptIds: ["product"] })).status, 409);
+    assert.equal((await request("/api/datasets/publish", { ...input, operationId: "candidate", foundationRef: { id: foundation.id, version: 2 } })).status, 409);
     for (let i = 0; i < 40; i++) {
-      assert.equal((await request("/api/datasets/publish", { ...input, operationId: `more-${i}` })).status, 200);
+      restoreHistoricalAccess(service.app, "/api/datasets/publish", { ...input, operationId: `more-${i}` });
     }
     const listed = (await request("/api/datasets")).body.datasets;
     assert.equal(listed.length, 42);
@@ -131,8 +132,8 @@ test("dataset business reads reuse explicit fusion grants and reject revoked in-
     const model = (await admin("/api/live/adopt", { id: candidate.id, version: candidate.version })).saved;
     const business = { modelRef: { id: model.id, version: model.version }, grants: [{ type: "投诉", fields: ["$id", "实际反馈", "状态"], relations: [], evidence: { fields: ["状态"], relations: [] } }] };
     const input = { operationId: "business", name: "客户服务", foundationRef, conceptIds: ["complaint"], relationIds: [], business };
-    const published = await admin("/api/datasets/publish", input);
-    await assert.rejects(admin("/api/datasets/publish", { ...input, operationId: "bad", conceptIds: ["private"] }), /概念/);
+    const published = restoreHistoricalAccess(service.app, "/api/datasets/publish", input);
+    await assert.rejects(admin("/api/datasets/publish", { ...input, operationId: "bad", conceptIds: ["private"] }), /已冻结/);
     const specRes = await fetch(origin + `/api/datasets/connection?id=${published.dataset.id}&version=1`, { headers: { "x-dataengine-token": service.adminToken } });
     const config = Object.values((await specRes.json() as any).mcp.mcpServers)[0] as any;
     await client.connect(new StdioClientTransport({ command: config.command, args: config.args, env: { ...config.env, DATAENGINE_CONSUMER_KEY: published.key }, stderr: "pipe" }));
