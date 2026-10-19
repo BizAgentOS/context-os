@@ -1,3 +1,5 @@
+import { projectLegacyModel, type LayeredModel } from "../semantic/model.ts";
+import { objectIdLimit } from "../semantic/values.ts";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { LiveMemory, SnapshotPins } from "./memory.ts";
@@ -17,7 +19,7 @@ export const correctionTarget = z
     modelId: name,
     modelVersion: version,
     type: name,
-    objectId: name,
+    objectId: z.string().trim().min(1).max(objectIdLimit),
     relation: name,
   })
   .strict();
@@ -25,7 +27,7 @@ const proposal = z
   .object({
     operationId: name,
     target: correctionTarget,
-    targetIds: z.array(name).max(20),
+    targetIds: z.array(z.string().trim().min(1).max(objectIdLimit)).max(20),
     reason: z.string().trim().min(1).max(2000),
     evidence: z.string().trim().min(1).max(4000),
   })
@@ -47,24 +49,45 @@ export const relationKey = (t: CorrectionTarget) => hash(t);
 export function activeCorrection(
   repo: Pick<MemoryStore, "listArtifacts">,
   target: CorrectionTarget,
+  relationId?: string,
+  historicalDefinition?: Data,
 ) {
-  return (
-    repo
-      .listArtifacts("relation_correction")
-      .find(
-        (a) =>
-          a.status === "adopted" && a.content.targetKey === relationKey(target),
-      ) ?? null
-  );
+  return repo.listArtifacts("relation_correction").find((record) => {
+    if (record.status !== "adopted") return false;
+    const saved = record.content.target as unknown as CorrectionTarget;
+    if (
+      saved.modelId !== target.modelId ||
+      saved.modelVersion !== target.modelVersion ||
+      saved.objectId !== target.objectId
+    ) return false;
+    const snapshot = record.content.snapshot as Data | undefined;
+    const definition = (record.content.modelDefinition ?? historicalDefinition) as Data | undefined;
+    const relations = definition?.layered
+      ? projectLegacyModel(definition.layered as unknown as LayeredModel, { allowTransforms: true }).relations
+      : definition?.relations as Data[] | undefined;
+    const original = relations?.find((relation) => relation.from === saved.type && relation.name === saved.relation);
+    const stableId = (snapshot?.relation as Data | undefined)?.relationId ?? original?.relationId;
+    // Once a stable ID exists, a reused/swapped display name cannot select it.
+    return stableId ? stableId === relationId : record.content.targetKey === relationKey(target);
+  }) ?? null;
 }
+
+function correctionModel(live: LiveMemory, target: CorrectionTarget, definitionOverride?: Data, fixedSemantic = false, pins?: SnapshotPins) {
+  const stored = live.assertModel(target.modelId, target.modelVersion, fixedSemantic, pins, definitionOverride);
+  const layered = (stored.content.layered ?? live.readLayered(target.modelId, target.modelVersion)) as unknown as LayeredModel;
+  return { ...stored, content: jsonData({ ...stored.content, ...projectLegacyModel(layered, { allowTransforms: true }), layered }) };
+}
+
 export async function captureRelation(
   live: LiveMemory,
   target: CorrectionTarget,
   targetIds: string[],
   assertActive: () => void,
-  reading?: { readMode: ReadMode; pins: SnapshotPins; fixedSemantic: boolean },
+  reading?: { readMode: ReadMode; pins: SnapshotPins; fixedSemantic: boolean; modelDefinition?: Data },
+  definitionOverride?: Data,
 ) {
-  const model = live.assertModel(target.modelId, target.modelVersion, reading?.fixedSemantic ?? false, reading?.pins);
+  const modelDefinition=definitionOverride??reading?.modelDefinition;
+  const model = correctionModel(live,target,modelDefinition,reading?.fixedSemantic??false,reading?.pins);
   if (model.status !== "adopted")
     throw new Error("局部纠正需要已采用的执行映射");
   const relation = (model.content.relations as Data[]).find(
@@ -84,7 +107,7 @@ export async function captureRelation(
       },
       assertActive,
       false,
-      undefined,
+      model.content,
       reading?.fixedSemantic ?? false,
       reading?.readMode === "release_pinned" ? reading.pins : undefined,
       reading,
@@ -122,7 +145,7 @@ export async function captureRelation(
       throw new Error("请使用目标对象的规范编号，禁止别名重复");
     targets.push(result);
   }
-  live.assertModel(target.modelId, target.modelVersion, reading?.fixedSemantic ?? false, reading?.pins);
+  live.assertModel(target.modelId, target.modelVersion, reading?.fixedSemantic ?? false, reading?.pins, modelDefinition);
   assertActive();
   const evidenceIdentity = (result: typeof origin) =>
     result.evidence
@@ -164,6 +187,7 @@ export async function captureRelation(
     origin,
     before,
     targets,
+    modelDefinition: model.content,
   };
   if (Buffer.byteLength(JSON.stringify(snapshot), "utf8") > 256 * 1024)
     throw new Error("纠正读取依据超过256KB，请先缩小映射字段或目标范围");
@@ -227,13 +251,17 @@ export class RelationCorrections {
     let record: Artifact | null = null,
       target: CorrectionTarget,
       ids: string[],
-      base: Data | null;
+      base: Data | null,
+      semanticRelationId: string | undefined;
     if ("target" in args) {
       if (new Set(args.targetIds).size !== args.targetIds.length)
         throw new Error("目标编号重复");
       target = args.target;
       ids = [...args.targetIds].sort();
-      const previous = activeCorrection(this.memory, target);
+      const current=correctionModel(this.live,target);
+      semanticRelationId=(current.content.relations as Data[]).find(relation=>relation.from===target.type&&relation.name===target.relation)?.relationId as string|undefined;
+      const historical=correctionModel(this.live,target,this.memory.getArtifact(target.modelId,target.modelVersion).content).content;
+      const previous = activeCorrection(this.memory, target,semanticRelationId,historical);
       base = previous ? { id: previous.id, version: previous.version } : null;
     } else {
       record = this.read(args.id);
@@ -246,19 +274,22 @@ export class RelationCorrections {
       target = record.content.target as unknown as CorrectionTarget;
       ids = record.content.targetIds as string[];
       base = record.content.base as Data | null;
+      semanticRelationId=((record.content.snapshot as Data|undefined)?.relation as Data|undefined)?.relationId as string|undefined;
     }
+    const historicalDefinition=method!=="cancel"?correctionModel(this.live,target,this.memory.getArtifact(target.modelId,target.modelVersion).content).content:undefined;
     if (method === "adopt" && record?.status !== "checked")
       throw new Error("请先检查候选，再确认该检查版本");
     const snapshot =
       method === "cancel"
         ? null
-        : await captureRelation(this.live, target, ids, valid);
+        : await captureRelation(this.live, target, ids, valid, undefined, record?(record.content.modelDefinition as Data|undefined)??historicalDefinition:undefined);
     if (
       record &&
       snapshot &&
       snapshot.fingerprint !== record.content.fingerprint
     )
       throw new Error("来源事实已变化，原候选不再适用，请保留记录并重新提议");
+    semanticRelationId ??= snapshot?.relation.relationId as string|undefined;
     valid();
     return this.memory.atomic(() => {
       valid();
@@ -266,7 +297,7 @@ export class RelationCorrections {
       if (replay) return replay;
       if (record && this.read(record.id).version !== record.version)
         throw new Error("候选版本冲突");
-      const prior = activeCorrection(this.memory, target);
+      const prior = activeCorrection(this.memory, target,semanticRelationId,historicalDefinition);
       if (
         method !== "cancel" &&
         canonical(prior ? { id: prior.id, version: prior.version } : null) !==
@@ -280,6 +311,7 @@ export class RelationCorrections {
         : jsonData({
             target,
             targetKey: relationKey(target),
+            modelDefinition: snapshot!.modelDefinition,
             targetIds: ids,
             base,
             reason: (args as z.infer<typeof proposal>).reason,

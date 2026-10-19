@@ -52,6 +52,25 @@ export class AutomaticApi {
       this.update(job, "queued", {error: null, rebindAttempt: null});
     }
   }
+  /** Stable semantic IDs decouple wording revisions from source bindings. Compare
+   * the complete foundation, including concepts which have no executable binding. */
+  private bindingsStillCurrent(model: Artifact, foundation: Artifact) {
+    if (!model.content.layered || !model.content.foundationRef || this.foundation.read().current?.status !== "adopted") return false;
+    const foundationRef = model.content.foundationRef as Data;
+    const topology = (artifact: Artifact) => ({
+      concepts: (artifact.content.concepts as Data[]).map(item => String(item.id)).sort(),
+      relations: (artifact.content.relations as Data[]).map(item => ({id: item.id, from: item.from, to: item.to}))
+        .sort((a,b) => String(a.id).localeCompare(String(b.id))),
+    });
+    try {
+      const previous = this.memory.getArtifact(String(foundationRef.id), Number(foundationRef.version));
+      if (!same(topology(previous), topology(foundation))) return false;
+      // This also checks all current source contracts; topology alone cannot
+      // excuse a disabled, replaced or otherwise invalid execution binding.
+      this.live.assertModel(model.id, model.version);
+      return true;
+    } catch { return false; }
+  }
   pending() {
     for (const job of this.jobs()) {
       const source = this.memory.getArtifact(String(job.content.sourceId));
@@ -61,9 +80,11 @@ export class AutomaticApi {
     if (pending) return pending;
     // A document/Agent may have changed definitions. Rebind one full preserved
     // execution model, not every source in turn (which would create a loop).
-    const foundationRef = ref(this.foundation.read().adopted);
-    const model = this.live.overview().models.find(item => item.status === "adopted");
+    const adoptedFoundation = this.foundation.read().adopted;
+    const foundationRef = ref(adoptedFoundation);
+    const model = this.memory.listArtifacts("live_ontology").find(item => item.status === "adopted");
     if (foundationRef && model && !same(model.content.foundationRef, foundationRef)) {
+      if (adoptedFoundation && this.bindingsStillCurrent(model, adoptedFoundation)) return undefined;
       const baseline = { foundationRef, modelRef: ref(model) };
       if (this.jobs().some(job => job.status === "failed" && job.content.rebindOnly && same(job.content.rebindAttempt, baseline))) return undefined;
       const completed = this.jobs().find(job => job.status === "completed" && this.covers(model, this.memory.getArtifact(String(job.content.sourceId))));
@@ -75,7 +96,7 @@ export class AutomaticApi {
   /** Follow an already adopted semantic revision without discovering or changing data structure. */
   private async rebind(context: WriteContext, operationId: string, assertCurrent: () => void) {
     const foundation = this.foundation.read().adopted;
-    const model = this.live.overview().models.find(item => item.status === "adopted");
+    const model = this.memory.listArtifacts("live_ontology").find(item => item.status === "adopted");
     if (!foundation || !model || !model.content.foundationRef) throw new Error("没有可重新绑定的已采用本体与执行映射");
     const priorRef = model.content.foundationRef as Data;
     const prior = this.memory.getArtifact(String(priorRef.id), Number(priorRef.version));

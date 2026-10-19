@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { createServer } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import { AgentApplication } from "../../src/agent/app.ts";
 import type { AgentDriver } from "../../src/agent/runtime.ts";
@@ -141,7 +142,7 @@ test("source queue reports pending foundation review without automatically adopt
   } finally {await f.close();}
 });
 
-test("an adopted semantic revision rebinds the existing execution model while preserving unresolved business conflicts", async () => {
+test("an adopted wording revision preserves layered bindings while showing current meaning and unresolved business conflicts", async () => {
   const f = await fixture();
   try {
     await f.app.live.sources.connect(f.config); await f.app.idle();
@@ -163,16 +164,85 @@ test("an adopted semantic revision rebinds the existing execution model while pr
     assert.deepEqual(f.app.foundation.read().adopted, revised, "rebinding must not revise or resolve the adopted foundation");
     assert.equal(f.app.programBuilds.overview().jobs.length, builds, "rebinding must not run structural discovery again");
     const model = f.app.live.overview().models.find(item => item.status === "adopted")!;
-    assert.deepEqual(model.content.foundationRef, { id: revised.id, version: revised.version });
-    assert.deepEqual((model.content.types as any[])[0].fields, (oldModel.content.types as any[])[0].fields);
-    assert.equal((model.content.types as any[])[0].name, "门店");
+    assert.equal(model.id, oldModel.id);
+    assert.equal(model.version, oldModel.version, "wording changes must not create an execution model revision");
+    const layered = f.app.live.readLayered(model.id);
+    assert.equal(layered.semantic.entityTypes[0].name, "门店");
+    assert.equal(layered.semantic.entityTypes[0].description, "销售服务网点。");
+    assert.deepEqual(layered.bindings, f.app.live.readLayered(oldModel.id, oldModel.version).bindings);
     assert.equal((f.app.foundation.view().adopted!.content.concepts as any[])[0].mappingStatus, "bound");
     assert.equal((await f.app.live.query({ modelId: model.id, conceptId: concept.id })).items[0].name, "东城店");
     assert.equal(f.calls(), 0);
   } finally { await f.close(); }
 });
 
-function adoptBusinessConflict(app: AgentApplication) {
+test("a description-only foundation adoption creates no background rebind run", async () => {
+  const f = await fixture();
+  try {
+    await f.app.live.sources.connect(f.config); await f.app.idle();
+    const before=f.app.foundation.read().adopted!, concept=(before.content.concepts as any[])[0];
+    const model=f.app.live.overview().models.find(item=>item.status==="adopted")!;
+    const bindings=f.app.live.readLayered(model.id).bindings;
+    const jobs=f.app.memory.listArtifacts("api_build"), tasks=f.app.memory.listTasks().map(task=>task.id);
+    const task=f.app.memory.createTask("仅补充门店说明"), message=f.app.memory.addMessage(task.id,"user","门店表示实际提供销售服务的网点。");
+    const context=f.app.memory.beginExecution(task.id);
+    try {
+      const candidate=f.app.foundation.propose({baseVersion:before.version,enterprise:before.content.enterprise,
+        concepts:[{id:concept.id,name:concept.name,description:"实际提供销售服务的网点。",evidenceRefs:["description"]}],relations:[],
+        evidence:[{id:"description",messageId:message.id,quote:message.content}],unknowns:[],conflicts:[]},context,"description","test-method",undefined,{lockStructure:true});
+      f.app.foundation.adopt(candidate.id,candidate.version,{automatic:true});
+    } finally {f.app.memory.endExecution(context);}
+    f.app.startAutomaticBuild();await f.app.idle();
+    assert.deepEqual(f.app.memory.listArtifacts("api_build"),jobs,"no queued, running or completed job revision was created");
+    assert.deepEqual(f.app.memory.listTasks().map(item=>item.id),[task.id,...tasks],"no background task was created");
+    assert.equal(f.app.memory.getArtifact(model.id).version,model.version);
+    assert.deepEqual(f.app.live.readLayered(model.id).bindings,bindings);
+    assert.equal(f.app.live.readLayered(model.id).semantic.entityTypes[0].description,"实际提供销售服务的网点。");
+    assert.equal((await f.app.live.query({modelId:model.id,conceptId:concept.id})).items[0].name,"东城店");
+    assert.equal(f.calls(),0);
+  } finally {await f.close();}
+});
+
+test("a pending foundation candidate still blocks automatic rebinding after a layered wording adoption", async () => {
+  const f=await fixture();
+  try {
+    await f.app.live.sources.connect(f.config);await f.app.idle();
+    const before=f.app.foundation.read().adopted!,concept=(before.content.concepts as any[])[0];
+    const model=f.app.live.overview().models.find(item=>item.status==="adopted")!;
+    const task=f.app.memory.createTask("先采用说明，再保留待审补充"),message=f.app.memory.addMessage(task.id,"user","门店为销售网点，联系人范围尚待核对。");
+    const context=f.app.memory.beginExecution(task.id);
+    let candidate;
+    try {
+      const wording=f.app.foundation.propose({baseVersion:before.version,enterprise:before.content.enterprise,
+        concepts:[{id:concept.id,name:concept.name,description:"销售网点。",evidenceRefs:["wording"]}],relations:[],
+        evidence:[{id:"wording",messageId:message.id,quote:message.content}],unknowns:[],conflicts:[]},context,"wording","test-method",undefined,{lockStructure:true});
+      const adopted=f.app.foundation.adopt(wording.id,wording.version,{automatic:true});
+      candidate=f.app.foundation.propose({baseVersion:adopted.version,enterprise:adopted.content.enterprise,concepts:[],relations:[],
+        evidence:[{id:"pending",messageId:message.id,quote:message.content}],unknowns:[{id:"contacts",description:"联系人范围尚待核对。",evidenceRefs:["pending"]}],conflicts:[]},context,"pending","test-method",undefined,{lockStructure:true});
+    } finally {f.app.memory.endExecution(context);}
+    f.app.startAutomaticBuild();await f.app.idle();
+    assert.deepEqual(f.app.foundation.read().current,candidate);
+    assert.equal(f.app.live.overview().models.find(item=>item.status==="adopted")!.id,model.id);
+    assert.equal(f.app.memory.getArtifact(model.id).version,model.version);
+    assert.equal(f.app.canvasState().automaticApiBuild.status,"failed");
+    assert.match(f.app.canvasState().automaticApiBuild.errors[0].message,/本体或执行映射已变化/);
+  } finally {await f.close();}
+});
+
+/** These regressions exercise pre-040 artifacts. Restore their historical
+ * representation directly in the fixture, preserving the exact model ID and
+ * version; product writes never remove layered data or rewrite history. */
+function restoreLegacyModelFixture(app: AgentApplication, directory: string) {
+  const active = app.live.overview().models.find(item => item.status === "adopted")!;
+  const historical = app.memory.getArtifact(active.id, active.version);
+  delete historical.content.layered;
+  const database = new DatabaseSync(join(directory, "memory.sqlite"));
+  try { database.prepare("UPDATE artifacts SET body=? WHERE id=? AND version=?").run(JSON.stringify(historical), historical.id, historical.version); }
+  finally { database.close(); }
+}
+
+function adoptBusinessConflict(app: AgentApplication, directory: string) {
+  restoreLegacyModelFixture(app, directory);
   const before = app.foundation.read().adopted!;
   const task = app.memory.createTask("记录业务口径差异"), message = app.memory.addMessage(task.id, "user", "系统中的营业状态和资料描述不一致，保留双方依据待核对。");
   const context = app.memory.beginExecution(task.id);
@@ -190,7 +260,7 @@ test("a failed rebind runs once per baseline, preserves other completed sources,
   try {
     await f.app.live.sources.connect(f.config); await f.app.idle();
     await f.app.live.sources.connect({ ...f.config, name: "另一业务来源" }); await f.app.idle();
-    const revised = adoptBusinessConflict(f.app);
+    const revised = adoptBusinessConflict(f.app, f.directory);
     const builds = f.app.programBuilds.overview().jobs.length;
     f.breakSource(); f.app.startAutomaticBuild(); await f.app.idle();
     const failed = f.app.canvasState().automaticApiBuild;
@@ -213,7 +283,7 @@ test("retry recovers persisted rebind-only failures for all still-mapped sources
   try {
     await f.app.live.sources.connect(f.config); await f.app.idle();
     await f.app.live.sources.connect({ ...f.config, name: "另一业务来源" }); await f.app.idle();
-    const revised = adoptBusinessConflict(f.app), builds = f.app.programBuilds.overview().jobs.length;
+    const revised = adoptBusinessConflict(f.app, f.directory), builds = f.app.programBuilds.overview().jobs.length;
     // The pre-fix queue persisted this state after trying each completed source in turn.
     for (const job of f.app.memory.listArtifacts("api_build")) f.app.memory.putArtifact({ ...job, expectedVersion: job.version, status: "failed",
       content: { ...job.content, rebindOnly: true, error: "现有工作版本存在未解决冲突，请通过助手修复后再采用" } });
@@ -230,7 +300,7 @@ test("rebind preserves a usable pending mapping and full structural rebuilds sti
   const f = await fixture();
   try {
     await f.app.live.sources.connect(f.config); await f.app.idle();
-    const revised = adoptBusinessConflict(f.app);
+    const revised = adoptBusinessConflict(f.app, f.directory);
     const model = f.app.live.overview().models.find(item => item.status === "adopted")!;
     const pending = await f.app.live.propose({ foundationRef: { id: revised.id, version: revised.version }, baseModelRef: { id: model.id, version: model.version },
       purpose: "人工待审映射", rationale: "采用前保留原映射", types: model.content.types, relations: model.content.relations });
@@ -249,7 +319,7 @@ test("a rebind whose final source read fails discards only its own candidate and
   const f = await fixture();
   try {
     await f.app.live.sources.connect(f.config); await f.app.idle();
-    const revised = adoptBusinessConflict(f.app);
+    const revised = adoptBusinessConflict(f.app, f.directory);
     f.failAfterReads(2); // Preparing the mapping succeeds; the adoption reread fails.
     f.app.startAutomaticBuild(); await f.app.idle();
     assert.equal(f.app.canvasState().automaticApiBuild.status, "failed");
@@ -292,7 +362,7 @@ test("rebind coordination follows a narrowed adopted model and never completes a
     const smaller = await f.app.live.propose({ foundationRef: model.content.foundationRef, baseModelRef: { id: model.id, version: model.version },
       purpose: "仅保留门店", rationale: "缩小执行范围", types: (model.content.types as any[]).filter(type => type.sourceId === retainedSource.id), relations: [] });
     await f.app.live.adopt(smaller.id, smaller.version);
-    const revised = adoptBusinessConflict(f.app);
+    const revised = adoptBusinessConflict(f.app, f.directory);
     f.app.startAutomaticBuild(); await f.app.idle();
     const rebound = f.app.live.overview().models.find(item => item.status === "adopted")!;
     assert.deepEqual(rebound.content.foundationRef, { id: revised.id, version: revised.version });

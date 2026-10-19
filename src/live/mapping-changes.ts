@@ -189,6 +189,8 @@ export class MappingChanges {
         ),
       ),
     );
+    // This legacy editor mutates its projection; rebuild the canonical layer once after the patch.
+    delete d.layered;
     d.baseModelRef = { id: base.id, version: base.version };
     const type = d.types.find((t) => t.name === patch.type);
     if (!type) throw new Error("修订类型不存在");
@@ -201,22 +203,42 @@ export class MappingChanges {
         throw new Error("属性绑定不存在；本票只修订已有绑定");
       before = binding.fields[patch.property];
       after = patch.sourceField;
+      const sharedSourceColumn = Object.values(binding.fields).filter(column => column === before).length > 1;
       Object.defineProperty(binding.fields, patch.property, {
         value: patch.sourceField,
         enumerable: true,
         writable: true,
         configurable: true,
       });
+      if (!patch.supplement) for (const relation of d.relations) if (!relation.linkTable) {
+        const revise = (columns: string[], field: string) => {
+          if (!columns.includes(String(before))) return columns;
+          if (sharedSourceColumn) throw new Error("多个业务属性共享关联源列，此编辑入口无法确定关联归属，请使用分层绑定修订");
+          if (columns.length === 1 && field !== patch.property) return columns;
+          return columns.map(column => column === before ? patch.sourceField : column);
+        };
+        if (relation.from === type.name && relation.fromColumns) relation.fromColumns = revise(relation.fromColumns, relation.fromField);
+        if (relation.to === type.name && relation.toColumns) relation.toColumns = revise(relation.toColumns, relation.toField);
+      }
       path = [patch.type, patch.supplement || "primary", patch.property];
     } else {
       const r = d.relations.find(
         (r) => r.from === patch.type && r.name === patch.relation,
       );
       if (!r) throw new Error("关系规则不存在");
+      if (r.linkTable || (r.fromColumns?.length ?? 1) > 1 || (r.toColumns?.length ?? 1) > 1) throw new Error("此单列编辑入口不能修订中间表或复合关系，请使用分层关系绑定");
       before = { fromField: r.fromField, toField: r.toField };
       after = { fromField: patch.fromField, toField: patch.toField };
       r.fromField = patch.fromField;
       r.toField = patch.toField;
+      const fromType = d.types.find(type => type.name === r.from)!, toType = d.types.find(type => type.name === r.to)!;
+      const sourceColumn = (type: typeof fromType, field: string) => {
+        if (field !== "$id") return type.fields[field];
+        if ((type.identityFields?.length ?? 1) > 1) throw new Error("此单列编辑入口不能修订复合身份关系");
+        return type.identityFields?.[0] ?? this.live.sources.capability(type.sourceId, type.capability).cap.idField;
+      };
+      r.fromColumns = [sourceColumn(fromType, patch.fromField)];
+      r.toColumns = [sourceColumn(toType, patch.toField)];
       path = [patch.type, patch.relation];
     }
     if (canonical(before) === canonical(after)) throw new Error("规则没有变化");

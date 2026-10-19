@@ -11,6 +11,7 @@ import { entityColumns, ontologyBundle, type Bundle, type Resource, type Suggest
 import { discoverFromSnapshots } from "./snapshot-discovery.ts";
 import { describeReport, validateDefinition } from "./validation.ts";
 import { confirmedEnterpriseEvidence, isUnknownEnterprise } from "../agent/foundation-evidence.ts";
+import { migrateLegacyModel, reconcileLayeredModel, type LayeredModel, type LegacyModel } from "../semantic/model.ts";
 
 const identifier = z.string().trim().min(1).max(200);
 const buildInput = z.object({ operationId: identifier, sourceIds: z.array(identifier).max(100).optional(), expectedFoundationVersion: z.number().int().nonnegative().optional(), autoAdopt: z.boolean().default(false) }).strict();
@@ -146,6 +147,16 @@ export class ProgramBuilds {
   }
 
   private activeModel() { return this.memory.listArtifacts("live_ontology").find(model => model.status === "adopted") ?? null; }
+  private layers(types: Data[], relations: Data[]) {
+    const migrated = migrateLegacyModel({ types, relations } as unknown as LegacyModel, { capability: (sourceId, capability) => {
+      const connection = this.memory.getArtifact(sourceId);
+      const cap = (connection.content.capabilities as unknown as Capability[]).find(c => c.name === capability);
+      if (!cap) throw new Error("已保存来源能力不存在");
+      return cap;
+    } });
+    const previous = this.activeModel()?.content.layered;
+    return previous ? reconcileLayeredModel(previous as unknown as LayeredModel, migrated) : migrated;
+  }
   private assertInputs(content: Pick<BuildContent, "sourceVersions" | "baseFoundationRef" | "baseModelRef">) {
     if (!equal(ref(this.foundation.read().current), content.baseFoundationRef)) throw new Error("本体工作版本已变化，请重新构建");
     if (!equal(ref(this.activeModel()), content.baseModelRef)) throw new Error("映射版本已变化，请重新构建");
@@ -347,7 +358,7 @@ export class ProgramBuilds {
         this.memory.putArtifact({ ...previous, expectedVersion: previous.version, status: "superseded" });
       }
       return this.memory.putArtifact({ kind: "engine_candidate", title: "程序构建候选", status: "candidate", content: jsonData({
-      jobId, baseFoundationRef: job.content.baseFoundationRef, baseModelRef: job.content.baseModelRef, sourceVersions, foundation, concepts, relations, types, modelRelations, issues,
+      jobId, baseFoundationRef: job.content.baseFoundationRef, baseModelRef: job.content.baseModelRef, sourceVersions, foundation, concepts, relations, types, modelRelations, layered: this.layers(types, modelRelations), issues,
       coverage: profiles.map(dataset => ({ sourceId: dataset.originSourceId ?? dataset.sourceId, capability: dataset.capability, sampledRows: dataset.rows.length, totalRows: dataset.rowCount, complete: dataset.complete, readAt: dataset.readAt })),
       diff: { addedConcepts, preservedConcepts, addedMappings, preservedMappings }, checks: { valid: false, description: "候选已生成，采用前需重新检查来源与执行映射。" },
       }) });
@@ -545,7 +556,7 @@ export class ProgramBuilds {
       for (const prior of this.memory.listArtifacts("engine_candidate").filter(item => ["candidate", "checked"].includes(item.status)))
         this.memory.putArtifact({ ...prior, expectedVersion: prior.version, status: "superseded" });
       return this.memory.putArtifact({ kind: "engine_candidate", title: "程序构建候选", status: "candidate", content: jsonData({
-        jobId, baseFoundationRef: job.content.baseFoundationRef, baseModelRef: job.content.baseModelRef, sourceVersions, foundation, concepts, relations, types, modelRelations, issues,
+        jobId, baseFoundationRef: job.content.baseFoundationRef, baseModelRef: job.content.baseModelRef, sourceVersions, foundation, concepts, relations, types, modelRelations, layered: this.layers(types, modelRelations), issues,
         coverage: datasets.map(d => { const c = d.content as unknown as DatasetContent; return { sourceId: c.sourceId, capability: c.capability, datasetId: d.id, snapshotId: c.activeVersion,
           sampledRows: c.coverage?.rows ?? c.profile?.rows ?? 0, totalRows: c.coverage?.total ?? null, complete: c.coverage?.complete ?? true, readAt: c.lastSync }; }),
         diff: { addedConcepts, preservedConcepts, addedMappings, preservedMappings, addedSupplements, addedRelations,

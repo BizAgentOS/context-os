@@ -2,7 +2,8 @@ import { z } from "zod";
 import type { Artifact, Data } from "../agent/contracts.ts";
 import type { MemoryStore } from "../agent/memory.ts";
 import { FoundationService } from "../agent/foundation.ts";
-import { pinKey, type LiveMemory, type SnapshotPins } from "../live/memory.ts";
+import type { LiveMemory } from "../live/memory.ts";
+import { snapshotPinsForRelease } from "../live/release-pins.ts";
 import type { DatasetContent, Snapshots } from "../data/snapshots.ts";
 import { OntologyDatasets } from "../live/ontology-datasets.ts";
 import { consumerGrant } from "../live/consumer-views.ts";
@@ -21,8 +22,7 @@ const revokeSchema = z.object({ operationId: name, connectionRef: ref }).strict(
 interface Issue { code: string; severity: "error" | "warning"; message: string }
 export interface ReleaseSnapshot { sourceId: string; capability: string; datasetId: string; snapshotId: string; fingerprint: string; rows: number; syncedAt: string; coverage?: DatasetContent["coverage"] }
 /** The pins a release's consumers read through. */
-export const releasePins = (definition: Data | undefined): SnapshotPins =>
-  Object.fromEntries((((definition?.snapshots ?? []) as unknown) as ReleaseSnapshot[]).map(s => [pinKey(s.sourceId, s.capability), s.snapshotId]));
+export const releasePins = snapshotPinsForRelease;
 
 /** Publication owns version/connection lifecycle; existing v4 services own all external reads. */
 export class Releases {
@@ -36,12 +36,13 @@ export class Releases {
   private working() {
     const { current, adopted } = new FoundationService(this.memory).read();
     const models = this.memory.listArtifacts("live_ontology");
-    const model = models.find(a => a.status === "adopted") ?? null;
+    const storedModel = models.find(a => a.status === "adopted") ?? null;
+    const model = storedModel ? this.live.projectModel(storedModel) : null;
     const issues: Issue[] = [];
     const pending: Artifact[] = [];
     if (current && current.status !== "adopted") pending.push(current);
     const latestCandidate = models.find(a => a.status === "candidate");
-    if (latestCandidate && (!model || models.indexOf(latestCandidate) < models.indexOf(model))) pending.push(latestCandidate);
+    if (latestCandidate && (!model || models.indexOf(latestCandidate) < models.indexOf(storedModel!))) pending.push(latestCandidate);
     pending.push(...this.memory.listArtifacts("mapping_change").filter(a => ["candidate", "checked"].includes(a.status)));
     pending.push(...this.memory.listArtifacts("engine_build").filter(a => ["queued", "running"].includes(a.status)));
     const engineCandidate = this.memory.listArtifacts("engine_candidate").find(a => ["candidate", "checked"].includes(a.status)
@@ -54,7 +55,7 @@ export class Releases {
       try { this.live.assertModel(model.id, model.version); }
       catch (error) { issues.push({ code: "mapping_unavailable", severity: "error", message: error instanceof Error ? error.message : "已采用映射不可用" }); }
       const f = model.content.foundationRef as Data | undefined;
-      if (!adopted || f?.id !== adopted.id || f.version !== adopted.version) issues.push({ code: "mapping_foundation_mismatch", severity: "error", message: "当前映射尚未绑定当前已采用本体，请先更新映射。" });
+      if (!adopted || f?.id !== adopted.id || (!model.content.layered && f.version !== adopted.version)) issues.push({ code: "mapping_foundation_mismatch", severity: "error", message: "当前映射尚未绑定当前已采用本体，请先更新映射。" });
     }
     const sourceIds = Object.keys((model?.content.connections ?? {}) as Data).sort();
     const sourceState = sourceIds.map(id => {
@@ -76,6 +77,7 @@ export class Releases {
     // Bindings with an active snapshot are pinned to it; others stay on demand and are labelled so.
     const store = this.live.snapshots as Snapshots | undefined, snapshots: ReleaseSnapshot[] = [];
     const bindings = ((model?.content.types ?? []) as Data[]).flatMap(t => [t, ...((t.supplements ?? []) as Data[])]);
+    for (const relation of (model?.content.relations ?? []) as Data[]) if (relation.linkTable) bindings.push(relation.linkTable as Data);
     for (const b of bindings) {
       const sourceId = String(b.sourceId), capability = String(b.capability);
       if (snapshots.some(s => s.sourceId === sourceId && s.capability === capability)) continue;
@@ -98,7 +100,7 @@ export class Releases {
     const definition = jsonData({
       enterprise: adopted?.content.enterprise ?? null,
       concepts, relations,
-      model: model ? { purpose: model.content.purpose, types: model.content.types, relations: model.content.relations, connections: model.content.connections } : null,
+      model: model ? { foundationRef: adopted ? reference(adopted) : model.content.foundationRef, purpose: model.content.purpose, types: model.content.types, relations: model.content.relations, ...(model.content.layered ? { layered: model.content.layered } : {}), connections: model.content.connections } : null,
       sourcePolicies: policies.sort((a, b) => String(a.content.sourceId).localeCompare(String(b.content.sourceId))).map(a => ({ ...a.content, policyRef: reference(a) })),
       sourceAccess,
       snapshots,
@@ -185,7 +187,7 @@ export class Releases {
           const fields = [...new Set(["$id", ...Object.keys(t.fields as Data), ...((t.supplements ?? []) as Data[]).flatMap(s => Object.keys(s.fields as Data))])];
           const sample = await this.live.query({ modelId: working.modelRef.id, modelVersion: working.modelRef.version, type: t.name, fields, limit: 1 }, () => {
             if (this.working().inputHash !== working.inputHash) throw new Error("检查过程中工作版本已变化");
-          }, false, undefined, false, releasePins(working.definition));
+          }, false, working.definition.model as Data, false, releasePins(working.definition));
           if (sample.evidence?.some(o => o.matches.some(m => m.status === "unavailable"))) throw new Error("附来源读取失败，请恢复连接后重新检查");
           samples.push(jsonData({ type: t.name, coverage: sample.coverage, reads: sample.reads }));
         } catch (error) { issues.push({ code: "source_check_failed", severity: "error", message: `${String(t.name)}：${error instanceof Error ? error.message : "来源读取失败"}` }); }

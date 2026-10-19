@@ -279,6 +279,9 @@ export async function createServer(
           );
       }
       if (request.method === "GET") {
+        if (url.pathname === "/api/ontology/model") {
+          send(200, app.live.readLayered(url.searchParams.get("id") ?? "", url.searchParams.has("version") ? Number(url.searchParams.get("version")) : undefined)); return;
+        }
         if (url.pathname === "/api/sources/summary") { send(200, sourceSummary(app.memory)); return; }
         if (url.pathname === "/api/engine") { send(200, app.programBuilds.overview()); return; }
         if (url.pathname === "/api/data") { send(200, app.snapshots.overview()); return; }

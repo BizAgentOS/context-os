@@ -450,13 +450,13 @@ test("adopted foundation concepts bind a checked execution subset, retain unboun
       api("/api/live/adopt", { id: pending.id, version: pending.version }),
       /基础|版本/,
     );
-    await assert.rejects(api("/api/live/query", query), /基础|版本/);
+    assert.equal((await api("/api/live/query", query)).items[0].$id, "TS002", "wording changes do not invalidate stable bindings");
     await service.close();
     service = await createServer({ directory, driver, automaticApi: false });
     api = await start();
     const reopened = await api();
     assert.equal(reopened.foundation.current.content.concepts.length, 3);
-    await assert.rejects(api("/api/live/query", query), /基础|版本/);
+    assert.equal((await api("/api/live/query", query)).items[0].$id, "TS002");
   } finally {
     await service.close();
     await upstream.close();

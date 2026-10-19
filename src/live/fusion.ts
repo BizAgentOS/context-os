@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { SourceConnections } from "./sources.ts";
 import type { Json } from "../agent/contracts.ts";
+import { identityValue, scopedFilter, transformValue, type ValueTransform } from "../semantic/values.ts";
 
 const name = z.string().trim().min(1).max(200);
 export const supplementSchema = z
@@ -35,6 +36,7 @@ export const supplementSchema = z
       ),
     ),
     rationale: z.string().trim().min(1).max(2000),
+    rowFilter: z.record(name, z.union([z.string(), z.number(), z.boolean()])).optional(),
   })
   .strict();
 export type Supplement = z.infer<typeof supplementSchema>;
@@ -42,7 +44,9 @@ export interface FusionType {
   sourceId: string;
   capability: string;
   fields: Record<string, string>;
-  supplements?: Supplement[];
+  identityFields?: string[];
+  propertyTransforms?: Record<string, ValueTransform>;
+  supplements?: (Supplement & { propertyTransforms?: Record<string, ValueTransform> })[];
 }
 type Page = Awaited<ReturnType<SourceConnections["readRecords"]>>;
 type Receipt = Page["provenance"];
@@ -51,6 +55,7 @@ export interface ValueEvidence extends Receipt {
   recordId: string | number;
   field: string;
   value: Json;
+  transformedValue?: Json;
   eligible: boolean;
 }
 export interface Match {
@@ -120,6 +125,7 @@ export function validateSupplements(
       !Object.hasOwn(cap.filters, s.match.sourceField)
     )
       throw new Error("附来源匹配键必须支持获准精确过滤");
+    if (Object.keys(s.rowFilter ?? {}).some(column => !cap.fields.includes(column) || !Object.hasOwn(cap.filters, column))) throw new Error("附来源行过滤列需要有效字段与获准精确过滤");
     connections[s.sourceId] = artifact.version;
   }
 }
@@ -144,7 +150,7 @@ export async function fuseRows(
     Object.keys(s.fields).some((f) => requested.has(f)),
   );
   const objects: ObjectEvidence[] = primary.items.map((row) => ({
-    objectId: row[primaryCap.idField] as string | number,
+    objectId: identityValue(row, type.identityFields?.length ? type.identityFields : [primaryCap.idField], primaryCap.idField),
     properties: Object.create(null),
     matches: [],
   }));
@@ -169,6 +175,7 @@ export async function fuseRows(
                 recordId: objects[i].objectId,
                 field: sourceField,
                 value: row[sourceField],
+                ...(field === "$id" ? { transformedValue: objects[i].objectId } : type.propertyTransforms?.[field] ? { transformedValue: transformValue(row[sourceField], type.propertyTransforms[field]) } : {}),
                 eligible: true,
               },
             ]
@@ -217,12 +224,15 @@ export async function fuseRows(
         !["string", "number", "boolean"].includes(typeof key)
       ) {
         match.reason = "匹配键类型不一致；未做字符串/数字转换";
+      } else if (Object.hasOwn(s.rowFilter ?? {}, s.match.sourceField) && s.rowFilter![s.match.sourceField] !== key) {
+        match.status = "missing";
+        match.reason = "此对象不在补充绑定的行过滤范围内";
       } else {
         try {
           page = await sources.readRecords(
             s.sourceId,
             s.capability,
-            { [s.match.sourceField]: key },
+            scopedFilter(s.rowFilter, { [s.match.sourceField]: key }),
             0,
             2,
             connections[s.sourceId],
@@ -266,6 +276,7 @@ export async function fuseRows(
             recordId: row[cap.idField] as string | number,
             field: sourceField,
             value: row[sourceField],
+            ...(s.propertyTransforms?.[property] ? { transformedValue: transformValue(row[sourceField], s.propertyTransforms[property]) } : {}),
             eligible: match.status === "unique",
           });
         if (!["unique", "missing"].includes(match.status))
@@ -294,7 +305,7 @@ export async function fuseRows(
       );
       const values = cell.evidence
         .filter((e) => e.eligible && e.value !== null)
-        .map((e) => e.value);
+        .map((e) => Object.hasOwn(e, "transformedValue") ? e.transformedValue! : e.value);
       const distinct = [
         ...new Map(values.map((v) => [JSON.stringify(v), v])).values(),
       ];

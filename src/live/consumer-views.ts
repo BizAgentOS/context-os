@@ -1,4 +1,6 @@
+import { objectIdLimit } from "../semantic/values.ts";
 import { freezeLegacyConsumption } from "./legacy-consumption.ts";
+import { snapshotPinsForRelease } from "./release-pins.ts";
 import type { SnapshotPins } from "./memory.ts";
 import type { ReadingReceipt } from "./reading-contract.ts";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -50,7 +52,7 @@ const proposal = z
 const query = z
   .object({
     type: name,
-    id: name.optional(),
+    id: z.string().trim().min(1).max(objectIdLimit).optional(),
     relation: name.optional(),
     fields: z.array(name).min(1).max(100).optional(),
     offset: z.number().int().min(0).default(0),
@@ -89,21 +91,24 @@ export class ConsumerViews {
   propose(_input: unknown, _context?: WriteContext, _options: { fixedSemantic?: boolean; snapshotPins?: SnapshotPins; releaseRef?: { id: string; version: number } } = {}): Artifact {
     return freezeLegacyConsumption();
   }
-  /** Only published v4 composition may create an internal business view; its credential is never exposed. */
-  createForRelease(input: unknown, releaseRef: { id: string; version: number }, options: { fixedSemantic?: boolean; snapshotPins?: SnapshotPins } = {}) {
+  /** Published v4 composition owns semantics and pins; compatibility options cannot override either. */
+  createForRelease(input: unknown, releaseRef: { id: string; version: number }, _options: { fixedSemantic?: boolean; snapshotPins?: SnapshotPins } = {}) {
     const release = this.memory.getArtifact(releaseRef.id, releaseRef.version);
     if (release.kind !== "data_release" || release.status !== "published") throw new Error("需要已发布版本");
     const args = proposal.parse(input);
     const modelRef = release.content.modelRef as { id: string; version: number } | null;
     if (!modelRef || modelRef.id !== args.modelRef.id || modelRef.version !== args.modelRef.version) throw new Error("业务映射必须属于指定发布版本");
-    const draft = this.proposeInternal(input, undefined, { ...options, releaseRef });
+    const definition = (release.content.definition as Data | undefined)?.model;
+    if (!definition || typeof definition !== "object" || Array.isArray(definition)) throw new Error("发布版本缺少固定业务映射");
+    const modelDefinition = jsonData({ ...definition, foundationRef: release.content.foundationRef });
+    const draft = this.proposeInternal(input, undefined, { fixedSemantic: true, snapshotPins: snapshotPinsForRelease(release.content.definition as Data), releaseRef, modelDefinition });
     return this.activateInternal({ id: draft.id, version: draft.version }).view;
   }
-  private proposeInternal(input: unknown, context?: WriteContext, options: { fixedSemantic?: boolean; snapshotPins?: SnapshotPins; releaseRef?: { id: string; version: number } } = {}) {
+  private proposeInternal(input: unknown, context?: WriteContext, options: { fixedSemantic?: boolean; snapshotPins?: SnapshotPins; releaseRef?: { id: string; version: number }; modelDefinition?: Data } = {}) {
     const a = proposal.parse(input),
       actor = context ? `agent:${context.taskId}` : "local-admin";
     if (context) this.memory.assertWritable(context);
-    const signature = digest(canonical(a));
+    const signature = digest(canonical({ ...a, ...(options.releaseRef ? { releaseRef: options.releaseRef } : {}) }));
     return this.memory.atomic(() => {
       const prior = this.memory
         .listArtifacts("view_receipt")
@@ -122,13 +127,13 @@ export class ConsumerViews {
           ),
         );
       }
-      this.live.assertModel(a.modelRef.id, a.modelRef.version, options.fixedSemantic, options.snapshotPins);
+      this.live.assertModel(a.modelRef.id, a.modelRef.version, options.fixedSemantic, options.snapshotPins, options.modelDefinition);
       const { model } = this.live.validateConsumerScope({
         name: a.name,
         purpose: a.purpose,
         modelId: a.modelRef.id,
         grants: a.grants.map(({ evidence, ...g }) => g),
-      }, options.fixedSemantic, options.snapshotPins);
+      }, options.fixedSemantic, options.snapshotPins, options.modelDefinition);
       if (
         a.grants.some(
           (g) =>
@@ -191,6 +196,7 @@ export class ConsumerViews {
             ...(options.fixedSemantic ? { fixedSemantic: true } : {}),
             ...(options.snapshotPins !== undefined ? { snapshotPins: options.snapshotPins } : {}),
             ...(options.releaseRef ? { releaseRef: options.releaseRef } : {}),
+            ...(options.modelDefinition ? { modelDefinition: options.modelDefinition } : {}),
           }),
         },
         context,
@@ -248,9 +254,15 @@ export class ConsumerViews {
   }
   private model(a: Artifact) {
     const r = a.content.modelRef as { id: string; version: number };
-    const m = this.live.assertModel(r.id, r.version, a.content.fixedSemantic === true, a.content.snapshotPins as SnapshotPins | undefined);
+    const m = this.live.assertModel(r.id, r.version, a.content.fixedSemantic === true, a.content.snapshotPins as SnapshotPins | undefined, this.definition(a));
     if (m.status !== "adopted") throw new Error("需要已采用映射");
     return m;
+  }
+  private definition(view: Artifact): Data {
+    if (view.content.modelDefinition) return view.content.modelDefinition as Data;
+    const modelRef = view.content.modelRef as { id: string; version: number };
+    // Pre-release views retain their original vocabulary even when current semantic names change.
+    return this.memory.getArtifact(modelRef.id, modelRef.version).content;
   }
   activate(_input: unknown): { view: Artifact; key: string | null; keyAvailable: boolean } {
     return freezeLegacyConsumption();
@@ -409,7 +421,7 @@ export class ConsumerViews {
             )
             .map((r) => ({ name: r.name, to: r.to })),
           limits: { maxObjects: 20 },
-          ...this.publicReading(view, this.live.describeReading(model.id, g.type, view.content.snapshotPins as SnapshotPins | undefined, "live", g.fields)),
+          ...this.publicReading(view, this.live.describeReading(model.id, g.type, view.content.snapshotPins as SnapshotPins | undefined, "live", g.fields, this.definition(view))),
         });
       } else if (path === "/v3/connection") {
         if (keys.length) throw new z.ZodError([]);
@@ -523,7 +535,7 @@ export class ConsumerViews {
           { ...args, modelId: model.id, modelVersion: model.version, fields, readMode: view.content.snapshotPins !== undefined ? "release_pinned" : "live" },
           valid,
           false,
-          undefined,
+          this.definition(view),
           view.content.fixedSemantic === true,
           view.content.snapshotPins as SnapshotPins | undefined,
         );

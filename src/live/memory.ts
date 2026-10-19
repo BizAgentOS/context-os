@@ -20,6 +20,8 @@ import type {
 } from "../agent/contracts.ts";
 
 import { readModeSchema, readingConsistency, readingDescription, multipleSourceTimes, type ReadMode, type ReadingReceipt, type SourceReading } from "./reading-contract.ts";
+import { layeredModelSchema, migrateLegacyModel, parseLayeredModel, projectLegacyModel, reconcileLayeredModel, transformSchema, type LayeredModel } from "../semantic/model.ts";
+import { identityFilter, identityValue, objectIdLimit, scopedFilter, transformValue } from "../semantic/values.ts";
 
 const name = z.string().trim().min(1).max(200);
 const foundationRefSchema = z
@@ -30,10 +32,13 @@ const typeSchema = z
     name,
     description: z.string().trim().min(1).max(1500),
     conceptId: name.optional(),
+    identityFields: z.array(name).min(1).optional(),
+    rowFilter: z.record(name, z.union([z.string(), z.number(), z.boolean()])).optional(),
+    propertyTransforms: z.record(name, transformSchema).optional(),
     sourceId: name,
     capability: name,
     fields: z.record(name, name),
-    supplements: z.array(supplementSchema).max(3).optional(),
+    supplements: z.array(supplementSchema.extend({ propertyTransforms: z.record(name, transformSchema).optional() })).max(3).optional(),
   })
   .strict();
 const relationSchema = z
@@ -44,6 +49,9 @@ const relationSchema = z
     fromField: name,
     toField: name,
     relationId: name.optional(),
+    fromColumns: z.array(name).min(1).optional(),
+    toColumns: z.array(name).min(1).optional(),
+    linkTable: z.object({ sourceId: name, capability: name, fromColumns: z.array(name).min(1), toColumns: z.array(name).min(1) }).strict().optional(),
   })
   .strict();
 export const modelSchema = z
@@ -51,8 +59,9 @@ export const modelSchema = z
     foundationRef: foundationRefSchema.optional(),
     baseModelRef: foundationRefSchema.nullable().optional(),
     purpose: z.string().trim().min(1).max(2000),
-    types: z.array(typeSchema).min(1).max(20),
-    relations: z.array(relationSchema).max(40),
+    types: z.array(typeSchema).min(1).max(20).default([]),
+    relations: z.array(relationSchema).max(40).default([]),
+    layered: layeredModelSchema.optional(),
     rationale: z.string().trim().min(1).max(4000),
   })
   .strict();
@@ -71,7 +80,8 @@ const prepareSchema = z
     grants: z.array(grantSchema).min(1).max(20),
   })
   .strict();
-type Definition = z.infer<typeof modelSchema> & {
+type Definition = Omit<z.infer<typeof modelSchema>, "types"> & {
+  types: z.infer<typeof typeSchema>[];
   connections: Record<string, number>;
 };
 type Grant = z.infer<typeof grantSchema>;
@@ -82,7 +92,7 @@ const querySchema = z
     readMode: readModeSchema.optional(),
     type: name.optional(),
     conceptId: name.optional(),
-    id: name.optional(),
+    id: z.string().trim().min(1).max(objectIdLimit).optional(),
     relation: name.optional(),
     fields: z.array(name).min(1).optional(),
     where: z
@@ -123,7 +133,7 @@ export class LiveMemory {
   overview() {
     return {
       connections: this.sources.list(),
-      models: this.repo.listArtifacts("live_ontology").map(a => ({...a, ...this.adoptionState(a)})),
+      models: this.repo.listArtifacts("live_ontology").map(a => ({...this.projectModel(a), ...this.adoptionState(a)})),
       consumers: this.repo.listArtifacts("live_consumer").map((a) => ({
         ...a,
         content: Object.fromEntries(
@@ -134,8 +144,9 @@ export class LiveMemory {
       audit: this.repo.listArtifacts("live_access").slice(0, 40),
     };
   }
-  assertModel(id: string, version: number, fixedSemantic = false, pins?: SnapshotPins) {
-    const model = this.model(id);
+  assertModel(id: string, version: number, fixedSemantic = false, pins?: SnapshotPins, definitionOverride?: Data) {
+    const stored = this.model(id);
+    const model = definitionOverride ? {...stored, content:definitionOverride} : this.projectModel(stored,fixedSemantic);
     if (model.version !== version)
       throw new Error("本体版本已变化，请重新读取");
     this.checkConnections(this.definition(model), undefined, fixedSemantic, this.sourcesFor(pins));
@@ -148,7 +159,52 @@ export class LiveMemory {
     return a;
   }
   private definition(a: Artifact) {
-    return a.content as unknown as Definition;
+    const stored = a.content as unknown as Definition;
+    const layered = stored.layered ?? this.layerLegacy(stored);
+    return { ...stored, ...projectLegacyModel(layered, { allowTransforms: true }), layered } as Definition;
+  }
+  /** Current wording is a read projection over stable semantic IDs. Neither the
+   * binding artifact nor any published definition is rewritten by this view. */
+  projectModel(artifact: Artifact, fixedSemantic = false): Artifact {
+    if (fixedSemantic || artifact.status !== "adopted" || !artifact.content.layered) return artifact;
+    const current = this.adoptedFoundation();
+    if (!current || (artifact.content.foundationRef as Data | undefined)?.id !== current.id) return artifact;
+    const layered = structuredClone(artifact.content.layered) as unknown as LayeredModel;
+    for (const [items, definitions] of [[layered.semantic.entityTypes,current.content.concepts],[layered.semantic.relationTypes,current.content.relations]] as const) {
+      for (const item of items) {
+        const definition = (definitions as Data[]).find(entry => entry.id === item.id);
+        if (!definition) continue;
+        const name = String(definition.name);
+        if (item.name !== name && !item.aliases.includes(item.name)) item.aliases.push(item.name);
+        item.name = name;item.description = String(definition.description);
+      }
+    }
+    return {...artifact,content:jsonData({...artifact.content,...projectLegacyModel(layered,{allowTransforms:true}),layered,
+      foundationRef:{id:current.id,version:current.version}})};
+  }
+  /** Specifying an artifact version reads its original immutable wording. */
+  readLayered(id: string, version?: number): LayeredModel {
+    const artifact=this.repo.getArtifact(id,version);
+    if(artifact.kind!=="live_ontology")throw new Error("需要连接本体");
+    return structuredClone(this.definition(version===undefined?this.projectModel(artifact):artifact).layered!);
+  }
+
+  private layerLegacy(definition: unknown): LayeredModel {
+    const connections = (definition as { connections?: Record<string, number> }).connections;
+    return migrateLegacyModel(definition as Parameters<typeof migrateLegacyModel>[0], { capability: (sourceId, capability) => {
+      if (!connections?.[sourceId]) return this.sources.capability(sourceId, capability).cap;
+      const saved = this.repo.getArtifact(sourceId, connections[sourceId]);
+      const cap = (saved.content.capabilities as unknown as Capability[]).find(c => c.name === capability);
+      if (!cap) throw new Error("历史来源能力不存在");
+      return cap;
+    } });
+  }
+  private validateValues(type: Definition["types"][number], rows: Data[]) {
+    const cap = this.sources.capability(type.sourceId, type.capability).cap;
+    for (const row of rows) {
+      identityValue(row, type.identityFields?.length ? type.identityFields : [cap.idField], cap.idField);
+      for (const [field, transform] of Object.entries(type.propertyTransforms ?? {})) transformValue(row[type.fields[field]], transform);
+    }
   }
   /** Resolve once per query so a concurrent synchronization cannot mix adopted snapshot versions. */
   private resolvePins(d: Definition, mode: ReadMode, pins?: SnapshotPins): SnapshotPins {
@@ -159,6 +215,12 @@ export class LiveMemory {
       const dataset = this.snapshots?.bindingDataset?.(b.sourceId, b.capability);
       if (!dataset || dataset.content.materialization === "live") continue;
       if (!dataset.content.activeVersion) throw new Error(`「${dataset.title}」没有已采用快照，请先同步或显式选择实时读取`);
+      active[pinKey(b.sourceId, b.capability)] = String(dataset.content.activeVersion);
+    }
+    for (const r of d.relations) if (r.linkTable) {
+      const b = r.linkTable, dataset = this.snapshots?.bindingDataset?.(b.sourceId, b.capability);
+      if (!dataset || dataset.content.materialization === "live") continue;
+      if (!dataset.content.activeVersion) throw new Error(`「${dataset.title}」没有已采用快照`);
       active[pinKey(b.sourceId, b.capability)] = String(dataset.content.activeVersion);
     }
     return active;
@@ -181,8 +243,9 @@ export class LiveMemory {
       sources, consistency: readingConsistency(readMode, sources), multiSourceTime: multipleSourceTimes };
   }
   /** Discovery describes the same routing used by query(), without fetching source values. */
-  describeReading(modelId: string, type: string, pins?: SnapshotPins, mode: ReadMode = "active_snapshot", fields?: string[]) {
-    const model = this.model(modelId), d = this.definition(model);
+  describeReading(modelId: string, type: string, pins?: SnapshotPins, mode: ReadMode = "active_snapshot", fields?: string[], definitionOverride?: Data) {
+    const stored=this.model(modelId);
+    const model=definitionOverride?{...stored,content:definitionOverride}:this.projectModel(stored,pins!==undefined),d=this.definition(model);
     const selectedMode = pins !== undefined ? "release_pinned" : mode;
     const selected = this.resolvePins(d, selectedMode, pins);
     const target = d.types.find(t => t.name === type);
@@ -226,11 +289,14 @@ export class LiveMemory {
           )
         : null;
   }
-  private checkFoundation(d: z.infer<typeof modelSchema>, preparedFoundation?: Artifact, fixedSemantic = false) {
+  private checkFoundation(d: Definition | (Omit<Definition, "connections"> & { connections?: Record<string, number> }), preparedFoundation?: Artifact, fixedSemantic = false) {
     if (!d.foundationRef) {
+      const inherited = this.active()?.content.layered as unknown as LayeredModel | undefined;
+      const inheritedReferences = inherited && d.types.every(type => inherited.semantic.entityTypes.some(entity => entity.id === type.conceptId)) && d.relations.every(relation => inherited.semantic.relationTypes.some(item => item.id === relation.relationId));
       if (
-        d.types.some((t) => t.conceptId) ||
+        !d.layered && !inheritedReferences && (d.types.some((t) => t.conceptId) ||
         d.relations.some((r) => r.relationId)
+        )
       )
         throw new Error("概念绑定需要明确基础本体引用");
       return;
@@ -243,7 +309,7 @@ export class LiveMemory {
       foundation.kind !== "foundation" ||
       foundation.status !== "adopted" ||
       foundation.id !== d.foundationRef.id ||
-      foundation.version !== d.foundationRef.version
+      (!d.layered && foundation.version !== d.foundationRef.version)
     )
       throw new Error("已采用基础本体版本已变化，请重新绑定并检查");
     const concepts = foundation.content.concepts as Data[];
@@ -254,8 +320,7 @@ export class LiveMemory {
       const concept = concepts.find((c) => c.id === t.conceptId);
       if (
         !concept ||
-        t.name !== concept.name ||
-        t.description !== concept.description
+        (!d.layered && (t.name !== concept.name || t.description !== concept.description))
       )
         throw new Error(
           "映射必须引用已采用概念，并保持名称和含义；修改定义请先治理基础本体",
@@ -267,7 +332,7 @@ export class LiveMemory {
         to = d.types.find((t) => t.name === r.to);
       if (
         !relation ||
-        relation.name !== r.name ||
+        (!d.layered && relation.name !== r.name) ||
         relation.from !== from?.conceptId ||
         relation.to !== to?.conceptId
       )
@@ -285,7 +350,7 @@ export class LiveMemory {
         const f = this.definition(a).foundationRef;
         return (
           f?.id === ref.id &&
-          f.version === ref.version &&
+          (this.definition(a).layered || f.version === ref.version) &&
           (a.status === "candidate" || a.id === active?.id)
         );
       })
@@ -347,6 +412,7 @@ export class LiveMemory {
           binding.capability,
           d.connections[binding.sourceId],
         );
+    for (const r of d.relations) if (r.linkTable) src.capability(r.linkTable.sourceId, r.linkTable.capability, d.connections[r.linkTable.sourceId]);
   }
   async propose(
     input: unknown,
@@ -401,7 +467,11 @@ export class LiveMemory {
     return this.prepareDefinitionWithFoundation(input, assertActive, foundation);
   }
   private async prepareDefinitionWithFoundation(input: unknown, assertActive: () => void, preparedFoundation?: Artifact) {
-    const d = modelSchema.parse(input);
+    const supplied = input as Record<string, unknown>;
+    const layered = supplied.layered ? parseLayeredModel(supplied.layered) : undefined;
+    const parsed = modelSchema.parse({ ...supplied, ...(layered ? projectLegacyModel(layered, { allowTransforms: true }) : {}) });
+    if (!parsed.types?.length) throw new Error("至少需要一个实体绑定");
+    const d = { ...parsed, types: parsed.types };
     const base = this.active();
     if (this.repo.listArtifacts("foundation").length && !d.foundationRef)
       throw new Error(
@@ -428,7 +498,28 @@ export class LiveMemory {
       )
         throw new Error("字段映射无效");
       connections[t.sourceId] = artifact.version;
+      for (const column of [...(t.identityFields ?? [cap.idField]), ...Object.keys(t.rowFilter ?? {})])
+        if (!cap.fields.includes(column) || !Object.hasOwn(cap.filters, column)) throw new Error("身份键与行过滤列需要获准精确过滤");
       validateSupplements(t, this.sources, connections);
+    }
+    // Older callers edit the business field on a projected single-column rule.
+    // A stale compatibility column must not silently override that edit.
+    if (!layered) for (const relation of d.relations) {
+      const columnsFor = (typeName: string, field: string, columns?: string[]) => {
+        const type = d.types.find(type => type.name === typeName);
+        if (!type) throw new Error("关系端点类型不存在");
+        const cap = this.sources.capability(type.sourceId, type.capability).cap;
+        const column = field === "$id" ? type.identityFields?.[0] ?? cap.idField : type.fields[field];
+        if (!column) throw new Error("关系映射字段不存在");
+        if (relation.linkTable || (columns?.length ?? 0) > 1) {
+          if (!columns?.length || columns[0] !== column) throw new Error("旧字段引用与复合或中间表关联列不一致，请使用分层绑定修订");
+          return columns;
+        }
+        if (field === "$id" && (type.identityFields?.length ?? 1) > 1) throw new Error("复合身份关系需要完整的分层关联列");
+        return [column];
+      };
+      relation.fromColumns = columnsFor(relation.from, relation.fromField, relation.fromColumns);
+      relation.toColumns = columnsFor(relation.to, relation.toField, relation.toColumns);
     }
     const find = (type: string, field: string) => {
       const t = d.types.find((t) => t.name === type);
@@ -456,6 +547,18 @@ export class LiveMemory {
         r.toField === "$id" ? cap.idField : target.fields[r.toField];
       if (!Object.hasOwn(cap.filters, field))
         throw new Error("关系目标来源必须支持关联字段过滤");
+      const from = d.types.find(t => t.name === r.from)!;
+      const fromCap = this.sources.capability(from.sourceId, from.capability).cap;
+      for (const column of r.fromColumns ?? [r.fromField === "$id" ? fromCap.idField : from.fields[r.fromField]])
+        if (!fromCap.fields.includes(column)) throw new Error("关系起点列不存在");
+      for (const column of r.toColumns ?? [field])
+        if (!cap.fields.includes(column) || !Object.hasOwn(cap.filters, column)) throw new Error("关系目标列必须支持精确过滤");
+      if (r.linkTable) {
+        const { cap: linkCap, artifact } = this.sources.capability(r.linkTable.sourceId, r.linkTable.capability);
+        if (linkCap.contentKind !== "records") throw new Error("关系中间表需要业务记录来源");
+        if ([...r.linkTable.fromColumns, ...r.linkTable.toColumns].some(c => !linkCap.fields.includes(c)) || r.linkTable.fromColumns.some(c => !Object.hasOwn(linkCap.filters, c))) throw new Error("中间表关联列需要有效字段与获准过滤");
+        connections[r.linkTable.sourceId] = artifact.version;
+      }
     }
     const checks = [];
     const assertValid = () => {
@@ -468,13 +571,14 @@ export class LiveMemory {
       const sample = await this.sources.readRecords(
         t.sourceId,
         t.capability,
-        {},
+        t.rowFilter ?? {},
         0,
         3,
         connections[t.sourceId],
       );
       assertValid();
       if (!sample.items.length) throw new Error("需要至少一条实际记录验证映射");
+      this.validateValues(t, sample.items);
       const fusion = t.supplements?.length
         ? await fuseRows(
             t,
@@ -514,7 +618,8 @@ export class LiveMemory {
     this.checkConnections({ ...d, connections }, preparedFoundation);
     if (d.foundationRef) this.checkExecutionBase(d.baseModelRef);
     assertActive();
-    return jsonData({...d,connections,checks,base:base ? {id:base.id,version:base.version} : null});
+    const canonical = layered ?? (base?.content.layered ? reconcileLayeredModel(base.content.layered as unknown as LayeredModel, this.layerLegacy(d)) : this.layerLegacy(d));
+    return jsonData({...d,layered: canonical,connections,checks,base:base ? {id:base.id,version:base.version} : null});
   }
 
   async adopt(
@@ -527,6 +632,7 @@ export class LiveMemory {
     if (a.status !== "candidate" || a.version !== version)
       throw new Error("候选已变化");
     const d = this.definition(a);
+    if (d.foundationRef && this.adoptedFoundation()?.version !== d.foundationRef.version) throw new Error("候选的基础本体版本已变化，请重新复验");
     this.checkConnections(d);
     const base = this.active();
     if (
@@ -538,13 +644,14 @@ export class LiveMemory {
       const sample = await this.sources.readRecords(
         t.sourceId,
         t.capability,
-        {},
+        t.rowFilter ?? {},
         0,
         3,
         d.connections[t.sourceId],
       );
       if (d.foundationRef && !sample.items.length)
         throw new Error("需要实际记录重新验证概念映射");
+      this.validateValues(t, sample.items);
       if (t.supplements?.length) {
         const fusion = await fuseRows(
           t,
@@ -602,6 +709,7 @@ export class LiveMemory {
       sourceComplete?: boolean;
       snapshotTotal?: number;
       uncoveredProperties?: string[];
+      unmatchedTargets?: number;
     };
     reads: {
       sourceId: string;
@@ -623,10 +731,21 @@ export class LiveMemory {
   }> {
     const args = querySchema.parse(input);
     const stored = this.model(args.modelId);
-    const model = previewDefinition ? {...stored, content: previewDefinition} : stored;
+    const model = previewDefinition ? {...stored, content: previewDefinition} : this.projectModel(stored,fixedSemantic);
     if (args.modelVersion !== undefined && args.modelVersion !== model.version)
       throw new Error("本体版本已变化，请重新读取目标");
     const d = this.definition(model);
+    if (d.layered) {
+      const entities=d.layered.semantic.entityTypes;
+      const entity=args.conceptId?entities.find(item=>item.id===args.conceptId):entities.find(item=>item.name===args.type)??entities.find(item=>item.aliases.includes(args.type??""));
+      const canonical=entity&&d.types.find(type=>type.conceptId===entity.id);
+      if(args.type&&canonical&&(entity!.name===args.type||entity!.aliases.includes(args.type)))args.type=canonical.name;
+      if(args.relation&&entity){
+        const relations=d.layered.semantic.relationTypes.filter(item=>item.from===entity.id);
+        const relation=relations.find(item=>item.name===args.relation)??relations.find(item=>item.aliases.includes(args.relation!));
+        if(relation)args.relation=d.relations.find(item=>item.relationId===relation.id)?.name??args.relation;
+      }
+    }
     const readMode = reading?.readMode ?? (pins !== undefined ? "release_pinned" : args.readMode ?? "active_snapshot");
     if (readMode === "release_pinned" && pins === undefined) throw new Error("release_pinned 需要发布固定的快照范围");
     if (pins !== undefined && args.readMode && args.readMode !== "release_pinned") throw new Error("发布读取不能覆盖固定读取模式");
@@ -658,16 +777,20 @@ export class LiveMemory {
       if (!Object.hasOwn(type.fields, field)) throw new Error("业务字段不存在");
       return type.fields[field];
     };
+    const identity = type.identityFields?.length ? type.identityFields : [cap.idField];
     const where: Data = Object.fromEntries(
-      Object.entries(args.where ?? {}).map(([f, v]) => {
+      Object.entries(args.where ?? {}).flatMap(([f, v]) => {
+        if (f === "$id")
+          return Object.entries(identityFilter(String(v), identity, cap.idType, cap.idField));
         if (isSupplementProperty(type, f))
           throw new Error(
             "融合属性不能作为主来源过滤；请先缩小主来源范围再检查融合结果",
           );
-        return [sourceField(f), v];
+        return [[sourceField(f), v]];
       }),
     );
-    if (args.id !== undefined) where[cap.idField] = args.id;
+    if (args.id !== undefined) Object.assign(where, identityFilter(args.id, identity, cap.idType, cap.idField));
+    const scopedWhere = scopedFilter(type.rowFilter, where);
     if (args.relation) {
       if (!args.id) throw new Error("关系查询需要对象编号");
       const rel = d.relations.find(
@@ -677,7 +800,7 @@ export class LiveMemory {
       const origin = await src.readRecords(
         type.sourceId,
         type.capability,
-        where,
+        scopedWhere,
         0,
         2,
         d.connections[type.sourceId],
@@ -687,24 +810,26 @@ export class LiveMemory {
         modelId: model.id,
         modelVersion: model.version,
         type: type.name,
-        objectId: String(origin.items[0][cap.idField]),
+        objectId: String(identityValue(origin.items[0], identity, cap.idField)),
         relation: args.relation,
       };
-      const correction = applyCorrections
-        ? activeCorrection(this.repo, correctionTarget)
-        : null;
+      const currentCorrection=()=>activeCorrection(this.repo,correctionTarget,rel.relationId,this.definition(stored) as unknown as Data);
+      const correction=applyCorrections?currentCorrection():null;
       if (correction) {
-        const snapshot = await captureRelation(
+        const originalTarget=correction.content.target as unknown as typeof correctionTarget;
+        const originalDefinition=(correction.content.modelDefinition??stored.content) as Data;
+        let snapshot: Awaited<ReturnType<typeof captureRelation>>;
+        try { snapshot = await captureRelation(
           this,
-          correctionTarget,
+          originalTarget,
           correction.content.targetIds as string[],
           assertValid,
-          { readMode, pins: selectedPins, fixedSemantic },
-        );
+          { readMode, pins: selectedPins, fixedSemantic, modelDefinition:originalDefinition },
+        ); } catch (error) { throw new Error(`局部纠正的原始范围无法复验，请重新检查关系纠正：${error instanceof Error?error.message:"定义或来源已变化"}`); }
         if (snapshot.fingerprint !== correction.content.fingerprint)
           throw new Error("局部纠正依赖的源事实已变化，请重新检查关系纠正");
         if (
-          activeCorrection(this.repo, correctionTarget)?.id !== correction.id ||
+          currentCorrection()?.id !== correction.id ||
           this.repo.getArtifact(correction.id).version !== correction.version
         )
           throw new Error("局部纠正版本已变化，请重读");
@@ -762,6 +887,40 @@ export class LiveMemory {
           ]),
         };
       }
+      if (rel.linkTable) {
+        const link = rel.linkTable, fromColumns = rel.fromColumns ?? identity;
+        const filter = Object.fromEntries(link.fromColumns.map((column, index) => [column, origin.items[0][fromColumns[index]]]));
+        if (Object.values(filter).some(value => value === null || value === "")) throw new Error("关联起点键为空");
+        const reads = [origin.provenance];
+        const keys = new Map<string, Data>();
+        let linkComplete = false, invalidLinkRows = 0;
+        for (let offset = 0; offset < 1000; offset += 100) {
+          const page = await src.readRecords(link.sourceId, link.capability, filter, offset, 100, d.connections[link.sourceId]);
+          assertValid(); reads.push(page.provenance);
+          for (const row of page.items) {
+            const key = Object.fromEntries((rel.toColumns ?? []).map((column, index) => [column, row[link.toColumns[index]]]));
+            if (Object.values(key).some(value => value === null || value === "")) { invalidLinkRows++; continue; }
+            keys.set(JSON.stringify(key), key);
+          }
+          if ((page.coverage.total !== null && offset + page.items.length >= page.coverage.total) || page.coverage.complete) { linkComplete = true; break; }
+          if (page.items.length < 100) break;
+        }
+        const target = d.types.find(t => t.name === rel.to)!;
+        const targetCap = src.capability(target.sourceId, target.capability, d.connections[target.sourceId]).cap;
+        const items: Data[] = [], evidence: ObjectEvidence[] = [];
+        let targetsComplete = true, unmatchedTargets = 0;
+        for (const key of [...keys.values()].slice(args.offset, args.offset + args.limit)) {
+          const objectId = identityValue(key, target.identityFields?.length ? target.identityFields : [targetCap.idField], targetCap.idField);
+          const result = await this.query({ modelId: model.id, modelVersion: model.version, type: target.name, id: String(objectId), fields: args.fields, readMode, limit: 1 }, assertActive, applyCorrections, previewDefinition, fixedSemantic, readMode === "release_pinned" ? selectedPins : undefined, { readMode, pins: selectedPins });
+          items.push(...result.items); evidence.push(...(result.evidence ?? [])); reads.push(...result.reads);
+          targetsComplete &&= result.coverage.complete && result.items.length === 1;
+          if (result.items.length !== 1) unmatchedTargets++;
+        }
+        assertValid();
+        return { model: { id: model.id, version: model.version }, type: target.name, items, ...(evidence.length ? { evidence } : {}),
+          coverage: { offset: args.offset, shown: items.length, total: linkComplete && !invalidLinkRows ? keys.size : null, complete: linkComplete && targetsComplete && !invalidLinkRows && args.offset === 0 && keys.size <= args.limit, ...(unmatchedTargets + invalidLinkRows ? { unmatchedTargets: unmatchedTargets + invalidLinkRows } : {}) },
+          relationOrigin: { type: type.name, id: String(identityValue(origin.items[0], identity, cap.idField)) }, reads, ...receipt(reads) };
+      }
       const value = origin.items[0][sourceField(rel.fromField)];
       if (value === null || value === "")
         throw new Error("关联字段为空，无法解析关系");
@@ -771,7 +930,15 @@ export class LiveMemory {
           modelVersion: model.version,
           readMode,
           type: rel.to,
-          where: { [rel.toField]: value },
+          where: rel.fromColumns && rel.toColumns ? Object.fromEntries(rel.toColumns.map((column, index) => {
+            const target = d.types.find(t => t.name === rel.to)!;
+            const targetCap = src.capability(target.sourceId, target.capability, d.connections[target.sourceId]).cap;
+            const targetIdentity = target.identityFields?.length ? target.identityFields : [targetCap.idField];
+            const field = Object.keys(target.fields).find(field => target.fields[field] === column)
+              ?? (column === targetCap.idField && targetIdentity.length === 1 && targetIdentity[0] === targetCap.idField ? "$id" : undefined);
+            if (!field) throw new Error("关系目标列没有业务属性绑定");
+            return [field, origin.items[0][rel.fromColumns![index]]];
+          })) : { [rel.toField]: value },
           fields: args.fields,
           offset: args.offset,
           limit: args.limit,
@@ -798,7 +965,7 @@ export class LiveMemory {
     const result = await src.readRecords(
       type.sourceId,
       type.capability,
-      where,
+      scopedWhere,
       args.offset,
       args.limit,
       d.connections[type.sourceId],
@@ -844,7 +1011,7 @@ export class LiveMemory {
       items:
         fusion?.items ??
         result.items.map((row) =>
-          Object.fromEntries(fields.map((f) => [f, row[sourceField(f)]])),
+          Object.fromEntries(fields.map((f) => [f, f === "$id" ? identityValue(row, identity, cap.idField) : transformValue(row[sourceField(f)], type.propertyTransforms?.[f])])),
         ),
       coverage: { ...result.coverage, ...(uncoveredProperties.length ? { uncoveredProperties } : {}) },
       reads: fusion?.reads ?? [result.provenance],
@@ -885,9 +1052,10 @@ export class LiveMemory {
       },
     } as Pick<SourceConnections, "capability" | "readRecords" | "list">;
   }
-  validateConsumerScope(input: unknown, fixedSemantic = false, pins?: SnapshotPins) {
+  validateConsumerScope(input: unknown, fixedSemantic = false, pins?: SnapshotPins, definitionOverride?: Data) {
     const args = prepareSchema.parse(input);
-    const model = this.model(args.modelId, true);
+    const stored = this.model(args.modelId, true);
+    const model = definitionOverride?{...stored,content:definitionOverride}:this.projectModel(stored,fixedSemantic);
     const d = this.definition(model);
     this.checkConnections(d, undefined, fixedSemantic, this.sourcesFor(pins));
     if (new Set(args.grants.map((g) => g.type)).size !== args.grants.length)

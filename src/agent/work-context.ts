@@ -1,3 +1,4 @@
+import { objectIdLimit } from "../semantic/values.ts";
 import { z } from "zod";
 import { workspaceReadModeSchema, readingDescription, type ReadMode } from "../live/reading-contract.ts";
 import { FoundationService } from "./foundation.ts";
@@ -27,7 +28,7 @@ const refSchema = z
     version: z.number().int().positive(),
     type: name.optional(),
     member: name.optional(),
-    objectId: name.optional(),
+    objectId: z.string().trim().min(1).max(objectIdLimit).optional(),
   })
   .strict()
   .superRefine((ref, ctx) => {

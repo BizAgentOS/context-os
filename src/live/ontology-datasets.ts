@@ -1,4 +1,5 @@
 import { freezeLegacyConsumption } from "./legacy-consumption.ts";
+import { snapshotPinsForRelease } from "./release-pins.ts";
 import type { SnapshotPins } from "./memory.ts";
 import { createHash, randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -49,16 +50,16 @@ export class OntologyDatasets {
     let model: Data | null = null;
     const active = this.memory.listArtifacts("live_ontology").find(a => a.status === "adopted");
     if (active && adopted) {
-      const f = active.content.foundationRef as Data | undefined;
       try {
-        this.live.assertModel(active.id, active.version);
+        const current = this.live.assertModel(active.id, active.version);
+        const f = current.content.foundationRef as Data | undefined;
         if (f?.id === adopted.id && f.version === adopted.version) model = jsonData({
-          id: active.id, version: active.version, title: active.title,
-          types: (active.content.types as Data[]).map(t => ({
+          id: current.id, version: current.version, title: current.title,
+          types: (current.content.types as Data[]).map(t => ({
             name: t.name, conceptId: t.conceptId,
             fields: [...new Set(["$id", ...Object.keys(t.fields as Data), ...((t.supplements ?? []) as Data[]).flatMap(s => Object.keys(s.fields as Data))])],
           })),
-          relations: (active.content.relations as Data[]).map(r => ({ name: r.name, relationId: r.relationId, from: r.from, to: r.to, fromField: r.fromField, toField: r.toField })),
+          relations: (current.content.relations as Data[]).map(r => ({ name: r.name, relationId: r.relationId, from: r.from, to: r.to, fromField: r.fromField, toField: r.toField })),
         });
       } catch { /* Invalid mappings remain in the workspace, not in the publication picker. */ }
     }
@@ -89,14 +90,14 @@ export class OntologyDatasets {
   publish(_input: unknown, _options: { fixedSemantic?: boolean; snapshotPins?: SnapshotPins; releaseRef?: { id: string; version: number } } = {}): { dataset: Artifact; key: string | null; keyAvailable: boolean } {
     return freezeLegacyConsumption();
   }
-  /** Published releases are the sole factory for new external datasets. */
-  publishForRelease(input: unknown, releaseRef: { id: string; version: number }, options: { fixedSemantic?: boolean; snapshotPins?: SnapshotPins } = {}) {
+  /** Published releases own semantics and pins; compatibility options cannot override either. */
+  publishForRelease(input: unknown, releaseRef: { id: string; version: number }, _options: { fixedSemantic?: boolean; snapshotPins?: SnapshotPins } = {}) {
     const release = this.memory.getArtifact(releaseRef.id, releaseRef.version);
     if (release.kind !== "data_release" || release.status !== "published") throw new Error("需要已发布版本");
     const args = publishInput.parse(input);
     const foundationRef = release.content.foundationRef as { id: string; version: number };
     if (foundationRef.id !== args.foundationRef.id || foundationRef.version !== args.foundationRef.version) throw new Error("本体必须属于指定发布版本");
-    const signature = digest(JSON.stringify(args));
+    const signature = digest(JSON.stringify({ ...args, releaseRef }));
     return this.memory.atomic(() => {
       const prior = this.memory.listArtifacts("ontology_dataset").find(a => a.content.operationId === args.operationId);
       if (prior) {
@@ -107,7 +108,12 @@ export class OntologyDatasets {
       const selection = this.select(foundation, args.conceptIds, args.relationIds);
       let business: Data | null = null;
       if (args.business) {
-        const model = this.live.assertModel(args.business.modelRef.id, args.business.modelRef.version, options.fixedSemantic, options.snapshotPins);
+        const releasedModelRef = release.content.modelRef as { id: string; version: number } | null;
+        if (!releasedModelRef || releasedModelRef.id !== args.business.modelRef.id || releasedModelRef.version !== args.business.modelRef.version) throw new Error("业务映射必须属于指定发布版本");
+        const definition = (release.content.definition as Data | undefined)?.model;
+        if (!definition || typeof definition !== "object" || Array.isArray(definition)) throw new Error("发布版本缺少固定业务映射");
+        const modelDefinition = jsonData({ ...definition, foundationRef: release.content.foundationRef });
+        const model = this.live.assertModel(args.business.modelRef.id, args.business.modelRef.version, true, snapshotPinsForRelease(release.content.definition as Data), modelDefinition);
         const f = model.content.foundationRef as Data | undefined;
         if (model.status !== "adopted" || f?.id !== foundation.id || f.version !== foundation.version) throw new Error("业务映射必须属于同一已采用本体版本");
         for (const grant of args.business.grants) {
@@ -119,7 +125,7 @@ export class OntologyDatasets {
           }
         }
         const views = new ConsumerViews(this.memory, this.live);
-        const view = views.createForRelease({ ...args.business, operationId: "dataset:" + args.operationId, name: args.name, purpose: "MCP 本体数据集" }, releaseRef, options);
+        const view = views.createForRelease({ ...args.business, operationId: "dataset:" + args.operationId, name: args.name, purpose: "MCP 本体数据集" }, releaseRef);
         business = jsonData({ viewRef: { id: view.id, version: view.version }, ...args.business });
       }
       const key = "de_dataset_" + randomBytes(32).toString("base64url");
