@@ -34,7 +34,7 @@ export function renderFoundation(
       el(
         "h3",
         "",
-        `${body.enterprise.name} · ${artifact.status === "adopted" ? "已采用" : "候选待核对"} · v${artifact.version}`,
+        `${body.enterprise.name} · ${artifact.status === "adopted" ? "已采用" : "候选待核对"}`,
       ),
     );
     card.append(

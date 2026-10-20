@@ -198,7 +198,7 @@ export function bindConcept(artifact, concept, live, api, mutate) {
   fields.append(
     el(
       "p",
-      `本次映射引用基础本体 v${artifact.version}；${baseline ? "保留当前执行子集中的其他映射。" : "创建一个新的执行子集。"}未映射的概念继续保留。`,
+      `本次映射引用当前基础本体；${baseline ? "保留当前执行子集中的其他映射。" : "创建一个新的执行子集。"}未映射的概念继续保留。`,
       "source-meta",
     ),
   );

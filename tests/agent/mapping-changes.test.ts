@@ -464,3 +464,49 @@ test("relation revision groups saved corrections, supports agent inspection and 
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+
+test("adopting an execution mapping and a mapping revision lands in the change ledger, while proposals do not", async () => {
+  const upstream = await createFusionSources(), directory = mkdtempSync(join(tmpdir(), "de-ledger-"));
+  const service = await createServer({ automaticApi: false, directory,
+    driver: { async run() { return { text: "idle", sessionId: "s", runId: "r" }; }, async stop() {}, async close() {} } });
+  await new Promise<void>((r) => service.server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
+  const post = async (path: string, body: unknown) => {
+    const r = await fetch(base + path, { method: "POST", headers: { "content-type": "application/json", "x-dataengine-token": service.adminToken }, body: JSON.stringify(body) });
+    const result = await r.json() as any;
+    if (!r.ok) throw new Error(result.error);
+    return result;
+  };
+  const read = async (path: string) => {
+    const r = await fetch(base + path, { headers: { "x-dataengine-token": service.adminToken } });
+    const result = await r.json() as any;
+    if (!r.ok) throw new Error(result.error);
+    return result;
+  };
+  try {
+    const primary = (await post("/api/live/connect", { name: "投诉", protocol: "http", url: upstream.url, capabilities: [primaryCapability] })).saved;
+    const extra = (await post("/api/live/connect", { name: "工单", protocol: "mcp", url: upstream.url + "/mcp", capabilities: [supplementCapability] })).saved;
+    const candidate = (await post("/api/live/propose", fusionDefinition(primary.id, extra.id))).saved;
+    assert.equal((await read("/api/changes?type=entity")).total, 0, "a proposed mapping is not a decision");
+    const adopted = (await post("/api/live/adopt", { id: candidate.id, version: candidate.version })).saved;
+    const entities = await read("/api/changes?type=entity");
+    assert.equal(entities.total, 1, "adopting an execution mapping is recorded");
+    assert.equal(entities.changes[0].status, "adopted");
+
+    const change = (await post("/api/live/changes/propose", {
+      operationId: "ledger-fix", baseRef: { id: adopted.id, version: adopted.version },
+      patch: { kind: "property", type: "投诉", property: "实际反馈", supplement: "工单", sourceField: "status" },
+      reason: "业务人员明确当前属性应绑定工单状态", evidence: "人工核对字段后指定口径", relatedCorrections: [] })).saved;
+    assert.equal((await read("/api/changes?type=binding")).total, 0, "a pending revision is not a decision");
+    const checked = (await post("/api/live/changes/check", { operationId: "ledger-check", id: change.id, version: change.version })).saved;
+    await post("/api/live/changes/adopt", { operationId: "ledger-adopt", id: checked.id, version: checked.version });
+    const bindings = await read("/api/changes?type=binding");
+    assert.equal(bindings.total, 1, "adopting a mapping revision is recorded");
+    assert.equal(bindings.changes[0].status, "adopted");
+  } finally {
+    await service.close();
+    await upstream.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

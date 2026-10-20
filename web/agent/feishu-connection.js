@@ -119,7 +119,7 @@ export function openFeishuConnection(api, options = {}) {
     const uses = el("div", null, "feishu-document-uses");
     for (const usage of doc.usage) {
       const item = el("section", null, "connection-summary");
-      item.append(el("strong", `${usage.status === "adopted" ? "已采用引用" : "候选引用 · 待核对"} · 本体 v${usage.foundationVersion}`),
+      item.append(el("strong", `${usage.status === "adopted" ? "已采用引用" : "候选引用 · 待核对"}`),
         el("p", `${usage.concepts.length} 个概念 · ${usage.relations.length} 个关系 · 引用快照 ${usage.sourceVersions.map(v => `v${v}`).join("、")}`),
         el("p", [...usage.concepts, ...usage.relations].map(x => x.name).join(" / ") || "用于企业说明或待核实项", "connection-note"));
       if (!usage.sourceVersions.includes(doc.sourceVersion)) item.append(el("p", "此本体仍引用旧快照，当前正文尚未用于该版本。", "connection-note"));
@@ -132,7 +132,7 @@ export function openFeishuConnection(api, options = {}) {
           options.onPrepared?.(snapshot); await shell.close();
         } catch (error) { if (alive()) shell.message(error.message); }
         finally { reading = false; freeze(false); if (alive()) render(); }
-      }), el("p", `在工作区的版本菜单中查看本体 v${usage.foundationVersion}，核对定义和原文依据。`, "connection-note"));
+      }), el("p", `在工作区的版本菜单中查看当前本体，核对定义和原文依据。`, "connection-note"));
       uses.append(item);
     }
     const actions = el("div", null, "connection-actions");

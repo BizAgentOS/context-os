@@ -306,7 +306,7 @@ export function renderOntologySpace(value, {selections, read, select, management
         el("h2", "", evidenceItem ? evidenceItem.title || "用户陈述" : definition.name),
         el("p", "os-detail-description", evidenceItem ? evidenceItem.quote : definition.description || "暂无说明"));
       const badges = el("div", "os-badges");
-      badges.append(el("span", "", `${result.target.status === "adopted" ? "已采用" : "候选待核对"} · v${ref.version}`), el("span", "", mappingLabel(definition))); inspectorBody.append(badges);
+      badges.append(el("span", "", `${result.target.status === "adopted" ? "已采用" : "候选待核对"}`), el("span", "", mappingLabel(definition))); inspectorBody.append(badges);
       if (evidenceItem?.readAt) inspectorBody.append(el("p", "os-muted", `读取时间 ${new Date(evidenceItem.readAt).toLocaleString("zh-CN")}`));
       if (isRelation) {
         const name = id => graph.concepts.find(item => item.id === id)?.name || id;
