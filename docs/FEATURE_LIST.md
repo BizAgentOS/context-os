@@ -28,6 +28,8 @@ Last Updated: 2026-10-19
 
 **2026-10-19 041 开工：**用户确认实施方案：首次构建后新增来源带来的新实体按 R2 进入待处理；有待采用变更时不阻塞发布，只提示不包含在本次发布中。041 改为 InProgress，未发布。
 
+**2026-10-20 041 T041-02 完成：**工作版组合与版本递增、发布固定工作版、已采用局部纠正进入发布与差异；有待采用变更只提示不阻塞。全量 325 项测试与类型检查通过；041 仍 InProgress（T041-03、04 未开始），版本 v0.2.3 未发布。证据见[设计块](features/v0.3.0.md#feature-041)。
+
 ## Version Info
 
 - **Current Release:** v0.2.3（2026-10-16，本地 Tag `v0.2.3`）。v0.2.2 于 2026-10-15 发布（本地 Tag `v0.2.2`）。v0.2.0 于 2026-10-14 发布（提交 `930b10e`，Tag `v0.2.0`）。
@@ -576,13 +578,14 @@ Last Updated: 2026-10-19
 
 ### 041: 统一变更流程与自动采用规则
 
-- **Status:** Planned
+- **Status:** InProgress
 - **Category / Priority:** Enhancement / High
 - **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / —
 - **Description:** 程序/人/Agent 变更统一提议、复验、采用；拒绝指纹；自动采用只限首次构建与同结构重绑；工作版组合；治理决定进入发布。
 - **Blocked by:** 040。
 - **Design:** [FEATURE_041](features/v0.3.0.md#feature-041)。
+- **Verification:** `tests/agent/ontology-changes.test.ts`（变更状态机与复验）、`tests/agent/workspace-corrections.test.ts`（工作版、发布纠正与旧发布隔离）；当前 T041-01/02 完成，T041-03/04 未开始。
 
 ### 042: 关系发现修复与身份对应
 

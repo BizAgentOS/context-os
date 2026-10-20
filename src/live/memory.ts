@@ -1,5 +1,5 @@
 import { freezeLegacyConsumption } from "./legacy-consumption.ts";
-import { activeCorrection, captureRelation } from "./relation-corrections.ts";
+import { activeCorrection, captureRelation, type PinnedCorrections } from "./relation-corrections.ts";
 import {
   supplementSchema,
   propertyNames,
@@ -691,7 +691,8 @@ export class LiveMemory {
   async query(
     input: unknown,
     assertActive: () => void = () => {},
-    applyCorrections = true,
+    /** `true`: the live adopted corrections; a set: exactly those pinned by a release; `false`: none. */
+    applyCorrections: boolean | PinnedCorrections = true,
     previewDefinition?: Data,
     fixedSemantic = false,
     pins?: SnapshotPins,
@@ -813,7 +814,8 @@ export class LiveMemory {
         objectId: String(identityValue(origin.items[0], identity, cap.idField)),
         relation: args.relation,
       };
-      const currentCorrection=()=>activeCorrection(this.repo,correctionTarget,rel.relationId,this.definition(stored) as unknown as Data);
+      const pinnedCorrections=typeof applyCorrections==="object"?applyCorrections:undefined;
+      const currentCorrection=()=>activeCorrection(this.repo,correctionTarget,rel.relationId,this.definition(stored) as unknown as Data,pinnedCorrections);
       const correction=applyCorrections?currentCorrection():null;
       if (correction) {
         const originalTarget=correction.content.target as unknown as typeof correctionTarget;
@@ -828,9 +830,11 @@ export class LiveMemory {
         ); } catch (error) { throw new Error(`局部纠正的原始范围无法复验，请重新检查关系纠正：${error instanceof Error?error.message:"定义或来源已变化"}`); }
         if (snapshot.fingerprint !== correction.content.fingerprint)
           throw new Error("局部纠正依赖的源事实已变化，请重新检查关系纠正");
+        // A pinned correction is an immutable stored version; only the live decision can be superseded mid-read.
         if (
-          currentCorrection()?.id !== correction.id ||
-          this.repo.getArtifact(correction.id).version !== correction.version
+          !pinnedCorrections &&
+          (currentCorrection()?.id !== correction.id ||
+            this.repo.getArtifact(correction.id).version !== correction.version)
         )
           throw new Error("局部纠正版本已变化，请重读");
         const targetType = d.types.find((t) => t.name === rel.to)!;

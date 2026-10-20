@@ -46,14 +46,23 @@ function canonical(value: unknown): string {
 const hash = (value: unknown) =>
   createHash("sha256").update(canonical(value)).digest("hex");
 export const relationKey = (t: CorrectionTarget) => hash(t);
+/** A published release fixes the corrections it was published with: `id@version` of each adopted record. */
+export type PinnedCorrections = ReadonlySet<string>;
+export const correctionPin = (record: { id: string; version: number }) => `${record.id}@${record.version}`;
 export function activeCorrection(
-  repo: Pick<MemoryStore, "listArtifacts">,
+  repo: Pick<MemoryStore, "listArtifacts" | "getArtifact">,
   target: CorrectionTarget,
   relationId?: string,
   historicalDefinition?: Data,
+  pinned?: PinnedCorrections,
 ) {
-  return repo.listArtifacts("relation_correction").find((record) => {
-    if (record.status !== "adopted") return false;
+  // A pinned set reads the exact stored version, even if that record was superseded since publication.
+  const records = pinned
+    ? [...pinned].map((pin) => { const [id, version] = pin.split("@"); return repo.getArtifact(id, Number(version)); })
+    : repo.listArtifacts("relation_correction");
+  return records.find((record) => {
+    // Live: only the adopted decision. Pinned: that exact version, which may have been superseded since.
+    if (!(pinned ? ["adopted", "superseded"] : ["adopted"]).includes(record.status)) return false;
     const saved = record.content.target as unknown as CorrectionTarget;
     if (
       saved.modelId !== target.modelId ||

@@ -68,6 +68,9 @@ export class MemoryStore implements Repository {
   private db: DatabaseSync;
   readonly changes = new EventEmitter();
   private pendingChanges: Data[] = [];
+  private written: Artifact[] = [];
+  /** Runs inside the outermost transaction, just before COMMIT, with every artifact it wrote. A throw rolls the whole write back. */
+  beforeCommit?: (written: Artifact[]) => void;
 
   private changed(change: Data) {
     if (this.db.isTransaction) this.pendingChanges.push(change);
@@ -133,8 +136,13 @@ export class MemoryStore implements Repository {
     if (this.db.isTransaction) return fn();
     this.db.exec("BEGIN IMMEDIATE");
     const changeStart = this.pendingChanges.length;
+    this.written = [];
     try {
       const result = fn();
+      if (this.written.length && this.beforeCommit) {
+        const written = this.written;
+        this.beforeCommit(written);
+      }
       this.db.exec("COMMIT");
       const committed = this.pendingChanges.splice(changeStart);
       for (const change of committed) this.publishChange(change);
@@ -143,6 +151,8 @@ export class MemoryStore implements Repository {
       this.db.exec("ROLLBACK");
       this.pendingChanges.splice(changeStart);
       throw error;
+    } finally {
+      this.written = [];
     }
   }
 
@@ -234,6 +244,7 @@ export class MemoryStore implements Repository {
         this.db
           .prepare("INSERT INTO operations VALUES (?,?)")
           .run(key, JSON.stringify(artifact));
+      this.written.push(artifact);
       if (context) this.attachArtifact(context.taskId, artifact);
       this.changed({kind:"artifact",id:artifact.id,version:artifact.version,artifactKind:artifact.kind});
       return artifact;

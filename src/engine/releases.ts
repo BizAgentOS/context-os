@@ -33,6 +33,11 @@ export class Releases {
     this.memory = memory; this.live = live; this.datasets = new OntologyDatasets(memory, live);
   }
 
+  /** The working version this release pins. Recorded by WorkspaceVersions on every adoption (FEATURE_041 T041-02). */
+  private latestWorkspace() {
+    return this.memory.listArtifacts("workspace_version").sort((a, b) => Number((b.content as Data).number ?? 0) - Number((a.content as Data).number ?? 0))[0] ?? null;
+  }
+
   private working() {
     const { current, adopted } = new FoundationService(this.memory).read();
     const models = this.memory.listArtifacts("live_ontology");
@@ -50,7 +55,8 @@ export class Releases {
       && fingerprint(a.content.baseModelRef) === fingerprint(model ? reference(model) : null));
     if (engineCandidate) pending.push(engineCandidate);
     if (!adopted || !(adopted.content.concepts as Data[] | undefined)?.length) issues.push({ code: "no_adopted_foundation", severity: "error", message: "请先构建并采用至少一个本体概念。" });
-    if (pending.length) issues.push({ code: "pending_changes", severity: "error", message: "仍有未采用的本体或映射修订，请先处理工作区中的候选。" });
+    // Pending work is not part of this release by construction (only adopted state is read), so it informs rather than blocks.
+    if (pending.length) issues.push({ code: "pending_changes", severity: "warning", message: `仍有 ${pending.length} 项未采用的本体或映射修订，不包含在本次发布中。` });
     if (model) {
       try { this.live.assertModel(model.id, model.version); }
       catch (error) { issues.push({ code: "mapping_unavailable", severity: "error", message: error instanceof Error ? error.message : "已采用映射不可用" }); }
@@ -97,6 +103,11 @@ export class Releases {
     const relations = (adopted?.content.relations ?? []) as Data[];
     const unresolved = ((adopted?.content.unknowns ?? []) as unknown[]).length + ((adopted?.content.conflicts ?? []) as unknown[]).length;
     if (unresolved) issues.push({ code: "semantic_uncertainty", severity: "warning", message: `已采用定义仍有 ${unresolved} 项未知或冲突；结构检查不证明业务含义正确。` });
+    // Adopted local corrections are governance decisions: they ride in the working version and are pinned by each release.
+    const corrections = model ? this.memory.listArtifacts("relation_correction")
+      .filter(a => a.status === "adopted" && (a.content.target as Data).modelId === model.id && (a.content.target as Data).modelVersion === model.version)
+      .map(a => ({ id: a.id, version: a.version, target: a.content.target, targetIds: a.content.targetIds, fingerprint: a.content.fingerprint, reason: a.content.reason }))
+      .sort((a, b) => a.id.localeCompare(b.id)) : [];
     const definition = jsonData({
       enterprise: adopted?.content.enterprise ?? null,
       concepts, relations,
@@ -104,14 +115,17 @@ export class Releases {
       sourcePolicies: policies.sort((a, b) => String(a.content.sourceId).localeCompare(String(b.content.sourceId))).map(a => ({ ...a.content, policyRef: reference(a) })),
       sourceAccess,
       snapshots,
+      corrections,
       accessPolicy: { facts: "per_source_strategy", snapshot: snapshots.length ? "pinned" : "none", consistency: allPinned ? "pinned_snapshot" : "not_atomic", historicalReplay: allPinned },
     });
+    const workspace = this.latestWorkspace();
+    const workspaceVersion = workspace ? { id: workspace.id, version: workspace.version, number: Number((workspace.content as Data).number) } : null;
     const currentRelease = this.memory.listArtifacts("data_release")[0] ?? null;
     const refs = { foundationRef: adopted ? reference(adopted) : null, modelRef: model ? reference(model) : null };
     const pendingRefs = pending.map(a => ({ ...reference(a), kind: a.kind, status: a.status, title: a.title }));
     return {
-      ...refs, definition, pending: pendingRefs, issues,
-      inputHash: fingerprint({ ...refs, definition, pending: pendingRefs, sourceState, baseReleaseRef: currentRelease ? reference(currentRelease) : null }),
+      ...refs, definition, pending: pendingRefs, issues, workspaceVersion,
+      inputHash: fingerprint({ ...refs, definition, pending: pendingRefs, sourceState, workspaceVersion, baseReleaseRef: currentRelease ? reference(currentRelease) : null }),
       summary: { concepts: concepts.length, relations: relations.length, types: ((model?.content.types ?? []) as Data[]).length, sources: sourceIds.length, snapshots: snapshots.length, rows: snapshots.reduce((n, s) => n + s.rows, 0) },
       diff: releaseDiff(currentRelease?.content.definition ?? {}, definition),
       baseReleaseRef: currentRelease ? reference(currentRelease) : null,

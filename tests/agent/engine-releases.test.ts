@@ -45,8 +45,12 @@ test("release lifecycle is checked, immutable, idempotent, scoped, and survives 
     memory.putArtifact({ ...f, expectedVersion: f.version, status: "candidate", content: { ...definition, adoptedVersion: f.version, concepts: [{ id: "company", name: "公司", description: "未采纳修改" }] } });
     assert.equal(releases.overview().working.pending.length, 1);
     assert.equal((await read()).body.concept && ((await read()).body.concept as any).description, "接受服务的公司");
-    const blocked = await releases.check({ inputHash: releases.overview().working.inputHash });
-    assert.equal(blocked.status, "blocked");
+    // Confirmed 2026-10-19 (FEATURE_041): pending work warns but no longer blocks, and it is not part of the release.
+    const unblocked = await releases.check({ inputHash: releases.overview().working.inputHash });
+    assert.equal(unblocked.status, "ready");
+    const pendingIssue = (unblocked.content.issues as any[]).find(issue => issue.code === "pending_changes");
+    assert.equal(pendingIssue.severity, "warning");
+    assert.deepEqual((unblocked.content.definition as any).concepts, [{ id: "company", name: "公司", description: "接受服务的公司" }], "the unadopted wording is not in the release");
     assert.equal(releases.read(ref(first.release)).content.name, "v1.0");
     memory.close();
     memory = new MemoryStore(directory); live = new LiveMemory(directory, memory); releases = new Releases(memory, live);

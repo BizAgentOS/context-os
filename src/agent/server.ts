@@ -324,6 +324,8 @@ export async function createServer(
         if (url.pathname === "/api/changes/read") {
           send(200, { change: app.changes.read(url.searchParams.get("id") ?? "", url.searchParams.has("version") ? Number(url.searchParams.get("version")) : undefined) }); return;
         }
+        if (url.pathname === "/api/workspace-versions") { send(200, { versions: app.workspaceVersions.list(), composition: app.workspaceVersions.composition() }); return; }
+        if (url.pathname === "/api/workspace-versions/read") { send(200, { version: app.workspaceVersions.read(Number(url.searchParams.get("number"))) }); return; }
         if (url.pathname === "/api/engine") { send(200, app.programBuilds.overview()); return; }
         if (url.pathname === "/api/data") { send(200, app.snapshots.overview()); return; }
         if (url.pathname === "/api/data/preview") {
