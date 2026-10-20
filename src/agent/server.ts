@@ -753,10 +753,13 @@ export async function createServer(
         case "/api/live/corrections/cancel": {
           const method = url.pathname.split("/").at(-1) as
             "propose" | "check" | "adopt" | "cancel";
-          const saved = await new RelationCorrections(
-            app.memory,
-            app.live,
-          ).execute(method, body);
+          const saved = await new RelationCorrections(app.memory, app.live, decided => {
+            // FEATURE_041 T041-04a: an adopted correction is a governance decision; the ledger records it in the same transaction.
+            app.changes.recordDecision({ type: "local_correction", title: `局部纠正 · ${decided.title}`,
+              subject: { id: decided.id, version: decided.version },
+              effect: { correctionRef: { id: decided.id, version: decided.version }, target: decided.content.target,
+                targetIds: decided.content.targetIds, reason: decided.content.reason } });
+          }).execute(method, body);
           result = { ...app.canvasState(), saved };
           break;
         }

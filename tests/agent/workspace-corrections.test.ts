@@ -197,3 +197,30 @@ test("a release pins the working version it was published from, and a later adop
     assert.deepEqual(reread.content.definition.corrections, [], "the old release does not carry corrections adopted afterwards");
   } finally { await w.close(); }
 });
+
+test("an adopted correction is recorded in the change ledger in the same transaction", async () => {
+  const w = await workspace();
+  try {
+    assert.equal((await w.manage("/api/changes?type=local_correction")).total, 0, "an untouched workspace has no correction changes");
+    const correction = await adoptCorrection(w, [], "ledger");
+    const listed = await w.manage("/api/changes?type=local_correction");
+    assert.equal(listed.total, 1, "adopting a correction records exactly one change");
+    const entry = listed.changes[0];
+    assert.equal(entry.type, "local_correction");
+    assert.equal(entry.status, "adopted");
+    assert.equal(entry.origin, "human");
+    const read = (await w.manage(`/api/changes/read?id=${entry.id}&version=${entry.version}`)).change;
+    assert.deepEqual(read.content.subject, { id: correction.id, version: correction.version }, "the change names the decided correction version");
+    assert.deepEqual(read.content.effect.correctionRef, { id: correction.id, version: correction.version });
+    assert.equal(read.content.recordedFrom, "owning_service");
+  } finally { await w.close(); }
+});
+
+test("a proposed correction that was never adopted stays out of the change ledger", async () => {
+  const w = await workspace();
+  try {
+    const target = { modelId: w.model.id, modelVersion: w.model.version, type: "投诉", objectId: "TS002", relation: "回访记录" };
+    await w.manage("/api/live/corrections/propose", { operationId: "p-only", target, targetIds: [], reason: "尚未决定", evidence: "管理员登记" });
+    assert.equal((await w.manage("/api/changes?type=local_correction")).total, 0, "a candidate is not a decision");
+  } finally { await w.close(); }
+});

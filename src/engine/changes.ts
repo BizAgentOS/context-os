@@ -211,6 +211,24 @@ export class OntologyChanges {
   }
 
   reject(input: unknown) { return this.close("reject", input, "rejected"); }
+
+  /** Record a decision an owning service has already executed, so the ledger shows it (FEATURE_041 T041-04a). */
+  recordDecision(input: { type: string; title: string; subject: Data; effect: Data; origin?: "program" | "human" | "agent" | "qa" }) {
+    const type = input.type;
+    if (!(typeNames as readonly string[]).includes(type)) throw new Error(`“${type}”不是已登记的类型`);
+    const fp = fingerprint({ type, subject: input.subject });
+    return this.memory.atomic(() => {
+      // Recording the same decision twice is still one change, not two.
+      const existing = this.memory.listArtifacts("ontology_change").find(item =>
+        String(item.content.type) === type && item.content.fingerprint === fp && item.status !== "rejected");
+      if (existing) return existing;
+      return this.memory.putArtifact({ kind: "ontology_change", title: input.title, status: "adopted", content: jsonData({
+        origin: input.origin ?? "human", type, subject: input.subject, baseline: this.currentBaseline(), fingerprint: fp,
+        effect: input.effect, recordedFrom: "owning_service", decision: { actor: "local-admin", at: new Date().toISOString() },
+        proposedBy: "local-admin" }) });
+    });
+  }
+
   withdraw(input: unknown) { return this.close("withdraw", input, "withdrawn"); }
   private close(method: string, input: unknown, disposition: "rejected" | "withdrawn") {
     const args = reasonInput.parse(input), actor = "local-admin", signature = fingerprint({ method, args });
