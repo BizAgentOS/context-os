@@ -100,9 +100,12 @@ function present(a: Artifact): Artifact & { changeRef: Data } {
 export class MappingChanges {
   private memory: MemoryStore;
   private live: LiveMemory;
-  constructor(memory: MemoryStore, live: LiveMemory) {
+  /** Called inside the adopting transaction so the decided revision and its change record cannot diverge. */
+  private onDecided?: (saved: Artifact) => void;
+  constructor(memory: MemoryStore, live: LiveMemory, onDecided?: (saved: Artifact) => void) {
     this.memory = memory;
     this.live = live;
+    this.onDecided = onDecided;
   }
   list() {
     return this.memory
@@ -539,6 +542,7 @@ export class MappingChanges {
           version: saved.version,
         },
       });
+      if (method === "adopt") this.onDecided?.(saved);
       return present(saved);
     });
   }

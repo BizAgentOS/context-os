@@ -87,7 +87,7 @@ function createView(models, api, saved) {
   for (const m of models) {
     const option = el(
       "option",
-      `${m.title} · v${m.version} · ${m.id.slice(0, 8)}`,
+      `${m.title} · ${m.id.slice(0, 8)}`,
     );
     option.value = m.id;
     modelChoice.append(option);
@@ -388,7 +388,7 @@ export function renderConsumerViews(live, { api, onSaved, showCredential }) {
       el("p", c.purpose),
       el(
         "p",
-        `${{ draft: "待启用", active: "已启用", revoked: "已停用" }[view.status]} · 固定映射 ${c.modelRef.id} v${c.modelRef.version}`,
+        `${{ draft: "待启用", active: "已启用", revoked: "已停用" }[view.status]} · 固定映射（发布时固定）`,
         "source-meta",
       ),
     );

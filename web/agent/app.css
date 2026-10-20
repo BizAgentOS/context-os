@@ -4176,3 +4176,9 @@ dialog.onboarding-dialog[open] { display: flex; flex-direction: column; overflow
 @media (prefers-reduced-motion:reduce) {
   .onboarding-dialog, .onboarding-dialog *, .onboarding-dialog::backdrop {animation:none!important;transition:none!important;scroll-behavior:auto!important;}
 }
+
+
+/* FEATURE_041 T041-04c: the main UI shows the working version and a release; other definition versions are developer-only. */
+.workspace-version {margin-inline-start:12px;padding:3px 10px;border-radius:999px;border:1px solid color-mix(in srgb, currentColor 22%, transparent);font-size:12px;line-height:1.6;letter-spacing:.02em;opacity:.82;white-space:nowrap;}
+.workspace-version[hidden] {display:none;}
+html:not([data-developer-view="true"]) .dev-only {display:none!important;}

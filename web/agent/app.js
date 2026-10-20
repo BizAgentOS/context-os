@@ -459,7 +459,25 @@ async function navigate(page) {
 }
 const capabilityPanel = createCapabilitiesPanel(api, () => renderCanvas(true));
 
+/** FEATURE_041 T041-04c: the main UI shows the working version; other definition versions live in the developer view. */
+function syncWorkspaceVersion() {
+  const topbar = document.querySelector(".topbar");
+  if (!topbar) return;
+  let chip = document.getElementById("workspace-version");
+  if (!chip) {
+    chip = document.createElement("span");
+    chip.id = "workspace-version";
+    chip.className = "workspace-version";
+    topbar.append(chip);
+  }
+  const version = state.workspaceVersion;
+  chip.hidden = !version;
+  chip.textContent = version ? `工作版 v${version.number}` : "";
+  chip.title = version ? `当前工作版本 v${version.number}；发布时固定这一版。其他定义版本号在开发者视图显示。` : "";
+}
+
 function render() {
+  syncWorkspaceVersion();
   capabilityPanel.button.hidden = !!shareMode || !!state.demo || !developerView();
   $("#demo-badge").hidden = !state.demo;
   $("#demo-badge").title = shareMode

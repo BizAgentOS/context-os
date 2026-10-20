@@ -763,6 +763,8 @@ export class AgentApplication {
     return {
       layoutVersion: 2,
       workspaceId: this.memory.workspaceId(),
+      // FEATURE_041 T041-04c: the working version is the only definition version the main UI shows beside a release.
+      workspaceVersion: (() => { const latest = this.workspaceVersions.latest(); return latest ? { id: latest.id, version: latest.version, number: Number(latest.content.number) } : null; })(),
       onboarding: this.onboarding.view(),
       legacyHistory: page === "setup" ? this.legacyHistory() : [],
       setupSection: setupSection(value) ?? progress.setupSection ?? "company",

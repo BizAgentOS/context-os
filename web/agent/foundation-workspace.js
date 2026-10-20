@@ -50,7 +50,7 @@ export function renderFoundationWorkspace(value, { selections, select, read }) {
     const option = el(
       "option",
       "",
-      `${artifact.status === "adopted" ? "已采用" : "候选待核对"} · v${artifact.version}`,
+      `${artifact.status === "adopted" ? "已采用" : "候选待核对"}`,
     );
     option.value = artifact.version;
     version.append(option);
@@ -113,7 +113,7 @@ export function renderFoundationWorkspace(value, { selections, select, read }) {
         el(
           "p",
           "source-meta",
-          `${result.target.status === "adopted" ? "已采用" : "候选待核对"} · v${ref.version} · ${status(definition)}`,
+          `${result.target.status === "adopted" ? "已采用" : "候选待核对"} · ${status(definition)}`,
         ),
         el("p", "source-meta", `定义标识：${ref.member}`),
       );

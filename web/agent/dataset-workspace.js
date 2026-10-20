@@ -37,7 +37,7 @@ export function renderDatasetWorkspace(state, { api, ontology, legacy, onChanged
 
   async function connection(dataset, initialKey = "") {
     const d = dialog("接入你的 Agent"); guard(d);
-    const subtitle = el("p", `${dataset.title} · 固定本体 v${dataset.content.foundationRef.version}`, "ds-muted");
+    const subtitle = el("p", `${dataset.title}`, "ds-muted");
     const message = notice(); d.content.append(subtitle, message);
     let keyInput, configText, config;
     d.addEventListener("close", () => { initialKey = ""; if (keyInput) keyInput.value = ""; if (configText) configText.value = ""; });
@@ -89,7 +89,7 @@ export function renderDatasetWorkspace(state, { api, ontology, legacy, onChanged
 
   function scope(dataset) {
     const d = dialog("已开放的本体范围");
-    d.content.append(el("p", `${dataset.title} · 本体 v${dataset.content.foundationRef.version} · ${dataset.status === "active" ? "已启用" : "已停用"}`, "ds-muted"));
+    d.content.append(el("p", `${dataset.title} · ${dataset.status === "active" ? "已启用" : "已停用"}`, "ds-muted"));
     for (const c of dataset.content.concepts) { const item = el("section", "", "ds-scope-item"); item.append(el("h3", c.name), el("p", c.description)); d.content.append(item); }
     if (dataset.content.relations.length) {
       const names = new Map(dataset.content.concepts.map(c => [c.id, c.name]));
@@ -116,7 +116,7 @@ export function renderDatasetWorkspace(state, { api, ontology, legacy, onChanged
   function create() {
     const foundation = data.foundation, model = data.model;
     const d = dialog("创建 MCP 数据集", true); guard(d);
-    d.content.append(el("p", `选择要交给 Agent 的内容 · ${foundation.enterprise} · 已采用本体 v${foundation.version}`, "ds-muted"));
+    d.content.append(el("p", `选择要交给 Agent 的内容 · ${foundation.enterprise}`, "ds-muted"));
     const form = el("form"); d.content.append(form);
     const title = field(form, "数据集名称", `${foundation.enterprise} · 本体知识`); title.required = true; title.maxLength = 200;
     let operationId = crypto.randomUUID(); form.addEventListener("input", () => { operationId = crypto.randomUUID(); });
@@ -198,7 +198,7 @@ export function renderDatasetWorkspace(state, { api, ontology, legacy, onChanged
     source.append(el("p", "本体数据来源", "ds-eyebrow"));
     if (data.foundation) {
       const f = data.foundation;
-      source.append(el("h2", f.enterprise), el("span", `已采用 · v${f.version}`, "ds-badge"));
+      source.append(el("h2", f.enterprise), el("span", "已采用", "ds-badge"));
       const stats = el("div", "", "ds-source-stats");
       for (const [value, label] of [[f.concepts.length, "个概念"], [f.relations.length, "条关系"]]) { const s = el("div"); s.append(el("strong", String(value)), el("span", label)); stats.append(s); }
       source.append(stats, el("p", data.model ? "已连接业务映射，可按字段开放真实记录。" : "当前可开放本体知识。连接业务映射后，还可开放真实业务记录。", "ds-muted"));
@@ -219,7 +219,7 @@ export function renderDatasetWorkspace(state, { api, ontology, legacy, onChanged
       top.append(el("h3", dataset.title), el("span", dataset.status === "active" ? "已启用" : "已停用", `ds-badge ${dataset.status === "active" ? "" : "ds-inactive"}`)); card.append(top);
       card.append(el("p", `${dataset.content.concepts.length} 个概念 · ${dataset.content.relations.length} 条关系 · ${(dataset.content.business?.grants || []).length} 类业务对象`, "ds-dataset-scope"));
       const names = el("div", "", "ds-tags"); for (const c of dataset.content.concepts.slice(0, 5)) names.append(el("span", c.name)); if (dataset.content.concepts.length > 5) names.append(el("span", `+${dataset.content.concepts.length - 5}`)); card.append(names);
-      card.append(el("p", `本体 v${dataset.content.foundationRef.version} · ${dataset.access ? `最近读取 ${when(dataset.access.lastReadAt)} · ${dataset.access.count} 次（含连接测试）` : "尚无读取记录"}`, "ds-muted"));
+      card.append(el("p", `${dataset.access ? `最近读取 ${when(dataset.access.lastReadAt)} · ${dataset.access.count} 次（含连接测试）` : "尚无读取记录"}`, "ds-muted"));
       const actions = el("div", "", "ds-actions"); actions.append(action("查看范围", () => scope(dataset)));
       if (dataset.status === "active") actions.append(action("接入配置 ↗", () => void connection(dataset), true), action("停用", () => revoke(dataset)));
       card.append(actions); datasets.append(card);

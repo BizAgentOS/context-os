@@ -533,8 +533,15 @@ export async function createServer(
           result = app.snapshots.setPolicy(body); break;
         case "/api/engine/check":
           result = await app.programBuilds.check(body); break;
-        case "/api/engine/adopt":
-          result = await app.programBuilds.adopt(body); break;
+        case "/api/engine/adopt": {
+          const adopted = await app.programBuilds.adopt(body);
+          // FEATURE_041 T041-04b: an adopted program candidate is a governance decision, so the ledger records it.
+          app.changes.recordDecision({ type: "entity", title: `程序构建 · ${adopted.candidate.title}`, origin: "program",
+            subject: { candidateRef: { id: adopted.candidate.id, version: adopted.candidate.version } },
+            effect: { foundationRef: { id: adopted.foundation.id, version: adopted.foundation.version },
+              modelRef: { id: adopted.model.id, version: adopted.model.version } } });
+          result = adopted; break;
+        }
         case "/api/engine/cancel":
           result = app.programBuilds.cancel(body); break;
         case "/api/releases/check":
@@ -640,12 +647,17 @@ export async function createServer(
               case "/api/live/propose":
                 saved = await app.live.propose(body);
                 break;
-              case "/api/live/adopt":
-                saved = await app.adoptLive(
+              case "/api/live/adopt": {
+                const adopted = await app.adoptLive(
                   String(body.id),
                   Number(body.version),
                 );
+                saved = adopted;
+                app.changes.recordDecision({ type: "entity", title: "执行映射采用", origin: "human",
+                  subject: { modelRef: { id: adopted.id, version: adopted.version } },
+                  effect: { modelRef: { id: adopted.id, version: adopted.version } } });
                 break;
+              }
               case "/api/live/prepare":
                 saved = app.live.prepare(body);
                 break;
@@ -733,7 +745,11 @@ export async function createServer(
         case "/api/live/changes/check":
         case "/api/live/changes/adopt":
         case "/api/live/changes/cancel": {
-          const saved=await new MappingChanges(app.memory,app.live).execute(url.pathname.split("/").at(-1) as "propose"|"check"|"adopt"|"cancel",body);
+          const saved=await new MappingChanges(app.memory,app.live, decided => {
+            app.changes.recordDecision({ type: "binding", title: `映射修订 · ${decided.title}`, origin: "human",
+              subject: { changeRef: { id: decided.id, version: decided.version } },
+              effect: { modelRef: decided.content.resultModel ?? null } });
+          }).execute(url.pathname.split("/").at(-1) as "propose"|"check"|"adopt"|"cancel",body);
           result={...app.canvasState(),saved}; break;
         }
         case "/api/live/corrections/read":
@@ -833,9 +849,14 @@ export async function createServer(
         case "/api/canvas/stop":
           result = await app.canvasStop(body);
           break;
-        case "/api/canvas/foundation/adopt":
-          result = await queue(() => app.canvasFoundationAdopt(body));
-          break;
+        case "/api/canvas/foundation/adopt": {
+          const adoptedFoundation = await queue(() => app.canvasFoundationAdopt(body));
+          const foundationRef = { id: String(body.id ?? ""), version: Number(body.version ?? 0) };
+          // FEATURE_041 T041-04b: adopting a foundation candidate is a decision, not a side effect of a dialog.
+          if (foundationRef.id) app.changes.recordDecision({ type: "entity", title: "基础本体采用", origin: "human",
+            subject: { foundationRef }, effect: { foundationRef } });
+          result = adoptedFoundation; break;
+        }
         case "/api/canvas/decision":
           result = await queue(() => app.canvasDecision(body));
           break;
