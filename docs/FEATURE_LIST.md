@@ -26,6 +26,8 @@ Last Updated: 2026-10-19
 
 **2026-10-19 M1 首批验收：**040 分层语义模型、047 会话 / 执行池和 049 事件推送完成隔离迁移、公共边界、真实模型及浏览器验收，完成证据见[基础批次记录](experiment/V030_M1_FOUNDATIONS_2026_10_19.md)。当前版本仍为 v0.2.3，未发布；后续从 041 统一变更继续。
 
+**2026-10-19 041 开工：**用户确认实施方案：首次构建后新增来源带来的新实体按 R2 进入待处理；有待采用变更时不阻塞发布，只提示不包含在本次发布中。041 改为 InProgress，未发布。
+
 ## Version Info
 
 - **Current Release:** v0.2.3（2026-10-16，本地 Tag `v0.2.3`）。v0.2.2 于 2026-10-15 发布（本地 Tag `v0.2.2`）。v0.2.0 于 2026-10-14 发布（提交 `930b10e`，Tag `v0.2.0`）。
@@ -41,7 +43,7 @@ Last Updated: 2026-10-19
 |---|---|---:|---:|---:|---:|
 | v0.1.0 | InProgress | 2 | 3 | 19 | 19/24 |
 | v0.2.0 | Released | 0 | 0 | 11 | 11/11 |
-| v0.3.0 | InProgress | 26 | 0 | 7 | 7/33 |
+| v0.3.0 | InProgress | 25 | 1 | 7 | 7/33 |
 
 本表按计划批次统计。v0.2.2 为已发布能力的 PATCH 修复版本，不新增或重复计算 Feature。
 
@@ -93,7 +95,7 @@ Last Updated: 2026-10-19
 | 038 | 读取合同对齐 | Enhancement | High | Completed | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-038) |
 | 039 | 冻结旧消费接口 | Refactor | High | Completed | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-039) |
 | 040 | 分层语义模型 | Refactor | High | Completed | v0.3.0 | 036 | [设计](features/v0.3.0.md#feature-040) |
-| 041 | 统一变更流程与自动采用规则 | Enhancement | High | Planned | v0.3.0 | 040 | [设计](features/v0.3.0.md#feature-041) |
+| 041 | 统一变更流程与自动采用规则 | Enhancement | High | InProgress | v0.3.0 | 040 | [设计](features/v0.3.0.md#feature-041) |
 | 042 | 关系发现修复与身份对应 | Enhancement | High | Planned | v0.3.0 | 040、041 | [设计](features/v0.3.0.md#feature-042) |
 | 043 | 文档补充、证据库与待裁决 | Enhancement | High | Planned | v0.3.0 | 041、044 | [设计](features/v0.3.0.md#feature-043) |
 | 044 | 待处理中心 | New | High | Planned | v0.3.0 | 041；界面依赖 048 | [设计](features/v0.3.0.md#feature-044) |

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "relation": {
+    "passMatchRate": 0.95,
+    "reviewMatchRate": 0.6,
+    "requireUniqueTarget": true
+  },
+  "rejection": {
+    "reproposeMatchRateDelta": 0.2
+  },
+  "limits": {
+    "listPageSize": 100,
+    "evidenceTextChars": 4000,
+    "targetChars": 2000
+  }
+}
