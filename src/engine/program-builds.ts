@@ -41,6 +41,15 @@ const MAX_CAPABILITIES = 40;
 const MAX_MODEL_TYPES = 20;
 const MAX_FOUNDATION_CONCEPTS = 30;
 
+/** Structural changes a program build proposes. Only these wait for an explicit decision after the first build (R2). */
+export interface StructuralDelta { entities: string[]; relations: string[]; merges: string[]; retired: string[] }
+export function structuralDelta(diff: Data | undefined): StructuralDelta {
+  const list = (value: unknown) => Array.isArray(value) ? value.map(String) : [];
+  return { entities: list(diff?.addedConcepts), relations: list(diff?.addedRelations), merges: list(diff?.addedSupplements),
+    retired: [...list(diff?.retiredConcepts), ...list(diff?.retiredRelations)] };
+}
+export const isStructural = (delta: StructuralDelta) => Object.values(delta).some(items => items.length > 0);
+
 /** Deterministic build jobs share ADE's ontology and mapping services, never a model loop. */
 /** A mapping follows its adopted concept's wording: documents and repairs may have renamed or described it since the mapping was built. */
 function alignTypes(types: Data[], modelRelations: Data[], concepts: Data[]) {
@@ -222,6 +231,18 @@ export class ProgramBuilds {
     if (candidate && content.autoAdopt) {
       candidate = await this.check({ id: candidate.id, version: candidate.version }, () => this.assertRunning(id));
       this.assertRunning(id);
+      const delta = structuralDelta(candidate.content.diff as Data);
+      // FEATURE_041 R2 (blueprint §10.3): only the first build adopts structure by itself. Afterwards new objects,
+      // relations, merges and retired structure wait for a decision; same-structure rebinds, snapshot refreshes,
+      // evidence refreshes and wording changes still adopt automatically.
+      if (this.foundation.read().adopted && isStructural(delta)) {
+        const parts = ([["新对象", delta.entities.length], ["新关系", delta.relations.length], ["新合并", delta.merges.length], ["退役结构", delta.retired.length]] as const)
+          .filter(([, count]) => count > 0).map(([label, count]) => `${label} ${count} 项`).join("、");
+        issues.push({ code: "structure_needs_review", severity: "warning",
+          message: `本次构建有结构变化（${parts}），未自动采用；请核对候选后显式采用或拒绝。`,
+          details: jsonData({ ...delta, candidateRef: { id: candidate.id, version: candidate.version } }) });
+        return candidate;
+      }
       if ((candidate.content.checks as Data).valid && !issues.some(issue => issue.code === "pending_foundation_review"))
         candidate = (await this.adopt({ id: candidate.id, version: candidate.version, operationId: `automatic:${content.operationId}` }, () => this.assertRunning(id))).candidate;
     }

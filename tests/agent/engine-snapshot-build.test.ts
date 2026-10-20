@@ -176,7 +176,11 @@ test("a larger discovered anchor preserves both sources' same-named properties a
 
     f.workspace.upload("accounts.csv", "id,crm_customer_id,name\nE0,C0,ERP0\nE1,C1,ERP1\nE2,C2,ERP2\nE3,C3,ERP3\nE4,C4,ERP4\n");
     const rebuilt = await f.engine.build({ operationId: "accounts", autoAdopt: true });
-    assert.equal(rebuilt.content.outcome, "adopted", JSON.stringify(rebuilt.content.issues));
+    // FEATURE_041 R2: a source that merges into an adopted object waits for a decision.
+    assert.equal(rebuilt.content.outcome, "candidate", JSON.stringify(rebuilt.content.issues));
+    const pendingMerge = f.engine.overview().candidate!;
+    const checkedMerge = await f.engine.check({ id: pendingMerge.id, version: pendingMerge.version });
+    await f.engine.adopt({ id: checkedMerge.id, version: checkedMerge.version, operationId: "accounts-adopt" });
     const model = f.live.overview().models.find(model => model.status === "adopted")!;
     const type = (model.content.types as any[])[0];
     assert.equal((model.content.types as any[]).length, 1);
@@ -215,7 +219,11 @@ test("new source properties avoid existing primary and supplement names without 
 
     f.workspace.upload("accounts.csv", "id,crm_customer_id,name\nE0,C0,ERP0\nE1,C1,ERP1\nE2,C2,ERP2\nE3,C3,ERP3\nE4,C4,ERP4\n");
     const rebuilt = await f.engine.build({ operationId: "accounts", autoAdopt: true });
-    assert.equal(rebuilt.content.outcome, "adopted", JSON.stringify(rebuilt.content.issues));
+    // FEATURE_041 R2: the new merge waits for a decision; the manual mapping is still what gets adopted.
+    assert.equal(rebuilt.content.outcome, "candidate", JSON.stringify(rebuilt.content.issues));
+    const pendingNames = f.engine.overview().candidate!;
+    const checkedNames = await f.engine.check({ id: pendingNames.id, version: pendingNames.version });
+    await f.engine.adopt({ id: checkedNames.id, version: checkedNames.version, operationId: "accounts-adopt-2" });
     const model = f.live.overview().models.find(model => model.status === "adopted")!;
     const type = (model.content.types as any[])[0];
     assert.deepEqual(type.fields, manualFields);

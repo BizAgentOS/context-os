@@ -122,7 +122,12 @@ test("an adopted foundation keeps the program discovery: merged sources, link ma
     await engine.build({ operationId: "build", autoAdopt: true });
     // A later build keeps the adopted relation; the projection must still know which link it came from.
     workspace.upload("sites.csv", "site_id,city\nS1,杭州\n");
-    assert.equal((await engine.build({ operationId: "rebuild", autoAdopt: true })).content.outcome, "adopted");
+    const rebuild = await engine.build({ operationId: "rebuild", autoAdopt: true });
+    // FEATURE_041 R2: a table that adds an object after the first build waits for a decision.
+    assert.equal(rebuild.content.outcome, "candidate", JSON.stringify(rebuild.content.issues));
+    const pending = engine.overview().candidate!;
+    const checkedPending = await engine.check({ id: pending.id, version: pending.version });
+    await engine.adopt({ id: checkedPending.id, version: checkedPending.version, operationId: "rebuild-adopt" });
     assert.equal(engine.overview().candidate, null, "the candidate itself is no longer offered after adoption");
     const view = foundation.view().current!;
     const helix = view.content.helix as any;

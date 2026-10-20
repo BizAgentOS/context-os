@@ -111,6 +111,10 @@ test("all nonempty capabilities are mapped and later sources preserve the earlie
       purpose: "保留人工映射", rationale: "业务字段用人工名称", types: (current.content.types as any[]).map(type => type === original ? {...type, fields: {门店名称: "name"}} : type), relations: []});
     await f.app.live.adopt(candidate.id, candidate.version);
     await f.app.live.sources.connect({...f.config, name: "第二个来源"}); await f.app.idle();
+    // FEATURE_041 R2: a second source adds objects, so it waits for an explicit decision.
+    const secondPending = f.app.programBuilds.overview().candidate!;
+    const secondChecked = await f.app.programBuilds.check({ id: secondPending.id, version: secondPending.version });
+    await f.app.programBuilds.adopt({ id: secondChecked.id, version: secondChecked.version, operationId: "second-source-adopt" });
     current = f.app.canvasState().live.models.find(model => model.status === "adopted")!;
     const preserved = (current.content.types as any[]).find(type => type.conceptId === original.conceptId);
     assert.deepEqual(preserved.fields, {门店名称: "name"});
@@ -283,6 +287,10 @@ test("retry recovers persisted rebind-only failures for all still-mapped sources
   try {
     await f.app.live.sources.connect(f.config); await f.app.idle();
     await f.app.live.sources.connect({ ...f.config, name: "另一业务来源" }); await f.app.idle();
+    // FEATURE_041 R2: the second source waits for a decision, so the adopted mapping only covers it after this.
+    const otherPending = f.app.programBuilds.overview().candidate!;
+    const otherChecked = await f.app.programBuilds.check({ id: otherPending.id, version: otherPending.version });
+    await f.app.programBuilds.adopt({ id: otherChecked.id, version: otherChecked.version, operationId: "other-source-adopt" });
     const revised = adoptBusinessConflict(f.app, f.directory), builds = f.app.programBuilds.overview().jobs.length;
     // The pre-fix queue persisted this state after trying each completed source in turn.
     for (const job of f.app.memory.listArtifacts("api_build")) f.app.memory.putArtifact({ ...job, expectedVersion: job.version, status: "failed",
@@ -403,8 +411,13 @@ test("HTTP and CSV management endpoints construct without model credentials and 
     assert.equal(service.app.canvasState().automaticApiBuild.status, "completed");
     await post("/api/canvas/upload", {page: "setup", name: "供应商.csv", content: "编号,名称\nSUP1,上传对象\n"});
     await service.app.idle();
+    // FEATURE_041 R2: the uploaded table adds an object, so it waits for a decision.
+    const uploadPending = service.app.programBuilds.overview().candidate!;
+    const uploadChecked = await service.app.programBuilds.check({ id: uploadPending.id, version: uploadPending.version });
+    await service.app.programBuilds.adopt({ id: uploadChecked.id, version: uploadChecked.version, operationId: "upload-adopt" });
     const state = service.app.canvasState();
-    assert.equal(state.automaticApiBuild.completed, 2);
+    assert.equal(state.automaticApiBuild.completed, 2, JSON.stringify({status: state.automaticApiBuild.status, errors: state.automaticApiBuild.errors,
+      jobs: service.app.programBuilds.overview().jobs.map(job => job.status)}));
     assert.equal(state.automaticBuild.total, 0, "CSV no longer queues model construction");
     const model = state.live.models.find(item => item.status === "adopted")!;
     assert.equal((model.content.types as any[]).length, 2);

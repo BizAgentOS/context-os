@@ -201,6 +201,21 @@ export class AutomaticApi {
         const checks = candidate?.content.checks as Data | undefined;
         const issues = (run.content.issues ?? []) as Data[];
         const pendingReview = issues.find(issue => issue.code === "pending_foundation_review");
+        // FEATURE_041 R2: a build whose remaining work is structural change finishes and waits for a decision
+        // instead of failing; the workspace keeps its adopted state until someone adopts the candidate.
+        const structural = issues.find(issue => issue.code === "structure_needs_review");
+        if (structural && !pendingReview) {
+          const message = String(structural.message);
+          this.memory.atomic(() => {
+            assertCurrent();
+            if (candidate) this.memory.attachArtifact(context.taskId, candidate);
+            this.update(job, "completed", {error: null, engineJobRef: ref(run),
+              candidateRef: candidateRef ? { id: String(candidateRef.id), version: Number(candidateRef.version) } : null, structurePending: true});
+            this.memory.addMessage(context.taskId, "assistant", message);
+            this.memory.complete(context, candidate ? [candidate.id] : [], message);
+          });
+          return;
+        }
         throw new Error(String(pendingReview?.message ?? checks?.description ?? issues.find(issue => issue.severity === "error")?.message ?? issues[0]?.message ?? "来源当前没有可验证记录，未采用执行映射"));
       }
       const candidateRef = run.content.candidateRef as Data;

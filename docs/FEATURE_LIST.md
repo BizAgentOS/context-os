@@ -30,6 +30,8 @@ Last Updated: 2026-10-19
 
 **2026-10-20 041 T041-02 完成：**工作版组合与版本递增、发布固定工作版、已采用局部纠正进入发布与差异；有待采用变更只提示不阻塞。全量 325 项测试与类型检查通过；041 仍 InProgress（T041-03、04 未开始），版本 v0.2.3 未发布。证据见[设计块](features/v0.3.0.md#feature-041)。
 
+**2026-10-20 041 T041-03a 完成：**自动采用按 R2 分流：首次构建仍自动采用，之后的程序构建出现新对象 / 新关系 / 新合并 / 退役结构时不再自动采用，候选留作待处理并在任务里标明原因；同结构重绑、快照与依据刷新、名称说明变化仍自动采用。全量 329 项测试与类型检查通过；T041-03b（基线 + 选中项重编译）与 T041-04 未开始，版本 v0.2.3 未发布。
+
 ## Version Info
 
 - **Current Release:** v0.2.3（2026-10-16，本地 Tag `v0.2.3`）。v0.2.2 于 2026-10-15 发布（本地 Tag `v0.2.2`）。v0.2.0 于 2026-10-14 发布（提交 `930b10e`，Tag `v0.2.0`）。
@@ -585,7 +587,7 @@ Last Updated: 2026-10-19
 - **Description:** 程序/人/Agent 变更统一提议、复验、采用；拒绝指纹；自动采用只限首次构建与同结构重绑；工作版组合；治理决定进入发布。
 - **Blocked by:** 040。
 - **Design:** [FEATURE_041](features/v0.3.0.md#feature-041)。
-- **Verification:** `tests/agent/ontology-changes.test.ts`（变更状态机与复验）、`tests/agent/workspace-corrections.test.ts`（工作版、发布纠正与旧发布隔离）；当前 T041-01/02 完成，T041-03/04 未开始。
+- **Verification:** `tests/agent/ontology-changes.test.ts`（变更状态机与复验）、`tests/agent/workspace-corrections.test.ts`（工作版、发布纠正与旧发布隔离）、`tests/agent/structure-approval.test.ts`（首次构建自动采用、结构变化阻断、同结构刷新）；当前 T041-01/02 与 T041-03a 完成，T041-03b/04 未开始。
 
 ### 042: 关系发现修复与身份对应
 
