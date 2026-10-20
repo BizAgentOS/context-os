@@ -19,6 +19,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { AgentApplication } from "./app.ts";
 import { SourcePolicyService } from "./source-policy.ts";
 import { Releases } from "../engine/releases.ts";
+import { ChangeConflict } from "../engine/changes.ts";
 import { DelegationDenied } from "../engine/delegations.ts";
 import { reviewVerification } from "./maintenance.ts";
 import type { AgentDriver } from "./runtime.ts";
@@ -315,6 +316,14 @@ export async function createServer(
           send(200, { ...value, eventCursor: events.cursor }); return;
         }
         if (url.pathname === "/api/sources/summary") { send(200, sourceSummary(app.memory)); return; }
+        if (url.pathname === "/api/changes") {
+          const q = url.searchParams;
+          send(200, app.changes.list({ ...(q.get("status") ? { status: q.get("status") } : {}), ...(q.get("type") ? { type: q.get("type") } : {}),
+            ...(q.has("limit") ? { limit: Number(q.get("limit")) } : {}), ...(q.has("offset") ? { offset: Number(q.get("offset")) } : {}) })); return;
+        }
+        if (url.pathname === "/api/changes/read") {
+          send(200, { change: app.changes.read(url.searchParams.get("id") ?? "", url.searchParams.has("version") ? Number(url.searchParams.get("version")) : undefined) }); return;
+        }
         if (url.pathname === "/api/engine") { send(200, app.programBuilds.overview()); return; }
         if (url.pathname === "/api/data") { send(200, app.snapshots.overview()); return; }
         if (url.pathname === "/api/data/preview") {
@@ -500,6 +509,18 @@ export async function createServer(
       }
       let result: unknown;
       switch (url.pathname) {
+        case "/api/changes/propose": {
+          const proposed = app.changes.propose(body);
+          send(proposed.suppressed ? 200 : 201, proposed); return;
+        }
+        case "/api/changes/verify":
+          result = { change: await app.changes.verify(body) }; break;
+        case "/api/changes/adopt":
+          result = { change: await app.changes.adopt(body) }; break;
+        case "/api/changes/reject":
+          result = { change: app.changes.reject(body) }; break;
+        case "/api/changes/withdraw":
+          result = { change: app.changes.withdraw(body) }; break;
         case "/api/engine/build":
           send(202, {job:app.programBuilds.start(body)}); return;
         case "/api/data/sync":
@@ -863,6 +884,8 @@ export async function createServer(
       send(200, result);
     } catch (error) {
       const message = app.safeError(error);
+      // A stale or already-decided change is a conflict the caller resolves by re-reading, not a malformed request.
+      if (error instanceof ChangeConflict) { send(409, { error: message.slice(0, 600), code: error.code }); return; }
       // Never include request bodies, provider credentials or raw SDK objects in HTTP errors.
       send(error instanceof DelegationDenied ? 403 : /不存在/.test(message) ? 404 : 400, {
         error: message.slice(0, 600),

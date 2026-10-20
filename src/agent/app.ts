@@ -20,6 +20,7 @@ import { ModelCredentials } from "./model-credentials.ts";
 import { Onboarding } from "./onboarding.ts";
 import { AgentDelegations } from "../engine/delegations.ts";
 import { ProgramBuilds } from "../engine/program-builds.ts";
+import { OntologyChanges } from "../engine/changes.ts";
 import { Snapshots } from "../data/snapshots.ts";
 import { Releases } from "../engine/releases.ts";
 import { validateDefinition } from "../engine/validation.ts";
@@ -170,6 +171,7 @@ export class AgentApplication {
   readonly onboarding: Onboarding;
   readonly delegations: AgentDelegations;
   readonly programBuilds: ProgramBuilds;
+  readonly changes: OntologyChanges;
   readonly snapshots: Snapshots;
   readonly capabilities: AgentCapabilities;
   readonly consumption: ConsumptionService;
@@ -217,6 +219,7 @@ export class AgentApplication {
     };
     this.live.snapshotCheck = definition => validateDefinition(this.snapshots, this.live, definition) as never;
     this.programBuilds = new ProgramBuilds(this.memory, this.foundation, this.live, this.snapshots);
+    this.changes = new OntologyChanges(this.memory, this.foundation, this.snapshots);
     this.onboarding = new Onboarding(this.memory, this.foundation, () => this.canvasTask("setup").id);
     this.contexts = new WorkContexts(this.memory, this.live);
     this.capabilities = new AgentCapabilities(directory, this.memory);
