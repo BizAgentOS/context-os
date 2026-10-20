@@ -626,7 +626,8 @@ export async function suggestOntology(
   for (const e of references) {
     const from = entityOf.get(e.A.ds),
       to = entityOf.get(e.B.ds);
-    if (!from || !to || from === to) continue;
+    // A table may reference itself (teams.parent_team_id → teams.team_id), so a self link is kept.
+    if (!from || !to) continue;
     const k = [drafts.indexOf(from), drafts.indexOf(to), e.A.name].join(":");
     const cur = best.get(k);
     const score = (x: Edge) => [
@@ -1079,8 +1080,8 @@ async function overlap(
   // Declared keys pair whatever their names.
   const matching = (t: string, agg: string) =>
     [
-      `SELECT a.c AS a, b.c AS b, ${agg} FROM ${t} a JOIN ${t} b ON a.v = b.v AND a.d <> b.d AND a.i = 0 AND b.i = 0 GROUP BY a.c, b.c`,
-      `SELECT a.c AS a, b.c AS b, ${agg} FROM ${t} a JOIN ${t} b ON a.v = b.v AND a.s = b.s AND a.d <> b.d AND (a.i = 1 OR b.i = 1) GROUP BY a.c, b.c`,
+      `SELECT a.c AS a, b.c AS b, ${agg} FROM ${t} a JOIN ${t} b ON a.v = b.v AND (a.d <> b.d OR a.c <> b.c) AND a.i = 0 AND b.i = 0 GROUP BY a.c, b.c`,
+      `SELECT a.c AS a, b.c AS b, ${agg} FROM ${t} a JOIN ${t} b ON a.v = b.v AND a.s = b.s AND (a.d <> b.d OR a.c <> b.c) AND (a.i = 1 OR b.i = 1) GROUP BY a.c, b.c`,
       ...(pairs.length
         ? [
             `SELECT a.c AS a, b.c AS b, ${agg} FROM (SELECT * FROM ${t} WHERE c IN (${pairs.map((p) => p[0]).join(", ")})) a JOIN (SELECT * FROM ${t} WHERE c IN (${pairs.map((p) => p[1]).join(", ")})) b ON a.v = b.v AND a.d <> b.d AND a.s <> b.s AND (a.i = 1 OR b.i = 1) WHERE ${pairs.map(([x, y]) => `(a.c = ${x} AND b.c = ${y})`).join(" OR ")} GROUP BY a.c, b.c`,

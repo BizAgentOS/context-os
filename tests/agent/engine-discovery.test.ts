@@ -9,6 +9,7 @@ import { LiveMemory } from "../../src/live/memory.ts";
 import { Workspace } from "../../src/agent/workspace.ts";
 import { Snapshots } from "../../src/data/snapshots.ts";
 import { discoverFromSnapshots } from "../../src/engine/snapshot-discovery.ts";
+import { profileColumns } from "../../src/engine/discovery.ts";
 import { confirmOntology, ontologyBundle } from "../../src/engine/helix-discovery.ts";
 
 function fixture() {
@@ -101,4 +102,32 @@ test("serial integer ids in different systems do not merge records by coincidenc
     assert.equal(o.entities.length, 2);
     assert.ok(o.entities.every(e => e.members.length === 1));
   } finally { await other.close(); await f.close(); }
+});
+
+
+test("a blank value does not make an otherwise unique key non-unique", () => {
+  const columns = profileColumns(["team_id", "name"], [
+    { team_id: "T1", name: "总部" }, { team_id: "", name: "华东" }, { team_id: "T2", name: "华南" },
+  ]);
+  const id = columns.find(column => column.name === "team_id")!;
+  assert.equal(id.distinct, 2);
+  assert.equal(id.nulls, 1, "the blank row counts as missing");
+  assert.equal(id.unique, true, "a missing value is not a duplicate value");
+});
+
+test("a table that references itself becomes a self link instead of being excluded", async () => {
+  const f = fixture();
+  try {
+    f.workspace.upload("teams.csv", "team_id,name,parent_team_id\nT1,总部,\nT2,华东,T1\nT3,华南,T1\nT4,上海,T2\n");
+    f.workspace.upload("people.csv", "person_id,name,team_id\nP1,张三,T2\nP2,李四,T3\nP3,王五,T4\n");
+    const run = await f.snapshots.sync({ operationId: "self" });
+    assert.equal(run.content.outcome, "synced", JSON.stringify(run.content));
+    const o = await f.discover();
+    const team = o.entities.find(e => e.key === "team_id");
+    assert.ok(team, JSON.stringify(o.entities.map(e => [e.name, e.key])));
+    const link = o.links.find(l => l.from === team!.id && l.to === team!.id);
+    assert.ok(link, JSON.stringify(o.links.map(l => [l.from, l.to, l.fromColumn])));
+    assert.equal(link!.fromColumn, "parent_team_id");
+    assert.notEqual(link!.fromColumn, "team_id", "the identity column is not the self link");
+  } finally { await f.close(); }
 });

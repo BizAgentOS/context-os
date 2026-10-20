@@ -38,6 +38,8 @@ Last Updated: 2026-10-19
 
 **2026-10-20 041 T041-04b/04c 收尾：**映射修订采用登记为 `binding` 变更，程序候选 / 执行映射 / 基础本体的采用登记为 `entity` 变更，并补 1 项回归（执行映射→entity、映射修订→binding、仅提议不登记），全量 334 项与类型检查通过；主界面新增「工作版 vN」并移除本体 / 映射 / 数据集 / 飞书引用文案里的技术版本号（发布详情保留发布时固定的版本）。04c 浏览器验收因本机沙箱禁止监听本地端口（listen EPERM）未完成，待可用环境补；版本 v0.2.3 未发布。
 
+**2026-10-20 042 T042-01 部分完成：**发现层修复自引用（同表不同列可配对、链接生成不再丢弃 `from === to`）与空串键唯一性（`profileColumns` 只统计非空值），新增 2 项回归；全量 336 项与类型检查通过。唯一外键被 identity 吞掉、普通责任字段生成提议、星桥正负例全量回归未完成，042 转 InProgress，版本 v0.2.3 未发布。
+
 ## Version Info
 
 - **Current Release:** v0.2.3（2026-10-16，本地 Tag `v0.2.3`）。v0.2.2 于 2026-10-15 发布（本地 Tag `v0.2.2`）。v0.2.0 于 2026-10-14 发布（提交 `930b10e`，Tag `v0.2.0`）。
@@ -597,13 +599,14 @@ Last Updated: 2026-10-19
 
 ### 042: 关系发现修复与身份对应
 
-- **Status:** Planned
+- **Status:** InProgress
 - **Category / Priority:** Enhancement / High
 - **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-20 / —
 - **Description:** 修复唯一外键、责任字段、自引用发现；身份规则 same_as/belongs_to 与记录级决定；去冗余与活动流改为提议。
 - **Blocked by:** 040、041。
 - **Design:** [FEATURE_042](features/v0.3.0.md#feature-042)。
+- **Verification:** `tests/agent/engine-discovery.test.ts`（空串不使唯一键失效、单表自引用链接）；T042-01 仅完成自引用与空串两项，唯一外键与责任字段待补。
 
 ### 043: 文档补充、证据库与待裁决
 

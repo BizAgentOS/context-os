@@ -46,7 +46,7 @@ export function profileColumns(fields: string[], rows: Data[]): ColumnProfile[] 
       : populated.every(value => typeof value === "number") ? "DOUBLE"
       : populated.every(value => typeof value === "boolean") ? "BOOLEAN" : "MIXED";
     return { name, type: populated.length ? type : "UNKNOWN", distinct, nulls: values.length - populated.length,
-      unique: rows.length > 0 && distinct === rows.length && values.every(scalar) };
+      unique: populated.length > 0 && distinct === populated.length && values.every(scalar) };
   });
 }
 /** Helix's own-key ordering, with ADE's conservative rejection of unnamed keys. */
