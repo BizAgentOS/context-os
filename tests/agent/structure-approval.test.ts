@@ -90,3 +90,55 @@ test("a same-structure refresh still adopts automatically, so snapshot and evide
     assert.equal(concepts(f).length, 1, "no object was added or removed");
   } finally { f.close(); }
 });
+
+
+/** Two new tables in one build, so a candidate actually offers a choice between new objects. */
+async function twoNewObjects(f: ReturnType<typeof fixture>) {
+  const workspace = new Workspace(f.memory);
+  workspace.upload("companies.csv", "id,name\nC1,青山\nC2,海川\n");
+  const first = await f.engine.build({ operationId: "first", autoAdopt: true });
+  assert.equal(first.content.outcome, "adopted", JSON.stringify(issues(first)));
+  workspace.upload("orders.csv", "order_id,partner_id,amount\nO1,C1,10\nO2,C2,20\n");
+  workspace.upload("products.csv", "product_id,label\nP1,甲\nP2,乙\n");
+  const second = await f.engine.build({ operationId: "two-new", autoAdopt: true });
+  assert.equal(second.content.outcome, "candidate", JSON.stringify(issues(second)));
+  const candidate = f.engine.overview().candidate!;
+  return f.engine.check({ id: candidate.id, version: candidate.version });
+}
+
+test("adopting part of a candidate keeps the selected object and leaves the rest pending", async () => {
+  const f = fixture();
+  try {
+    const checked = await twoNewObjects(f);
+    const added = (checked.content.diff as any).addedConcepts as string[];
+    assert.equal(added.length, 2, `both tables are new objects: ${JSON.stringify(issues(checked))}`);
+    const [keep, drop] = added;
+    await f.engine.adopt({ id: checked.id, version: checked.version, operationId: "partial",
+      selection: { entities: [keep], relations: [], merges: [] } });
+    const adopted = f.foundation.read().adopted!;
+    const ids = (adopted.content.concepts as any[]).map(concept => concept.id);
+    assert.ok(ids.includes(keep), "the selected object is adopted");
+    assert.equal(ids.includes(drop), false, "the unselected object stays out of the working version");
+
+    // The unselected object was never decided, so the next build proposes it again instead of adopting it.
+    const again = await f.engine.build({ operationId: "remaining", autoAdopt: true });
+    assert.equal(again.content.outcome, "candidate", JSON.stringify(issues(again)));
+    const structural = issues(again).find((issue: any) => issue.code === "structure_needs_review");
+    assert.match(structural.message, /新对象 1 项/);
+  } finally { f.close(); }
+});
+
+test("a selection that names something the candidate does not add is refused instead of guessed", async () => {
+  const f = fixture();
+  try {
+    const checked = await twoNewObjects(f);
+    const before = f.foundation.read().adopted!.version;
+    await assert.rejects(f.engine.adopt({ id: checked.id, version: checked.version, operationId: "bad-entity",
+      selection: { entities: ["source_not_there"], relations: [], merges: [] } }), /不是本次候选新增的对象/);
+    await assert.rejects(f.engine.adopt({ id: checked.id, version: checked.version, operationId: "bad-relation",
+      selection: { entities: [], relations: ["rel_not_there"], merges: [] } }), /不是本次候选新增的关系/);
+    await assert.rejects(f.engine.adopt({ id: checked.id, version: checked.version, operationId: "bad-merge",
+      selection: { entities: [], relations: [], merges: ["不存在的合并 ← 来源"] } }), /不是本次候选新增的合并/);
+    assert.equal(f.foundation.read().adopted!.version, before, "a refused selection changes nothing");
+  } finally { f.close(); }
+});

@@ -16,7 +16,13 @@ import { migrateLegacyModel, reconcileLayeredModel, type LayeredModel, type Lega
 const identifier = z.string().trim().min(1).max(200);
 const buildInput = z.object({ operationId: identifier, sourceIds: z.array(identifier).max(100).optional(), expectedFoundationVersion: z.number().int().nonnegative().optional(), autoAdopt: z.boolean().default(false) }).strict();
 const referenceInput = z.object({ id: identifier, version: z.number().int().positive() }).strict();
-const adoptInput = referenceInput.extend({ operationId: identifier });
+const selection = z.object({
+  entities: z.array(identifier).max(30).default([]),
+  relations: z.array(identifier).max(40).default([]),
+  merges: z.array(identifier).max(20).default([]),
+}).strict();
+const adoptInput = referenceInput.extend({ operationId: identifier, selection: selection.optional() });
+type Selection = z.infer<typeof selection>;
 type BuildInput = z.infer<typeof buildInput>;
 type Ref = { id: string; version: number };
 interface BuildContent {
@@ -30,7 +36,7 @@ interface CandidateContent {
   foundation: Data; concepts: Data[]; relations: Data[]; types: Data[]; modelRelations: Data[];
   issues: BuildIssue[]; coverage: Data[]; diff: Data; checks: Data;
   discovery?: Data; bundle?: Data; snapshotInputs?: Record<string, string>;
-  adoption?: { operationId: string; inputVersion: number; foundationRef: Ref; modelRef: Ref };
+  adoption?: { operationId: string; inputVersion: number; selection?: unknown; foundationRef: Ref; modelRef: Ref };
 }
 const ref = (artifact: Artifact | null | undefined): Ref | null => artifact ? { id: artifact.id, version: artifact.version } : null;
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -617,6 +623,54 @@ export class ProgramBuilds {
     return candidate;
   }
 
+  /** Keep only the selected new structure: adopting part of a candidate recompiles the rest against the same base. */
+  private prune(content: CandidateContent, selection: Selection): CandidateContent {
+    const list = (value: unknown) => Array.isArray(value) ? value.map(String) : [];
+    const addedEntities = new Set(list(content.diff.addedConcepts));
+    const addedRelations = new Set(list(content.diff.addedRelations));
+    const addedMerges = new Set(list(content.diff.addedSupplements));
+    // Retiring structure cannot be expressed as "keep some": restoring a retired definition is a different edit.
+    if (list(content.diff.retiredConcepts).length || list(content.diff.retiredRelations).length)
+      throw new Error("本次候选包含退役结构，部分采用无法保留原有定义；请整批采用或拒绝后重新构建");
+    for (const id of selection.entities) if (!addedEntities.has(id)) throw new Error(`所选对象不是本次候选新增的对象：${id}`);
+    for (const id of selection.relations) if (!addedRelations.has(id)) throw new Error(`所选关系不是本次候选新增的关系：${id}`);
+    for (const key of selection.merges) if (!addedMerges.has(key)) throw new Error(`所选合并不是本次候选新增的合并：${key}`);
+    const keepEntities = selection.entities.length ? new Set(selection.entities) : null;
+    const keepRelations = selection.relations.length ? new Set(selection.relations) : null;
+    const keepMerges = selection.merges.length ? new Set(selection.merges) : null;
+
+    const concepts = content.concepts.filter(concept => !addedEntities.has(String(concept.id)) || keepEntities?.has(String(concept.id)));
+    const keptConcepts = new Set(concepts.map(concept => String(concept.id)));
+    const relations = content.relations.filter(relation => {
+      if (!keptConcepts.has(String(relation.from)) || !keptConcepts.has(String(relation.to))) return false;
+      return !addedRelations.has(String(relation.id)) || keepRelations?.has(String(relation.id));
+    });
+    const keptRelations = new Set(relations.map(relation => String(relation.id)));
+    const types = content.types.flatMap((type): Data[] => {
+      if (!keptConcepts.has(String(type.conceptId))) return [];
+      const supplements = dataArray(type.supplements).filter(supplement => {
+        const key = `${String(type.name)} ← ${String(supplement.name)}`;
+        return !addedMerges.has(key) || keepMerges?.has(key);
+      });
+      return [{ ...type, ...(dataArray(type.supplements).length ? { supplements } : {}) }];
+    });
+    if (!types.length) throw new Error("所选范围没有保留任何实体映射；请至少选择一个新增对象，或整批采用");
+    const typeNames = new Set(types.map(type => String(type.name)));
+    const modelRelations = content.modelRelations.filter(relation => {
+      if (!typeNames.has(String(relation.from)) || !typeNames.has(String(relation.to))) return false;
+      const relationId = String(relation.relationId ?? "");
+      return !relationId || !addedRelations.has(relationId) || keptRelations.has(relationId);
+    });
+    const evidenceIds = new Set<string>();
+    for (const concept of concepts) {
+      for (const id of dataArray(concept.evidenceRefs)) evidenceIds.add(String(id));
+      if (concept.programEvidenceId) evidenceIds.add(String(concept.programEvidenceId));
+    }
+    for (const relation of relations) for (const id of dataArray(relation.evidenceRefs)) evidenceIds.add(String(id));
+    const evidence = dataArray(content.foundation.evidence).filter(item => evidenceIds.has(String(item.id)));
+    return { ...content, concepts, relations, types, modelRelations, foundation: jsonData({ ...content.foundation, concepts, relations, evidence }) };
+  }
+
   private virtualFoundation(content: CandidateContent): Artifact {
     const current = this.foundation.read().current;
     const keys = ["enterprise", "concepts", "relations", "evidence", "unknowns", "conflicts", "documentVersions", "profileRef"];
@@ -624,9 +678,9 @@ export class ProgramBuilds {
     return { id: current?.id ?? "engine-new-foundation", version: (current?.version ?? 0) + 2, kind: "foundation", status: "adopted", title: "数据底座本体", createdAt: now(), content: content.foundation };
   }
 
-  private async prepare(candidate: Artifact, assertActive: () => void = () => {}) {
+  private async prepare(candidate: Artifact, assertActive: () => void = () => {}, override?: CandidateContent) {
     assertActive();
-    const content = candidate.content as unknown as CandidateContent;
+    const content = override ?? candidate.content as unknown as CandidateContent;
     this.assertInputs(content);
     if (content.issues.some(issue => issue.severity === "error")) throw new Error("候选包含来源或身份错误，请修复问题后重新构建");
     if (dataArray(content.foundation.conflicts).some(conflict => !conflict.resolvedBy)) throw new Error("现有工作版本存在未解决冲突，请通过助手修复后再采用");
@@ -672,11 +726,13 @@ export class ProgramBuilds {
     const prior = this.memory.getArtifact(input.id), priorContent = prior.content as unknown as CandidateContent;
     if (prior.kind === "engine_candidate" && prior.status === "adopted" && priorContent.adoption?.operationId === input.operationId) {
       if (priorContent.adoption.inputVersion !== input.version) throw new Error("同一采用操作标识不能用于不同候选版本");
+      if (JSON.stringify(priorContent.adoption.selection ?? null) !== JSON.stringify(input.selection ?? null)) throw new Error("同一采用操作标识不能用于不同的选择范围");
       return { status: "adopted", candidate: prior, foundation: this.memory.getArtifact(priorContent.adoption.foundationRef.id, priorContent.adoption.foundationRef.version), model: this.memory.getArtifact(priorContent.adoption.modelRef.id, priorContent.adoption.modelRef.version) };
     }
     const candidate = this.candidate({ id: input.id, version: input.version });
     if (candidate.status !== "checked" || !(candidate.content.checks as Data).valid) throw new Error("请先检查候选，再采用工作版本");
-    const prepared = await this.prepare(candidate, assertActive), content = candidate.content as unknown as CandidateContent;
+    const content = candidate.content as unknown as CandidateContent;
+    const prepared = await this.prepare(candidate, assertActive, input.selection ? this.prune(content, input.selection) : undefined);
     return this.memory.atomic(() => {
       assertActive();
       this.candidate({ id: input.id, version: input.version });
@@ -689,7 +745,7 @@ export class ProgramBuilds {
         adopted = this.foundation.adopt(draft.id, draft.version);
       }
       const model = this.memory.putArtifact({ kind: "live_ontology", status: "adopted", title: "程序构建的数据底座", content: { ...prepared.definition, foundationRef: jsonData(ref(adopted)), programBuildId: content.jobId } });
-      const saved = this.memory.putArtifact({ ...candidate, expectedVersion: candidate.version, status: "adopted", content: { ...candidate.content, adoption: jsonData({ operationId: input.operationId, inputVersion: input.version, foundationRef: ref(adopted), modelRef: ref(model) }) } });
+      const saved = this.memory.putArtifact({ ...candidate, expectedVersion: candidate.version, status: "adopted", content: { ...candidate.content, adoption: jsonData({ operationId: input.operationId, inputVersion: input.version, selection: input.selection ?? null, foundationRef: ref(adopted), modelRef: ref(model) }) } });
       const job = this.memory.getArtifact(content.jobId);
       this.memory.putArtifact({ ...job, expectedVersion: job.version, content: { ...job.content, outcome: "adopted", candidateRef: jsonData(ref(saved)) } });
       return { status: "adopted" as const, candidate: saved, foundation: adopted!, model };
