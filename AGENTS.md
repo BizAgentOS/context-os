@@ -23,7 +23,9 @@
 
 ## 当前范围与开发方式
 
-当前版本 0.2.3：数据、本体、发布与接入三页工作台，结构化来源同步为快照，基础本体由 Helix 规则构建、内部 Agent 只修正，发布锁定快照；已知问题见 [ISSUES](docs/ISSUES.md)。范围与验收看 [0.2.x 设计](docs/features/v0.2.0.md)、[功能台账](docs/FEATURE_LIST.md)和[整体验收](docs/experiment/ENGINE_WORKBENCH.md)。v0.1.0 未单独发布，002、004、005、006、019 仍未完成，台账保留。保持本地单企业实验范围，按当前授权任务推进，不自动展开全部路线图。
+当前正在开发 v0.3.0，范围为 FEATURE_036—068：分层本体、统一变更与身份治理、构建 / 问答双模式 Agent、企业数据接入及旧路径清理。开工入口为 [v0.3.0 设计与任务](docs/features/v0.3.0.md)、[目标蓝图](docs/features/v0.3.0-blueprint.md)和[功能台账](docs/FEATURE_LIST.md)，完成情况以台账与实际验收为准。
+
+最近已发布版本为 v0.2.3（2026-10-16），是本轮开发基线；[0.2.x 设计](docs/features/v0.2.0.md)与[当时验收](docs/experiment/ENGINE_WORKBENCH.md)保留历史。包版本仍为 v0.2.3 不代表当前开发范围停在 0.2.x。已知问题见 [ISSUES](docs/ISSUES.md)；v0.1.0 未完成项继续在台账保留。保持本地单企业实验范围，按当前授权任务推进，不自动展开全部路线图。
 
 使用项目内 `.agents/skills/` 的开发技能，来源固定在 [.agents/CODINGSKILLS.md](.agents/CODINGSKILLS.md)。产品运行身份位于 `config/agent/`，运行 Skill 位于 `config/skills/`；它们与本文件、开发技能和 `docs/` 规格是不同角色，不能把设计文档自动装入模型。
 
@@ -35,7 +37,8 @@
 
 ## 版本与发布
 
-- **当前版本记录在三处，必须一致**：`package.json` 的 `version`、CHANGELOG 最新的已发布段落、最新的 Git Tag。README 的“当前版本”表随发布更新。
+- **已发布版本记录在三处，必须一致**：`package.json` 的 `version`、CHANGELOG 最新的已发布段落、最新的 Git Tag。README 的“已发布版本”表随发布更新。
+- **当前开发版本与最近发布版本分别表述**：当前开发目标由功能台账和对应设计块确定。开发汇报以 v0.3.0 及具体 Feature 为主；提及 v0.2.3 时注明“最近发布版本”或“包版本”，不能用它代替当前开发范围。
 - **版本号**：`MAJOR.MINOR.PATCH`。修复与补齐已承诺范围用 PATCH，新的功能批次用 MINOR。开发期间不加 `-dev` 后缀，`package.json` 保持最近一次发布的版本，未发布内容写在 CHANGELOG 的 `[Unreleased]`。
 - **功能与版本**：台账中 `Planned` 是计划版本，`Released` 只填实际包含它的发布版本（如 031—035 计划于 v0.2.0、发布于 v0.2.1）。每次完成功能就在 `[Unreleased]` 追加一条，写清做了什么、怎么验证、有什么限制。
 - **发布只在用户确认版本号后进行**，步骤：

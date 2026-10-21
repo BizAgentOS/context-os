@@ -1,14 +1,16 @@
 # 开发导航：三页数据融合产品
 
-下一开发版本 v0.3.0 的 Feature 与任务见 [v0.3.0 设计](features/v0.3.0.md)，目标设计见[蓝图](features/v0.3.0-blueprint.md)。当前发布版本 v0.2.3（2026-10-16，本地 Tag）；v0.2.0 的 Feature 与任务见 [v0.2.0 设计](features/v0.2.0.md)。以下保留 v0.1.0 历史实施导航。产品核心、三页方案和范围见[三页产品计划](THREE_PAGE_PLAN.md)；当前运行已为三页；T012-01 完成记录见[迁移验收](experiment/THREE_PAGE_MIGRATION.md)。
+当前正在开发 **v0.3.0**，Feature 与任务见 [v0.3.0 设计](features/v0.3.0.md)，目标设计见[蓝图](features/v0.3.0-blueprint.md)，实际进度见[功能台账](FEATURE_LIST.md)。最近发布版本为 v0.2.3（2026-10-16，本地 Tag），包版本保留发布值不改变当前开发目标。
 
-## 本轮交付
+以下保留 v0.1.0 历史实施导航，其中“本轮”指当时阶段。[三页产品计划](THREE_PAGE_PLAN.md)记录历史迁移，T012-01 完成记录见[迁移验收](experiment/THREE_PAGE_MIGRATION.md)；v0.2.0 历史任务见 [v0.2.0 设计](features/v0.2.0.md)。当前范围以 v0.3.0 设计和台账为准。
+
+## v0.1.0 历史交付
 
 **T016-04 已完成，本轮十八张票已交付，未发布。** 基础本体、各类来源、融合治理、两个独立消费者及离线兼容的证据见[整链验收](experiment/FUSION_CHAIN.md)。后续开发需明确新的任务范围。
 
 补充需求 FEATURE_017 自定义模型 API 已完成，见[使用与验收](experiment/CUSTOM_MODEL_API.md)。
 
-## 本轮开发顺序
+## v0.1.0 历史开发顺序
 
 | Feature | 交付 | 设计与任务 |
 |---|---|---|

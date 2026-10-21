@@ -2,11 +2,17 @@
 
 本体驱动的通用多源数据底座。把散落在不同系统的数据接进来，构建可溯源、有依据的本体，按版本发布给人和外部 Agent 使用。程序负责构建结构，KodaX Agent 协助接入、解释与修订。投研作为后续验证场景。
 
-## 当前版本
+## 当前开发：v0.3.0
+
+当前源码正在实现 v0.3.0 的 FEATURE_036—068，范围为分层本体、统一变更与身份治理、构建 / 问答双模式 Agent 和企业数据接入。开发入口见 [v0.3.0 设计与任务](docs/features/v0.3.0.md)及[目标蓝图](docs/features/v0.3.0-blueprint.md)，实际进度以[功能台账](docs/FEATURE_LIST.md)为准；最近完成的 041 / 042 见[统一变更验收](docs/experiment/V030_041_2026_10_21.md)和[关系与身份验收](docs/experiment/V030_042_2026_10_21.md)。
+
+v0.3.0 尚未发布。按仓库版本规则，`package.json` 和最新 Git Tag 保留最近发布的 v0.2.3，当前源码包含其后的 v0.3.0 开发改动。
+
+## 已发布版本
 
 | 版本 | 日期 | 提交 / Tag | 内容 |
 |---|---|---|---|
-| **0.2.3**（当前） | 2026-10-16 | Tag `v0.2.3` | 基础本体改由规则构建、Agent 只修正；本体页按程序发现结果展示；修复替换 CSV 后重建失败。228 项测试通过、14 项旧流程测试暂跳过，已知问题见 [ISSUES](docs/ISSUES.md) |
+| **0.2.3**（最近发布） | 2026-10-16 | Tag `v0.2.3` | 基础本体改由规则构建、Agent 只修正；本体页按程序发现结果展示；修复替换 CSV 后重建失败。发布当时 228 项测试通过、14 项旧流程测试暂跳过，后续处理见 [ISSUES](docs/ISSUES.md) |
 | 0.2.2 | 2026-10-15 | Tag `v0.2.2` | 修复快照保留、来源覆盖、旧发布接入、同名字段及日期原值等 7 项问题；231 项测试与整链验收通过 |
 | 0.2.1 | 2026-10-15 | Tag `v0.2.1` | 移植 Helix 快照底座：全量快照、全量本体发现与检查、发布锁定数据（FEATURE_031—035）及后续修复 |
 | 0.2.0 | 2026-10-14 | `930b10e` / Tag `v0.2.0` | 数据 · 本体 · 发布与接入三页工作台（FEATURE_025—030） |
@@ -16,8 +22,8 @@
 ## 三个页面
 
 - **数据**：接入文件、HTTP API 与 MCP 来源；把结构化记录同步为不可变快照，查看行数、字段画像与样本；来源字段结构变化时列出逐字段差异，确认后才生效；可把单个数据集改为实时读取。
-- **本体**：程序在全量快照上识别身份、跨来源合并与关联，生成候选并检查（身份唯一、字段、合并与关系匹配率），检查通过后采用；人或 Agent 提出或修订映射时，自动比较前后的全量检查结果，引入新问题则不能采用。
-- **发布与接入**：发布锁定本体、映射和各来源快照版本；发布与升级前显示定义差异和行级数据差异；为接入方选择范围、签发密钥、显式升级或撤销；可单独开启受限的 ADE Agent 委托。
+- **本体**：程序基于快照生成独立实体初稿与关系、身份等提议；结构变化经统一流程提议、复验并明确采用或拒绝，保留记录级身份决定和历史工作版。首次独立实体与同结构重绑适用有界自动采用规则。
+- **发布与接入**：发布固定工作版、本体、映射、来源快照与已采用的治理决定；发布与升级前显示定义差异和行级数据差异；为接入方选择范围、签发密钥、显式升级或撤销；可单独开启受限的 ADE Agent 委托。
 
 本体构建方法移植自 Helix Foundry（Apache-2.0），许可与逐文件修改记录见[第三方说明](third_party/helix-foundry/MODIFICATIONS.md)，设计决定见 [ADR-004](docs/ADR/ADR-004-managed-snapshots-and-pinned-releases.md)。
 
@@ -40,8 +46,8 @@ npm start
 
 | 命令 | 内容 | 是否调用模型 |
 |---|---|---|
-| `npm run check` | 类型检查与全部 Agent 测试（0.2.3 发布时 242 项，其中 14 项暂跳过） | 否 |
-| `npm run verify:snapshots` | 经 HTTP 接口走完快照整链：同步 → 构建 → 检查采用 → 发布 → 来源更新与字段类型变化 → 再发布 → 升级 → 撤销，见[验收](docs/experiment/ENGINE_WORKBENCH.md#021-更新2026-10-15) | 否 |
+| `npm run check` | 类型检查与全部 Agent 测试；最近一次 v0.3.0 验收见 [042 记录](docs/experiment/V030_042_2026_10_21.md) | 否 |
+| `npm run verify:snapshots` | 经 HTTP 接口走完快照整链：同步 → 独立实体构建 → 明确采用身份与关系 → 发布 → 来源更新与字段类型变化 → 再发布 → 升级 → 撤销，见[验收](docs/experiment/V030_042_2026_10_21.md) | 否 |
 | `npm run verify:chain -- --real` | 真实模型、双消费者的历史融合整链，见[整链验收](docs/experiment/FUSION_CHAIN.md) | 是，会产生费用 |
 
 ## 数据存储与边界
@@ -54,7 +60,7 @@ npm start
 
 ## 版本与发布管理
 
-- **版本号只有一个来源**：`package.json` 的 `version`。开发期间不加 `-dev` 后缀，保持最近一次发布的版本号，未发布内容记在 CHANGELOG 的 `[Unreleased]`。
+- **包版本号只有一个来源**：`package.json` 的 `version`。开发期间不加 `-dev` 后缀，保持最近一次发布的版本号，未发布内容记在 CHANGELOG 的 `[Unreleased]`。当前开发版本由功能台账和对应设计块标明，不能仅凭包版本判断开发范围。
 - **发布步骤**（由用户确认版本号后执行）：同步 `package.json` / `package-lock.json` 和代码中对外报告的版本号 → CHANGELOG 把 `[Unreleased]` 整理成 `[x.y.z] - 日期` → 功能台账填写 `Released` → 本地提交 `chore(release): vx.y.z` → 打附注 Tag `vx.y.z`。
 - **Tag 一经发布不移动**；发现问题就发下一个补丁版本。推送远程和 GitHub Release 需用户另行确认。
 - 完整规则见 [AGENTS.md](AGENTS.md#版本与发布) 与[开发流程](docs/DEVELOPMENT.md)。
@@ -65,7 +71,7 @@ npm start
 - [产品需求](docs/PRODUCT.md)与[总体架构](docs/DATA_ENGINE_DESIGN.md)：本体融合价值、用户与系统分工。
 - [内部 Agent](docs/AGENT_DESIGN.md)、[KodaX 接入记录](docs/KODAX_CAPABILITY_LEDGER.md)和[运行 Skill](docs/BUILTIN_SKILLS.md)：方法、能力与运行边界。
 - [语义契约](docs/SEMANTIC_CONTRACTS.md)、[人机协作](docs/AGENT_UI_DESIGN.md)、[画布](docs/CANVAS_DESIGN.md)、[消费](docs/DATA_CONSUMPTION_DESIGN.md)：同一对象与操作如何服务人和其他 Agent。
-- [0.2.x 设计与任务](docs/features/v0.2.0.md)、[功能台账](docs/FEATURE_LIST.md)、[开发流程](docs/DEVELOPMENT.md)、[Agent 工作约定](AGENTS.md)：实际状态与开发规则。
+- [v0.3.0 设计与任务](docs/features/v0.3.0.md)、[功能台账](docs/FEATURE_LIST.md)、[开发流程](docs/DEVELOPMENT.md)、[Agent 工作约定](AGENTS.md)：当前开发入口、实际状态与开发规则；[0.2.x 设计](docs/features/v0.2.0.md)保留历史。
 
 ## 演示与历史能力
 
