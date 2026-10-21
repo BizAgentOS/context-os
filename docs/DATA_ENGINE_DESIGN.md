@@ -50,9 +50,9 @@ SSE 按对象局部推送，前端拆 Agent 面板、待处理、任务和三页
 |---|---|---|
 | `src/agent/runtime.ts`、`app.ts` | Node HTTP / Web，KodaX embedded/inline；按页工具，跨页会话、有界上下文、按会话交互及后台各自的 runtime / 停止句柄 | 双模式、结构化执行卡与成本 |
 | `src/data/snapshots.ts`、执行器 | 本地不可变快照、字段画像、版本与保留，发布锁定；实时为显式策略 | 统一工作区快照读取、定时增量与质量熔断 |
-| `src/engine/program-builds.ts` | 确定性程序初稿、检查、候选，输出分层模型并保留稳定身份与人工语义元数据 | 统一变更、严格自动采用 |
-| `src/agent/foundation.ts`、`src/live/` | 显式语义 / 绑定层、稳定 ID、复合身份、中间表、有限转换、融合取证与纠正，来源许可每次核对 | 统一治理与共同扩展查询 |
-| `src/engine/releases.ts` | 不可变发布、接入方与受限委托；本轮 039 冻结旧写入、保留历史读取及撤销，发布专用构造继续提供 v4 | 治理决定发布与旧读取接口退出 |
+| `src/engine/program-builds.ts`、`changes.ts` | 确定性程序初稿、逐项结构变更、复验与部分采用；首次构建与同结构重绑自动采用，拒绝记忆保留 | 身份与去冗余提议、统一待处理中心 |
+| `src/agent/foundation.ts`、`src/live/` | 显式语义 / 绑定层、稳定 ID、复合身份、中间表、有限转换、融合取证与纠正；旧采用入口接入统一事务，兼容纠正随换绑保留 | 身份规则 / 决定与共同扩展查询 |
+| `src/engine/releases.ts`、`workspace-versions.ts` | 工作版固定组合、历史恢复及不可变发布；采用的局部纠正进入发布和差异，待采用项只提示；039 冻结旧写入、保留历史读取及撤销 | 身份决定发布与旧读取接口退出 |
 | `src/agent/memory.ts`、`web/agent/` | SQLite 成果、长期会话与分页历史，三页按 SSE 事件和分域快照更新，模块与表单状态独立 | 证据索引 / 外置、统一待处理和面板重构 |
 
 能力台账只登记实际 SDK 接入；inline 不等于沙箱。Helix 的确定性方法沿 `third_party/helix-foundry/` 保留 Apache-2.0 来源，不引入 Helix 模型循环、HelixDB 或整套权限。NOOA 提供有界对象方法参考，不引入 Python Runtime、任意代码执行或全量 SDK 生成。

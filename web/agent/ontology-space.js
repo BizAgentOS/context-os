@@ -1,4 +1,4 @@
-import { safeText, technicalDetails } from "./ui-display.js";
+import { safeText, technicalDetails, developerView } from "./ui-display.js";
 import { buildOntologyGraph, createOntologyNavigation } from "./ontology-space-model.js";
 import { createOntologyScene } from "./ontology-scene.js";
 
@@ -39,8 +39,8 @@ export function renderOntologySpace(value, {selections, read, select, management
   const identity = el("div", "os-identity");
   const eyebrow = el("p", "os-eyebrow", "本体");
   const title = el("h1", "", artifact?.content.enterprise?.name || "企业本体");
-  const version = el("select", "os-version"); version.setAttribute("aria-label", "本体版本");
-  for (const item of versions) {const option = el("option", "", `v${item.version} · ${item.status === "adopted" ? "已采用" : "候选待核对"}`); option.value = item.version; version.append(option);}
+  const version = el("select", "os-version"); version.setAttribute("aria-label", "本体内容");
+  for (const item of versions) {const option = el("option", "", `${developerView() ? `v${item.version} · ` : ""}${item.status === "adopted" ? "已采用" : "候选待核对"}`); option.value = item.version; version.append(option);}
   version.value = artifact?.version || ""; version.hidden = !artifact;
   identity.append(eyebrow, title, version);
   if (!artifact?.content.helix) identity.append(el("p", "os-muted", `${sourceSummary?.total ?? 0} 个已接入来源`));
@@ -69,7 +69,7 @@ export function renderOntologySpace(value, {selections, read, select, management
   if (helixSummary) {
     const {stats, notes, unplaced} = helixSummary;
     const line = el("div", "os-helix-summary");
-    line.append(el("span", "", `${stats.tables} 张表 · ${sourceSummary?.total ?? stats.sources} 个已接入来源 → ${stats.entities} 个实体 · ${stats.links} 条关联`));
+    line.append(el("span", "", `${stats.tables} 张表 · ${sourceSummary?.total ?? stats.sources} 个已接入来源；程序发现 ${stats.entities} 个实体 · ${stats.links} 条关联`));
     const worth = notes.filter(n => n.kind !== "merged");
     if (notes.length || unplaced.length) {
       const dialog = el("dialog", "live-dialog os-management"); dialog.setAttribute("aria-label", "程序构建说明");
@@ -282,7 +282,7 @@ export function renderOntologySpace(value, {selections, read, select, management
     if (!bindings.length) section.append(el("p", "os-muted", "尚未建立执行映射，暂无可查询的实际对象。"));
     for (const binding of bindings) {
       const row = el("article", "os-evidence-card");
-      row.append(el("strong", "", sourceSummary?.sources.find(s => s.id === binding.sourceId)?.title || `数据对应 v${binding.modelVersion}`), el("p", "", `${binding.status === "adopted" ? "已采用" : "候选 / 不可用"} · ${binding.capability || ""}`));
+      row.append(el("strong", "", sourceSummary?.sources.find(s => s.id === binding.sourceId)?.title || "数据对应"), el("p", "", `${binding.status === "adopted" ? "已采用" : "候选 / 不可用"} · ${binding.capability || ""}`), technicalDetails(binding));
       if (binding.reason) row.append(el("p", "", binding.reason));
       for (const [property, field] of Object.entries(binding.fields || {})) row.append(el("p", "", `${property} ← ${field}`));
       section.append(row);

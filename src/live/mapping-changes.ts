@@ -1,3 +1,4 @@
+import { prepareCorrectionMigration } from "./correction-migration.ts";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { assertSnapshotImpact, modelSchema, type LiveMemory } from "./memory.ts";
@@ -100,12 +101,9 @@ function present(a: Artifact): Artifact & { changeRef: Data } {
 export class MappingChanges {
   private memory: MemoryStore;
   private live: LiveMemory;
-  /** Called inside the adopting transaction so the decided revision and its change record cannot diverge. */
-  private onDecided?: (saved: Artifact) => void;
-  constructor(memory: MemoryStore, live: LiveMemory, onDecided?: (saved: Artifact) => void) {
+  constructor(memory: MemoryStore, live: LiveMemory) {
     this.memory = memory;
     this.live = live;
-    this.onDecided = onDecided;
   }
   list() {
     return this.memory
@@ -385,7 +383,7 @@ export class MappingChanges {
       },
       localCorrections: {
         ...issues,
-        policy: "remain_on_base_model_not_migrated",
+        policy: "preserve_compatible_decisions_block_changed_scope_or_facts",
       },
       consumption: {
         status: "not_evaluated",
@@ -429,6 +427,7 @@ export class MappingChanges {
     input: unknown,
     context?: WriteContext,
     assertActive: () => void = () => {},
+    commit?: (save: () => Artifact) => Artifact,
   ) {
     if (method === "adopt" && context)
       throw new Error("采用需由管理员确认具体检查版本");
@@ -454,7 +453,7 @@ export class MappingChanges {
       if (!["candidate", "checked"].includes(record.status))
         throw new Error("修订已终结");
     }
-    if (method === "adopt" && record?.status !== "checked")
+    if (method === "adopt" && !commit && record?.status !== "checked")
       throw new Error("请先检查并确认具体版本");
     const draft = ("baseRef" in args ? args : record!.content.draft) as Draft;
     const captured =
@@ -465,7 +464,9 @@ export class MappingChanges {
       captured.fingerprint !== record.content.fingerprint
     )
       throw new Error("来源或治理依据已变化，请重新提出修订");
-    return this.memory.atomic(() => {
+    if (method === "check" || method === "adopt") assertSnapshotImpact(((captured as unknown as Data).impact as Data).snapshotCheck as Data | undefined);
+    const migrateCorrections = method === "adopt" ? await prepareCorrectionMigration(this.memory, this.live, captured!.definition) : undefined;
+    const save = () => this.memory.atomic(() => {
       valid();
       const replay = this.previous(actor, args.operationId, signature);
       if (replay) return replay;
@@ -482,7 +483,6 @@ export class MappingChanges {
             evidenceKind: "submitted_rationale",
           });
       delete (content.impact as Data).changeRef;
-      if (method === "check") assertSnapshotImpact((content.impact as Data).snapshotCheck as Data | undefined);
       if (method === "check")
         content.check = {
           ruleVersion: "mapping-change-v1",
@@ -508,6 +508,7 @@ export class MappingChanges {
             },
           },
         });
+        migrateCorrections!(result);
         content.resultModel = { id: result.id, version: result.version };
         content.decision = {
           actor,
@@ -542,9 +543,10 @@ export class MappingChanges {
           version: saved.version,
         },
       });
-      if (method === "adopt") this.onDecided?.(saved);
       return present(saved);
     });
+    if (commit) return commit(save);
+    return method === "adopt" && this.live.onGovernanceAdopt ? this.live.onGovernanceAdopt(record!, save) : save();
   }
 }
 export const mappingChangeTools: DomainTool[] = [

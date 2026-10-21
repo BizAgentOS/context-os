@@ -1,3 +1,4 @@
+import { technicalDetails } from "./ui-display.js";
 import { updateRegion } from "./page-region.js";
 import { renderHistoryAccess } from "./history-access.js";
 import { el, action, ref, when, dialog, message, transact, field, check, table, issues, diffTable, downloadConfig, dataDiffTable } from "./engine-ui.js";
@@ -17,7 +18,7 @@ export function renderReleaseWorkspace(state, actions) {
     }catch(error){if(container.isConnected)container.replaceChildren(el("p",error.message,"engine-message"));}
   }
   function releaseName(release){return release?`${release.content.name||release.title} · #${release.content.sequence}`:"尚未发布";}
-  function detail(release){const d=dialog(releaseName(release),true),c=release.content;d.body.append(el("p",`发布于 ${when(c.publishedAt)} · 本体 v${c.foundationRef.version}${c.modelRef?` · 映射 v${c.modelRef.version}`:""}`,"engine-muted"));if(c.notes)d.body.append(el("p",c.notes,"engine-release-notes"));d.body.append(el("h3","本次变更"),diffTable(c.diff||[],"本版本",data?.names),el("h3","已冻结定义"),table(c.definition.concepts||[],[["概念",i=>i.name],["业务定义",i=>i.description]]));
+  function detail(release){const d=dialog(releaseName(release),true),c=release.content;d.body.append(el("p",`发布于 ${when(c.publishedAt)}${c.workspaceVersion?` · 工作版 v${c.workspaceVersion.number}`:""}`,"engine-muted"));d.body.append(technicalDetails({foundationRef:c.foundationRef,modelRef:c.modelRef}));if(c.notes)d.body.append(el("p",c.notes,"engine-release-notes"));d.body.append(el("h3","本次变更"),diffTable(c.diff||[],"本版本",data?.names),el("h3","已冻结定义"),table(c.definition.concepts||[],[["概念",i=>i.name],["业务定义",i=>i.description]]));
     if(c.definition.snapshots?.length)d.body.append(el("h3","锁定的数据快照"),snapshotTable(c.definition),el("p",c.definition.accessPolicy?.historicalReplay?"此版本的全部业务数据来自锁定快照，接入方读取结果不随来源更新而变化。":"部分来源设为实时读取，这部分数据按需读取，其余来自锁定快照。","engine-muted"));
     else d.body.append(el("p","此版本固定定义、映射及访问策略，未锁定数据快照；来源业务值按声明策略读取。","engine-muted"));}
   function publish(){

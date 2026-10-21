@@ -83,12 +83,12 @@ function merge<T extends { id: string }>(previous: T[], updates: T[]): T[] {
   return [...entries.values()];
 }
 
-// Program (Helix) provenance survives wording and evidence updates.
-const PROGRAM_FIELDS = ["origin", "programSource", "programEvidenceId"] as const;
+// Program provenance and explicit adoption survive wording and evidence updates.
+const PROGRAM_FIELDS = ["origin", "programSource", "programEvidenceId", "governed"] as const;
 function keepProgram<T extends { id: string }>(previous: T[], updates: T[]): T[] {
   return updates.map((item) => {
     const prior = previous.find((entry) => entry.id === item.id) as Record<string, unknown> | undefined;
-    if (prior?.origin !== "program") return item;
+    if (prior?.origin !== "program" && prior?.governed !== true) return item;
     return { ...item, ...Object.fromEntries(PROGRAM_FIELDS.filter((key) => key in prior).map((key) => [key, prior[key]])) };
   });
 }
@@ -130,6 +130,7 @@ export const foundationTools: DomainTool[] = [
 
 /** Shared semantic service; the UI and agent consume the same versioned artifact. */
 export class FoundationService {
+  onAdopt?: (candidate: Artifact, save: () => Artifact) => Artifact;
   private memory: MemoryStore;
   private live?: LiveMemory;
   constructor(memory: MemoryStore, live?: LiveMemory) {
@@ -568,7 +569,7 @@ export class FoundationService {
     return current;
   }
 
-  adopt(id: string, version: number, options: { automatic?: boolean } = {}): Artifact {
+  adopt(id: string, version: number, options: { automatic?: boolean; commit?: (save: () => Artifact) => Artifact } = {}): Artifact {
     const { current, adopted } = this.read();
     if (
       current?.id === id &&
@@ -617,7 +618,7 @@ export class FoundationService {
       if (!conflict.resolvedBy && conflict.retained && !retained.has(conflict.retained.id))
         retained.set(conflict.retained.id, conflict.retained);
     }
-    return this.memory.putArtifact({
+    const save = () => this.memory.putArtifact({
       id,
       expectedVersion: version,
       kind: "foundation",
@@ -632,5 +633,7 @@ export class FoundationService {
         ...(options.automatic ? { automatic: true } : {}),
       },
     });
+    if (options.commit) return options.commit(save);
+    return this.onAdopt ? this.onAdopt(candidate, save) : save();
   }
 }

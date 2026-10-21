@@ -3,6 +3,7 @@ import { createWorkspaceStore, connectWorkspaceEvents, createScopeQueue } from "
 import { createAgentPanel } from "./agent-panel.js";
 import { createTaskCenter } from "./task-center.js";
 import { renderPendingCenter } from "./pending-center.js";
+import { showWorkspaceHistory } from "./changes-workspace.js";
 import { createDataProfile } from "./data-profile.js";
 import { renderSharedAccess } from "./share-workspace.js";
 import { developerView, setDeveloperView, safeText, displayValue, fieldLabel, technicalDetails } from "./ui-display.js";
@@ -135,6 +136,7 @@ if (accessFragment.has("access")) {
 const state = {
   token: initialAccess,
   workspaceId: null,
+  workspaceVersion: null,
   onboarding: null,
   setupSection: "company",
   legacyHistory: [],
@@ -465,13 +467,16 @@ function syncWorkspaceVersion() {
   if (!topbar) return;
   let chip = document.getElementById("workspace-version");
   if (!chip) {
-    chip = document.createElement("span");
+    chip = document.createElement("button");
+    chip.type = "button";
     chip.id = "workspace-version";
     chip.className = "workspace-version";
+    chip.addEventListener("click", () => showWorkspaceHistory({ api, refresh }));
     topbar.append(chip);
   }
   const version = state.workspaceVersion;
   chip.hidden = !version;
+  chip.disabled = !!shareMode;
   chip.textContent = version ? `工作版 v${version.number}` : "";
   chip.title = version ? `当前工作版本 v${version.number}；发布时固定这一版。其他定义版本号在开发者视图显示。` : "";
 }
@@ -559,7 +564,7 @@ function renderOntologyBoard(actions) {
     }
     const picker = node("select", "model-select"); picker.setAttribute("aria-label", "对象的执行映射");
     for (const model of models) {
-      const option = node("option", "", `${model.title} · v${model.version} · ${model.status === "adopted" ? "已采用" : "候选预览"}`);
+      const option = node("option", "", `${model.title} · ${model.status === "adopted" ? "已采用" : "候选预览"} · ${developerView() ? `v${model.version}` : new Date(model.updatedAt || model.createdAt).toLocaleString("zh-CN", {hour12:false})}`);
       option.value = model.id; picker.append(option);
     }
     const saved = ui.graphSelections.get("ontology-object-model");
@@ -572,6 +577,7 @@ function renderOntologyBoard(actions) {
       if (model.status !== "adopted") host.append(node("p", "source-meta", "候选映射下的对象预览，尚未采用。"));
       host.append(renderLiveObjects(model, {api, selections: ui.graphSelections,
         select: (m, t, scope, guard) => selectLiveContext(m, t, scope, false, () => objects.closest("dialog")?.open && (!guard || guard()))}));
+      host.append(technicalDetails({id:model.id,version:model.version}));
     };
     picker.onchange = show; show();
   };
@@ -798,7 +804,6 @@ function renderSources() {
             ? `${source.content.rows?.length || 0} 条记录`
             : "文档 · 可用于概念定义",
           `文件上传 · ${(source.content.format || "文档").toUpperCase()}`,
-          `第 ${source.version} 版`,
         ].join(" · "),
       ),
     );
@@ -1485,7 +1490,7 @@ async function inspectContext(context, page = ui.page) {
         node(
           "p",
           "source-meta",
-          `本体 / 成果第 ${value.target.ref.version} 版 · ${{ adopted: "已采用", candidate: "待确认", draft: "草稿", ready: "可用", confirmed: "已确认", active: "已启用", disabled: "已停用", revoked: "已停用" }[value.target.status] || "已保存"}`,
+          { adopted: "已采用", candidate: "待确认", draft: "草稿", ready: "可用", confirmed: "已确认", active: "已启用", disabled: "已停用", revoked: "已停用" }[value.target.status] || "已保存",
         ),
       );
       const details = node("dl", "memory-properties");
@@ -1516,7 +1521,7 @@ async function inspectContext(context, page = ui.page) {
         );
         details.append(row);
       }
-      body.append(details, technicalDetails(value.target.definition));
+      body.append(details, technicalDetails(value.target));
     }
     body.append(
       node(
@@ -1750,7 +1755,7 @@ function openSource(artifact, options = {}) {
       node(
         "p",
         "detail-note",
-        `${rows.length} 条记录 · 来源第 ${artifact.version} 版`,
+        `${rows.length} 条记录`,
       ),
     );
   } else {
@@ -1761,8 +1766,8 @@ function openSource(artifact, options = {}) {
         artifact.content.raw || "这份资料没有文本内容。",
       ),
     );
-    section.append(node("p", "detail-note", `来源第 ${artifact.version} 版`));
   }
+  section.append(technicalDetails({id:artifact.id,version:artifact.version}));
   showDetail(
     { key: `source:${artifact.id}:${artifact.version}:${offset}`, artifact },
     section,
@@ -2212,7 +2217,7 @@ function updateComposer() {
                 : "";
   $("#focus-context").hidden = !ui.focus;
   $("#focus-label").textContent = ui.focus
-    ? `${ui.focus.source === "viewport" ? "当前浏览 · " : ""}${ui.focus.label} · 第 ${ui.focus.version} 版${ui.focus.ref ? "" : " · 整份成果"}`
+    ? `${ui.focus.source === "viewport" ? "当前浏览 · " : ""}${ui.focus.label}${developerView() ? ` · 第 ${ui.focus.version} 版` : ""}${ui.focus.ref ? "" : " · 整份成果"}`
     : "";
   $("#inspect-focus").hidden = !ui.focus || !!shareMode;
   $("#focus-context").dataset.kind = ui.focus?.ref?.kind || "artifact";

@@ -75,7 +75,7 @@ export class WorkspaceEvents {
 }
 
 export const snapshotScopes: Record<string, string[]> = {
-  shell: ["workspaceId", "pages", "model", "onboarding", "profile", "sourceSummary", "attention", "automaticBuild", "automaticApiBuild"],
+  shell: ["workspaceId", "workspaceVersion", "pages", "model", "onboarding", "profile", "sourceSummary", "attention", "automaticBuild", "automaticApiBuild"],
   agent: ["session", "currentSessionId", "pools", "busy", "streaming", "messages", "messagePage", "pending", "prompt", "agentTask"],
   data: ["engine", "data", "sources", "sourceSummary", "sourcePolicies", "sourcePolicyFields", "live", "onboarding", "profile", "legacyHistory", "setupSection"],
   ontology: ["foundation", "ontologies", "outlines", "verifications", "evidence", "engine", "live", "sourceSummary", "automaticBuild", "automaticApiBuild"],

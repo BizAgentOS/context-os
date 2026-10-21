@@ -205,12 +205,9 @@ export async function captureRelation(
 export class RelationCorrections {
   private memory: MemoryStore;
   private live: LiveMemory;
-  /** Called inside the adopting transaction so the decided correction and its change record cannot diverge. */
-  private onDecided?: (saved: Artifact) => void;
-  constructor(memory: MemoryStore, live: LiveMemory, onDecided?: (saved: Artifact) => void) {
+  constructor(memory: MemoryStore, live: LiveMemory) {
     this.memory = memory;
     this.live = live;
-    this.onDecided = onDecided;
   }
   list() {
     return this.memory
@@ -246,6 +243,7 @@ export class RelationCorrections {
     input: unknown,
     context?: WriteContext,
     assertActive: () => void = () => {},
+    commit?: (save: () => Artifact) => Artifact,
   ) {
     if (method === "adopt" && context)
       throw new Error("采用需由本地管理员确认具体检查版本");
@@ -289,7 +287,7 @@ export class RelationCorrections {
       semanticRelationId=((record.content.snapshot as Data|undefined)?.relation as Data|undefined)?.relationId as string|undefined;
     }
     const historicalDefinition=method!=="cancel"?correctionModel(this.live,target,this.memory.getArtifact(target.modelId,target.modelVersion).content).content:undefined;
-    if (method === "adopt" && record?.status !== "checked")
+    if (method === "adopt" && !commit && record?.status !== "checked")
       throw new Error("请先检查候选，再确认该检查版本");
     const snapshot =
       method === "cancel"
@@ -303,7 +301,7 @@ export class RelationCorrections {
       throw new Error("来源事实已变化，原候选不再适用，请保留记录并重新提议");
     semanticRelationId ??= snapshot?.relation.relationId as string|undefined;
     valid();
-    return this.memory.atomic(() => {
+    const save = () => this.memory.atomic(() => {
       valid();
       const replay = this.previous(actor, args.operationId, signature);
       if (replay) return replay;
@@ -392,9 +390,10 @@ export class RelationCorrections {
           version: saved.version,
         }),
       });
-      if (method === "adopt") this.onDecided?.(saved);
       return saved;
     });
+    if (commit) return commit(save);
+    return method === "adopt" && this.live.onGovernanceAdopt ? this.live.onGovernanceAdopt(record!, save) : save();
   }
 }
 export const correctionTools: DomainTool[] = [

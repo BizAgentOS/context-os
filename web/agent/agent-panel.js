@@ -65,12 +65,15 @@ function renderDialogue() {
       `dialogue-line ${message.role} ${age}${message.streaming ? " streaming" : ""}`,
     );
     line.append(node("span", "message-text", text));
-    if (/`{3,}json/.test(text)) line.append(technicalDetails({ text: message.content }));
+    if (/`{3,}json/.test(text) || message.workContext) line.append(technicalDetails(message));
     if (message.workContext?.target) {
       const ref = message.workContext.target;
+      const label = String(ref.label || "相关内容").replace(/\s*[·-]?\s*第\s*\d+\s*版/g, "").replace(/\s*[·-]?\s*v\d+\b/g, "");
+      const time = new Date(message.createdAt);
+      const savedAt = Number.isNaN(time.getTime()) ? "" : ` · ${time.toLocaleString("zh-CN")}`;
       line.append(
         button(
-          `引用：${ref.label} · 第 ${ref.ref.version} 版`,
+          `引用：${label}${savedAt}`,
           "message-context",
           () =>
             inspectContext(

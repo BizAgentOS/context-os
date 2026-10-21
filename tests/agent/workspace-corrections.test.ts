@@ -135,7 +135,7 @@ test("every adoption records a workspace version in the same transaction, and un
     const correction = await adoptCorrection(w, [], "ws");
     const after = await versions();
     assert.equal(after[0].number, before + 1, "adopting a correction creates exactly one new version");
-    assert.deepEqual(after[0].cause, ["relation_correction"]);
+    assert.deepEqual(after[0].cause, ["ontology_change", "relation_correction"]);
     const read = (await w.manage(`/api/workspace-versions/read?number=${after[0].number}`)).version;
     assert.ok(read.content.composition.corrections.includes(`${correction.id}@${correction.version}`), "the version names the correction it contains");
     const older = (await w.manage(`/api/workspace-versions/read?number=${before}`)).version;
@@ -210,17 +210,101 @@ test("an adopted correction is recorded in the change ledger in the same transac
     assert.equal(entry.status, "adopted");
     assert.equal(entry.origin, "human");
     const read = (await w.manage(`/api/changes/read?id=${entry.id}&version=${entry.version}`)).change;
-    assert.deepEqual(read.content.subject, { id: correction.id, version: correction.version }, "the change names the decided correction version");
-    assert.deepEqual(read.content.effect.correctionRef, { id: correction.id, version: correction.version });
-    assert.equal(read.content.recordedFrom, "owning_service");
+    assert.equal(read.content.subject.ownerRef.id, correction.id, "the change names the proposed correction");
+    assert.deepEqual(read.content.effect.ownerRef, { id: correction.id, version: correction.version });
+    assert.equal(read.content.verification.result, "passed", "the owning service verifies before the shared state transition");
   } finally { await w.close(); }
 });
 
-test("a proposed correction that was never adopted stays out of the change ledger", async () => {
+test("a proposed correction is pending in the change ledger until a decision", async () => {
   const w = await workspace();
   try {
     const target = { modelId: w.model.id, modelVersion: w.model.version, type: "投诉", objectId: "TS002", relation: "回访记录" };
     await w.manage("/api/live/corrections/propose", { operationId: "p-only", target, targetIds: [], reason: "尚未决定", evidence: "管理员登记" });
-    assert.equal((await w.manage("/api/changes?type=local_correction")).total, 0, "a candidate is not a decision");
+    const pending = await w.manage("/api/changes?type=local_correction");
+    assert.equal(pending.total, 1);
+    assert.equal(pending.changes[0].status, "proposed", "a candidate is visible but is not an adopted decision");
+  } finally { await w.close(); }
+});
+
+test("a wording change preserves adopted corrections and the binding identity", async () => {
+  const w = await workspace();
+  try {
+    const correction = await adoptCorrection(w, [], "wording");
+    const baseline = (await w.manage("/api/changes")).baseline;
+    const proposed = await w.manage("/api/changes/propose", { operationId: "wording", origin: "human", type: "description", baseline,
+      subject: { target: "concept", id: "complaint", description: "客户提交的供暖投诉" } });
+    const checked = (await w.manage("/api/changes/verify", { operationId: "wording-check", ...ref(proposed.change) })).change;
+    await w.manage("/api/changes/adopt", { operationId: "wording-adopt", ...ref(checked) });
+    const working = (await w.manage("/api/workspace-versions")).composition;
+    assert.deepEqual(working.bindings, ref(w.model));
+    assert.ok(working.corrections.includes(`${correction.id}@${correction.version}`));
+    const release = await w.publish("wording"), key = await w.connect(release, "wording");
+    assert.deepEqual((await w.external(key, w.callbacks)).body.items, []);
+  } finally { await w.close(); }
+});
+
+test("a unified change alone warns at publication while the adopted working version remains publishable", async () => {
+  const w = await workspace();
+  try {
+    const baseline = (await w.manage("/api/changes")).baseline;
+    const proposal = await w.manage("/api/changes/propose", { operationId: "publish-pending", origin: "human", type: "naming", baseline,
+      subject: { target: "concept", id: "complaint", name: "供暖投诉" } });
+    const working = (await w.manage("/api/releases")).working;
+    assert.equal(working.pending.filter((p: any) => p.id === proposal.change.id).length, 1);
+    assert.ok(working.issues.some((i: any) => i.code === "pending_changes" && i.severity === "warning"));
+    const check = await w.manage("/api/releases/check", { inputHash: working.inputHash });
+    assert.equal(check.status, "ready");
+    assert.match(check.content.issues.find((i: any) => i.code === "pending_changes").message, /不包含在本次发布/);
+  } finally { await w.close(); }
+});
+
+test("a correction proposed by the old endpoint is verified and adopted through the shared change endpoint", async () => {
+  const w = await workspace();
+  try {
+    const target = { modelId: w.model.id, modelVersion: w.model.version, type: "投诉", objectId: "TS002", relation: "回访记录" };
+    await w.manage("/api/live/corrections/propose", { operationId: "unified-p", target, targetIds: [], reason: "不应关联此回访", evidence: "人工核对" });
+    const pending = (await w.manage("/api/changes?type=local_correction")).changes[0];
+    const checked = (await w.manage("/api/changes/verify", { operationId: "unified-v", ...ref(pending) })).change;
+    assert.equal(checked.status, "verified", JSON.stringify(checked.content.verification));
+    const adopted = (await w.manage("/api/changes/adopt", { operationId: "unified-a", ...ref(checked) })).change;
+    assert.equal(adopted.status, "adopted");
+    const release = await w.publish("unified"), key = await w.connect(release, "unified");
+    assert.deepEqual((await w.external(key, w.callbacks)).body.items, []);
+  } finally { await w.close(); }
+});
+
+test("rejecting a checked correction prevents adoption through the old endpoint", async () => {
+  const w = await workspace();
+  try {
+    const target = { modelId: w.model.id, modelVersion: w.model.version, type: "投诉", objectId: "TS002", relation: "回访记录" };
+    const candidate = (await w.manage("/api/live/corrections/propose", { operationId: "reject-p", target, targetIds: [], reason: "待定纠正", evidence: "人工核对" })).saved;
+    const checked = (await w.manage("/api/live/corrections/check", { operationId: "reject-v", ...ref(candidate) })).saved;
+    const change = (await w.manage("/api/changes?type=local_correction")).changes[0];
+    assert.equal(change.status, "verified");
+    await w.manage("/api/changes/reject", { operationId: "reject-r", ...ref(change), reason: "核对后维持原值" });
+    const before = (await w.manage("/api/workspace-versions")).versions[0].number;
+    await assert.rejects(w.manage("/api/live/corrections/adopt", { operationId: "reject-a", ...ref(checked) }), /已处理/);
+    assert.equal((await w.manage("/api/workspace-versions")).versions[0].number, before);
+  } finally { await w.close(); }
+});
+
+
+test("cancelling through either legacy governance entry point withdraws its unified change", async () => {
+  const w = await workspace();
+  try {
+    const drafts = [
+      { path: "/api/live/corrections", body: { operationId: "cancel-correction", target: { modelId: w.model.id, modelVersion: w.model.version, type: "投诉", objectId: "TS002", relation: "回访记录" }, targetIds: [], reason: "待核对", evidence: "本轮撤回" } },
+      { path: "/api/live/changes", body: { operationId: "cancel-mapping", baseRef: ref(w.model), patch: { kind: "property", type: "投诉", property: "状态", sourceField: "description" }, reason: "待核对属性规则", evidence: "本轮撤回" } },
+    ];
+    for (const [index, draft] of drafts.entries()) {
+      const owner = (await w.manage(draft.path + "/propose", draft.body)).saved;
+      const before = (await w.manage("/api/changes")).changes.find((change: any) => change.owner?.id === owner.id);
+      assert.equal(before.status, "proposed");
+      await w.manage(draft.path + "/cancel", { operationId: "cancel-" + index, ...ref(owner) });
+      const after = (await w.manage("/api/changes/read?id=" + before.id)).change;
+      assert.equal(after.status, "rejected");
+      assert.equal(after.content.disposition, "withdrawn");
+    }
   } finally { await w.close(); }
 });

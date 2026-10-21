@@ -466,7 +466,7 @@ test("relation revision groups saved corrections, supports agent inspection and 
 });
 
 
-test("adopting an execution mapping and a mapping revision lands in the change ledger, while proposals do not", async () => {
+test("execution mapping and mapping revisions enter the shared proposal and adoption lifecycle", async () => {
   const upstream = await createFusionSources(), directory = mkdtempSync(join(tmpdir(), "de-ledger-"));
   const service = await createServer({ automaticApi: false, directory,
     driver: { async run() { return { text: "idle", sessionId: "s", runId: "r" }; }, async stop() {}, async close() {} } });
@@ -488,7 +488,7 @@ test("adopting an execution mapping and a mapping revision lands in the change l
     const primary = (await post("/api/live/connect", { name: "投诉", protocol: "http", url: upstream.url, capabilities: [primaryCapability] })).saved;
     const extra = (await post("/api/live/connect", { name: "工单", protocol: "mcp", url: upstream.url + "/mcp", capabilities: [supplementCapability] })).saved;
     const candidate = (await post("/api/live/propose", fusionDefinition(primary.id, extra.id))).saved;
-    assert.equal((await read("/api/changes?type=entity")).total, 0, "a proposed mapping is not a decision");
+    assert.equal((await read("/api/changes?type=entity")).changes[0].status, "proposed", "a mapping proposal is visible before adoption");
     const adopted = (await post("/api/live/adopt", { id: candidate.id, version: candidate.version })).saved;
     const entities = await read("/api/changes?type=entity");
     assert.equal(entities.total, 1, "adopting an execution mapping is recorded");
@@ -498,7 +498,7 @@ test("adopting an execution mapping and a mapping revision lands in the change l
       operationId: "ledger-fix", baseRef: { id: adopted.id, version: adopted.version },
       patch: { kind: "property", type: "投诉", property: "实际反馈", supplement: "工单", sourceField: "status" },
       reason: "业务人员明确当前属性应绑定工单状态", evidence: "人工核对字段后指定口径", relatedCorrections: [] })).saved;
-    assert.equal((await read("/api/changes?type=binding")).total, 0, "a pending revision is not a decision");
+    assert.equal((await read("/api/changes?type=binding")).changes[0].status, "proposed", "a pending revision is visible before adoption");
     const checked = (await post("/api/live/changes/check", { operationId: "ledger-check", id: change.id, version: change.version })).saved;
     await post("/api/live/changes/adopt", { operationId: "ledger-adopt", id: checked.id, version: checked.version });
     const bindings = await read("/api/changes?type=binding");

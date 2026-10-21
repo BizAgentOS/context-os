@@ -21,6 +21,10 @@ import { Onboarding } from "./onboarding.ts";
 import { AgentDelegations } from "../engine/delegations.ts";
 import { ProgramBuilds } from "../engine/program-builds.ts";
 import { OntologyChanges } from "../engine/changes.ts";
+import { connectChanges } from "../engine/change-integration.ts";
+import { connectProgramChanges } from "../engine/program-changes.ts";
+import { connectRelationChanges } from "../engine/relation-change.ts";
+import { WorkspaceRestore, workspaceRestoreSubject } from "../engine/workspace-restore.ts";
 import { WorkspaceVersions } from "../engine/workspace-versions.ts";
 import { Snapshots } from "../data/snapshots.ts";
 import { Releases } from "../engine/releases.ts";
@@ -223,6 +227,14 @@ export class AgentApplication {
     this.programBuilds = new ProgramBuilds(this.memory, this.foundation, this.live, this.snapshots);
     this.changes = new OntologyChanges(this.memory, this.foundation, this.snapshots);
     this.workspaceVersions = new WorkspaceVersions(this.memory, this.foundation, this.live);
+    connectChanges(this.memory, this.foundation, this.live, this.changes);
+    connectProgramChanges(this.memory, this.programBuilds, this.changes);
+    connectRelationChanges(this.memory, this.foundation, this.live, this.snapshots, this.changes);
+    const restore = new WorkspaceRestore(this.memory, this.foundation, this.live, this.snapshots);
+    this.changes.registerHandler("restore", { subject: workspaceRestoreSubject, prepare: async change => {
+      const prepared = await restore.prepare(workspaceRestoreSubject.parse(change.content.subject));
+      return { verification: { result: "passed", metrics: prepared.metrics, inputs: prepared.inputs, notes: prepared.notes }, apply: prepared.apply };
+    } });
     this.onboarding = new Onboarding(this.memory, this.foundation, () => this.canvasTask("setup").id);
     this.contexts = new WorkContexts(this.memory, this.live);
     this.capabilities = new AgentCapabilities(directory, this.memory);

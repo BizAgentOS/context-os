@@ -56,7 +56,7 @@ function openChange(model, live, api, saved) {
   d.append(
     el(
       "p",
-      "修订一个已有绑定或关系规则。读取代表性实例后保存影响报告，由用户确认检查版本。关闭保留本次草稿，刷新页面会丢失。",
+      "修订一个已有绑定或关系规则。读取代表性实例后保存影响报告，由用户核对并确认采用。关闭保留本次草稿，刷新页面会丢失。",
       "source-meta",
     ),
     form,
@@ -139,7 +139,7 @@ function openChange(model, live, api, saved) {
             `${group.type} / ${group.relation}：${group.count}条记录（含历史状态）`,
           ),
         );
-        for (const r of group.references) {
+        for (const [index, r] of group.references.entries()) {
           const label = el("label", "", "live-field"),
             check = el("input");
           check.type = "checkbox";
@@ -153,9 +153,9 @@ function openChange(model, live, api, saved) {
           };
           label.append(
             check,
-            document.createTextNode(safeText(`${r.id} · v${r.version} · ${states[r.status] || "已保存"}`)),
+            document.createTextNode(safeText(`局部纠正 ${index + 1} · ${states[r.status] || "已保存"}`)),
           );
-          issueList.append(label);
+          issueList.append(label, technicalDetails(r));
         }
       }
       if (!result.groups.length)
@@ -248,13 +248,13 @@ export function inspectChange(initial, api, saved) {
     content.replaceChildren(
       el(
         "h3",
-        `${record.title} · ${states[record.status]} · v${record.version}`,
+        `${record.title} · ${states[record.status] || "已保存"}`,
       ),
-      el("p", `修订记录 · 第 ${record.version} 版`),
-      el("p", `所依据的映射 · 第 ${c.baseRef.version} 版`),
+      el("p", record.createdAt ? `记录于 ${new Date(record.createdAt).toLocaleString("zh-CN")}` : "已保存的修订记录"),
       el("p", `理由：${c.draft.reason}`),
       el("p", `提交者依据：${c.draft.evidence}`),
-      el("p", `责任主体：${c.responsible}`),
+      el("p", `提交者：${c.responsible === "local-admin" ? "本地管理员" : String(c.responsible || "").startsWith("agent:") ? "助手" : "提交者"}`),
+      technicalDetails(record),
     );
     content.append(
       el("h3", "规则差异"),
@@ -322,7 +322,7 @@ export function inspectChange(initial, api, saved) {
       el("h3", "治理影响"),
       el(
         "p",
-        "局部纠正保留在原模型，不自动迁移到新映射；既有消费者继续使用原模型。点击“查看消费影响”按当前许可核对；本报告的原始样本保留不变。",
+        "关系和事实依据保持不变的局部纠正会随新映射保留；修订改变其依据时，需先处理该纠正。既有发布继续使用原映射。点击“查看消费影响”按当前许可核对；本报告的原始样本保留不变。",
         "source-meta",
       ),
     );
@@ -348,14 +348,14 @@ export function inspectChange(initial, api, saved) {
       content.append(
         el(
           "p",
-          `检查 ${c.check.ruleVersion} · ${c.check.at}。只确认结构、样本与基线；不证明业务真实。`,
+          `检查于 ${c.check.at}。只确认结构、样本与基线；不证明业务真实。`,
         ),
       );
     if (c.resultModel)
       content.append(
         el(
           "p",
-          `新执行映射：${c.resultModel.id} · v${c.resultModel.version}；采用者 ${c.decision.actor}，基于检查 v${c.decision.checkedVersion}`,
+          `已采用修订并更新执行映射${c.decision?.at ? ` · ${new Date(c.decision.at).toLocaleString("zh-CN")}` : ""}`,
         ),
       );
     content.append(btn('查看消费影响',async()=>{const {inspectConsumerImpact}=await import('./consumer-migrations.js');if(d.isConnected)inspectConsumerImpact(record,api,saved);}));
@@ -388,7 +388,7 @@ export function inspectChange(initial, api, saved) {
       content.append(btn("检查这份修订", () => act("check")));
       if (record.status === "checked")
         content.append(
-          btn(`确认采用修订检查 v${record.version}`, () => act("adopt")),
+          btn("确认采用已检查的修订", () => act("adopt")),
         );
       content.append(btn("取消未采用修订", () => act("cancel")));
     }
@@ -413,9 +413,9 @@ export function renderMappingChanges(model, { api, live, onSaved }) {
       const r = await api("/api/live/changes/list", {});
       if (!panel.isConnected || request !== generation) return;
       list.replaceChildren();
-      for (const a of r.items)
+      for (const [index, a] of r.items.entries())
         list.append(
-          btn(`${a.title} · ${states[a.status]} · v${a.version}`, async () => {
+          btn(`${a.title} · ${states[a.status] || "已保存"} · ${a.createdAt ? new Date(a.createdAt).toLocaleString("zh-CN") : `记录 ${index + 1}`}`, async () => {
             const id = ++detailsGeneration;
             try {
               const full = await api("/api/live/changes/read", {
@@ -429,6 +429,7 @@ export function renderMappingChanges(model, { api, live, onSaved }) {
                 list.append(el("p", e.message));
             }
           }),
+          technicalDetails(a),
         );
       if (!r.items.length) list.append(el("p", "尚无映射修订记录。"));
       if (r.items.length === 40)

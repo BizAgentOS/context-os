@@ -66,7 +66,7 @@ function renderPacket(view) {
   root.append(
     el("h3", a.title),
     meta(
-      `${status[a.status]} · 取证于 ${p.collectedAt} · 映射 v${p.model.version}（${p.model.status === "adopted" ? "已采用" : "候选预览"}）`,
+      `${status[a.status]} · 取证于 ${p.collectedAt} · ${p.model.status === "adopted" ? "已采用映射" : "候选预览"}`,
     ),
     meta("保存的读取时证据，不代表当前源状态。" + p.scope),
   );
@@ -110,7 +110,7 @@ function renderPacket(view) {
     );
     section.append(
       meta(
-        `来源 ${doc.sourceTitle || "所选文档来源"} · 来源第 ${doc.request.connectionVersion} 版 · 片段修订 ${doc.request.revision} · 从第 ${(doc.request.offset ?? 0) + 1} 个字符起，最多 ${doc.request.limit} 个字符`,
+        `来源 ${doc.sourceTitle || "所选文档来源"} · 从第 ${(doc.request.offset ?? 0) + 1} 个字符起，最多 ${doc.request.limit} 个字符`,
       ),
     );
     if (doc.status === "read") {
@@ -124,7 +124,7 @@ function renderPacket(view) {
         originalQuote(r.text.slice(0, 180) + (r.text.length > 180 ? "…（预览，可展开）" : "")),
         excerpt,
         meta(
-          `片段修订 ${r.revision} · 字符 ${r.start}–${r.end} / ${r.coverage.totalCharacters} · ${r.coverage.complete ? "片段完整" : "部分片段，未读部分未知"} · ${r.readAt}`,
+          `字符 ${r.start}–${r.end} / ${r.coverage.totalCharacters} · ${r.coverage.complete ? "片段完整" : "部分片段，未读部分未知"} · ${r.readAt}`,
         ),
       );
     } else section.append(el("p", doc.error));
@@ -141,7 +141,7 @@ function renderPacket(view) {
     );
     section.append(
       meta(
-        `来源 ${metric.sourceTitle || "所选指标来源"} · 来源第 ${metric.request.connectionVersion} 版`,
+        `来源 ${metric.sourceTitle || "所选指标来源"}`,
       ),
       meta(
         `请求期间 ${metric.request.start} 至 ${metric.request.end}（结束日不含） · ${filterSummary(metric.request.where)} · 从第 ${(metric.request.offset ?? 0) + 1} 条起，最多 ${metric.request.limit} 条`,
@@ -159,7 +159,7 @@ function renderPacket(view) {
           `${d.unit} · ${d.grain === "month" ? "月" : "日"}粒度 · ${d.timeZone} · ${r.query.start} 至 ${r.query.end}（结束日不含）`,
         ),
         meta(
-          `口径 ${d.revision} · ${d.aggregation.timeAdditive ? "允许按时间加总" : "不可按时间直接加总"} · 可加总维度：${d.aggregation.additiveDimensions.join("、") || "无"}`,
+          `${d.aggregation.timeAdditive ? "允许按时间加总" : "不可按时间直接加总"} · 可加总维度：${d.aggregation.additiveDimensions.join("、") || "无"}`,
         ),
         table(
           r.items.map((i) => ({
@@ -181,16 +181,16 @@ function renderPacket(view) {
         ),
         el("p", metric.association.reason),
       );
-      for (const link of metric.association.links || [])
+      for (const [index, link] of (metric.association.links || []).entries())
         section.append(
           meta(
-            `观测 ${link.observationId.slice(0, 12)} · 匹配对象：${link.objectIds.join("、") || "无"} · 未确定对象：${link.uncertainObjectIds.join("、") || "无"}`,
+            `观测 ${index + 1} · 匹配对象：${link.objectIds.join("、") || "无"} · 未确定对象：${link.uncertainObjectIds.join("、") || "无"}`,
           ),
         );
     } else section.append(el("p", metric.error));
     root.append(section);
   }
-  root.append(technicalDetails(p));
+  root.append(technicalDetails(a));
   return root;
 }
 export function renderEvidenceWorkspace(state, { api, mutate }) {
@@ -277,9 +277,10 @@ function createForm(live, api, mutate, inspect) {
     object,
     models.map((m, i) => [
       String(i),
-      `${m.type.name} · 映射 v${m.model.version}`,
+      `${m.type.name} · ${m.model.id === models[0].model.id ? "当前工作版" : "历史映射"} · ${m.model.createdAt ? new Date(m.model.createdAt).toLocaleString("zh-CN") : `记录 ${i + 1}`}`,
     ]),
   );
+  fields.append(technicalDetails(models.map(({ model, type }) => ({ type: type.name, modelRef: { id: model.id, version: model.version } }))));
   const objectId = input(fields, "对象编号（留空读取前5条）");
   const property = input(fields, "读取业务属性（逗号分隔；自动包含对象编号）");
   property.required = true;

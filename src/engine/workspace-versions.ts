@@ -11,7 +11,7 @@ import { fingerprint } from "./release-diff.ts";
  * local corrections and the active snapshot set (blueprint §10.4). A new version is recorded in the same
  * transaction that changes any of its parts, so there is never an adopted state without a version for it.
  */
-const SOURCES = new Set(["foundation", "live_ontology", "relation_correction", "data_dataset"]);
+const SOURCES = new Set(["foundation", "live_ontology", "relation_correction", "data_dataset", "ontology_change"]);
 const isAdopted = (artifact: Artifact) => {
   if (artifact.kind === "data_dataset") return true;
   return artifact.status === "adopted";

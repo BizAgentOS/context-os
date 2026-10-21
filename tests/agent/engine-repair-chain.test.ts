@@ -156,7 +156,7 @@ test("renaming semantic types and relations preserves local corrections and stil
     latest=await corrections.execute('check',{operationId:'restored-check',...ref(latest)});
     latest=await corrections.execute('adopt',{operationId:'restored-adopt',...ref(latest)});
     await assert.rejects(corrections.execute('check',{operationId:'stale-renamed-recheck',...ref(stale)}),/已有新的纠正决定/,'a checked candidate under a former name cannot ignore a newer stable-relation decision');
-    await assert.rejects(corrections.execute('adopt',{operationId:'stale-renamed-adopt',...ref(stale)}),/已有新的纠正决定/);
+    await assert.rejects(corrections.execute('adopt',{operationId:'stale-renamed-adopt',...ref(stale)}), /已有新的纠正决定|本体基线已变化/);
     assert.equal(service.app.memory.getArtifact(stale.id).version,stale.version,'rejected concurrency checks do not mutate the older candidate');
     assert.equal((await service.app.live.query({modelId:model.id,type:'投诉',id:'TS002',relation:'回访记录'})).correction?.id,latest.id);
     await assert.rejects(service.app.live.query({modelId:model.id,conceptId:ids.get('投诉'),type:'回访'}),/类型与概念引用不一致/);

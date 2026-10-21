@@ -1,3 +1,4 @@
+import { technicalDetails } from "./ui-display.js";
 import { element as el, action, field, connectionDialog } from "./connection-ui.js";
 import { renderFeishuDirectory } from "./feishu-directory.js";
 
@@ -106,13 +107,14 @@ export function openFeishuConnection(api, options = {}) {
   function showDocument(target) {
     if (!documentResult) return;
     const doc = documentResult;
-    const version = doc.revision == null ? "附件文本" : `在线文档 · 飞书版本 ${doc.revision}`;
+    const version = doc.revision == null ? "附件文本" : "在线文档";
     const summary = el("div", null, "feishu-document-meta");
-    for (const [label, value] of [["读取内容", `${doc.characters} 字符`], ["来源类型", version], ["快照读取时间", new Date(doc.readAt).toLocaleString("zh-CN")], ["保存结果", `本地快照 v${doc.sourceVersion}`]]) {
+    for (const [label, value] of [["读取内容", `${doc.characters} 字符`], ["来源类型", version], ["快照读取时间", new Date(doc.readAt).toLocaleString("zh-CN")], ["保存结果", "已保存本地快照"]]) {
       const item = el("div"); item.append(el("small", label), el("strong", value)); summary.append(item);
     }
     const status = el("div", null, "feishu-document-progress");
     status.append(el("span", "✓ 正文已读取"), el("span", "✓ 资料已保存"), el("span", doc.usage.length ? "已有本体引用 ↓" : "已进入自动构建流程"));
+    target.append(technicalDetails({sourceVersion:doc.sourceVersion,revision:doc.revision}));
     const heading = el("h3", doc.title);
     const preview = el("pre", doc.content || "这份文档没有可读取的正文。", "service-document");
     const link = el("a", "在飞书打开原文 ↗", "connection-note"); link.href = doc.url; link.target = "_blank"; link.rel = "noopener noreferrer";
@@ -120,7 +122,7 @@ export function openFeishuConnection(api, options = {}) {
     for (const usage of doc.usage) {
       const item = el("section", null, "connection-summary");
       item.append(el("strong", `${usage.status === "adopted" ? "已采用引用" : "候选引用 · 待核对"}`),
-        el("p", `${usage.concepts.length} 个概念 · ${usage.relations.length} 个关系 · 引用快照 ${usage.sourceVersions.map(v => `v${v}`).join("、")}`),
+        el("p", `${usage.concepts.length} 个概念 · ${usage.relations.length} 个关系`),
         el("p", [...usage.concepts, ...usage.relations].map(x => x.name).join(" / ") || "用于企业说明或待核实项", "connection-note"));
       if (!usage.sourceVersions.includes(doc.sourceVersion)) item.append(el("p", "此本体仍引用旧快照，当前正文尚未用于该版本。", "connection-note"));
       item.append(action("前往本体工作区", async () => {
@@ -162,7 +164,7 @@ export function openFeishuConnection(api, options = {}) {
     for (const doc of docs) {
       const button = action("", () => selectDocument(doc.sourceId), "feishu-document-entry");
       button.setAttribute("aria-pressed", String(doc.sourceId === selectedId));
-      button.append(el("strong", doc.title), el("small", `${doc.characters} 字符 · 快照 v${doc.sourceVersion} · ${doc.usage.length ? "已有本体引用" : "已进入自动构建流程"}`));
+      button.append(el("strong", doc.title), el("small", `${doc.characters} 字符 · ${doc.usage.length ? "已有本体引用" : "已进入自动构建流程"}`));
       list.append(button);
     }
     library.append(list);

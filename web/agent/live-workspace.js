@@ -121,15 +121,16 @@ function knowledgeDialog(source, cap, api) {
             `已读目录 ${page.coverage.shown} 条 · ${page.coverage.complete ? "当前查询目录完整" : "部分目录，非全库覆盖"}`,
           ),
         );
-        for (const item of page.items) {
+        for (const [index, item] of page.items.entries()) {
           const row = el("article", "live-card");
           row.append(
             el("h3", "", item.title),
             el(
               "p",
               "source-meta",
-              `文档 ${item.documentId} · 片段 ${item.segmentId} · 版本 ${item.revision}`,
+              `文档片段 ${offset + index + 1}`,
             ),
+            technicalDetails(item),
           );
           const read = async (position = 0) => {
             const request = ++sequence;
@@ -147,9 +148,10 @@ function knowledgeDialog(source, cap, api) {
                 el(
                   "p",
                   "source-meta",
-                  `版本 ${part.revision} · ${new Date(part.readAt).toLocaleString("zh-CN")} · ${part.coverage.complete ? "当前片段完整，不代表整份文档" : "当前片段部分正文"}`,
+                  `${new Date(part.readAt).toLocaleString("zh-CN")} · ${part.coverage.complete ? "当前片段完整，不代表整份文档" : "当前片段部分正文"}`,
                 ),
                 el("pre", "", part.text),
+                technicalDetails(part),
               );
               if (part.coverage.nextOffset !== null)
                 excerpt.append(
@@ -477,10 +479,10 @@ export function renderLiveWorkspace(
           "source-meta",
           `${model.status === "adopted"
             ? (model.id === currentModel?.id ? "当前采用映射" : "历史采用映射") + " · 查询默认使用已采用快照"
-            : "待确认 · 结构检查通过，业务含义仍需确认"} · v${model.version}`,
+            : "待确认 · 结构检查通过，业务含义仍需确认"}${model.createdAt ? ` · ${new Date(model.createdAt).toLocaleString("zh-CN")}` : ""}`,
         ),
         el("p", "", `建模时的依据：${model.content.rationale}`),
-        technicalDetails({ id: model.id, version: model.version, connections: model.content.connections }),
+        technicalDetails(model),
       );
       const cite = async (target, scope, dialog) => {
         if (await onSelectContext?.(model, target, scope)) {
@@ -596,8 +598,9 @@ export function renderLiveWorkspace(
             el(
               "p",
               "source-meta",
-              `${source?.title || "来源不可用"} · ${type.capability} · 连接契约第 ${model.content.connections[type.sourceId]} 版`,
+              `${source?.title || "来源不可用"} · ${type.capability}`,
             ),
+            technicalDetails({ modelRef: { id: model.id, version: model.version }, sourceRef: { id: type.sourceId, version: model.content.connections[type.sourceId] }, type }),
             table(
               Object.entries({
                 $id: cap?.idField || "未知",
@@ -664,8 +667,9 @@ export function renderLiveWorkspace(
                 el(
                   "p",
                   "source-meta",
-                  `${live.connections.find((s) => s.id === ref.sourceId)?.title || "来源不可用"} · 连接契约第 ${ref.version} 版`,
+                  live.connections.find((s) => s.id === ref.sourceId)?.title || "来源不可用",
                 ),
+                technicalDetails(ref),
               );
             return list;
           },

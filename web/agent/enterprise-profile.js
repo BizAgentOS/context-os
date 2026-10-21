@@ -1,5 +1,6 @@
 import { openApiImport } from "./openapi-import.js";
 import { openConnections } from "./connections.js";
+import { technicalDetails } from "./ui-display.js";
 // Presentation only: company facts, source accounts and imported files remain distinct.
 export function renderEnterpriseProfile(state, actions) {
   const el = (tag, cls, text) => {
@@ -89,16 +90,21 @@ export function renderEnterpriseProfile(state, actions) {
     }
     dialog.append(comparison, el("p", "ed-methods-note", "三种方式可搭配使用。API 和 MCP 连接成功后，仍需按需读取内容；不会自动同步全部数据。"));
   });
+  const fileMeta = source => {
+    const time = new Date(source.createdAt);
+    const savedAt = Number.isNaN(time.getTime()) ? "" : ` · ${time.toLocaleString("zh-CN")}`;
+    return `${format(source)} · 文件上传${savedAt}${source.content.parseError ? " · 内容需修正" : ""}`;
+  };
   const showFile = source => popup(source.title, dialog => {
-    dialog.append(el("p", "source-meta", `${format(source)} · 文件上传 · 第 ${source.version} 版`));
+    dialog.append(el("p", "source-meta", fileMeta(source)));
     if (source.content.parseError) dialog.append(el("p", "", "内容需要修正"));
-    dialog.append(el("pre", "data-map-content", source.content.raw || JSON.stringify(source.content.rows || source.content, null, 2)));
+    dialog.append(el("pre", "data-map-content", source.content.raw || (source.content.rows ? JSON.stringify(source.content.rows, null, 2) : source.content.text || "暂无可预览内容")), technicalDetails(source));
   });
   const showFiles = () => popup("上传资料", dialog => {
     if (!actions.readonly) dialog.append(button("quiet-button", "上传资料", () => { dialog.close(); actions.upload(); }));
     for (const source of files) {
       const file = button("data-map-file", source.title, () => showFile(source));
-      file.append(el("span", "source-meta", `${format(source)} · 文件上传 · 第 ${source.version} 版${source.content.parseError ? " · 内容需修正" : ""}`));
+      file.append(el("span", "source-meta", fileMeta(source)));
       dialog.append(file);
     }
     if (!files.length) dialog.append(el("p", "", "可上传 CSV、Markdown 或 TXT 文件。"));
@@ -169,7 +175,7 @@ export function renderEnterpriseProfile(state, actions) {
     const file = button("ed-file", "", () => showFile(source));
     const mark = el("span", "ed-file-icon"); mark.append(icon("files"));
     const copy = el("span", "ed-file-copy");
-    copy.append(el("strong", "", source.title), el("small", "", `${format(source)} · 第 ${source.version} 版${source.content.parseError ? " · 内容需修正" : ""}`));
+    copy.append(el("strong", "", source.title), el("small", "", fileMeta(source)));
     file.replaceChildren(mark, copy, icon("caret-right"));
     if (actions.api) {
       const row = el("div", "ed-upload-row");

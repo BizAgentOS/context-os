@@ -1,4 +1,6 @@
 import { test } from "node:test";
+import { OntologyChanges } from "../../src/engine/changes.ts";
+import { connectChanges } from "../../src/engine/change-integration.ts";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -33,6 +35,8 @@ test("a mapping revision reports its full-snapshot effect, and one that breaks a
     assert.ok(relation, "the build linked orders to companies");
     const baseRef = { id: model.id, version: model.version };
 
+    const lifecycle = new OntologyChanges(memory, foundation, snapshots);
+    connectChanges(memory, foundation, live, lifecycle);
     const broken = await changes.execute("propose", { operationId: "break", baseRef, reason: "测试", evidence: "测试",
       patch: { kind: "relation", type: relation.from, relation: relation.name, fromField: "金额", toField: relation.toField } });
     const full = (broken.content.impact as any).snapshotCheck;
@@ -42,6 +46,11 @@ test("a mapping revision reports its full-snapshot effect, and one that breaks a
     assert.equal(full.newErrors.length, 1, JSON.stringify(full.changes));
     assert.match(full.changes[0].detail, /关系不成立/);
     await assert.rejects(changes.execute("check", { operationId: "break-check", id: broken.id, version: broken.version }), /全量快照上引入新的问题/);
+    const pending = lifecycle.list().changes.find((item: any) => item.owner?.id === broken.id)!;
+    const rejected = await lifecycle.verify({ operationId: "shared-check", id: pending.id, version: pending.version });
+    assert.equal(rejected.status, "failed", "the shared verification must execute the full-snapshot guard before declaring success");
+    assert.match((rejected.content.verification as any).notes.join(""), /全量快照上引入新的问题/);
+
 
     const company = (model.content.types as any[]).find(t => t.name !== relation.from);
     const harmless = await changes.execute("propose", { operationId: "rename", baseRef, reason: "测试", evidence: "测试",

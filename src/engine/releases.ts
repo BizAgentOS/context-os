@@ -54,6 +54,11 @@ export class Releases {
       && fingerprint(a.content.baseFoundationRef) === fingerprint(current ? reference(current) : null)
       && fingerprint(a.content.baseModelRef) === fingerprint(model ? reference(model) : null));
     if (engineCandidate) pending.push(engineCandidate);
+    const changes = this.memory.listArtifacts("ontology_change");
+    const governedOwners = new Set(changes.map(change => String((change.content.owner as Data | undefined)?.id ?? "")).filter(Boolean));
+    // A candidate represented by individual changes is counted by those decisions, including explicit rejections.
+    for (let index = pending.length - 1; index >= 0; index--) if (governedOwners.has(pending[index].id)) pending.splice(index, 1);
+    pending.push(...changes.filter(change => ["proposed", "verified", "failed"].includes(change.status)));
     if (!adopted || !(adopted.content.concepts as Data[] | undefined)?.length) issues.push({ code: "no_adopted_foundation", severity: "error", message: "请先构建并采用至少一个本体概念。" });
     // Pending work is not part of this release by construction (only adopted state is read), so it informs rather than blocks.
     if (pending.length) issues.push({ code: "pending_changes", severity: "warning", message: `仍有 ${pending.length} 项未采用的本体或映射修订，不包含在本次发布中。` });

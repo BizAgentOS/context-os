@@ -368,6 +368,7 @@ body.haizhi-glass .is-ontology-space:has(.agent-task-status:not([hidden])) .os-l
   body.haizhi-glass .os-identity > .os-eyebrow { grid-column: 1 / -1; font-size: 8px; line-height: 11px; margin: 0; }
   body.haizhi-glass .os-identity h1 { min-width: 0; margin: 0; font-size: 16px; line-height: 22px; overflow-wrap: anywhere; }
   body.haizhi-glass .os-identity .os-version { max-width: 128px; font-size: 9px; padding: 4px 6px; }
+  body.haizhi-glass .os-identity > div { grid-column: 1 / -1; min-width: 0; }
   body.haizhi-glass .os-identity :is(.os-build-status, .os-status) {
     grid-column: 1 / -1;
     max-width: 100%;

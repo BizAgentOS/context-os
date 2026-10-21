@@ -61,13 +61,13 @@ export function renderFoundation(
             "small",
             "muted",
             evidence.kind === "knowledge"
-              ? `${evidence.title} · 知识文档 ${evidence.documentId} / ${evidence.segmentId} · 版本 ${evidence.revision} · 读取 ${new Date(evidence.readAt).toLocaleString("zh-CN")} · ${evidence.coverage?.complete ? "当前片段完整" : "部分片段"} · 适用时间未说明`
+              ? `${evidence.title} · 知识文档 · 读取 ${new Date(evidence.readAt).toLocaleString("zh-CN")} · ${evidence.coverage?.complete ? "当前片段完整" : "部分片段"} · 适用时间未说明`
               : evidence.kind === "web"
                 ? `${evidence.title} · 公开网页 · 已读取 ${new Date(evidence.readAt).toLocaleString("zh-CN")} · ${evidence.coverage?.complete ? "该次已读完整正文" : "部分正文，覆盖不完整"} · 适用时间未说明`
                 : evidence.kind === "document"
-                  ? `${evidence.title} · v${evidence.sourceVersion} · 已读取 ${new Date(evidence.readAt).toLocaleString("zh-CN")} · 适用时间未说明`
+                  ? `${evidence.title} · 已读取 ${new Date(evidence.readAt).toLocaleString("zh-CN")} · 适用时间未说明`
                   : evidence.kind === "profile"
-                    ? `人工确认的企业档案 · v${evidence.sourceVersion} · ${new Date(evidence.capturedAt).toLocaleString("zh-CN")} · 适用时间未说明`
+                    ? `人工确认的企业档案 · ${new Date(evidence.capturedAt).toLocaleString("zh-CN")} · 适用时间未说明`
                     : `用户陈述 · ${new Date(evidence.capturedAt).toLocaleString("zh-CN")} · 适用时间未说明`,
           ),
         );
@@ -112,10 +112,10 @@ export function renderFoundation(
                   "p",
                   "muted",
                   found.kind === "knowledge"
-                    ? `${found.title} · 读取时版本 ${found.revision} · 连接${found.connectionStatus === "ready" ? "可用" : "已停用"} · 保存的片段不代表当前源内容`
+                    ? `${found.title} · 已保存的读取依据 · 连接${found.connectionStatus === "ready" ? "可用" : "已停用"} · 保存的片段不代表当前源内容`
                     : found.kind === "web"
                       ? `${found.url} · 读取时快照，不代表网页当前内容`
-                      : `${found.title} · 依据版本 v${found.sourceVersion} · 当前资料 v${found.currentSourceVersion}`,
+                      : `${found.title} · ${found.sourceVersion === found.currentSourceVersion ? "依据与当前资料一致" : "依据保留了此前资料内容"}`,
                 ),
                 paragraph,
               );
@@ -167,7 +167,7 @@ export function renderFoundation(
           el(
             "p",
             "source-meta",
-            `${binding.status === "adopted" ? "已采用" : binding.status === "candidate" ? "候选" : "不可用"} · ${binding.capability} · 映射 v${binding.modelVersion} · 身份 ${binding.identity || "未提供"}${binding.reason ? " · " + binding.reason : ""}`,
+            `${binding.status === "adopted" ? "已采用" : binding.status === "candidate" ? "候选" : "不可用"} · ${binding.capability} · 身份 ${binding.identity || "未提供"}${binding.reason ? " · " + binding.reason : ""}`,
           ),
         );
         const details = el("details", "");
@@ -335,13 +335,14 @@ export function renderFoundation(
       }
       card.append(actions);
     }
+    card.append(technicalDetails(artifact));
     return card;
   };
   section.append(render(current));
   if (value.adopted && current.version !== value.adopted.version) {
     const adopted = el("details", "foundation-previous");
     adopted.append(
-      el("summary", "", `查看仍有效的已采用定义 · v${value.adopted.version}`),
+      el("summary", "", "查看仍有效的已采用定义"),
       render(value.adopted, true),
     );
     section.append(adopted);

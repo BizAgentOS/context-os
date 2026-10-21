@@ -204,7 +204,7 @@ export function renderDatasetWorkspace(state, { api, ontology, legacy, onChanged
       source.append(stats, el("p", data.model ? "已连接业务映射，可按字段开放真实记录。" : "当前可开放本体知识。连接业务映射后，还可开放真实业务记录。", "ds-muted"));
       source.append(action("查看本体 ↗", ontology));
     } else {
-      source.append(el("h2", data.current ? "本体等待确认" : "先整理企业本体"), el("p", data.current ? `当前为 v${data.current.version} 候选。到本体工作区核对并采用后，即可选择内容开放。` : "在本体工作区整理企业概念与关系，采用后即可在这里开放给 Agent。", "ds-description"), action("前往本体工作区 ↗", ontology, true));
+      source.append(el("h2", data.current ? "本体等待确认" : "先整理企业本体"), el("p", data.current ? "当前本体仍为候选。到本体工作区核对并采用后，即可选择内容开放。" : "在本体工作区整理企业概念与关系，采用后即可在这里开放给 Agent。", "ds-description"), action("前往本体工作区 ↗", ontology, true));
     }
     source.append(el("div", "本体定义固定版本\n业务数据按需读取\n随时停用访问", "ds-source-notes"));
     const head = el("header", "", "ds-list-head"), heading = el("div"); heading.append(el("h2", "我的 MCP 数据集"), el("p", `${data.datasets.filter(d => d.status === "active").length} 份已启用 · ${data.datasets.length} 份数据集`, "ds-muted"));

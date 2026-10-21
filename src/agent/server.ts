@@ -68,6 +68,7 @@ const staticFiles: Record<string, { file: string; type: string }> = {
   "/metrics.js": { file: "metrics.js", type: "text/javascript; charset=utf-8" },
   "/consumer-migrations.js": {file:"consumer-migrations.js",type:"text/javascript; charset=utf-8"},
   "/consumer-views.js": {file:"consumer-views.js",type:"text/javascript; charset=utf-8"},
+  "/changes-workspace.js": {file:"changes-workspace.js",type:"text/javascript; charset=utf-8"},
   "/mapping-changes.js": {file:"mapping-changes.js",type:"text/javascript; charset=utf-8"},
   "/relation-corrections.js": {
     file: "relation-corrections.js",
@@ -512,7 +513,7 @@ export async function createServer(
       let result: unknown;
       switch (url.pathname) {
         case "/api/changes/propose": {
-          const proposed = app.changes.propose(body);
+          const proposed = await app.changes.propose(body);
           send(proposed.suppressed ? 200 : 201, proposed); return;
         }
         case "/api/changes/verify":
@@ -535,11 +536,6 @@ export async function createServer(
           result = await app.programBuilds.check(body); break;
         case "/api/engine/adopt": {
           const adopted = await app.programBuilds.adopt(body);
-          // FEATURE_041 T041-04b: an adopted program candidate is a governance decision, so the ledger records it.
-          app.changes.recordDecision({ type: "entity", title: `程序构建 · ${adopted.candidate.title}`, origin: "program",
-            subject: { candidateRef: { id: adopted.candidate.id, version: adopted.candidate.version } },
-            effect: { foundationRef: { id: adopted.foundation.id, version: adopted.foundation.version },
-              modelRef: { id: adopted.model.id, version: adopted.model.version } } });
           result = adopted; break;
         }
         case "/api/engine/cancel":
@@ -653,9 +649,6 @@ export async function createServer(
                   Number(body.version),
                 );
                 saved = adopted;
-                app.changes.recordDecision({ type: "entity", title: "执行映射采用", origin: "human",
-                  subject: { modelRef: { id: adopted.id, version: adopted.version } },
-                  effect: { modelRef: { id: adopted.id, version: adopted.version } } });
                 break;
               }
               case "/api/live/prepare":
@@ -745,11 +738,7 @@ export async function createServer(
         case "/api/live/changes/check":
         case "/api/live/changes/adopt":
         case "/api/live/changes/cancel": {
-          const saved=await new MappingChanges(app.memory,app.live, decided => {
-            app.changes.recordDecision({ type: "binding", title: `映射修订 · ${decided.title}`, origin: "human",
-              subject: { changeRef: { id: decided.id, version: decided.version } },
-              effect: { modelRef: decided.content.resultModel ?? null } });
-          }).execute(url.pathname.split("/").at(-1) as "propose"|"check"|"adopt"|"cancel",body);
+          const saved=await new MappingChanges(app.memory,app.live).execute(url.pathname.split("/").at(-1) as "propose"|"check"|"adopt"|"cancel",body);
           result={...app.canvasState(),saved}; break;
         }
         case "/api/live/corrections/read":
@@ -769,13 +758,7 @@ export async function createServer(
         case "/api/live/corrections/cancel": {
           const method = url.pathname.split("/").at(-1) as
             "propose" | "check" | "adopt" | "cancel";
-          const saved = await new RelationCorrections(app.memory, app.live, decided => {
-            // FEATURE_041 T041-04a: an adopted correction is a governance decision; the ledger records it in the same transaction.
-            app.changes.recordDecision({ type: "local_correction", title: `局部纠正 · ${decided.title}`,
-              subject: { id: decided.id, version: decided.version },
-              effect: { correctionRef: { id: decided.id, version: decided.version }, target: decided.content.target,
-                targetIds: decided.content.targetIds, reason: decided.content.reason } });
-          }).execute(method, body);
+          const saved = await new RelationCorrections(app.memory, app.live).execute(method, body);
           result = { ...app.canvasState(), saved };
           break;
         }
@@ -851,10 +834,6 @@ export async function createServer(
           break;
         case "/api/canvas/foundation/adopt": {
           const adoptedFoundation = await queue(() => app.canvasFoundationAdopt(body));
-          const foundationRef = { id: String(body.id ?? ""), version: Number(body.version ?? 0) };
-          // FEATURE_041 T041-04b: adopting a foundation candidate is a decision, not a side effect of a dialog.
-          if (foundationRef.id) app.changes.recordDecision({ type: "entity", title: "基础本体采用", origin: "human",
-            subject: { foundationRef }, effect: { foundationRef } });
           result = adoptedFoundation; break;
         }
         case "/api/canvas/decision":

@@ -1,3 +1,4 @@
+import { prepareCorrectionMigration } from "./correction-migration.ts";
 import { freezeLegacyConsumption } from "./legacy-consumption.ts";
 import { activeCorrection, captureRelation, type PinnedCorrections } from "./relation-corrections.ts";
 import {
@@ -22,6 +23,14 @@ import type {
 import { readModeSchema, readingConsistency, readingDescription, multipleSourceTimes, type ReadMode, type ReadingReceipt, type SourceReading } from "./reading-contract.ts";
 import { layeredModelSchema, migrateLegacyModel, parseLayeredModel, projectLegacyModel, reconcileLayeredModel, transformSchema, type LayeredModel } from "../semantic/model.ts";
 import { identityFilter, identityValue, objectIdLimit, scopedFilter, transformValue } from "../semantic/values.ts";
+
+const stableFusionEvidence = (evidence: ObjectEvidence[]) => evidence.map(object => ({
+  objectId: object.objectId,
+  properties: Object.fromEntries(Object.entries(object.properties).map(([key, value]) => [key, {
+    ...value, evidence: value.evidence.map(({ readAt, ...receipt }) => receipt),
+  }])),
+  matches: object.matches.map(({ readAt, attemptedAt, ...match }) => match),
+}));
 
 const name = z.string().trim().min(1).max(200);
 const foundationRefSchema = z
@@ -120,6 +129,7 @@ export interface PinnedReader {
     ReturnType<SourceConnections["readRecords"]>;
 }
 export class LiveMemory {
+  onGovernanceAdopt?: (candidate: Artifact, save: () => Artifact, readingFacts?: Data[]) => Artifact;
   readonly sources: SourceConnections;
   /** Set by the host once its snapshot service exists; release consumers read pinned bindings through it. */
   snapshots?: PinnedReader;
@@ -596,6 +606,7 @@ export class LiveMemory {
       )
         throw new Error("附来源样本检查失败，请恢复连接或修订映射");
       checks.push({
+        factsFingerprint: createHash("sha256").update(JSON.stringify({ items: sample.items, coverage: sample.coverage, fusion: fusion ? stableFusionEvidence(fusion.evidence) : null })).digest("hex"),
         ...(fusion
           ? {
               fusion: fusion.evidence
@@ -627,7 +638,10 @@ export class LiveMemory {
     version: number,
     commit: (save: () => Artifact) => Artifact = (save) => save(),
     inspectFusion?: (type: string, evidence: ObjectEvidence[]) => void,
+    inspectReading?: (facts: Data) => void,
   ) {
+    const readingFacts: Data[] = [];
+    const inspect = (facts: Data) => { readingFacts.push(facts); inspectReading?.(facts); };
     const a = this.model(id);
     if (a.status !== "candidate" || a.version !== version)
       throw new Error("候选已变化");
@@ -652,6 +666,7 @@ export class LiveMemory {
       if (d.foundationRef && !sample.items.length)
         throw new Error("需要实际记录重新验证概念映射");
       this.validateValues(t, sample.items);
+      inspect(jsonData({ type: t.name, items: sample.items, coverage: sample.coverage }));
       if (t.supplements?.length) {
         const fusion = await fuseRows(
           t,
@@ -671,6 +686,7 @@ export class LiveMemory {
         )
           throw new Error("附来源检查失败，未采用");
         inspectFusion?.(t.name, fusion.evidence);
+        inspect(jsonData({ type: t.name, fusion: stableFusionEvidence(fusion.evidence) }));
       }
     }
     assertSnapshotImpact(await this.snapshotImpact(base ? this.definition(base) : null, d));
@@ -680,13 +696,15 @@ export class LiveMemory {
       (this.active()?.version ?? null) !== (base?.version ?? null)
     )
       throw new Error("基础本体已变化");
-    return commit(() =>
-      this.repo.putArtifact({
+    const migrateCorrections = await prepareCorrectionMigration(this.repo, this, a.content);
+    return commit(() => {
+      const save = () => { const adopted = this.repo.putArtifact({
         ...a,
         expectedVersion: version,
         status: "adopted",
-      }),
-    );
+      }); migrateCorrections(adopted); return adopted; };
+      return this.onGovernanceAdopt ? this.onGovernanceAdopt(a, save, readingFacts) : save();
+    });
   }
   async query(
     input: unknown,

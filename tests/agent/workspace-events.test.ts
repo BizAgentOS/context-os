@@ -42,6 +42,10 @@ test("workspace events require admin access, replay object versions, and correct
     const data = await fetch(`${base}/api/snapshot?scope=data`, { headers }).then(r => r.json());
     assert.ok(data.sources.some((entry: {id:string}) => entry.id === source.id));
     assert.equal(data.messages, undefined, "a data correction does not resend the conversation");
+    await service.app.programBuilds.build({ operationId: "events-build", autoAdopt: true });
+    const shell = await fetch(`${base}/api/snapshot?scope=shell`, { headers }).then(r => r.json());
+    const versions = await fetch(`${base}/api/workspace-versions`, { headers }).then(r => r.json());
+    assert.equal(shell.workspaceVersion.number, versions.versions[0].number, "event-driven shell refreshes carry the current working version");
   } finally {
     abort.abort();
     await service.close();

@@ -1,21 +1,24 @@
 import { el, btn, modal, field } from "./relation-corrections.js";
 import { inspectChange } from "./mapping-changes.js";
-const refText = (r) => (r ? `${r.id} · v${r.version}` : "尚无目标版本");
+import { safeText, technicalDetails } from "./ui-display.js";
+const stateText = status => ({ candidate: "候选", checked: "检查通过", adopted: "已采用", cancelled: "已取消", superseded: "已替代", active: "使用中", revoked: "已撤销", draft: "草稿", previewed: "预览", committed: "已提交" })[status] || "待处理";
+const when = value => value ? new Date(value).toLocaleString("zh-CN") : "时间未记录";
+const recordLabel = (record, index) => `${record.title} · ${stateText(record.status)} · ${record.createdAt ? when(record.createdAt) : `记录 ${index + 1}`}`;
 function explanation(report, box) {
   box.append(
-    el("p", `原映射：${refText(report.baseRef)}`),
-    el("p", `目标映射：${refText(report.targetRef)}`),
+    el("p", "原数据对应：此接入方当前使用的规则"),
+    el("p", report.targetRef ? "目标数据对应：本次修订后的规则" : "目标数据对应：尚未采用"),
     el(
       "p",
       report.affected
         ? "当前许可涉及修订规则或依赖，读取含义可能变化。"
-        : "当前许可未发现直接规则影响；迁移仍改变固定版本。",
+        : "当前许可未发现直接规则影响；迁移仍会更新此接入方使用的规则。",
     ),
   );
   box.append(
     el(
       "p",
-      "字段、关系和证据许可保持原样，不自动扩大。迁移保留密钥，但客户端需重新读取目录并携带视图版本。旧动态证据失效，源数据仍按需读取。",
+      "字段、关系和证据许可保持原样，不自动扩大。迁移保留密钥，客户端需刷新接入目录后继续使用。旧动态证据失效，源数据仍按需读取。",
       "source-meta",
     ),
   );
@@ -35,7 +38,8 @@ function explanation(report, box) {
       ),
     );
   for (const reason of report.reasons)
-    box.append(el("p", reason, "source-meta"));
+    box.append(el("p", reason.replace(/v[23]视图/g, "消费视图"), "source-meta"));
+  box.append(technicalDetails(report));
 }
 export function inspectMigration(record, api, onSaved) {
   const d = modal("消费视图迁移确认"),
@@ -48,16 +52,16 @@ export function inspectMigration(record, api, onSaved) {
       el("h3", current.title),
       el(
         "p",
-        `迁移记录 ${refText(current)} · ${current.status === "committed" ? "已提交" : "预览"}`,
+        `${stateText(current.status)} · ${when(current.createdAt)}`,
       ),
-      el("p", `对应变更：${refText(current.content.changeRef)}`),
+      technicalDetails(current),
     );
     explanation(current.content.report, body);
     if (current.status === "committed")
       body.append(
         el(
           "p",
-          `历史提交回执：视图 ${refText(current.content.resultRef)}。当前状态请重新读取视图；旧回执不代表仍获授权。`,
+          "此接入方已完成迁移。当前状态请重新读取视图；历史回执不代表仍获授权。",
         ),
       );
     const status = el("p");
@@ -78,7 +82,7 @@ export function inspectMigration(record, api, onSaved) {
             if (d.isConnected) draw();
           } catch (e) {
             if (d.isConnected)
-              status.textContent = `未确认迁移：${e.message}。可重试原请求或重新生成预览。`;
+              status.textContent = safeText(`未确认迁移：${e.message}。可重试原请求或重新生成预览。`);
           } finally {
             buttons.forEach((b) => (b.disabled = false));
           }
@@ -105,7 +109,8 @@ export function inspectConsumerImpact(change, api, onSaved) {
       if (!d.isConnected || request !== generation) return;
       body.replaceChildren(
         el("h3", change.title),
-        el("p", `同一变更 ${refText(change)} · ${info.status}`),
+        el("p", `${stateText(info.status)} · ${when(change.createdAt)}`),
+        technicalDetails({ change, info }),
       );
       body.append(
         btn("查看规则差异与样本依据", () =>
@@ -115,16 +120,16 @@ export function inspectConsumerImpact(change, api, onSaved) {
       body.append(
         el(
           "p",
-          `当前基线共有 ${info.coverage.total} 份v3视图；旧v2 ${info.legacy.count} 份保持原合同。本页每次最多20份，不执行批量自动迁移。`,
+          `当前基线共有 ${info.coverage.total} 份消费视图；另有 ${info.legacy.count} 份历史视图保持原合同。本页每次最多20份，不执行批量自动迁移。`,
           "source-meta",
         ),
       );
       if (!info.items.length) body.append(el("p", "此基线当前没有消费视图。"));
-      for (const view of info.items) {
+      for (const [index, view] of info.items.entries()) {
         const card = el("article", "", "live-card");
         card.append(
           el("h3", view.title),
-          el("p", `视图 ${refText(view)} · ${view.status}`),
+          el("p", `${stateText(view.status)} · ${view.createdAt ? when(view.createdAt) : `记录 ${offset + index + 1}`}`),
         );
         explanation(view, card);
         let drop;
@@ -165,7 +170,7 @@ export function inspectConsumerImpact(change, api, onSaved) {
                 inspectMigration(r.saved, api, onSaved);
             } catch (e) {
               if (d.isConnected && request === generation)
-                status.textContent = `无法确认预览：${e.message}。`;
+                status.textContent = safeText(`无法确认预览：${e.message}。`);
             } finally {
               button.disabled = false;
               if (drop) drop.disabled = false;
@@ -236,7 +241,9 @@ export function renderConsumerMigrations({ api, onSaved }) {
         e.preventDefault();
         open(id.value, Number(version.value));
       };
-      body.append(form);
+      const referenceEntry = el("details", "", "technical-information");
+      referenceEntry.append(el("summary", "按技术引用打开"), form);
+      body.append(referenceEntry);
       try {
         const [changes, migrations] = await Promise.all([
           api("/api/live/changes/list", {}),
@@ -244,16 +251,16 @@ export function renderConsumerMigrations({ api, onSaved }) {
         ]);
         if (!d.isConnected) return;
         body.append(el("h3", "最近40条映射变更"));
-        for (const c of changes.items)
+        for (const [index, c] of changes.items.entries())
           body.append(
-            btn(`${c.title} · ${c.status} · v${c.version}`, () =>
+            btn(recordLabel(c, index), () =>
               open(c.id, c.version),
             ),
           );
         body.append(el("h3", "最近40条迁移记录"));
-        for (const m of migrations.items)
+        for (const [index, m] of migrations.items.entries())
           body.append(
-            btn(`${m.title} · ${m.status} · v${m.version}`, async () => {
+            btn(recordLabel(m, index), async () => {
               const selection = ++selectionGeneration;
               try {
                 const r = await api("/api/live/migrations/read", {
@@ -268,6 +275,7 @@ export function renderConsumerMigrations({ api, onSaved }) {
               }
             }),
           );
+        body.append(technicalDetails({ changes: changes.items, migrations: migrations.items }));
       } catch (e) {
         if (d.isConnected) body.append(el("p", `读取失败：${e.message}`));
       }

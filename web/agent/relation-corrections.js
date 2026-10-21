@@ -19,6 +19,8 @@ const states = {
   cancelled: "已取消",
   superseded: "已被新决定替代",
 };
+const when = value => value ? new Date(value).toLocaleString("zh-CN") : "时间未记录";
+const actor = value => value === "local-admin" ? "本地管理员" : String(value || "").startsWith("agent:") ? "助手" : "提交者";
 export function modal(title) {
   const d = el("dialog", "", "live-dialog");
   d.append(
@@ -43,7 +45,7 @@ export function openCorrection(model, api, initial = {}, after = () => {}) {
     form = el("form"),
     notice = el(
       "p",
-      "仅影响指定起点在本地内部关系视图中的目标集合；保留源记录，外部消费契约保持原样。",
+      "纠正指定起点的关联目标，保留源记录。采用后进入工作版，发布后供对应接入方使用；已有发布保持原样。",
       "source-meta",
     );
   dialog.append(notice, form);
@@ -134,10 +136,10 @@ export function inspectCorrection(initial, api, after = () => {}) {
     content.replaceChildren(
       el(
         "h3",
-        `${record.title} · ${states[record.status]} · v${record.version}`,
+        `${record.title} · ${states[record.status] || "待处理"}`,
       ),
-      el("p", `纠正记录 · 第 ${record.version} 版`),
-      el("p", `执行映射 v${t.modelVersion} · 责任主体 ${c.responsible}`),
+      el("p", `记录时间：${when(record.createdAt)} · 提交者：${actor(c.responsible)}`),
+      el("p", `${t.type} ${t.objectId} · ${t.relation}`),
       el(
         "p",
         `原始目标：${c.snapshot.before.items.map((i) => i.$id).join("、") || "无"}`,
@@ -147,7 +149,7 @@ export function inspectCorrection(initial, api, after = () => {}) {
       el("p", `提交者依据：${c.evidence}`),
       el(
         "p",
-        "适用条件：本模型版本、起点、原关系及新目标源事实保持基线不变。",
+        "适用条件：起点、关系规则及目标源事实保持已核对的状态。",
         "source-meta",
       ),
     );
@@ -164,14 +166,14 @@ export function inspectCorrection(initial, api, after = () => {}) {
       content.append(
         el(
           "p",
-          `检查规则 ${c.check.ruleVersion} · ${c.check.checkedAt} · 仅核验引用、范围和版本，不证明业务真实。`,
+          `已复验 · ${when(c.check.checkedAt)} · 已核验引用、范围和当前状态，不证明业务真实。`,
         ),
       );
     if (c.decision)
       content.append(
         el(
           "p",
-          `采用决定：${c.decision.actor} · ${c.decision.at} · 基于检查 v${c.decision.checkedVersion}`,
+          `采用决定：${actor(c.decision.actor)} · ${when(c.decision.at)}`,
         ),
       );
     const status = el("p");
@@ -203,12 +205,13 @@ export function inspectCorrection(initial, api, after = () => {}) {
       content.append(btn("检查当前候选", () => act("check")));
       if (record.status === "checked")
         content.append(
-          btn(`确认采用检查 v${record.version}`, () => act("adopt")),
+          btn("确认采用已检查的纠正", () => act("adopt")),
         );
       content.append(btn("取消未采用候选", () => act("cancel")));
     }
     content.append(
       status,
+      technicalDetails(record),
       el(
         "p",
         "采用不写回源系统；已采用记录不能通过取消假装回滚。重新读取对象关系查看当前有效结果。",
@@ -236,9 +239,9 @@ export function renderCorrections(model, { api }) {
       );
       if (!items.length)
         list.append(el("p", "尚无局部纠正记录。", "source-meta"));
-      for (const a of items)
+      for (const [index, a] of items.entries())
         list.append(
-          btn(`${a.title} · ${states[a.status]} · v${a.version}`, async () => {
+          btn(`${a.title} · ${states[a.status] || "待处理"} · ${a.createdAt ? when(a.createdAt) : `记录 ${index + 1}`}`, async () => {
             const detailRequest = ++detailGeneration;
             try {
               const record = await api("/api/live/corrections/read", {

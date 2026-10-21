@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { ownerVerificationInputs } from "./owner-verification.ts";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import type { Artifact, Data } from "../agent/contracts.ts";
@@ -61,24 +62,37 @@ const listInput = z.object({ status: z.string().optional(), type: z.string().opt
 type Subjects = { [K in keyof typeof subjects]: z.infer<(typeof subjects)[K]> };
 type VerifiedType = keyof Subjects;
 interface Metrics { [key: string]: number | boolean | string | null }
-interface Verification { ruleVersion: number; result: "passed" | "review" | "failed"; metrics: Metrics; notes: string[]; inputs: Data; checkedAt: string }
-/** Effect of adopting a type on the workspace, supplied by the service that owns it (wired in T041-03/04). */
-export type ChangeApplier = (change: Artifact) => Data;
+export interface Verification { ruleVersion: number; result: "passed" | "review" | "failed"; metrics: Metrics; notes: string[]; inputs: Data; checkedAt: string }
+export interface PreparedChange { verification: Omit<Verification, "ruleVersion" | "checkedAt">; apply: () => Data }
+export interface ChangeHandler {
+  subject: z.ZodType;
+  prepare: (change: Artifact) => Promise<PreparedChange>;
+}
 
 const isVerifiedType = (type: string): type is VerifiedType => Object.hasOwn(subjects, type);
 const round = (value: number) => Math.round(value * 10000) / 10000;
+const ownerProposalHash = (owner: Artifact) => {
+  const keys = owner.kind === "mapping_change" ? ["draft"] : owner.kind === "relation_correction" ? ["target", "targetIds", "reason", "evidence"]
+    : owner.kind === "foundation" ? ["enterprise", "concepts", "relations", "evidence", "unknowns", "conflicts", "profileRef", "documentVersions"]
+      : ["purpose", "types", "relations", "foundationRef", "base", "layered"];
+  return fingerprint(Object.fromEntries(keys.map(key => [key, owner.content[key] ?? null])));
+};
 
 export class OntologyChanges {
+  applying = false;
   private memory: MemoryStore;
   private foundation: FoundationService;
   private snapshots: Snapshots;
-  private appliers = new Map<string, ChangeApplier>();
+  private handlers = new Map<string, ChangeHandler>();
+  private ownerHandlers = new Map<string, ChangeHandler>();
 
   constructor(memory: MemoryStore, foundation: FoundationService, snapshots: Snapshots) {
     this.memory = memory; this.foundation = foundation; this.snapshots = snapshots;
   }
 
-  registerApplier(type: string, applier: ChangeApplier) { this.appliers.set(type, applier); }
+  registerHandler(type: string, handler: ChangeHandler) { this.handlers.set(type, handler); }
+  registerOwnerHandler(kind: string, handler: ChangeHandler) { this.ownerHandlers.set(kind, handler); }
+  private handler(change: Artifact) { return this.ownerHandlers.get(String((change.content.owner as Data | undefined)?.kind)) ?? this.handlers.get(String(change.content.type)); }
 
   /** What every change is proposed against; a change made against anything older is rejected as stale. */
   currentBaseline(): z.infer<typeof baseline> {
@@ -98,7 +112,9 @@ export class OntologyChanges {
       .filter(item => (!args.status || item.status === args.status) && (!args.type || item.content.type === args.type));
     return { baseline: this.currentBaseline(), total: all.length,
       changes: all.slice(args.offset, args.offset + args.limit).map(item => ({ id: item.id, version: item.version, title: item.title, status: item.status,
-        type: item.content.type, origin: item.content.origin, result: (item.content.verification as Data | undefined)?.result ?? null, createdAt: item.createdAt })) };
+        type: item.content.type, origin: item.content.origin, subject: item.content.subject, owner: item.content.owner ?? null,
+        verification: item.content.verification ?? null, effect: item.content.effect ?? null,
+        result: (item.content.verification as Data | undefined)?.result ?? null, createdAt: item.createdAt })) };
   }
   read(id: string, version?: number): Artifact {
     if (!id) throw new Error("需要变更标识");
@@ -133,31 +149,37 @@ export class OntologyChanges {
     if (!rejected) return null;
     const before = rejected.content.rejectedMetrics as Data | null;
     if (!now || !before) return rejected;
-    const moved = Math.abs(Number(before.matchRate) - now.matchRate) > rules.rejection.reproposeMatchRateDelta;
+    const moved = round(Math.abs(Number(before.matchRate) - now.matchRate)) > rules.rejection.reproposeMatchRateDelta;
     const uniquenessChanged = before.targetUnique !== now.targetUnique;
     return moved || uniquenessChanged ? null : rejected;
   }
 
-  propose(input: unknown) {
+  async propose(input: unknown) {
     const args = proposeInput.parse(input);
     const actor = "local-admin", signature = fingerprint({ method: "propose", args });
     const replay = this.previous(actor, args.operationId, signature);
-    if (replay) return { change: replay, suppressed: false };
+    if (replay) return { change: replay, suppressed: replay.status === "rejected" && replay.content.disposition === "rejected" };
     const type = args.type;
-    if (!isVerifiedType(type)) throw new Error(`“${type}”类变更的复验尚未接入统一流程`);
+    const handler = this.handlers.get(type);
+    if (!isVerifiedType(type) && !handler) throw new Error(`“${type}”类变更的复验尚未接入统一流程`);
     if ((args.origin === "agent" || args.origin === "program") && !args.evidence) throw new Error("程序与 Agent 的提议必须附依据");
-    const subject = subjects[type].parse(args.subject);
+    const subject = (handler?.subject ?? subjects[type as VerifiedType]).parse(args.subject) as Subjects[VerifiedType];
     this.assertBaseline(args.baseline);
-    const fp = fingerprint({ type, subject: this.identity(type, subject) });
+    if (type === "relation" && args.origin === "program") {
+      const measured = await this.checkRelation(subject as Subjects["relation"]);
+      args.observed = { matchRate: Number(measured.metrics.matchRate), targetUnique: Boolean(measured.metrics.targetUnique) };
+      this.assertBaseline(args.baseline);
+    }
+    const fp = fingerprint({ type, subject: isVerifiedType(type) ? this.identity(type, subject) : subject });
     if (args.origin === "program") {
       const rejected = this.suppressedBy(fp, args.observed);
-      if (rejected) return { change: rejected, suppressed: true };
+      if (rejected) return this.memory.atomic(() => { this.receipt(actor, args.operationId, signature, rejected); return { change: rejected, suppressed: true }; });
     }
     return this.memory.atomic(() => {
       const again = this.previous(actor, args.operationId, signature);
       if (again) return { change: again, suppressed: false };
       this.assertBaseline(args.baseline);
-      const change = this.memory.putArtifact({ kind: "ontology_change", title: this.title(type, subject), status: "proposed", content: jsonData({
+      const change = this.memory.putArtifact({ kind: "ontology_change", title: isVerifiedType(type) ? this.title(type, subject) : `变更 · ${type}`, status: "proposed", content: jsonData({
         origin: args.origin, type, subject, baseline: args.baseline, fingerprint: fp, evidence: args.evidence ?? null,
         ...(args.observed ? { observed: args.observed } : {}), proposedBy: actor, operationId: args.operationId }) });
       this.receipt(actor, args.operationId, signature, change);
@@ -171,7 +193,12 @@ export class OntologyChanges {
     if (replay) return replay;
     const change = this.open(args);
     this.assertBaseline(change.content.baseline as z.infer<typeof baseline>);
-    const verification = await this.check(change);
+    let verification: Verification;
+    try { verification = await this.check(change); }
+    catch (error) {
+      if (error instanceof ChangeConflict) throw error;
+      verification = { ruleVersion: 1, result: "failed", metrics: {}, notes: [(error as Error).message], inputs: {}, checkedAt: new Date().toISOString() };
+    }
     return this.memory.atomic(() => {
       const again = this.previous(actor, args.operationId, signature);
       if (again) return again;
@@ -191,11 +218,12 @@ export class OntologyChanges {
     if (change.status !== "verified") throw new ChangeConflict("not_verified", "请先复验该变更，再采用具体版本");
     const stored = change.content.verification as unknown as Verification;
     if (stored.result === "review" && !args.acknowledgeReview) throw new ChangeConflict("review_required", "复验结果为待审，需明确确认后才能采用");
-    const applier = this.appliers.get(String(change.content.type));
+    const prepared = await this.handler(change)?.prepare(change);
+    const applier = prepared ? () => prepared.apply() : undefined;
     if (!applier) throw new Error(`“${change.content.type}”类变更的采用尚未接入统一流程`);
     this.assertBaseline(change.content.baseline as z.infer<typeof baseline>);
     // Adoption re-reads the facts: a result that moved since verification is no longer what was approved.
-    const fresh = await this.check(change);
+    const fresh = prepared ? { ruleVersion: 1, checkedAt: new Date().toISOString(), ...prepared.verification } : await this.check(change);
     if (fresh.result !== stored.result || fingerprint(fresh.metrics) !== fingerprint(stored.metrics) || fingerprint(fresh.inputs) !== fingerprint(stored.inputs))
       throw new ChangeConflict("verification_changed", "来源数据或定义已变化，复验结果与已核对的版本不一致，请重新复验");
     return this.memory.atomic(() => {
@@ -203,7 +231,9 @@ export class OntologyChanges {
       if (again) return again;
       if (this.read(change.id).version !== change.version) throw new ChangeConflict("version_conflict", "变更版本已变化，请重新读取");
       this.assertBaseline(change.content.baseline as z.infer<typeof baseline>);
-      const effect = applier(change);
+      let effect: Data;
+      this.applying = true;
+      try { effect = applier(); } finally { this.applying = false; }
       const saved = this.move(change, "adopted", { ...change.content, effect, decision: { actor, at: new Date().toISOString(), verifiedVersion: change.version, acknowledgedReview: args.acknowledgeReview } });
       this.receipt(actor, args.operationId, signature, saved);
       return saved;
@@ -212,21 +242,91 @@ export class OntologyChanges {
 
   reject(input: unknown) { return this.close("reject", input, "rejected"); }
 
-  /** Record a decision an owning service has already executed, so the ledger shows it (FEATURE_041 T041-04a). */
-  recordDecision(input: { type: string; title: string; subject: Data; effect: Data; origin?: "program" | "human" | "agent" | "qa" }) {
-    const type = input.type;
-    if (!(typeNames as readonly string[]).includes(type)) throw new Error(`“${type}”不是已登记的类型`);
-    const fp = fingerprint({ type, subject: input.subject });
+  /** Legacy entry points call this only after their owning service has revalidated its inputs. */
+  commitOwned<T>(owner: Artifact, save: () => T, readings: Data = {}): T {
+    if (this.applying) return save();
     return this.memory.atomic(() => {
-      // Recording the same decision twice is still one change, not two.
-      const existing = this.memory.listArtifacts("ontology_change").find(item =>
-        String(item.content.type) === type && item.content.fingerprint === fp && item.status !== "rejected");
-      if (existing) return existing;
-      return this.memory.putArtifact({ kind: "ontology_change", title: input.title, status: "adopted", content: jsonData({
-        origin: input.origin ?? "human", type, subject: input.subject, baseline: this.currentBaseline(), fingerprint: fp,
-        effect: input.effect, recordedFrom: "owning_service", decision: { actor: "local-admin", at: new Date().toISOString() },
-        proposedBy: "local-admin" }) });
+      const change = this.trackOwner(owner);
+      if (!change) return save();
+      if (["rejected", "superseded", "deprecated", "adopted"].includes(change.status))
+        throw new ChangeConflict("invalid_transition", "该变更已处理，不能从旧入口再次采用");
+      this.assertBaseline(change.content.baseline as z.infer<typeof baseline>);
+      const inputs = { ...ownerVerificationInputs(this.memory, owner), ...readings };
+      if (change.status === "verified" && fingerprint((change.content.verification as Data).inputs) !== fingerprint(inputs))
+        throw new ChangeConflict("verification_changed", "来源数据或定义已变化，复验结果与已核对的版本不一致，请重新复验");
+      const verified = this.move(change, "verified", { ...change.content, verification: {
+        ruleVersion: 1, result: "passed", metrics: { ownerValidated: true }, notes: ["原服务已重新核对来源、权限与候选版本"],
+        inputs, checkedAt: new Date().toISOString() } });
+      this.applying = true;
+      let result: T;
+      try { result = save(); } finally { this.applying = false; }
+      const adopted = this.memory.getArtifact(owner.id);
+      this.move(verified, "adopted", { ...verified.content, effect: { ownerRef: { id: adopted.id, version: adopted.version } },
+        decision: { actor: "local-admin", at: new Date().toISOString(), verifiedVersion: verified.version } });
+      return result;
     });
+  }
+
+  trackOwner(owner: Artifact): Artifact | null {
+    const types: Record<string, string> = { foundation: "entity", live_ontology: "entity", mapping_change: "binding", relation_correction: "local_correction" };
+    const type = types[owner.kind];
+    if (!type) return null;
+    if (this.memory.getArtifact(owner.id).version !== owner.version) return null;
+    let existing = this.memory.listArtifacts("ontology_change").find(change => (change.content.owner as Data | undefined)?.id === owner.id);
+    if (owner.status === "cancelled" && existing && ["proposed", "verified", "failed"].includes(existing.status))
+      return this.move(existing, "rejected", { ...existing.content, disposition: "withdrawn", closedReason: "原入口撤回候选", closedBy: "local-admin", closedAt: new Date().toISOString() });
+    if (!["candidate", "checked"].includes(owner.status)) return null;
+    if (existing && (existing.content.owner as Data).version === owner.version) return existing;
+    if (existing && ["rejected", "deprecated"].includes(existing.status)) {
+      if (existing.content.proposalHash === ownerProposalHash(owner)) return existing;
+      existing = undefined;
+    }
+    if (existing?.status === "adopted") existing = undefined;
+    const baseline = this.currentBaseline();
+    const content = jsonData({ origin: String(owner.content.responsible ?? "").startsWith("agent:") ? "agent" : "human", type, subject: { ownerRef: { id: owner.id, version: owner.version } },
+      owner: { id: owner.id, version: owner.version, kind: owner.kind }, baseline,
+      fingerprint: fingerprint({ kind: owner.kind, id: owner.id }), proposalHash: ownerProposalHash(owner), evidence: owner.content.reason ?? owner.content.rationale ?? owner.title,
+      ...(owner.status === "checked" ? { verification: { ruleVersion: 1, result: "passed", metrics: { ownerValidated: true }, notes: ["原服务已重新核对来源、权限与候选版本"],
+        inputs: ownerVerificationInputs(this.memory, owner), checkedAt: new Date().toISOString() } } : {}) });
+    return this.memory.putArtifact({ ...(existing ? { id: existing.id, expectedVersion: existing.version } : {}), kind: "ontology_change", title: owner.title, status: owner.status === "checked" ? "verified" : "proposed", content });
+  }
+
+  trackProgram(owner: Artifact, item: { type: string; key: string; label?: string; selection: Data; identity: Data; observed?: { matchRate: number; targetUnique: boolean } }): Artifact {
+    const fp = fingerprint({ type: item.type, subject: item.identity });
+    const rejected = this.suppressedBy(fp, item.observed);
+    if (rejected) return rejected;
+    const existing = this.memory.listArtifacts("ontology_change").find(change => change.content.fingerprint === fp && !["adopted", "rejected", "deprecated"].includes(change.status));
+    if (existing && (existing.content.owner as Data)?.id === owner.id && (existing.content.owner as Data)?.version === owner.version) return existing;
+    return this.memory.putArtifact({ ...(existing ? { id: existing.id, expectedVersion: existing.version } : {}), kind: "ontology_change", title: `${item.type === "entity" ? "新增对象" : item.type === "relation" ? "新增关系" : item.type === "deprecation" ? "退役结构" : "合并来源"} · ${item.label ?? item.key}`,
+      status: "proposed", content: jsonData({ type: item.type, origin: "program", subject: { candidateRef: { id: owner.id, version: owner.version }, selection: item.selection },
+        owner: { id: owner.id, version: owner.version, kind: owner.kind }, baseline: this.currentBaseline(), fingerprint: fp, structuralKey: item.key,
+        identity: item.identity, evidence: "程序根据来源字段、身份及实际值发现的结构变化", observed: item.observed ?? null }) });
+  }
+
+  commitProgram<T>(items: Artifact[], save: () => T): T {
+    return this.memory.atomic(() => {
+      for (const item of items) {
+        const current = this.read(item.id);
+        if (!["proposed", "verified", "failed"].includes(current.status)) throw new ChangeConflict("invalid_transition", "候选包含已拒绝或已处理的结构变更，请重新选择");
+        this.assertBaseline(current.content.baseline as z.infer<typeof baseline>);
+      }
+      this.applying = true;
+      let result: T;
+      try { result = save(); } finally { this.applying = false; }
+      for (const item of items) {
+        const current = this.read(item.id);
+        const verified = this.move(current, "verified", { ...current.content, verification: { ruleVersion: 1, result: "passed", metrics: { ownerValidated: true }, notes: ["程序按选中结构重新编译并验证"], inputs: { owner: current.content.owner }, checkedAt: new Date().toISOString() } });
+        this.move(verified, "adopted", { ...verified.content, effect: { baseline: this.currentBaseline() }, decision: { actor: "local-admin", at: new Date().toISOString(), verifiedVersion: verified.version } });
+      }
+      return result;
+    });
+  }
+
+  supersedeOwner(id: string) {
+    for (const change of this.memory.listArtifacts("ontology_change")) {
+      if ((change.content.owner as Data | undefined)?.id !== id || !["proposed", "verified", "failed"].includes(change.status)) continue;
+      this.move(change, "rejected", { ...change.content, disposition: "withdrawn", closedReason: "后续构建已替代该候选，当前未再提出这项结构", closedAt: new Date().toISOString(), closedBy: "program" });
+    }
   }
 
   withdraw(input: unknown) { return this.close("withdraw", input, "withdrawn"); }
@@ -238,6 +338,7 @@ export class OntologyChanges {
       const again = this.previous(actor, args.operationId, signature);
       if (again) return again;
       const change = this.open(args);
+      this.assertBaseline(change.content.baseline as z.infer<typeof baseline>);
       const verification = change.content.verification as Data | undefined;
       // A rejection remembers the measured facts so the same program proposal is not repeated until they move.
       const metrics = (verification?.metrics ?? change.content.observed ?? null) as Data | null;
@@ -255,13 +356,17 @@ export class OntologyChanges {
   private title(type: VerifiedType, subject: Subjects[VerifiedType]) {
     if (type === "relation") { const s = subject as Subjects["relation"]; return `关系 ${s.from.datasetId}.${s.from.column} → ${s.to.datasetId}.${s.to.column}`.slice(0, rules.limits.targetChars); }
     const s = subject as Subjects["naming"] | Subjects["description"];
-    return `${type === "naming" ? "命名" : "说明"} · ${s.id}`;
+    const definitions = (this.foundation.read().adopted?.content[s.target === "concept" ? "concepts" : "relations"] ?? []) as Data[];
+    const target = definitions.find(item => item.id === s.id);
+    return `${type === "naming" ? "命名" : "说明"} · ${String(target?.name ?? "待核对对象")}`;
   }
 
   /** Deterministic verification: every number is recomputed here from the workspace, never taken from the proposer. */
   private async check(change: Artifact): Promise<Verification> {
     const type = String(change.content.type) as VerifiedType;
     const base = { ruleVersion: 1, checkedAt: new Date().toISOString() };
+    const handler = this.handler(change);
+    if (handler) return { ...base, ...(await handler.prepare(change)).verification };
     if (type === "relation") return { ...base, ...await this.checkRelation(change.content.subject as unknown as Subjects["relation"]) };
     return { ...base, ...this.checkWording(type, change.content.subject as unknown as Subjects["naming"] & Subjects["description"]) };
   }
@@ -284,7 +389,7 @@ export class OntologyChanges {
       notes, inputs: { foundationRef: adopted ? { id: adopted.id, version: adopted.version } : null } };
   }
 
-  private async checkRelation(subject: Subjects["relation"]) {
+  async checkRelation(subject: Subjects["relation"]) {
     const dataset = (id: string) => {
       const artifact = this.snapshots.dataset(id), content = artifact.content as unknown as DatasetContent;
       if (!content.activeVersion || content.materialization === "live") throw new Error("该数据集没有可核对的已采用快照");

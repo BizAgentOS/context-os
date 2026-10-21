@@ -1,6 +1,6 @@
 # DataEngine Feature List
 
-Last Updated: 2026-10-19
+Last Updated: 2026-10-21
 
 **2026-10-19 v0.3.0 规划登记：**用户确认 Fabric IQ 对照与产品全面体检后的方向，将全部改进定义为开发版本 v0.3.0，登记 FEATURE_036—068（33 项，分 M0 清理与对齐、M1 核心闭环、M2 问答、M3 数据接入、M4 试点准入五个里程碑）。目标设计见 [v0.3.0 目标产品蓝图](features/v0.3.0-blueprint.md)，Feature、票与依赖见 [v0.3.0 设计与任务](features/v0.3.0.md)。本次只登记范围与拆票，全部为 Planned，未开工、未改代码、未改变既有 Feature 状态或版本号。
 
@@ -42,8 +42,12 @@ Last Updated: 2026-10-19
 
 ## Version Info
 
+**2026-10-21 继续实施：**按用户授权先补齐 041 统一提议、复验、采用与拒绝闭环及浏览器验收，再完成 042 关系发现、身份对应与正负例回归。041 不仅剩界面验收：逐项结构记录、拒绝记忆、旧入口接入与事务一致性仍须收口。同步 042 索引为 InProgress；本轮完成状态以实际验收追加，版本保持 v0.2.3、未发布。
+
+**2026-10-21 041 收口：**旧入口与统一变更共同复验和采用，逐项结构、拒绝记忆、部分采用续办、历史恢复、治理决定随兼容换绑保留及版本显示完成。361 项测试、类型检查、快照整链和桌面 / 390px 浏览器通过；采用丢响应重试只形成一个工作版，重启后决定可回看。041 完成，042 继续；见[验收记录](experiment/V030_041_2026_10_21.md)。仍为 v0.2.3，未发布。
+
 - **Current Release:** v0.2.3（2026-10-16，本地 Tag `v0.2.3`）。v0.2.2 于 2026-10-15 发布（本地 Tag `v0.2.2`）。v0.2.0 于 2026-10-14 发布（提交 `930b10e`，Tag `v0.2.0`）。
-- **Planned Version:** v0.3.0（2026-10-19 登记，FEATURE_036—068；M0 与 M1 首批已验收，其余 26 项 Planned）。v0.1.0 保留历史功能与验收记录。
+- **Planned Version:** v0.3.0（2026-10-19 登记，FEATURE_036—068；8 项完成、042 进行中、24 项 Planned）。v0.1.0 保留历史功能与验收记录。
 - **版本状态:** 计划于 v0.2.0 的 11 项全部完成：025—030 随 v0.2.0 发布，031—035 随 v0.2.1 发布；v0.2.2 为这些能力的修复发布。v0.1.0 未单独发布，002、004、005、006、019 仍未完成，继续保留。
 - **状态规则:** `Planned → InProgress → Completed`；`Released` 仅填写实际发布版本。
 - **设计:** [v0.3.0 设计与任务](features/v0.3.0.md)及[目标产品蓝图](features/v0.3.0-blueprint.md)；[v0.2.0 设计与开发步骤](features/v0.2.0.md)；[v0.1.0 历史](features/v0.1.0.md)。
@@ -55,7 +59,7 @@ Last Updated: 2026-10-19
 |---|---|---:|---:|---:|---:|
 | v0.1.0 | InProgress | 2 | 3 | 19 | 19/24 |
 | v0.2.0 | Released | 0 | 0 | 11 | 11/11 |
-| v0.3.0 | InProgress | 25 | 1 | 7 | 7/33 |
+| v0.3.0 | InProgress | 24 | 1 | 8 | 8/33 |
 
 本表按计划批次统计。v0.2.2 为已发布能力的 PATCH 修复版本，不新增或重复计算 Feature。
 
@@ -107,8 +111,8 @@ Last Updated: 2026-10-19
 | 038 | 读取合同对齐 | Enhancement | High | Completed | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-038) |
 | 039 | 冻结旧消费接口 | Refactor | High | Completed | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-039) |
 | 040 | 分层语义模型 | Refactor | High | Completed | v0.3.0 | 036 | [设计](features/v0.3.0.md#feature-040) |
-| 041 | 统一变更流程与自动采用规则 | Enhancement | High | InProgress | v0.3.0 | 040 | [设计](features/v0.3.0.md#feature-041) |
-| 042 | 关系发现修复与身份对应 | Enhancement | High | Planned | v0.3.0 | 040、041 | [设计](features/v0.3.0.md#feature-042) |
+| 041 | 统一变更流程与自动采用规则 | Enhancement | High | Completed | v0.3.0 | 040 | [设计](features/v0.3.0.md#feature-041) |
+| 042 | 关系发现修复与身份对应 | Enhancement | High | InProgress | v0.3.0 | 040、041 | [设计](features/v0.3.0.md#feature-042) |
 | 043 | 文档补充、证据库与待裁决 | Enhancement | High | Planned | v0.3.0 | 041、044 | [设计](features/v0.3.0.md#feature-043) |
 | 044 | 待处理中心 | New | High | Planned | v0.3.0 | 041；界面依赖 048 | [设计](features/v0.3.0.md#feature-044) |
 | 045 | 首次构建批量业务命名 | New | High | Planned | v0.3.0 | 041、044、047 | [设计](features/v0.3.0.md#feature-045) |
@@ -588,14 +592,14 @@ Last Updated: 2026-10-19
 
 ### 041: 统一变更流程与自动采用规则
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** Enhancement / High
 - **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / —
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / 2026-10-21
 - **Description:** 程序/人/Agent 变更统一提议、复验、采用；拒绝指纹；自动采用只限首次构建与同结构重绑；工作版组合；治理决定进入发布。
 - **Blocked by:** 040。
 - **Design:** [FEATURE_041](features/v0.3.0.md#feature-041)。
-- **Verification:** `tests/agent/ontology-changes.test.ts`（变更状态机与复验）、`tests/agent/workspace-corrections.test.ts`（工作版、发布纠正与旧发布隔离、纠正采用的台账登记）、`tests/agent/structure-approval.test.ts`（首次构建自动采用、结构变化阻断、同结构刷新、按选择部分采用）；当前 T041-01—04b 完成，04c 实现完成待浏览器验收；本轮未新增回归测试（按用户要求开发完成后统一补）。
+- **Verification:** [041 闭环与浏览器验收](experiment/V030_041_2026_10_21.md)。统一 / 旧入口、原子回执、拒绝抑制、部分采用、来源漂移、恢复竞态、兼容纠正迁移与固定发布均有公共边界回归；361 项全量、类型检查、快照整链、宽窄屏及重启验证通过。
 
 ### 042: 关系发现修复与身份对应
 

@@ -292,8 +292,9 @@ export function renderLiveObjects(model, { api, select, selections }) {
       el(
         "p",
         "source-meta",
-        `映射 v${model.version} · 已读结果；重新查询可能变化`,
+        "已读结果；重新查询可能变化",
       ),
+      technicalDetails({ modelRef: { id: model.id, version: model.version } }),
     );
     detail.append(
       button("引用对象到对话", () =>
@@ -441,8 +442,9 @@ export function renderLiveObjects(model, { api, select, selections }) {
         el(
           "p",
           "source-meta",
-          `已应用局部纠正 ${r.correction.id} · v${r.correction.version}；原目标 ${(r.correction.originalIds || []).join("、") || "无"}`,
+          `已应用局部纠正；原目标 ${(r.correction.originalIds || []).join("、") || "无"}`,
         ),
+        technicalDetails(r.correction),
       );
     detail.append(
       button("引用这条对象关系", () =>

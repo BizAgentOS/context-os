@@ -1,3 +1,4 @@
+import { prepareCorrectionMigration } from "../live/correction-migration.ts";
 import { z } from "zod";
 import type { Artifact, Data } from "../agent/contracts.ts";
 import type { MemoryStore } from "../agent/memory.ts";
@@ -20,9 +21,11 @@ const selection = z.object({
   entities: z.array(identifier).max(30).default([]),
   relations: z.array(identifier).max(40).default([]),
   merges: z.array(identifier).max(20).default([]),
+  retired: z.array(identifier).max(70).optional(),
 }).strict();
 const adoptInput = referenceInput.extend({ operationId: identifier, selection: selection.optional() });
-type Selection = z.infer<typeof selection>;
+export type Selection = z.infer<typeof selection>;
+export type AdoptedBuild = { status: "adopted"; candidate: Artifact; foundation: Artifact; model: Artifact };
 type BuildInput = z.infer<typeof buildInput>;
 type Ref = { id: string; version: number };
 interface BuildContent {
@@ -78,6 +81,7 @@ function enterpriseIdentity(previous: Data | undefined, profile: Artifact | unde
 }
 
 export class ProgramBuilds {
+  onAdopt?: (candidate: Artifact, selection: Selection | undefined, save: () => AdoptedBuild) => AdoptedBuild;
   private memory: MemoryStore;
   private foundation: FoundationService;
   private live: LiveMemory;
@@ -413,14 +417,15 @@ export class ProgramBuilds {
     const job = this.memory.getArtifact(jobId), base = this.foundation.read(), active = this.activeModel();
     const previous = base.current?.content;
     // Legacy interpretation-built structures are replaced in the new version only.
-    // Program provenance survives later human/Agent wording edits, so those are retained.
+    // Program provenance and explicitly adopted relations survive later builds and wording edits.
     const priorConcepts = dataArray(previous?.concepts), priorRelations = dataArray(previous?.relations);
     const retiredConcepts = priorConcepts.filter(c => c.origin !== "program").map(c => String(c.id));
     const concepts = priorConcepts.filter(c => c.origin === "program"), keptConcepts = new Set(concepts.map(c => c.id));
-    const relations = priorRelations.filter(r => r.origin === "program" && keptConcepts.has(r.from) && keptConcepts.has(r.to));
+    const relations = priorRelations.filter(r => (r.origin === "program" || r.governed === true) && keptConcepts.has(r.from) && keptConcepts.has(r.to));
     const retiredRelations = priorRelations.filter(r => !relations.includes(r)).map(r => String(r.id));
     const evidence = dataArray(previous?.evidence);
-    const priorTypes = dataArray(active?.content.types), priorModelRelations = dataArray(active?.content.relations);
+    const currentModel = active ? this.live.projectModel(active) : null;
+    const priorTypes = dataArray(currentModel?.content.types), priorModelRelations = dataArray(currentModel?.content.relations);
     const migrating = retiredConcepts.length > 0 || retiredRelations.length > 0;
     const types = migrating ? priorTypes.filter(t => keptConcepts.has(t.conceptId)) : priorTypes;
     const keptTypes = new Set(types.map(t => t.name)), keptRelations = new Set(relations.map(r => r.id));
@@ -629,24 +634,32 @@ export class ProgramBuilds {
     const addedEntities = new Set(list(content.diff.addedConcepts));
     const addedRelations = new Set(list(content.diff.addedRelations));
     const addedMerges = new Set(list(content.diff.addedSupplements));
-    // Retiring structure cannot be expressed as "keep some": restoring a retired definition is a different edit.
-    if (list(content.diff.retiredConcepts).length || list(content.diff.retiredRelations).length)
-      throw new Error("本次候选包含退役结构，部分采用无法保留原有定义；请整批采用或拒绝后重新构建");
+    const retiring = new Set(selection.retired ?? []);
+    const retired = [...list(content.diff.retiredConcepts), ...list(content.diff.retiredRelations)];
+    for (const id of retiring) if (!retired.includes(id)) throw new Error(`所选退役项不在本次候选中：${id}`);
     for (const id of selection.entities) if (!addedEntities.has(id)) throw new Error(`所选对象不是本次候选新增的对象：${id}`);
     for (const id of selection.relations) if (!addedRelations.has(id)) throw new Error(`所选关系不是本次候选新增的关系：${id}`);
     for (const key of selection.merges) if (!addedMerges.has(key)) throw new Error(`所选合并不是本次候选新增的合并：${key}`);
+    if (![...selection.entities, ...selection.relations, ...selection.merges, ...(selection.retired ?? [])].length)
+      throw new Error("请至少选择一项结构变更，或整批采用候选");
     const keepEntities = selection.entities.length ? new Set(selection.entities) : null;
     const keepRelations = selection.relations.length ? new Set(selection.relations) : null;
     const keepMerges = selection.merges.length ? new Set(selection.merges) : null;
 
-    const concepts = content.concepts.filter(concept => !addedEntities.has(String(concept.id)) || keepEntities?.has(String(concept.id)));
+    const baseline = this.foundation.read().adopted?.content;
+    const baselineModel = this.activeModel()?.content;
+    for (const relation of dataArray(baseline?.relations))
+      if ((retiring.has(String(relation.from)) || retiring.has(String(relation.to))) && !retiring.has(String(relation.id)))
+        throw new Error("退役对象前需先采用其关联关系的退役变更");
+    const concepts = [...content.concepts, ...dataArray(baseline?.concepts).filter(c => list(content.diff.retiredConcepts).includes(String(c.id)) && !retiring.has(String(c.id)))].filter(concept => !addedEntities.has(String(concept.id)) || keepEntities?.has(String(concept.id)));
     const keptConcepts = new Set(concepts.map(concept => String(concept.id)));
-    const relations = content.relations.filter(relation => {
+    const relations = [...content.relations, ...dataArray(baseline?.relations).filter(r => list(content.diff.retiredRelations).includes(String(r.id)) && !retiring.has(String(r.id)))].filter(relation => {
       if (!keptConcepts.has(String(relation.from)) || !keptConcepts.has(String(relation.to))) return false;
       return !addedRelations.has(String(relation.id)) || keepRelations?.has(String(relation.id));
     });
     const keptRelations = new Set(relations.map(relation => String(relation.id)));
-    const types = content.types.flatMap((type): Data[] => {
+    for (const id of selection.relations) if (!keptRelations.has(id)) throw new Error("所选关系的端点尚未采用，请先选择其新增对象");
+    const types = [...content.types, ...dataArray(baselineModel?.types).filter(t => !content.types.some(candidate => candidate.conceptId === t.conceptId) && keptConcepts.has(String(t.conceptId)))].flatMap((type): Data[] => {
       if (!keptConcepts.has(String(type.conceptId))) return [];
       const supplements = dataArray(type.supplements).filter(supplement => {
         const key = `${String(type.name)} ← ${String(supplement.name)}`;
@@ -655,20 +668,35 @@ export class ProgramBuilds {
       return [{ ...type, ...(dataArray(type.supplements).length ? { supplements } : {}) }];
     });
     if (!types.length) throw new Error("所选范围没有保留任何实体映射；请至少选择一个新增对象，或整批采用");
+    const keptMerges = new Set(types.flatMap(type => dataArray(type.supplements).map(supplement => `${String(type.name)} ← ${String(supplement.name)}`)));
+    for (const key of selection.merges) if (!keptMerges.has(key)) throw new Error("所选合并的主对象尚未采用，请先选择其新增对象");
     const typeNames = new Set(types.map(type => String(type.name)));
-    const modelRelations = content.modelRelations.filter(relation => {
+    const modelRelations = [...content.modelRelations, ...dataArray(baselineModel?.relations).filter(r => !content.modelRelations.some(candidate => candidate.relationId === r.relationId) && keptRelations.has(String(r.relationId)))].filter(relation => {
       if (!typeNames.has(String(relation.from)) || !typeNames.has(String(relation.to))) return false;
       const relationId = String(relation.relationId ?? "");
       return !relationId || !addedRelations.has(relationId) || keptRelations.has(relationId);
     });
     const evidenceIds = new Set<string>();
     for (const concept of concepts) {
-      for (const id of dataArray(concept.evidenceRefs)) evidenceIds.add(String(id));
+      for (const id of list(concept.evidenceRefs)) evidenceIds.add(id);
       if (concept.programEvidenceId) evidenceIds.add(String(concept.programEvidenceId));
     }
     for (const relation of relations) for (const id of dataArray(relation.evidenceRefs)) evidenceIds.add(String(id));
-    const evidence = dataArray(content.foundation.evidence).filter(item => evidenceIds.has(String(item.id)));
+    const evidence = [...dataArray(content.foundation.evidence), ...dataArray(baseline?.evidence).filter(e => !dataArray(content.foundation.evidence).some(candidate => candidate.id === e.id))].filter(item => evidenceIds.has(String(item.id)));
     return { ...content, concepts, relations, types, modelRelations, foundation: jsonData({ ...content.foundation, concepts, relations, evidence }) };
+  }
+
+  /** Keep an unselected structural proposal actionable against the newly adopted baseline. */
+  continueCandidate(candidate: Artifact, selected?: Selection): Artifact | null {
+    if (!selected) return null;
+    const content = candidate.content as unknown as CandidateContent;
+    const keep = (field: string, accepted: string[]) => (Array.isArray(content.diff[field]) ? content.diff[field] as string[] : []).filter(id => !accepted.includes(id));
+    const diff = { ...content.diff, addedConcepts: keep("addedConcepts", selected.entities), addedRelations: keep("addedRelations", selected.relations),
+      addedSupplements: keep("addedSupplements", selected.merges), retiredConcepts: keep("retiredConcepts", selected.retired ?? []), retiredRelations: keep("retiredRelations", selected.retired ?? []) };
+    if (!isStructural(structuralDelta(diff))) return null;
+    return this.memory.putArtifact({ kind: "engine_candidate", title: "程序构建剩余变更", status: "candidate", content: jsonData({ ...content,
+      baseFoundationRef: ref(this.foundation.read().current), baseModelRef: ref(this.activeModel()), diff, continuationOf: ref(candidate),
+      checks: { valid: false, description: "未选结构保留待处理；采用前会按当前工作版重新编译并复验。" } }) });
   }
 
   private virtualFoundation(content: CandidateContent): Artifact {
@@ -693,7 +721,8 @@ export class ProgramBuilds {
     }, foundation, () => { assertActive(); this.assertInputs(content); });
     assertActive();
     this.assertInputs(content);
-    return { foundation, definition };
+    const migrateCorrections = await prepareCorrectionMigration(this.memory, this.live, definition);
+    return { foundation, definition, migrateCorrections };
   }
 
   async check(args: unknown, assertActive: () => void = () => {}): Promise<Artifact> {
@@ -720,7 +749,7 @@ export class ProgramBuilds {
     }
   }
 
-  async adopt(args: unknown, assertActive: () => void = () => {}): Promise<{ status: "adopted"; candidate: Artifact; foundation: Artifact; model: Artifact }> {
+  async adopt(args: unknown, assertActive: () => void = () => {}, commit?: (save: () => AdoptedBuild) => AdoptedBuild, inspectVerification?: (facts: Data) => void): Promise<AdoptedBuild> {
     assertActive();
     const input = adoptInput.parse(args);
     const prior = this.memory.getArtifact(input.id), priorContent = prior.content as unknown as CandidateContent;
@@ -730,10 +759,16 @@ export class ProgramBuilds {
       return { status: "adopted", candidate: prior, foundation: this.memory.getArtifact(priorContent.adoption.foundationRef.id, priorContent.adoption.foundationRef.version), model: this.memory.getArtifact(priorContent.adoption.modelRef.id, priorContent.adoption.modelRef.version) };
     }
     const candidate = this.candidate({ id: input.id, version: input.version });
-    if (candidate.status !== "checked" || !(candidate.content.checks as Data).valid) throw new Error("请先检查候选，再采用工作版本");
+    if (!commit && (candidate.status !== "checked" || !(candidate.content.checks as Data).valid)) throw new Error("请先检查候选，再采用工作版本");
     const content = candidate.content as unknown as CandidateContent;
-    const prepared = await this.prepare(candidate, assertActive, input.selection ? this.prune(content, input.selection) : undefined);
-    return this.memory.atomic(() => {
+    const selected = input.selection ? this.prune(content, input.selection) : content;
+    if (this.snapshots && selected.snapshotInputs) {
+      const checked = await validateDefinition(this.snapshots, this.live, { types: selected.types, relations: selected.modelRelations }, ((selected.bundle as Data | undefined)?.pipelines ?? []) as never);
+      if (!checked.valid) throw new Error(describeReport(checked));
+    }
+    const prepared = await this.prepare(candidate, assertActive, selected);
+    inspectVerification?.({ checks: dataArray(prepared.definition.checks).map(check => ({ type: check.type, factsFingerprint: check.factsFingerprint })) });
+    const save = () => this.memory.atomic(() => {
       assertActive();
       this.candidate({ id: input.id, version: input.version });
       const activeJob = this.memory.getArtifact(content.jobId);
@@ -745,11 +780,14 @@ export class ProgramBuilds {
         adopted = this.foundation.adopt(draft.id, draft.version);
       }
       const model = this.memory.putArtifact({ kind: "live_ontology", status: "adopted", title: "程序构建的数据底座", content: { ...prepared.definition, foundationRef: jsonData(ref(adopted)), programBuildId: content.jobId } });
+      prepared.migrateCorrections(model);
       const saved = this.memory.putArtifact({ ...candidate, expectedVersion: candidate.version, status: "adopted", content: { ...candidate.content, adoption: jsonData({ operationId: input.operationId, inputVersion: input.version, selection: input.selection ?? null, foundationRef: ref(adopted), modelRef: ref(model) }) } });
       const job = this.memory.getArtifact(content.jobId);
       this.memory.putArtifact({ ...job, expectedVersion: job.version, content: { ...job.content, outcome: "adopted", candidateRef: jsonData(ref(saved)) } });
       return { status: "adopted" as const, candidate: saved, foundation: adopted!, model };
     });
+    if (commit) return commit(save);
+    return this.onAdopt ? this.onAdopt(candidate, input.selection, save) : save();
   }
 }
 
