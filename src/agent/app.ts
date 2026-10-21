@@ -1,4 +1,19 @@
+import { QuestionAnswering } from "./qa-tools.ts";
+import { SyncGovernance, SyncScheduler } from "../data/sync-governance.ts";
+import { qaDataViewSchema } from "./qa-view.ts";
+import { connectLocalChanges } from "../engine/local-changes.ts";
+import { SemanticQuery } from "../semantic/query.ts";
+import { connectStructureChanges } from "../engine/structure-changes.ts";
+import { agentModePrompt } from "./agent-prompts.ts";
+import { AgentChangeTools } from "./agent-change-tools.ts";
+import { freezeAgentTurn, modeTools, modeNativeTools, assertAgentTool, type FrozenAgentTurn } from "./agent-modes.ts";
+import { DocumentUploadBatches } from "./document-upload-batches.ts";
+import { TableFiles } from "../data/table-files.ts";
+import { FoundationAdjudication } from "./foundation-adjudication.ts";
+import { decisionRequestTool, requestDecision } from "./decision-requests.ts";
 import { connectDiscoveryChanges } from "../engine/discovery-changes.ts";
+import { PendingCenter } from "../engine/pending.ts";
+import { RunPresentation, projectAgentRuns } from "./run-presentation.ts";
 import { connectIdentityChanges } from "../engine/identity-changes.ts";
 import { freezeLegacyConsumption } from "../live/legacy-consumption.ts";
 import { z } from "zod";
@@ -54,7 +69,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join, basename } from "node:path";
 import { FoundationService, foundationTools } from "./foundation.ts";
-import { conversationContext } from "./conversation-context.ts";
+import { conversationContext, qaConversationContext } from "./conversation-context.ts";
 import { MemoryStore } from "./memory.ts";
 import { Workspace, domainTools } from "./workspace.ts";
 import { LiveMemory, liveTools } from "../live/memory.ts";
@@ -138,23 +153,7 @@ const controlTools: DomainTool[] = [
     mutates: true,
     inputSchema: objectSchema({ nextStep: { type: "string" } }, ["nextStep"]),
   },
-  {
-    name: "task_ask",
-    description:
-      "保存具体待补充问题并等待用户；本体采用问题带 candidateId/version。成功后只收尾，不再调用其他工具。",
-    mutates: true,
-    inputSchema: objectSchema(
-      {
-        question: { type: "string" },
-        reason: { type: "string" },
-        candidateId: { type: "string" },
-        consumerId: { type: "string" },
-        foundationId: { type: "string" },
-        version: { type: "integer" },
-      },
-      ["question", "reason"],
-    ),
-  },
+  decisionRequestTool,
   {
     name: "task_complete",
     description:
@@ -179,8 +178,16 @@ export class AgentApplication {
   readonly delegations: AgentDelegations;
   readonly programBuilds: ProgramBuilds;
   readonly changes: OntologyChanges;
+  readonly pendingCenter: PendingCenter;
+  readonly agentChanges: AgentChangeTools;
+  readonly adjudication: FoundationAdjudication;
+  readonly tableFiles: TableFiles;
   readonly workspaceVersions: WorkspaceVersions;
   readonly snapshots: Snapshots;
+  readonly syncGovernance: SyncGovernance;
+  readonly syncScheduler: SyncScheduler;
+  readonly semanticQuery: SemanticQuery;
+  readonly questionAnswering: QuestionAnswering;
   readonly capabilities: AgentCapabilities;
   readonly consumption: ConsumptionService;
   readonly driver: AgentDriver;
@@ -195,6 +202,7 @@ export class AgentApplication {
     return driver;
   }
   readonly automaticBuild: AutomaticFoundation;
+  readonly documentUploads: DocumentUploadBatches;
   readonly automaticApiBuild: AutomaticApi;
   private automaticApiEnabled: boolean;
   private closing = false;
@@ -220,6 +228,7 @@ export class AgentApplication {
     this.live = new LiveMemory(directory, this.memory);
     this.foundation = new FoundationService(this.memory, this.live);
     this.snapshots = new Snapshots(this.memory, this.live, directory);
+    this.semanticQuery = new SemanticQuery(this.memory, this.live, this.snapshots);
     this.snapshots.onChanged = (sourceIds, key) => {
       if (!this.automaticApiEnabled) return;
       for (const id of sourceIds) this.automaticApiBuild.enqueue(this.memory.getArtifact(id), key);
@@ -228,11 +237,23 @@ export class AgentApplication {
     this.live.snapshotCheck = definition => validateDefinition(this.snapshots, this.live, definition) as never;
     this.programBuilds = new ProgramBuilds(this.memory, this.foundation, this.live, this.snapshots);
     this.changes = new OntologyChanges(this.memory, this.foundation, this.snapshots);
+    this.pendingCenter = new PendingCenter(this.memory, this.changes, this.foundation);
+    this.syncGovernance=new SyncGovernance(this.memory,this.snapshots);
+    this.syncScheduler=new SyncScheduler(this.memory,this.snapshots,this.syncGovernance);
+    this.pendingCenter.register(this.syncGovernance);
+    this.adjudication = new FoundationAdjudication(this.memory, this.foundation, this.changes);
+    this.pendingCenter.register(this.adjudication.provider);
+    this.tableFiles = new TableFiles(this.memory, directory);
     this.workspaceVersions = new WorkspaceVersions(this.memory, this.foundation, this.live);
     connectChanges(this.memory, this.foundation, this.live, this.changes);
+    connectStructureChanges(this.memory, this.foundation, this.live, this.snapshots, this.changes);
+    connectLocalChanges(this.memory, this.live, this.changes);
     connectIdentityChanges(this.memory, this.foundation, this.live, this.changes);
     connectDiscoveryChanges(this.memory, this.foundation, this.live, this.snapshots, this.programBuilds, this.changes);
     connectProgramChanges(this.memory, this.programBuilds, this.changes);
+    this.questionAnswering = new QuestionAnswering(this.memory, this.foundation, this.live, this.snapshots, this.workspaceVersions, this.changes);
+    this.pendingCenter.register(this.questionAnswering.gaps);
+    this.agentChanges = new AgentChangeTools(this.memory, this.changes, this.pendingCenter, this.live,this.questionAnswering.gaps);
     connectRelationChanges(this.memory, this.foundation, this.live, this.snapshots, this.changes);
     const restore = new WorkspaceRestore(this.memory, this.foundation, this.live, this.snapshots);
     this.changes.registerHandler("restore", { subject: workspaceRestoreSubject, prepare: async change => {
@@ -263,6 +284,7 @@ export class AgentApplication {
       : new KodaXDriver(join(directory, "runtime"), this.settings);
     this.driver = driver ?? this.actualDriver!;
     this.automaticBuild = new AutomaticFoundation(this.memory, this.foundation, this.capabilities);
+    this.documentUploads = new DocumentUploadBatches(this.memory, this.automaticBuild);
     this.automaticApiBuild = new AutomaticApi(this.memory, this.foundation, this.live, this.capabilities, this.programBuilds);
     this.delegations = new AgentDelegations(this.memory, this.live, ()=>this.runDriver("background"), {
       configured: () => this.model().configured,
@@ -271,6 +293,7 @@ export class AgentApplication {
       safeError: error => this.safeError(error),
     });
     if (automaticApi) {
+      this.syncScheduler.start();
       this.live.sources.onSaved = source => { this.automaticApiBuild.enqueue(source); this.startAutomaticBuild(); };
       for (const source of this.live.sources.list()) this.automaticApiBuild.enqueue(source);
     }
@@ -779,6 +802,7 @@ export class AgentApplication {
     return {
       layoutVersion: 2,
       workspaceId: this.memory.workspaceId(),
+      pendingSummary: this.pendingCenter.summary(),
       // FEATURE_041 T041-04c: the working version is the only definition version the main UI shows beside a release.
       workspaceVersion: (() => { const latest = this.workspaceVersions.latest(); return latest ? { id: latest.id, version: latest.version, number: Number(latest.content.number) } : null; })(),
       onboarding: this.onboarding.view(),
@@ -787,6 +811,7 @@ export class AgentApplication {
       currentPage: page,
       session,
       currentSessionId:session.id,
+      agentRuns: projectAgentRuns(this.memory, task.id, this.pendingCenter),
       pools:this.pools(),
       page,
       pages: canvasPages.map((id) => ({
@@ -801,10 +826,12 @@ export class AgentApplication {
       messages: task
         ? this.memory
             .sessionMessages(session.id).messages
-            .map(({ id, role, content, workContext }) => ({
+            .map(({ id, role, content, workContext, binding, createdAt, taskId }) => ({
               id,
               role,
               content,
+              createdAt,taskId,
+              ...(binding?{binding}:{}),
               ...(workContext ? { workContext } : {}),
             }))
         : [],
@@ -919,13 +946,19 @@ export class AgentApplication {
       (body.focusId !== undefined || body.focusVersion !== undefined)
     )
       throw new Error("请只提供一种目标引用");
+    const turnInput = z.object({ mode: z.enum(["build", "qa"]).default("build"),
+      pendingRef: z.object({ id: z.string().min(1), version: z.number().int().positive() }).strict().optional(),
+      dataView: qaDataViewSchema.optional(),
+      continuationRunId: z.string().min(1).optional() }).strict().parse({ mode: body.mode, pendingRef: body.pendingRef, dataView:body.dataView, continuationRunId: body.continuationRunId });
+    const hasTurnBinding = body.mode !== undefined || body.pendingRef !== undefined || body.dataView !== undefined || body.continuationRunId !== undefined;
     const binding =
-      parsedContext || body.focusId || body.refreshSources === true
+      parsedContext || body.focusId || body.refreshSources === true || hasTurnBinding
         ? (serializable({
             workContext: parsedContext ?? null,
             focusId: body.focusId ?? null,
             focusVersion: body.focusVersion ?? null,
             refreshSources: body.refreshSources === true,
+            ...(hasTurnBinding ? turnInput : {}),
           }) as Data)
         : undefined;
     const progress = this.canvasProgress();
@@ -1007,6 +1040,7 @@ export class AgentApplication {
         focus,
         page,
         workContext,
+        message.binding,
       );
     return this.canvasState(page,sessionId);
   }
@@ -1064,6 +1098,53 @@ export class AgentApplication {
     else this.automaticBuild.enqueue(artifact);
     this.startAutomaticBuild();
     return this.canvasState(page,typeof body.sessionId === "string"?body.sessionId:undefined);
+  }
+
+  canvasDocumentBatchStart(body: Record<string, unknown>) {
+    const input = z.object({ operationId: z.string().min(1).max(200), page: z.unknown().optional(), sessionId: z.string().optional() }).strict().parse(body);
+    const page = this.canvasPage(input.page);
+    if (page === "consumption") throw new Error("请在企业与数据页接入资料。");
+    const task = this.canvasTask(page, input.sessionId);
+    return { batch: this.documentUploads.start(input.operationId, task.id, page, input.sessionId) };
+  }
+  canvasDocumentBatchFinalize(body: Record<string, unknown>) {
+    const { batchId } = z.object({ batchId: z.string().min(1) }).strict().parse(body);
+    const uploadBatch = this.documentUploads.finalize(batchId);
+    this.startAutomaticBuild();
+    return { ...this.canvasState(this.canvasPage(uploadBatch.content.page), typeof uploadBatch.content.sessionId === "string" ? uploadBatch.content.sessionId : undefined), uploadBatch };
+  }
+
+  async canvasTableUpload(body: Record<string, unknown>, input: AsyncIterable<Uint8Array>) {
+    if (this.modelTest) throw new Error("正在测试连接，请稍后上传");
+    const page = this.canvasPage(body.page);
+    if (page === "consumption") throw new Error("请在企业与数据页接入资料。");
+    const sessionId = typeof body.sessionId === "string" ? body.sessionId : undefined;
+    const task = this.canvasTask(page, sessionId);
+    const tableImport = await this.tableFiles.import({ name: string(body.name, "文件名", 180), input, options: body.options });
+    if (!task.executionId) this.memory.clearInvestigation(task.id, "已接入新表格。");
+    for (const source of tableImport.sources) {
+      this.memory.attachArtifact(task.id, source);
+      this.automaticApiBuild.enqueueUpload(source);
+    }
+    this.memory.addMessage(task.id, "user", `我上传了 ${String(body.name)}，接入 ${tableImport.sources.length} 张表。`);
+    this.memory.trimMessages(task.id);
+    this.startAutomaticBuild();
+    return { ...this.canvasState(page, sessionId), tableImport };
+  }
+
+  async canvasTableReparse(body: Record<string, unknown>) {
+    const parsed = z.object({ sourceId: z.string().min(1), version: z.number().int().positive(), options: z.unknown(),
+      page: z.unknown().optional(), sessionId: z.string().optional() }).strict().parse(body);
+    const page = this.canvasPage(parsed.page);
+    if (page === "consumption") throw new Error("请在企业与数据页重解析表格。");
+    const task = this.canvasTask(page, parsed.sessionId);
+    const tableImport = await this.tableFiles.reparse({ sourceId: parsed.sourceId, version: parsed.version, options: parsed.options });
+    for (const source of tableImport.sources) {
+      this.memory.attachArtifact(task.id, source);
+      this.automaticApiBuild.enqueueUpload(source);
+    }
+    this.startAutomaticBuild();
+    return { ...this.canvasState(page, parsed.sessionId), tableImport };
   }
 
   async canvasDecision(
@@ -1267,15 +1348,17 @@ export class AgentApplication {
       "ontology_outline",
       "foundation",
       "source_policy",
-      ...(page === "consumption" ? ["consumer"] : ["source", "verification", "industry_reference"]),
+      "source", "verification", "industry_reference", "change_evidence_receipt",
     ];
     const repository: Repository = {
+      directory: this.memory.directory,
       listArtifacts: (kind) =>
         this.memory
           .listArtifacts(kind)
           .filter((a) => readableKinds.includes(a.kind)),
-      getArtifact: (id, version) => {
-        const artifact = this.memory.getArtifact(id, version);
+      getArtifact: (id, version, options) => {
+        const compact = this.memory.getArtifact(id, version, {evidence:"compact"});
+        const artifact = compact.kind === "change_evidence_receipt" ? compact : this.memory.getArtifact(id, version, options);
         if (!readableKinds.includes(artifact.kind))
           throw new Error("当前页面不支持此内容");
         return artifact;
@@ -1363,6 +1446,9 @@ export class AgentApplication {
   ): Promise<{ task: Task; artifact?: Artifact }> {
     if (this.modelTest) throw new Error("正在测试模型连接，请稍后发送");
     const text = string(body.text, "消息");
+    const turnInput = z.object({ mode:z.enum(["build","qa"]).default("build"), pendingRef:z.object({id:z.string().min(1),version:z.number().int().positive()}).strict().optional(), dataView:qaDataViewSchema.optional(), continuationRunId:z.string().min(1).optional() }).strict().parse({mode:body.mode,pendingRef:body.pendingRef,dataView:body.dataView,continuationRunId:body.continuationRunId});
+    const hasTurnBinding = body.mode !== undefined || body.pendingRef !== undefined || body.dataView !== undefined || body.continuationRunId !== undefined;
+    const binding = hasTurnBinding ? serializable(turnInput) as Data : undefined;
     const session=typeof body.sessionId === "string"?this.memory.getSession(body.sessionId):undefined;
     if(session?.archived)throw new Error("该会话已归档，请新建或恢复会话");
     const messageId =
@@ -1374,6 +1460,7 @@ export class AgentApplication {
       if (
         previous.content !== text ||
         previous.role !== "user" ||
+        JSON.stringify(previous.binding ?? {}) !== JSON.stringify(binding ?? {}) ||
         (body.taskId !== undefined && body.taskId !== previous.taskId) ||
         (session!==undefined&&!session.taskIds.includes(previous.taskId))
       )
@@ -1397,7 +1484,7 @@ export class AgentApplication {
         ? this.memory.getTask(body.taskId)
         : this.memory.createTask(text.slice(0, 160));
     if(this.interactions.has(task.id))throw new Error("该会话已有运行，请等待结束或先停止");
-    const message = this.memory.addMessage(task.id, "user", text, messageId);
+    const message = this.memory.addMessage(task.id, "user", text, messageId, binding);
     if (text === "使用最新资料继续") {
       this.memory.clearInvestigation(
         task.id,
@@ -1411,7 +1498,7 @@ export class AgentApplication {
     this.launch(
       task.id,
       `当前用户消息（id=${message.id}）：${text}${task.pending ? `\n此前待用户决定：${JSON.stringify(task.pending)}` : ""}`,
-      focus,
+      focus, undefined, undefined, message.binding,
     );
     return { task: this.memory.getTask(task.id) };
   }
@@ -1422,10 +1509,11 @@ export class AgentApplication {
     focus?: Artifact,
     page?: CanvasPage,
     workContext?: ResolvedWorkContext,
+    messageBinding?: Data,
   ) {
     const context=this.memory.beginExecution(taskId),driver=this.runDriver(`interactive-${this.memory.sessionForTask(taskId)?.id??taskId}`);
     this.streams.set(taskId,"");
-    const promise=Promise.resolve().then(()=>this.run(context,input,focus,page,workContext,driver));
+    const promise=Promise.resolve().then(()=>this.run(context,input,focus,page,workContext,driver,messageBinding));
     this.interactions.set(taskId,{context,promise,driver});
     void promise.finally(()=>{if(this.interactions.get(taskId)?.context.executionId===context.executionId)this.interactions.delete(taskId);this.memory.changes.emit("change",{kind:"runtime",id:taskId});this.startAutomaticBuild();}).catch(()=>{});
   }
@@ -1437,53 +1525,32 @@ export class AgentApplication {
     page?: CanvasPage,
     workContext?: ResolvedWorkContext,
     driver:AgentDriver=this.driver,
+    messageBinding?: Data,
   ) {
     const task = this.memory.getTask(context.taskId);
+    let turn: FrozenAgentTurn;
+    const question = this.memory.messages(task.id).findLast(message=>message.role==="user")?.content ?? task.goal;
+    let qaRun: ReturnType<QuestionAnswering['begin']> | null = null;
+    try {
+      turn = freezeAgentTurn(this.memory, context, { mode: messageBinding?.mode ?? "build",
+        ...(messageBinding?.pendingRef ? { pendingRef: messageBinding.pendingRef } : {}),
+        ...(messageBinding?.dataView ? { dataView:messageBinding.dataView } : {}),
+        ...(messageBinding?.continuationRunId ? { continuationRunId: messageBinding.continuationRunId } : {}) }, this.pendingCenter);
+      if (turn.mode === "qa") qaRun = this.questionAnswering.begin({dataView:turn.dataView,question,assertActive:()=>this.memory.assertWritable(context),taskId:task.id,sessionId:turn.sessionId??undefined});
+    } catch (error) {
+      const reason=this.safeError(error);
+      this.memory.addMessage(task.id,"assistant",`本次执行未开始：${reason}。请选择可读取的数据视图后重试。`);
+      this.memory.pauseTask(task.id, reason); this.memory.endExecution(context,reason); return;
+    }
     const workspace = page
       ? this.canvasWorkspace(context, page)
       : new Workspace(this.memory, context);
     const titleTool:DomainTool={name:"session_title",description:"为首轮会话生成简短标题；人工改名后不会覆盖。",mutates:true,inputSchema:objectSchema({title:{type:"string",minLength:1,maxLength:80}},["title"])};
-    const tools = page
-      ? [
-          ...domainTools.filter((tool) =>
-            [
-              "workspace_overview",
-              "memory_read",
-              ...(page !== "consumption" ? ["profile_update"] : []),
-              ...(page === "ontology"
-                ? [
-                    // Structure comes from the data program; outline/propose would bypass it.
-                    "ontology_preview",
-                    "object_execute",
-                    "ontology_verify",
-                  ]
-                : []),
-            ].includes(tool.name),
-          ),
-          ...(page === "consumption" ? [...consumerViewTools,...mappingChangeTools.filter(t=>["mapping_change_list","mapping_change_read"].includes(t.name)),...evidenceTools.filter(t=>t.name!=="evidence_collect")] : []),
-          ...liveTools.filter(
-            (tool) =>
-              tool.name === "live_overview" ||
-              ((page === "setup" || page === "ontology") &&
-                ["live_read", "live_propose", "live_query"].includes(
-                  tool.name,
-                )),
-          ),
-          ...(page === "setup" ? [historyReadTool] : []),
-          ...(workContext?.target ? [contextReadTool] : []),
-          ...(page !== "consumption"
-            ? [...foundationTools, ...metricTools, ...evidenceTools]
-            : []),
-          ...(page === "ontology" ? [...correctionTools, ...mappingChangeTools] : []),
-          ...engineTools.filter(tool => page === "consumption"
-            ? tool.name === "release_overview"
-            : tool.name !== "release_overview"),
-          ...capabilityTools,
-          titleTool,
-          ...controlTools.filter((tool) => tool.name === "task_ask"),
-          ...(page === "consumption" ? [] : [pageCompleteTool]),
-        ]
-      : [...domainTools, ...controlTools,titleTool];
+    const legacyCatalog = [...domainTools, ...controlTools, ...liveTools, ...foundationTools, ...metricTools,
+      ...evidenceTools, ...engineTools, ...capabilityTools, titleTool, decisionRequestTool,
+      ...(page === "setup" ? [historyReadTool] : []),
+      ...(workContext?.target ? [contextReadTool] : [])];
+    const tools = modeTools(turn.mode, [...legacyCatalog, ...this.agentChanges.tools, ...(qaRun?.tools??[])]);
     const executionWorkContext = workContext
       ? structuredClone(workContext.context)
       : undefined;
@@ -1499,14 +1566,17 @@ export class AgentApplication {
     const evidenceService = new EvidenceService(this.memory, this.live);
     let foundationSkill = "";
     const delivery = new TurnDelivery();
+    const presentation = new RunPresentation(this.memory, context, { goal: turn.mode === "qa" ? question : task.goal, workContext:turn.mode === "qa" ? undefined : workContext });
     const trackTool = (execute: (name: string, args: Record<string, unknown>) => Promise<Json>) =>
-      async (name: string, args: Record<string, unknown>) => {
+      async (name: string, args: Record<string, unknown>, operationId?: string) => {
         try {
           const result = await execute(name, args);
           delivery.remember(name, args, result);
+          presentation.tool(name, args, result, operationId);
           return result;
         } catch (error) {
           delivery.failed(this.safeError(error));
+          presentation.failed(name, this.safeError(error), operationId);
           throw error;
         }
       };
@@ -1528,7 +1598,8 @@ export class AgentApplication {
     const enterpriseName=String(statements.find(item=>["company.name","company_name","companyName","name","企业名称","公司名称"].includes(String(item.key)))?.text??(foundation?.content.enterprise as Data|undefined)?.name??"");
     const compact={
       page:page??null,
-      workSummary:{enterpriseName,workspaceVersion:activeModel?.version??foundation?.version??0,entityCount:(foundation?.content.concepts as Json[]|undefined)?.length??0,relationCount:(foundation?.content.relations as Json[]|undefined)?.length??0,pendingCount:this.canvasAttention(this.canvasProgress()).length,currentReference:workContext?.context.selection[0]??null},
+      mode:turn.mode, pendingReference:turn.pendingRef ?? null, continuation:turn.continuation ?? null,
+      workSummary:{enterpriseName,workspaceVersion:this.workspaceVersions.latest()?.content.number??0,entityCount:(foundation?.content.concepts as Json[]|undefined)?.length??0,relationCount:(foundation?.content.relations as Json[]|undefined)?.length??0,pendingCount:this.pendingCenter.summary().total,currentReference:workContext?.context.selection[0]??null},
       foundation:foundation?{id:foundation.id,version:foundation.version,status:foundation.status}:null,
       enterprise:{industryReferences:this.memory.listArtifacts("industry_reference").slice(0,1).map(({id,version,title})=>({id,version,title,purpose:"naming_reference",instructions:"按需用 memory_read 读取；只辅助命名，不是企业事实。"}))},
       ...(workContext?{workContext,workContextPolicy:`目标固定到本条消息，先按需 context_read 核对。${readingDescription("active_snapshot")}`} :{}),
@@ -1538,24 +1609,28 @@ export class AgentApplication {
       input,
     };
     try {
-      const prepared=conversationContext(this.memory,task.id,page?canvasSystem:system,serializable(compact) as Data);
+      const prepared=qaRun ? qaConversationContext(this.memory,task.id,agentModePrompt(turn.mode),serializable({mode:turn.mode,dataView:qaRun.view.receipt,question,...(session?.titleOrigin==="pending"?{sessionTitle:compact.sessionTitle}:{})}) as Data,serializable(qaRun.view.selection) as Data) : conversationContext(this.memory,task.id,agentModePrompt(turn.mode),serializable(compact) as Data);
       this.memory.event(task.id,"context.prepared",{estimatedTokens:prepared.estimatedTokens,limit:prepared.limit,recentCount:prepared.recentCount,summaryCharacters:prepared.summaryCharacters});
       const outcome = await driver.run({
         ephemeral: true,
         ...(page
           ? {
-              nativeTools: nativeCapabilityTools,
+              nativeTools: modeNativeTools(turn.mode, nativeCapabilityTools),
               capabilities: this.capabilities,
             }
           : {}),
-        title: task.goal,
-        system: page ? canvasSystem : system,
+        title: qaRun ? question : task.goal,
+        system: agentModePrompt(turn.mode),
         tools,
+        authorizeTool: name => assertAgentTool(this.memory, context, turn, name),
         input: prepared.input,
         onSession: (id) => {
           if (!page) this.memory.session(task.id, id);
         },
         onEvent: (kind, data) => {
+          if (kind === "run.timed_out" && this.memory.getTask(task.id).executionId === context.executionId)
+            this.memory.pauseTask(task.id, "运行超时，已保存的成果保留，可继续核对未完成事项。");
+          presentation.event(kind, data);
           if (kind === "assistant.delta") {
             if (
               page &&
@@ -1570,13 +1645,15 @@ export class AgentApplication {
         },
         onTool: trackTool(async (name, args) => {
           try {
-            this.memory.assertWritable(context);
+            assertAgentTool(this.memory, context, turn, name);
           } catch (error) {
             void driver.stop().catch(() => {});
             throw error;
           }
           if (!tools.some((tool) => tool.name === name))
             throw new Error("当前页面没有这项能力");
+          if (qaRun?.tools.some(tool=>tool.name===name)) return serializable(await qaRun.execute(name,args));
+          if (this.agentChanges.tools.some(tool => tool.name === name)) return serializable(await this.agentChanges.execute(name, args, context, turn, foundationDocuments));
           if(name==="session_title"){this.memory.assertWritable(context);const conversation=this.memory.sessionForTask(task.id);if(!conversation) return {saved:false};return serializable(this.memory.updateSession(conversation.id,{title:string(args.title,"会话标题",80)},"agent"));}
           if (name === "context_read" && workContext) {
             const reading = z.object({ readMode: workspaceReadModeSchema.optional() }).strict().parse(args);
@@ -1674,6 +1751,11 @@ export class AgentApplication {
                 string(args.nextStep, "下一步", 3000),
               ),
             );
+          if (name === "decision_request") {
+            const result = requestDecision(this.memory, context, args, this.pendingCenter);
+            startClosing();
+            return serializable(result);
+          }
           if (name === "task_ask") {
             const pending: Data = {
               question: string(args.question, "问题", 3000),
@@ -1937,10 +2019,15 @@ export class AgentApplication {
       });
       failure = outcome.error
         ? this.safeError(new Error(outcome.error))
-        : undefined;
+        : outcome.status === "failed" ? "模型执行失败，尚未形成可验证的回答" : undefined;
       const interrupted =
         page && this.memory.getTask(task.id).revision !== context.taskRevision;
-      if (page && failure && !interrupted) {
+      if (qaRun && !failure && !interrupted && !["stopped","timed_out"].includes(outcome.status??"")) {
+        const answer=qaRun.answer(outcome.text);
+        presentation.answer(answer);
+        this.memory.event(task.id,"answer",answer);
+      }
+      if (failure && !interrupted) {
         this.memory.addMessage(
           task.id,
           "assistant",
@@ -1953,10 +2040,10 @@ export class AgentApplication {
         this.memory.addMessage(
           task.id,
           "assistant",
-          delivery.finish(page ? outcome.text.slice(0, 6000) : outcome.text, input, this.memory, this.memory.getTask(task.id).pending),
+          qaRun ? outcome.text : delivery.finish(page ? outcome.text.slice(0, 6000) : outcome.text, input, this.memory, this.memory.getTask(task.id).pending),
           randomUUID(),
-          undefined,
-          workContext,
+          qaRun ? serializable({mode:"qa",dataView:qaRun.view.selection}) as Data : undefined,
+          qaRun ? undefined : workContext,
         );
       this.memory.event(task.id, "run.result", {
         runId: outcome.runId,
@@ -1964,6 +2051,9 @@ export class AgentApplication {
         ...(outcome.usage ? { usage: outcome.usage } : {}),
         ...(failure ? { error: failure } : {}),
       });
+      const current = this.memory.getTask(task.id);
+      presentation.finish({ status: outcome.status === "timed_out" ? "timed_out" : current.status === "paused" || outcome.status === "stopped" ? "stopped" : failure ? "failed" : current.status === "waiting" ? "waiting" : "completed",
+        ...(outcome.usage ? { usage: outcome.usage } : {}), ...(failure ? { error: failure } : {}), pending: current.pending });
     } catch (error) {
       failure = this.safeError(error);
       if (
@@ -1980,6 +2070,7 @@ export class AgentApplication {
         );
     } finally {
       if (closingTimer) clearTimeout(closingTimer);
+      presentation.finish({ status: this.memory.getTask(task.id).status === "paused" ? "stopped" : failure ? "failed" : "completed", ...(failure ? { error: failure } : {}) });
       this.memory.endExecution(context, failure);
       if (page) {
         this.memory.trimMessages(task.id);
@@ -2298,6 +2389,7 @@ export class AgentApplication {
 
   async close() {
     this.closing = true;
+    await this.syncScheduler.close();
     await this.stopActive();
     await this.programBuilds.close();
     await this.snapshots.close();

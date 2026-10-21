@@ -7,6 +7,7 @@ import { AgentApplication } from "../../src/agent/app.ts";
 import type { AgentDriver } from "../../src/agent/runtime.ts";
 import type { Artifact } from "../../src/agent/contracts.ts";
 import { Releases } from "../../src/engine/releases.ts";
+import { proposeWording } from "./unified-wording-fixture.ts";
 
 test("Agent repairs a program-built concept without inventing an enterprise identity or publishing it", async () => {
   const directory = mkdtempSync(join(tmpdir(), "ade-engine-repair-"));
@@ -24,18 +25,14 @@ test("Agent repairs a program-built concept without inventing an enterprise iden
         assert.equal(typeof result.latestCheck.id, "string");
       } else {
         assert(request.tools.some(t => t.name === "engine_overview"));
-        assert(!request.tools.some(t => t.name === "release_overview"));
+        assert(request.tools.some(t => t.name === "change_propose"));
         const overview = await request.onTool("engine_overview", {}) as any;
         assert.equal(overview.jobs[0].content.outcome, "adopted");
         assert.doesNotMatch(JSON.stringify(overview), /Example|apiSnapshot/, "discovery must not resend source rows or evidence snapshots");
         await request.onTool("skill_use", { name: "company-foundation-ontology" });
         const foundation = (await request.onTool("foundation_read", {}) as any).current;
-        const message = input.recentMessages.at(-1);
-        const proposal = { baseVersion: foundation.version, enterprise: foundation.content.enterprise,
-          concepts: [{ id: foundation.content.concepts[0].id, name: "公司", description: "公司业务记录", evidenceRefs: ["user-repair"] }],
-          relations: [], evidence: [{ id: "user-repair", messageId: message.id, quote: message.content }], unknowns: [], conflicts: [] };
-        await assert.rejects(request.onTool("foundation_propose", { ...proposal, enterprise: { name: "凭空企业", evidenceRefs: [] } }), /企业名称/);
-        candidate = await request.onTool("foundation_propose", proposal) as unknown as Artifact;
+        assert(!request.tools.some(t => t.name === "foundation_propose"));
+        candidate = await proposeWording(request, "concept", foundation.content.concepts[0].id, { name: "公司", description: "公司业务记录" }, "user-repair");
       }
       return { text: "已核对当前工作版本。", sessionId: "fixture", runId: "fixture" };
     }, async stop() {}, async close() {},
@@ -49,10 +46,11 @@ test("Agent repairs a program-built concept without inventing an enterprise iden
     await app.canvasNavigate({ page: "ontology" });
     await app.canvasMessage({ page: "ontology", text: "把这个概念叫公司，含义为公司业务记录。", messageId: "repair-message" });
     await app.idle();
-    assert.equal(candidate?.status, "candidate");
-    assert.equal((candidate!.content.concepts as any[])[0].id, (built.content.concepts as any[])[0].id);
-    assert.equal((candidate!.content.concepts as any[])[0].name, "公司");
-    assert.deepEqual(candidate!.content.enterprise, built.content.enterprise);
+    assert.equal(candidate?.status, "adopted");
+    const repaired = app.foundation.read().adopted!;
+    assert.equal((repaired.content.concepts as any[])[0].id, (built.content.concepts as any[])[0].id);
+    assert.equal((repaired.content.concepts as any[])[0].name, "公司");
+    assert.deepEqual(repaired.content.enterprise, built.content.enterprise);
     const releases = new Releases(app.memory, app.live);
     assert.equal(releases.overview().releases.length, 0);
     await releases.check({ inputHash: releases.overview().working.inputHash });

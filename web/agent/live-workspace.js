@@ -685,11 +685,7 @@ export function renderLiveWorkspace(
       for (const type of model.content.types)
         actions.append(button(`查看${type.name}`, () => readType(type)));
       if (model.status === "candidate" && model.canAdopt !== false) {
-        const accept = button("采用本体", async () => {
-          accept.disabled = true; accept.textContent = "正在采用…";
-          const ok = await change("adopt", {id:model.id, version:model.version});
-          accept.disabled = ok; accept.textContent = ok ? "已采用" : "重试采用";
-        });
+        const accept = button("到待处理核对本体", () => requestPending({ ownerId: model.id }));
         actions.append(accept);
       }
       if (model.status === "candidate" && model.adoptionReason)
@@ -887,3 +883,4 @@ export function renderLiveWorkspace(
   }
   return section;
 }
+import { requestPending } from "./pending-center.js";

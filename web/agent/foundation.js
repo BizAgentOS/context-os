@@ -1,5 +1,6 @@
 import { safeText, displayValue, technicalDetails } from "./ui-display.js";
 import { bindConcept, previewBinding } from "./foundation-bindings.js";
+import { requestPending } from "./pending-center.js";
 const el = (tag, className, text) => {
   const element = document.createElement(tag);
   element.className = className;
@@ -198,18 +199,11 @@ export function renderFoundation(
           preview.onclick = () => previewBinding(item, binding, api);
           row.append(preview);
           if (binding.status === "candidate" && binding.canAdopt !== false && mutate) {
-            const accept = el("button", "quiet-button", "采用此执行子集");
+            const accept = el("button", "quiet-button", "到待处理核对执行子集");
             accept.type = "button";
             accept.dataset.busyControl = "true";
             accept.disabled = busy;
-            accept.onclick = async () => {
-              accept.disabled = true; accept.textContent = "正在采用…";
-              const ok = await mutate("/api/live/adopt", {
-                id: binding.modelId,
-                version: binding.modelVersion,
-              });
-              accept.textContent = ok ? "已采用" : "重试采用"; accept.disabled = ok; accept.dataset.blocked = String(ok);
-            };
+            accept.onclick = () => requestPending({ ownerId: binding.modelId });
             row.append(accept);
           }
         }
@@ -318,17 +312,13 @@ export function renderFoundation(
         const button = el(
           "button",
           "quiet-button",
-          body.enterpriseChange ? "确认名称纠正并采用" : "采用这版基础定义",
+          body.enterpriseChange ? "到待处理核对名称纠正" : "到待处理核对基础定义",
         );
         button.type = "button";
         const conflict = body.conflicts.some((item) => !item.resolvedBy);
         button.dataset.busyControl = "true"; button.dataset.blocked = String(conflict);
         button.disabled = busy || conflict;
-        button.onclick = async () => {
-          button.disabled = true; button.textContent = "正在采用…";
-          const ok = await adopt({ page, id: artifact.id, version: artifact.version });
-          button.textContent = ok ? "已采用" : "重试采用"; button.disabled = ok; button.dataset.blocked = String(ok);
-        };
+        button.onclick = () => requestPending({ ownerId: artifact.id });
         actions.append(button);
         if (conflict)
           actions.append(el("span", "muted", "先补充冲突依据，再采用"));

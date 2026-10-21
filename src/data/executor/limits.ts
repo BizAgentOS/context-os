@@ -7,7 +7,7 @@ const settings = { query: ["EXECUTOR_QUERY_TIMEOUT", 120], job: ["EXECUTOR_JOB_T
 export interface TimeLimit { ms: number; setting: string }
 
 export function timeLimit(job: Partial<Pick<Execution, "mode" | "persist">>): TimeLimit {
-  const [setting, fallback] = settings[job.mode === "query" && !job.persist ? "query" : "job"];
+  const [setting, fallback] = settings[(job.mode === "query" || job.mode === "read") && !job.persist ? "query" : "job"];
   const value = process.env[setting]?.trim();
   const seconds = value ? Number(value) : fallback;
   if ((value && !/^\d+(\.\d+)?$/.test(value)) || !(seconds >= 1 && seconds <= 86400)) throw new Error(`Invalid ${setting}: ${value} (whole or decimal seconds, from 1 to 86400)`);

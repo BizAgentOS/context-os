@@ -358,7 +358,7 @@ test("HTTP import endpoints require admin identity and preserve tested connectio
   }
 });
 
-test("undocumented limit/offset names can be supplied and verified without enabling page-based pagination", async () => {
+test("undocumented limit/offset names can be supplied and explicit page parameters are recognized", async () => {
   const upstream = createServer((req, res) => {
     res.setHeader("Content-Type", "application/json");
     assert.equal(req.url, "/v1/customers?take=3&start=0");
@@ -388,11 +388,9 @@ test("undocumented limit/offset names can be supplied and verified without enabl
     spec.paths["/customers"].get.parameters = [
       { name: "page", in: "query", schema: { type: "integer" } },
     ];
-    assert.equal(
-      (await imports.parse({ text: JSON.stringify(spec) })).operations[0]
-        .supported,
-      false,
-    );
+    const paged = (await imports.parse({ text: JSON.stringify(spec) })).operations[0];
+    assert.equal(paged.supported, true);
+    assert.deepEqual(paged.defaults!.pagination, { type: "page", pageParam: "page", startPage: 1 });
   } finally {
     imports.close();
     repo.close();

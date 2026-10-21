@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import type { AddressInfo } from "node:net";
 import { createServer } from "../../src/agent/server.ts";
 import type { AgentDriver } from "../../src/agent/runtime.ts";
+import { runFoundationSession } from "./foundation-domain-fixture.ts";
 import { seedFoundation } from "./program-foundation-fixture.ts";
 
 test("uploaded enterprise text is read before citation and its versioned excerpt reopens after replacement and restart", async () => {
@@ -148,269 +149,80 @@ test("uploaded enterprise text is read before citation and its versioned excerpt
   }
 });
 
-test("document changes retain prior meaning as a conflict; fresh user choice resolves it on the same foundation", async () => {
+test("document changes retain prior meaning as a conflict; a fresh human adjudication resolves it on the same foundation", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-doc-conflict-"));
-  let checked = 0;
-  let sourceId = "";
+  let sourceId = "", checked = false;
   const driver: AgentDriver = {
     async run(request) {
       const input = JSON.parse(request.input);
-      const before = (await request.onTool("foundation_read", {})) as any;
-      if (input.mode !== "automatic-document-ontology") await request.onTool("skill_use", {
-        name: "company-foundation-ontology",
-      });
-      const user = (input.recentMessages ?? [])
-        .filter((m: any) => m.role === "user")
-        .at(-1);
-      const draft: any = {
-        baseVersion: before.current?.version ?? 0,
+      assert.equal(input.mode, "automatic-document-ontology", "only the host document job retains its internal proposal method");
+      sourceId = input.sources[0].id;
+      const before = await request.onTool("foundation_read", {}) as any;
+      const part = await request.onTool("foundation_document_read", { sourceId }) as any;
+      const candidate = await request.onTool("foundation_propose", { baseVersion: before.current.version,
         enterprise: { name: "澄川热力", evidenceRefs: ["e1"] },
-        concepts: [],
-        relations: [],
-        evidence: [],
-        unknowns: [],
-        conflicts: [],
-      };
-      if (checked === 0) {
-        draft.concepts = [
-          {
-            id: "customer",
-            name: "客户",
-            description: "接受供热服务的居民",
-            evidenceRefs: ["e1"],
-          },
-        ];
-        draft.evidence = [
-          { id: "e1", messageId: user.id, quote: user.content },
-        ];
-        draft.unknowns = [{ id: "area", description: "服务区域未知" }];
-      } else if (checked === 1) {
-        sourceId = input.sources[0].id;
-        const part = (await request.onTool("foundation_document_read", {
-          sourceId,
-        })) as any;
-        draft.concepts = [
-          {
-            id: "customer",
-            name: "客户",
-            description: "接受供热服务的工业企业",
-            evidenceRefs: ["d1"],
-          },
-        ];
-        draft.evidence = [
-          { id: "d1", kind: "document", readId: part.readId, quote: part.text },
-        ];
-        draft.unknowns = [
-          { id: "area", description: "服务区域未知", resolvedBy: ["d1"] },
-        ];
-      } else if (checked === 3) {
-        draft.concepts = [
-          {
-            id: "customer",
-            name: "客户",
-            description: "接受供热服务的居民",
-            evidenceRefs: ["back"],
-          },
-        ];
-        draft.evidence = [
-          { id: "back", messageId: user.id, quote: user.content },
-        ];
-      } else if (checked === 4) {
-        draft.concepts = [
-          {
-            id: "customer",
-            name: "客户",
-            description: "接受供热服务的工业企业",
-            evidenceRefs: ["d1"],
-          },
-        ];
-      } else {
-        const conflict = before.current.content.conflicts[0];
-        draft.evidence = [
-          { id: "choice", messageId: user.id, quote: user.content },
-        ];
-        draft.concepts = [{ id: "customer", name: "客户", description: "接受供热服务的工业企业", evidenceRefs: ["choice"] }];
-        draft.conflicts = [
-          {
-            id: conflict.id,
-            description: conflict.description,
-            resolvedBy: ["choice"],
-          },
-        ];
-      }
-      const saved = (await request.onTool("foundation_propose", draft)) as any;
-      if (checked === 1) {
-        assert.equal(saved.content.conflicts.length, 1);
-        assert.equal(
-          saved.content.conflicts[0].retained.description,
-          "接受供热服务的居民",
-        );
-        assert.equal(saved.content.unknowns[0].resolvedBy[0], "d1");
-      }
-      checked++;
-      return { text: "已保存候选。", sessionId: "conflict", runId: "conflict" };
-    },
-    async stop() {},
-    async close() {},
+        concepts: [{ id: "customer", name: "客户", description: "接受供热服务的工业企业", evidenceRefs: ["d1"] }], relations: [],
+        evidence: [{ id: "d1", kind: "document", readId: part.readId, quote: part.text }],
+        unknowns: [{ id: "area", description: "服务区域未知", resolvedBy: ["d1"] }], conflicts: [],
+      }) as any;
+      assert.equal(candidate.content.conflicts[0].retained.description, "接受供热服务的居民");
+      assert.deepEqual(candidate.content.unknowns[0].resolvedBy, ["d1"]);
+      checked = true;
+      return { text: "资料分歧已保留。", sessionId: "doc", runId: "doc" };
+    }, async stop() {}, async close() {},
   };
   const service = await createServer({ directory, driver });
-  seedFoundation(service.app.memory, service.app.foundation, {
-    enterprise: "澄川热力",
-    concepts: [
-      { id: "customer", name: "客户", description: "来自客户表的记录，业务含义待核对。" },
-    ],
-  });
+  seedFoundation(service.app.memory, service.app.foundation, { enterprise: "澄川热力", concepts: [{ id: "customer", name: "客户", description: "来自客户表的记录，业务含义待核对。" }] });
+  const proposeUser = (text: string, description: string, evidenceId: string) => runFoundationSession(service.app, text, session => session.propose({
+    baseVersion: session.read().current!.version, enterprise: { name: "澄川热力", evidenceRefs: ["e1"] },
+    concepts: [{ id: "customer", name: "客户", description, evidenceRefs: [evidenceId] }], relations: [],
+    evidence: [{ id: evidenceId, messageId: session.message.id, quote: text }],
+    unknowns: evidenceId === "e1" ? [{ id: "area", description: "服务区域未知" }] : [], conflicts: [],
+  }));
   try {
-    await service.app.canvasMessage({
-      page: "setup",
-      text: "澄川热力为居民供热，客户指接受供热服务的居民",
-      messageId: "doc-base",
-    });
+    const initial = await proposeUser("澄川热力为居民供热，客户指接受供热服务的居民", "接受供热服务的居民", "e1") as any;
+    await service.app.canvasFoundationAdopt({ page: "setup", id: initial.id, version: initial.version });
+    await service.app.canvasUpload({ page: "setup", name: "业务说明.txt", content: "澄川热力的客户指工业企业，服务区域为城北。" });
     await service.app.idle();
-    assert.equal(checked, 1);
-    const foundation = service.app.canvasState().foundation.current!;
-    await service.app.canvasFoundationAdopt({
-      page: "setup",
-      id: foundation.id,
-      version: foundation.version,
-    });
-    await service.app.canvasUpload({
-      page: "setup",
-      name: "业务说明.txt",
-      content: "澄川热力的客户指工业企业，服务区域为城北。",
-    });
-    await service.app.idle();
-    assert.equal(
-      checked,
-      2,
-      JSON.stringify(service.app.canvasState().messages),
-    );
-    const afterDocument = service.app.canvasState().foundation.adopted!;
-    assert.equal(afterDocument.version, foundation.version + 3);
-    assert.equal((service.app.canvasState().foundation.adopted!.content.concepts as any[])[0].description, "接受供热服务的居民");
-    const selected = service.app.canvasContext({
-      page: "ontology",
-      context: {
-        view: "ontology.definitions",
-        revision: 0,
-        selection: [
-          {
-            spaceId: service.app.canvasState().workspaceId,
-            kind: "foundation_concept",
-            id: foundation.id,
-            version: afterDocument.version,
-            member: "customer",
-          },
-        ],
-        scope: { where: {}, offset: 0, limit: 20 },
-        draftRef: { id: "conflict-view", revision: 0 },
-      },
-    }).target!.definition as any;
-    assert.equal(
-      selected.conflicts[0].retained.description,
-      "接受供热服务的居民",
-    );
-    assert.equal(
-      selected.conflicts[0].proposed.description,
-      "接受供热服务的工业企业",
-    );
+    assert(checked, JSON.stringify(service.app.canvasState().automaticBuild));
+    const after = service.app.foundation.read().adopted!;
+    assert.equal((after.content.concepts as any[])[0].description, "接受供热服务的居民");
+    const selected = service.app.canvasContext({ page: "ontology", context: { view: "ontology.definitions", revision: 0,
+      selection: [{ spaceId: service.app.canvasState().workspaceId, kind: "foundation_concept", id: after.id, version: after.version, member: "customer" }],
+      scope: { where: {}, offset: 0, limit: 20 }, draftRef: { id: "conflict-view", revision: 0 },
+    } }).target!.definition as any;
+    assert.equal(selected.conflicts[0].retained.description, "接受供热服务的居民");
+    assert.equal(selected.conflicts[0].proposed.description, "接受供热服务的工业企业");
     assert(selected.evidence.some((e: any) => e.kind === "document"));
     assert.equal(selected.unresolvedConflictCount, 1);
-    assert.equal(service.app.canvasState().automaticBuild.status, "completed");
-    await service.app.canvasMessage({
-      page: "setup",
-      text: "确认采用文档中的工业企业客户含义，原居民范围不再适用。",
-      messageId: "doc-choice",
-    });
-    await service.app.idle();
-    assert.equal(
-      checked,
-      3,
-      JSON.stringify(service.app.canvasState().messages),
-    );
-    const accepted = await service.app.canvasFoundationAdopt({
-      page: "setup",
-      id: foundation.id,
-      version: service.app.canvasState().foundation.current!.version,
-    });
-    assert.equal(
-      (accepted.foundation.adopted!.content.concepts as any[])[0].id,
-      "customer",
-    );
+    const conflict = (after.content.conflicts as any[])[0];
+    const proposal = await service.app.adjudication.propose({ operationId: "doc-choice", foundationRef: { id: after.id, version: after.version },
+      issue: { kind: "conflict", id: conflict.id }, action: "choose_proposed", reason: "确认采用文档中的工业企业客户含义，原居民范围不再适用。" });
+    const verified = await service.app.changes.verify({ id: proposal.change.id, version: proposal.change.version, operationId: "doc-choice-check" });
+    await service.app.changes.adopt({ id: verified.id, version: verified.version, operationId: "doc-choice-adopt" });
+    const accepted = service.app.foundation.read().adopted!;
+    assert.equal(accepted.id, initial.id);
+    assert.equal((accepted.content.concepts as any[])[0].id, "customer");
+    assert.equal((accepted.content.concepts as any[])[0].description, "接受供热服务的工业企业");
     assert(sourceId);
-    await service.app.canvasMessage({
-      page: "setup",
-      text: "更正，客户仍指接受供热服务的居民。",
-      messageId: "back-to-residents",
-    });
-    await service.app.idle();
-    assert.equal(checked, 4);
-    await service.app.canvasFoundationAdopt({
-      page: "setup",
-      id: foundation.id,
-      version: service.app.canvasState().foundation.current!.version,
-    });
-    await service.app.canvasMessage({
-      page: "setup",
-      text: "再检查资料中的客户定义。",
-      messageId: "review-again",
-    });
-    await service.app.idle();
-    assert.equal(checked, 5);
-    await assert.rejects(
-      service.app.canvasFoundationAdopt({
-        page: "setup",
-        id: foundation.id,
-        version: service.app.canvasState().foundation.current!.version,
-      }),
-      /冲突/,
-    );
-  } finally {
-    await service.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
+    const back = await proposeUser("更正，客户仍指接受供热服务的居民。", "接受供热服务的居民", "back") as any;
+    await service.app.canvasFoundationAdopt({ page: "setup", id: back.id, version: back.version });
+    const repeated = await runFoundationSession(service.app, "再检查资料中的客户定义。", session => session.propose({
+      baseVersion: session.read().current!.version, enterprise: { name: "澄川热力", evidenceRefs: ["e1"] },
+      concepts: [{ id: "customer", name: "客户", description: "接受供热服务的工业企业", evidenceRefs: ["d1"] }],
+      relations: [], evidence: [], unknowns: [], conflicts: [],
+    })) as any;
+    await assert.rejects(service.app.canvasFoundationAdopt({ page: "setup", id: repeated.id, version: repeated.version }), /冲突/);
+  } finally { await service.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
 test("bad text fails explicitly and bounded document reads cannot cite unread tail or adopt after source replacement", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-doc-boundary-"));
   let checked = 0;
   let replacement = false;
-  let resave = false;
-  let reread = false;
   let validSourceId = "";
   const driver: AgentDriver = {
     async run(request) {
-      if (resave) {
-        await request.onTool("skill_use", {
-          name: "company-foundation-ontology",
-        });
-        const before = (await request.onTool("foundation_read", {})) as any;
-        const latest = reread
-          ? ((await request.onTool("foundation_document_read", {
-              sourceId: validSourceId,
-            })) as any)
-          : null;
-        await request.onTool("foundation_propose", {
-          baseVersion: before.current.version,
-          enterprise: before.current.content.enterprise,
-          concepts: [],
-          relations: [],
-          evidence: latest
-            ? [
-                {
-                  id: "d2",
-                  kind: "document",
-                  readId: latest.readId,
-                  quote: latest.text,
-                },
-              ]
-            : [],
-          unknowns: [],
-          conflicts: [],
-        });
-        checked++;
-        return { text: "复用原有依据。", sessionId: "resave", runId: "resave" };
-      }
       if (replacement)
         return { text: "新资料待检查。", sessionId: "new", runId: "new" };
       const input = JSON.parse(request.input);
@@ -525,13 +337,15 @@ test("bad text fails explicitly and bounded document reads cannot cite unread ta
       }),
       /候选版本已变化/,
     );
-    resave = true;
-    await service.app.canvasMessage({
-      page: "setup",
-      text: "先保留当前定义。",
-      messageId: "resave-old-evidence",
+    const resave = async (reread: boolean) => runFoundationSession(service.app, "核对当前资料", async session => {
+      const before = session.read().current!;
+      const latest = reread ? session.documents.read({ sourceId: validSourceId }) : null;
+      const saved = await session.propose({ baseVersion: before.version, enterprise: before.content.enterprise,
+        concepts: [], relations: [], evidence: latest ? [{ id: "d2", kind: "document", readId: latest.readId, quote: latest.text }] : [], unknowns: [], conflicts: [] });
+      checked++;
+      return saved;
     });
-    await service.app.idle();
+    await resave(false);
     assert.equal(checked, 2);
     await assert.rejects(
       service.app.canvasFoundationAdopt({
@@ -542,13 +356,7 @@ test("bad text fails explicitly and bounded document reads cannot cite unread ta
       /资料已更新/,
     );
     assert.equal(service.app.canvasState().foundation.adopted?.version, candidate.version);
-    reread = true;
-    await service.app.canvasMessage({
-      page: "setup",
-      text: "请读取新资料核对。",
-      messageId: "read-new-evidence",
-    });
-    await service.app.idle();
+    await resave(true);
     assert.equal(checked, 3);
     const reviewed = service.app.canvasState().foundation.current!;
     assert.equal((reviewed.content.documentVersions as any)[validSourceId], 2);

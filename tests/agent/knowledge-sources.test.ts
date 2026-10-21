@@ -7,6 +7,8 @@ import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { createServer } from "../../src/agent/server.ts";
 import type { AgentDriver } from "../../src/agent/runtime.ts";
+import { sourceCatalog } from "../../src/agent/knowledge.ts";
+import { runFoundationSession, type FoundationSession } from "./foundation-domain-fixture.ts";
 import { seedFoundation } from "./program-foundation-fixture.ts";
 
 test("authorized knowledge directory, bounded read and cited foundation survive source revocation", async () => {
@@ -40,26 +42,22 @@ test("authorized knowledge directory, bounded read and cited foundation survive 
   let connection: any,
     candidate: any,
     checked = false;
-  const driver: AgentDriver = {
-    async run(request) {
-      const catalog = (await request.onTool("source_catalog", {})) as any;
+  const run = async (session: FoundationSession) => {
+      const catalog = (await sourceCatalog(service.app.memory, {})) as any;
       assert.equal(
         catalog.connections[0].content.capabilities[0].contentKind,
         "knowledge",
       );
-      await request.onTool("skill_use", {
-        name: "company-foundation-ontology",
-      });
       const args = { sourceId: connection.id, capability: "documents" };
-      await assert.rejects(request.onTool("live_read", args), /知识/);
-      const query = (await request.onTool("knowledge_query", {
+      await assert.rejects(service.app.live.execute("live_read", args), /知识/);
+      const query = (await session.documents.knowledge!.query( {
         ...args,
         where: { documentId: "intro" },
         limit: 1,
       })) as any;
       assert.equal(query.items[0].segmentId, "intro-1");
       assert.equal(query.items[0].text, undefined);
-      const read = (await request.onTool("knowledge_read", {
+      const read = (await session.documents.knowledge!.read( {
         ...args,
         segmentId: "intro-1",
         revision: query.items[0].revision,
@@ -70,7 +68,7 @@ test("authorized knowledge directory, bounded read and cited foundation survive 
       assert.equal(read.coverage.nextOffset, 100);
       revision = "2026-09-02";
       await assert.rejects(
-        request.onTool("knowledge_read", {
+        session.documents.knowledge!.read( {
           ...args,
           segmentId: "intro-1",
           revision: "2026-09-01",
@@ -78,7 +76,7 @@ test("authorized knowledge directory, bounded read and cited foundation survive 
         /版本/,
       );
       const draft = {
-        baseVersion: ((await request.onTool("foundation_read", {})) as any).current.version,
+        baseVersion: ((await session.read()) as any).current.version,
         enterprise: { name: "澄川热力", evidenceRefs: ["kb1"] },
         concepts: [
           {
@@ -101,13 +99,13 @@ test("authorized knowledge directory, bounded read and cited foundation survive 
         ],
       };
       await assert.rejects(
-        request.onTool("foundation_propose", {
+        session.propose( {
           ...draft,
           evidence: [{ ...draft.evidence[0], readId: "made-up" }],
         }),
         /读取/,
       );
-      candidate = await request.onTool("foundation_propose", draft);
+      candidate = await session.propose( draft);
       assert.deepEqual(candidate.content.concepts.map((item: any) => [item.id, item.origin]), [["resident", "program"]]);
       assert.equal(candidate.content.evidence.find((item: any) => item.id === "kb1").knowledgeSnapshot, undefined);
       checked = true;
@@ -116,11 +114,8 @@ test("authorized knowledge directory, bounded read and cited foundation survive 
         sessionId: "knowledge",
         runId: "knowledge",
       };
-    },
-    async stop() {},
-    async close() {},
   };
-  let service = await createServer({ directory, driver, automaticApi: false });
+  let service = await createServer({ directory, automaticApi: false });
   seedFoundation(service.app.memory, service.app.foundation, {
     enterprise: "澄川热力",
     concepts: [
@@ -161,12 +156,7 @@ test("authorized knowledge directory, bounded read and cited foundation survive 
         ],
       })
     ).saved;
-    await api("/api/canvas/message", {
-      page: "setup",
-      text: "请使用知识库整理企业基础定义",
-      messageId: "knowledge-request",
-    });
-    await service.app.idle();
+    await runFoundationSession(service.app, "请使用知识库整理企业基础定义", run, { messageId: "knowledge-request" });
     assert(checked, JSON.stringify((await api("/api/canvas")).messages));
     await api("/api/live/disable", {
       id: connection.id,
@@ -365,16 +355,10 @@ test("resolved historical knowledge conflict does not lock a foundation after us
   const directory = mkdtempSync(join(tmpdir(), "de-knowledge-history-"));
   let phase = 0,
     source: any;
-  const driver: AgentDriver = {
-    async run(request) {
-      await request.onTool("skill_use", {
-        name: "company-foundation-ontology",
-      });
-      const current = ((await request.onTool("foundation_read", {})) as any)
+  const run = async (session: FoundationSession) => {
+      const current = ((await session.read()) as any)
         .current;
-      const user = JSON.parse(request.input)
-        .recentMessages.filter((m: any) => m.role === "user")
-        .at(-1);
+      const user = session.message;
       const draft: any = {
         baseVersion: current?.version ?? 0,
         enterprise: { name: "澄川热力", evidenceRefs: ["user0"] },
@@ -385,7 +369,7 @@ test("resolved historical knowledge conflict does not lock a foundation after us
         conflicts: [],
       };
       if (phase === 1) {
-        const part = (await request.onTool("knowledge_read", {
+        const part = (await session.documents.knowledge!.read( {
           sourceId: source.id,
           capability: "documents",
           segmentId: "company-1",
@@ -430,14 +414,11 @@ test("resolved historical knowledge conflict does not lock a foundation after us
           ];
         }
       }
-      await request.onTool("foundation_propose", draft);
+      await session.propose( draft);
       phase++;
       return { text: "已保存", sessionId: "history", runId: "history" };
-    },
-    async stop() {},
-    async close() {},
   };
-  const service = await createServer({ directory, driver, automaticApi: false });
+  const service = await createServer({ directory, automaticApi: false });
   seedFoundation(service.app.memory, service.app.foundation, {
     enterprise: "澄川热力",
     concepts: [
@@ -456,12 +437,7 @@ test("resolved historical knowledge conflict does not lock a foundation after us
       "请检查资料中的客服含义",
       "我确认客服只登记居民咨询，替换旧定义与知识材料含义。",
     ].entries()) {
-      await service.app.canvasMessage({
-        page: "setup",
-        text,
-        messageId: "history-" + index,
-      });
-      await service.app.idle();
+      await runFoundationSession(service.app, text, run, { messageId: "history-" + index });
       assert.equal(
         phase,
         index + 1,

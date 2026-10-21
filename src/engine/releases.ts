@@ -3,13 +3,14 @@ import type { Artifact, Data } from "../agent/contracts.ts";
 import type { MemoryStore } from "../agent/memory.ts";
 import { FoundationService } from "../agent/foundation.ts";
 import type { LiveMemory } from "../live/memory.ts";
-import { snapshotPinsForRelease, identityDecisionPinsForRelease } from "../live/release-pins.ts";
+import { snapshotPinsForRelease, identityDecisionPinsForRelease, propertyCorrectionPinsForRelease } from "../live/release-pins.ts";
+import { propertyCorrectionsForModel, validatePropertyCorrections } from "../live/property-corrections.ts";
 import { captureIdentityDecision, identityDecisionsForModel } from "../live/identity.ts";
 import type { DatasetContent, Snapshots } from "../data/snapshots.ts";
 import { OntologyDatasets } from "../live/ontology-datasets.ts";
 import { consumerGrant } from "../live/consumer-views.ts";
 import { jsonData } from "../live/sources.ts";
-import { fingerprint, releaseDiff } from "./release-diff.ts";
+import { fingerprint, releaseDiff, releaseObjectDiff } from "./release-diff.ts";
 import { quote as quoteId } from "../data/executor/engine.ts";
 
 const name = z.string().trim().min(1).max(200);
@@ -104,10 +105,13 @@ export class Releases {
     const allPinned = bindings.length > 0 && bindings.every(b => snapshots.some(s => s.sourceId === b.sourceId && s.capability === b.capability));
     for (const access of sourceAccess) if (snapshots.some(s => s.sourceId === access.sourceId)) access.strategy = bindings.filter(b => b.sourceId === access.sourceId).every(b => snapshots.some(s => s.sourceId === b.sourceId && s.capability === b.capability)) ? "snapshot" : "snapshot_and_on_demand";
     const policySources = new Set([...sourceIds, ...sourceAccess.flatMap(s => s.uploadRef ? [String(s.uploadRef.id)] : [])]);
+    const dataIssues=this.memory.listArtifacts('sync_issue').filter(issue=>issue.status==='open'&&policySources.has(String(issue.content.sourceId))).map(issue=>({...reference(issue),title:issue.title,sourceId:issue.content.sourceId}));
+    if(dataIssues.length)issues.push({code:'unconfirmed_data_issue',severity:'error',message:`参与发布的来源仍有 ${dataIssues.length} 项数据问题未确认，请先确认新数据或说明保留旧快照的理由。`});
     const policies = this.memory.listArtifacts("source_policy").filter(a => policySources.has(String(a.content.sourceId)));
     const concepts = (adopted?.content.concepts ?? []) as Data[];
     const relations = (adopted?.content.relations ?? []) as Data[];
-    const unresolved = ((adopted?.content.unknowns ?? []) as unknown[]).length + ((adopted?.content.conflicts ?? []) as unknown[]).length;
+    const unresolvedSemantic=[...((adopted?.content.unknowns??[]) as Data[]).map((item):Data=>({...item,kind:'unknown'})),...((adopted?.content.conflicts??[]) as Data[]).map((item):Data=>({...item,kind:'conflict'}))].filter(item=>!item.resolvedBy&&!item.adjudication);
+    const unresolved = unresolvedSemantic.length;
     if (unresolved) issues.push({ code: "semantic_uncertainty", severity: "warning", message: `已采用定义仍有 ${unresolved} 项未知或冲突；结构检查不证明业务含义正确。` });
     // Adopted local corrections are governance decisions: they ride in the working version and are pinned by each release.
     const corrections = model ? this.memory.listArtifacts("relation_correction")
@@ -116,15 +120,18 @@ export class Releases {
       .sort((a, b) => a.id.localeCompare(b.id)) : [];
     const identityDecisions = model ? identityDecisionsForModel(this.memory, model)
       .map(decision => ({ ...decision.content, ...reference(decision) })).sort((a, b) => a.id.localeCompare(b.id)) : [];
+    const propertyCorrections = model ? propertyCorrectionsForModel(this.memory, model)
+      .map(correction => ({ ...correction.content, ...reference(correction) })) : [];
     const definition = jsonData({
       enterprise: adopted?.content.enterprise ?? null,
-      concepts, relations,
+      concepts, relations, properties:adopted?.content.properties??[],
       model: model ? { foundationRef: adopted ? reference(adopted) : model.content.foundationRef, purpose: model.content.purpose, types: model.content.types, relations: model.content.relations, ...(model.content.layered ? { layered: model.content.layered } : {}), connections: model.content.connections } : null,
       sourcePolicies: policies.sort((a, b) => String(a.content.sourceId).localeCompare(String(b.content.sourceId))).map(a => ({ ...a.content, policyRef: reference(a) })),
       sourceAccess,
       snapshots,
       corrections,
       identityDecisions,
+      propertyCorrections,
       accessPolicy: { facts: "per_source_strategy", snapshot: snapshots.length ? "pinned" : "none", consistency: allPinned ? "pinned_snapshot" : "not_atomic", historicalReplay: allPinned },
     });
     const workspace = this.latestWorkspace();
@@ -133,10 +140,11 @@ export class Releases {
     const refs = { foundationRef: adopted ? reference(adopted) : null, modelRef: model ? reference(model) : null };
     const pendingRefs = pending.map(a => ({ ...reference(a), kind: a.kind, status: a.status, title: a.title }));
     return {
-      ...refs, definition, pending: pendingRefs, issues, workspaceVersion,
-      inputHash: fingerprint({ ...refs, definition, pending: pendingRefs, sourceState, workspaceVersion, baseReleaseRef: currentRelease ? reference(currentRelease) : null }),
+      ...refs, definition, pending: pendingRefs, issues, workspaceVersion,dataIssues,unresolvedSemantic,
+      inputHash: fingerprint({ ...refs, definition, pending: pendingRefs, sourceState, workspaceVersion,dataIssues,unresolvedSemantic, baseReleaseRef: currentRelease ? reference(currentRelease) : null }),
       summary: { concepts: concepts.length, relations: relations.length, types: ((model?.content.types ?? []) as Data[]).length, sources: sourceIds.length, snapshots: snapshots.length, rows: snapshots.reduce((n, s) => n + s.rows, 0) },
       diff: releaseDiff(currentRelease?.content.definition ?? {}, definition),
+      objectDiff:releaseObjectDiff(currentRelease?.content.definition??{},definition),
       baseReleaseRef: currentRelease ? reference(currentRelease) : null,
     };
   }
@@ -162,7 +170,7 @@ export class Releases {
     const args = z.object({ from: ref, to: ref }).strict().parse(input);
     const from = this.read(args.from), to = this.read(args.to);
     return { from: { ...reference(from), name: from.title }, to: { ...reference(to), name: to.title },
-      diff: releaseDiff(from.content.definition, to.content.definition), names: this.names() };
+      diff: releaseDiff(from.content.definition, to.content.definition),objectDiff:releaseObjectDiff(from.content.definition,to.content.definition), names: this.names() };
   }
   /** Row-level differences of each pinned dataset between a release and another release or the working version. */
   async dataDiff(input: unknown) {
@@ -206,6 +214,12 @@ export class Releases {
     const samples: Data[] = [];
     if (!issues.some(i => i.severity === "error") && working.modelRef) {
       const model = this.memory.getArtifact(working.modelRef.id, working.modelRef.version);
+      try {
+        await validatePropertyCorrections(this.live, model, propertyCorrectionsForModel(this.memory, model, new Set(propertyCorrectionPinsForRelease(working.definition))), {
+          readMode: "release_pinned", pins: releasePins(working.definition), fixedSemantic: true, modelDefinition: working.definition.model as Data,
+          identityDecisionPins: new Set(identityDecisionPinsForRelease(working.definition)),
+        });
+      } catch (error) { issues.push({ code: "property_correction_unavailable", severity: "error", message: error instanceof Error ? error.message : "属性纠正无法复验" }); }
       for (const decision of identityDecisionsForModel(this.memory, model, new Set(identityDecisionPinsForRelease(working.definition)))) {
         try {
           const captured = await captureIdentityDecision(this.live, model, decision.content, {
@@ -258,7 +272,9 @@ export class Releases {
       if (latestCheck?.id !== check.id) throw new Error("已有更新的发布检查，请使用最新检查结果");
       const prior = this.memory.listArtifacts("data_release");
       if (prior.some(a => a.title === args.name)) throw new Error("发布版本名称已存在");
-      const release = this.memory.putArtifact({ kind: "data_release", title: args.name, status: "published", content: jsonData({ ...working, name: args.name, notes: args.notes, sequence: prior.length + 1, contractVersion: "v4", checkRef: args.checkRef, checkedAt: check.content.checkedAt, publishedAt: new Date().toISOString() }) });
+      const warnings=working.unresolvedSemantic.map(item=>`${item.kind==='conflict'?'未裁决冲突':'待确认定义'}：${String(item.description??'尚未确认')}`);
+      const notes=[args.notes,...(warnings.length?['发布时保留以下未决事项：',...warnings]:[])].filter(Boolean).join('\n');
+      const release = this.memory.putArtifact({ kind: "data_release", title: args.name, status: "published", content: jsonData({ ...working, name: args.name, notes, sequence: prior.length + 1, contractVersion: "v4", checkRef: args.checkRef, checkedAt: check.content.checkedAt, publishedAt: new Date().toISOString() }) });
       this.receipt("publish", args.operationId, args, { releaseRef: reference(release) });
       return { release, replayed: false };
     });

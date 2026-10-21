@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
+import {createServer as httpServer} from 'node:http';
 import { createServer } from "../../src/agent/server.ts";
 import { Workspace } from "../../src/agent/workspace.ts";
 import { sourceSummary } from "../../src/agent/source-summary.ts";
@@ -45,6 +46,20 @@ test("all pages share source counts, CSV aliases are deduplicated and history is
     assert.equal(older.nextBefore, null);
     assert.equal((await fetch(`${base}/api/sessions/${session.id}/messages?before=missing`, { headers })).status, 404);
   } finally { await service.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('a failed synchronization remains a source problem while the prior snapshot cutoff and data stay readable',async()=>{
+ const directory=mkdtempSync(join(tmpdir(),'ade-source-failure-')),service=await createServer({directory,automaticApi:false});let denied=false;
+ const upstream=httpServer((request,response)=>{response.setHeader('content-type','application/json');response.statusCode=denied?401:200;response.end(JSON.stringify(denied?{error:'credential expired'}:{items:[{id:'T1',title:'已采用数据'}],total:1}));});
+ await new Promise<void>(resolve=>upstream.listen(0,'127.0.0.1',resolve));
+ try{
+  const source=await service.app.live.sources.connect({name:'任务API',protocol:'http',url:`http://127.0.0.1:${(upstream.address() as AddressInfo).port}`,capabilities:[{name:'tasks',path:'/',fields:['id','title'],idField:'id',idType:'string',totalPath:'total'}]});
+  await service.app.snapshots.sync({operationId:'source-first'});const before=sourceSummary(service.app.memory).sources.find(item=>item.id===source.id)!;
+  denied=true;await service.app.snapshots.sync({operationId:'source-denied'});
+  const current=sourceSummary(service.app.memory).sources.find(item=>item.id===source.id)!;
+  assert.equal(current.status,'unavailable');assert.equal(current.dataAsOf,before.dataAsOf);assert.equal((current as any).problems.length,1);
+  assert.equal((await service.app.snapshots.preview({datasetId:service.app.snapshots.datasets()[0].id})).rows[0].title,'已采用数据');
+ }finally{await service.close();upstream.closeAllConnections();await new Promise<void>(resolve=>upstream.close(()=>resolve()));rmSync(directory,{recursive:true,force:true});}
 });
 
 test("source data cutoff is the adopted snapshot time while a new structure awaits confirmation", async () => {

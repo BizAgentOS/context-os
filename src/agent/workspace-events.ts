@@ -31,6 +31,7 @@ export class WorkspaceEvents {
     if (type === "artifact") {
       type = /source|dataset|snapshot/.test(kind) ? "sources" : /change|correction|verification/.test(kind) ? "changes" : /release|consumer/.test(kind) ? "versions" : /job|task/.test(kind) ? "tasks" : "versions";
       scopes = /source|dataset|snapshot/.test(kind) ? ["data", "ontology", "release", "shell"] : /release|consumer/.test(kind) ? ["release", "shell"] : ["data", "ontology", "release", "shell"];
+      if (kind === "agent_run") { type = "steps"; scopes = ["agent"]; }
     } else if (type === "delta") scopes = [];
     else if (type === "message") { type = "messages"; scopes = ["agent"]; }
     else if (type === "step") { type = "steps"; scopes = ["agent"]; }
@@ -75,8 +76,8 @@ export class WorkspaceEvents {
 }
 
 export const snapshotScopes: Record<string, string[]> = {
-  shell: ["workspaceId", "workspaceVersion", "pages", "model", "onboarding", "profile", "sourceSummary", "attention", "automaticBuild", "automaticApiBuild"],
-  agent: ["session", "currentSessionId", "pools", "busy", "streaming", "messages", "messagePage", "pending", "prompt", "agentTask"],
+  shell: ["workspaceId", "workspaceVersion", "pendingSummary", "pages", "model", "onboarding", "profile", "sourceSummary", "attention", "automaticBuild", "automaticApiBuild"],
+  agent: ["session", "currentSessionId", "pools", "busy", "streaming", "messages", "messagePage", "pending", "prompt", "agentTask", "agentRuns"],
   data: ["engine", "data", "sources", "sourceSummary", "sourcePolicies", "sourcePolicyFields", "live", "onboarding", "profile", "legacyHistory", "setupSection"],
   ontology: ["foundation", "ontologies", "outlines", "verifications", "evidence", "engine", "live", "sourceSummary", "automaticBuild", "automaticApiBuild"],
   release: ["consumers", "accessLogs", "live", "sourceSummary"],

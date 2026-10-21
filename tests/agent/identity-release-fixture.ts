@@ -1,3 +1,4 @@
+import type { AgentDriver } from "../../src/agent/runtime.ts";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,9 +11,9 @@ import { seedFoundation } from "./program-foundation-fixture.ts";
 export const ref = (a: { id: string; version: number }) => ({ id: a.id, version: a.version });
 
 /** Separate people and account datasets: a shared mailbox is not proof that a bot is a person. */
-export async function identityWorkspace() {
+export async function identityWorkspace(driver?: AgentDriver) {
   const directory = mkdtempSync(join(tmpdir(), "ade-identity-release-"));
-  const service = await createServer({ directory, automaticApi: false });
+  const service = await createServer({ directory, driver, automaticApi: false });
   await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));
   const origin = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
   const request = async (path: string, body?: unknown) => {

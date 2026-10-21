@@ -7,6 +7,7 @@ import type { AddressInfo } from "node:net";
 import { createServer } from "../../src/agent/server.ts";
 import type { AgentDriver } from "../../src/agent/runtime.ts";
 import { seedFoundation } from "./program-foundation-fixture.ts";
+import { foundationSession } from "./foundation-domain-fixture.ts";
 
 test("onboarding saves selected industry naming references, waits for data and preserves existing definitions", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-onboarding-"));
@@ -105,7 +106,7 @@ test("onboarding saves selected industry naming references, waits for data and p
   } finally { await service.close(); rmSync(directory,{recursive:true,force:true}); }
 });
 
-test("an Agent reads industry vocabulary by reference and refines only a rule-built concept; saving references preserves a pending candidate", async () => {
+test("an Agent reads industry vocabulary by reference and refines only a rule-built concept; saving references preserves a pending candidate", { timeout: 20000 }, async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-onboarding-reference-"));
   let ran = false;
   const selected = { id: "banking_customer", name: "机构客户", description: "与银行开展业务的机构主体。" };
@@ -119,22 +120,18 @@ test("an Agent reads industry vocabulary by reference and refines only a rule-bu
       const reference = await request.onTool("memory_read", { id: catalog.id, version: catalog.version }) as any;
       assert.deepEqual(reference.content.concepts, [{ templateId: selected.id, name: selected.name, description: selected.description }]);
       assert.match(reference.content.instructions, /不得据此新建/);
-      const current = (await request.onTool("foundation_read", {}) as any).current;
       const message = input.recentMessages.filter((item: any) => item.role === "user").at(-1);
       await request.onTool("skill_use", { name: "company-foundation-ontology" });
-      const proposal = {
-        baseVersion: current.version, enterprise: current.content.enterprise,
-        concepts: [{ id: "customer_table", name: selected.name, description: selected.description, evidenceRefs: ["meaning"] }],
-        relations: [], evidence: [{ id: "meaning", messageId: message.id, quote: message.content }], unknowns: [], conflicts: [],
-      };
-      await assert.rejects(request.onTool("foundation_propose", {
-        ...proposal, concepts: [{ ...proposal.concepts[0], id: selected.id }],
-      }), /数据程序/);
-      const candidate = await request.onTool("foundation_propose", proposal) as any;
-      assert.deepEqual(candidate.content.concepts.map((item: any) => [item.id, item.name, item.origin]), [["customer_table", "机构客户", "program"]]);
-      await request.onTool("task_ask", { question: "请核对客户定义修正", reason: "采用已有客户记录的业务名称", foundationId: candidate.id, version: candidate.version });
+      const missing = await request.onTool("change_propose", { operationId: "unbuilt-concept", type: "naming", baseline: (await request.onTool("pending_list", {}) as any).baseline,
+        subject: { target: "concept", id: selected.id, name: selected.name }, evidence: "行业目录只辅助已有对象命名" }) as any;
+      assert.equal(missing.change.status, "failed", "industry vocabulary cannot create a missing entity through wording");
+      for (const [type, patch] of [["naming", { name: selected.name }], ["description", { description: selected.description }]] as const) {
+        const result = await request.onTool("change_propose", { operationId: type, type, baseline: (await request.onTool("pending_list", {}) as any).baseline,
+          subject: { target: "concept", id: "customer_table", ...patch, evidence: [{ id: "meaning", messageId: message.id, quote: message.content }] }, evidence: "用户确认现有客户表的业务含义" }) as any;
+        assert.equal(result.change.status, "adopted");
+      }
       ran = true;
-      return { text: "已保存修正候选，等待采用。", sessionId: "reference", runId: "reference" };
+      return { text: "已采用现有概念的名称与说明。", sessionId: "reference", runId: "reference" };
     }, async stop() {}, async close() {},
   };
   let service = await createServer({ directory, driver });
@@ -161,15 +158,25 @@ test("an Agent reads industry vocabulary by reference and refines only a rule-bu
     await call("/api/canvas/message", { page: "setup", messageId: "refine-from-vocabulary", text: "我们的客户表记录是与银行开展业务的机构主体。请称为机构客户。" });
     await service.app.idle();
     assert(ran, JSON.stringify(service.app.canvasState().messages));
+    const refined = service.app.foundation.read().adopted!;
+    assert(refined.version > seeded.version);
+    assert.deepEqual((refined.content.concepts as any[]).map(item => [item.id, item.name, item.origin]), [["customer_table", "机构客户", "program"]]);
+    // Keep the historical host candidate contract covered separately from the current Agent write catalog.
+    const session = foundationSession(service.app, "客户说明的下一次修订仍需核对。", { messageId: "pending-reference" });
+    try {
+      await session.propose({ baseVersion: refined.version, enterprise: refined.content.enterprise,
+        concepts: [{ id: "customer_table", name: selected.name, description: "客户说明的下一次修订仍需核对。", evidenceRefs: ["pending"] }],
+        relations: [], evidence: [{ id: "pending", messageId: session.message.id, quote: session.message.content }], unknowns: [], conflicts: [] });
+    } finally { session.close(); }
     const before = await call("/api/canvas");
     assert.equal(before.foundation.current.status, "candidate");
-    assert.equal(before.foundation.adopted.version, seeded.version);
-    assert.equal(before.pending.foundationId, before.foundation.current.id);
+    assert.equal(before.foundation.adopted.version, refined.version);
+    const pending = service.app.pendingCenter.list();
     state = before.onboarding;
     const changed = await call("/api/onboarding/pack", { expectedVersion: state.version, baseVersion: before.foundation.current.version,
       packId: "banking", concepts: [{ ...selected, name: "企业客户" }], operationId: "change-reference-only" });
     assert.deepEqual(changed.foundation, before.foundation, "updating naming references neither replaces nor adopts an existing candidate");
-    assert.deepEqual(changed.pending, before.pending);
+    assert.deepEqual(service.app.pendingCenter.list(), pending);
     assert.equal(changed.onboarding.reference.content.concepts[0].name, "企业客户");
   } finally { await service.close(); rmSync(directory, { recursive: true, force: true }); }
 });

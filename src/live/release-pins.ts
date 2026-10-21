@@ -18,3 +18,8 @@ export function identityDecisionPinsForRelease(definition: Data | undefined): st
   const decisions = (definition?.identityDecisions ?? []) as Array<{ id: string; version: number }>;
   return decisions.map(item => `${item.id}@${item.version}`).sort();
 }
+
+export function propertyCorrectionPinsForRelease(definition: Data | undefined): string[] {
+  const corrections = (definition?.propertyCorrections ?? []) as Array<{ id: string; version: number }>;
+  return corrections.map(item => `${item.id}@${item.version}`).sort();
+}

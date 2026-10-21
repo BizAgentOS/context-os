@@ -55,11 +55,7 @@ export function heatingDemoDriver(): AgentDriver {
               text: "演示问答支持重新执行已保存的问题。可以试问“哪些投诉还缺恢复依据？”，或打开已有验证再执行；自定义问题需要接入真实模型。",
               sessionId: `demo-${randomUUID()}`, runId: randomUUID(),
             };
-            const verification = await request.onTool("ontology_verify", {
-              question: requestedQuestion,
-              operations,
-            }) as unknown as Artifact;
-            const result = verification.content.result as Data;
+            const result = await request.onTool("object_execute", {operations}) as unknown as Data;
             const values = (result.results as Data).recovery as Data | undefined;
             const items = values?.items as Data[] | undefined;
             const counts = new Map<string, number>();
@@ -68,8 +64,8 @@ export function heatingDemoDriver(): AgentDriver {
               counts.set(status, (counts.get(status) ?? 0) + 1);
             }
             text = items
-              ? `已查证 ${items.length} 条投诉：${[...counts].map(([status, count]) => `${count} 条${statusLabels[status] || status}`).join("，")}。\n办结不能代表供热恢复，单户回访也不能代表整栋楼。结果与原始记录已保存在“验证”中。`
-              : "已使用当前资料重新执行示例问题。请在“验证”中查看结果和原始依据，并判断是否符合预期。";
+              ? `已查证 ${items.length} 条投诉：${[...counts].map(([status, count]) => `${count} 条${statusLabels[status] || status}`).join("，")}。\n办结不能代表供热恢复，单户回访也不能代表整栋楼。本轮查询表与读取过程可在助手面板查看，原始验证记录继续保留。`
+              : "已使用当前资料重新执行示例问题。请在助手面板查看本轮结果，并判断是否符合预期。";
           }
         }
       } else if (context.page === "consumption" && question === "谁可以调用这些记忆？") {

@@ -22,12 +22,14 @@ export interface RunRequest {
   input: string;
   system: string;
   tools: DomainTool[];
-  onTool: (name: string, args: Record<string, unknown>) => Promise<Json>;
+  onTool: (name: string, args: Record<string, unknown>, operationId?: string) => Promise<Json>;
   onSession: (id: string) => void;
   onEvent: (kind: string, data: Data) => void;
+  authorizeTool?: (name: string, args: Record<string, unknown>) => void;
 }
 export interface RunOutcome {
   text: string;
+  status?: "completed" | "stopped" | "timed_out" | "failed";
   error?: string;
   sessionId: string;
   runId: string;
@@ -174,11 +176,16 @@ export class KodaXDriver implements AgentDriver {
     request.onSession(session.id);
     let usedTool = false;
     let textAfterTool = "";
+    let operationSequence = 0;
     const toolBoundary = () => { usedTool = true; textAfterTool = ""; };
     const allowed = new Set([
       ...request.tools.map((t) => t.name),
       ...(request.nativeTools ?? []),
     ]);
+    const authorize = (name: string, args: Record<string, unknown> = {}) => {
+      if (this.stopping || !allowed.has(name)) throw new Error("当前运行不允许这个操作");
+      request.authorizeTool?.(name, args);
+    };
     const external = request.capabilities?.mcp;
     const assertExternal = () => {
       if (this.stopping || !external) throw new Error("外部能力不可用");
@@ -187,16 +194,19 @@ export class KodaXDriver implements AgentDriver {
     const externalResult = async (
       id: string,
       args: Record<string, unknown> = {},
+      permission = "mcp_call",
     ) => {
+      authorize(permission, args);
       toolBoundary();
-      request.onEvent("operation.started", { name: id });
+      const operationId = `operation-${++operationSequence}`;
+      request.onEvent("operation.started", { id: operationId, name: id });
       try {
         const result = await assertExternal().call(id, args);
         if (this.stopping) throw new Error("已停止本次调用");
-        request.onEvent("operation.completed", { name: id });
+        request.onEvent("operation.completed", { id: operationId, name: id });
         return { kind: "tool" as const, content: JSON.stringify(result) };
       } catch (error) {
-        request.onEvent("operation.failed", { name: id });
+        request.onEvent("operation.failed", { id: operationId, name: id });
         throw error;
       }
     };
@@ -210,37 +220,38 @@ export class KodaXDriver implements AgentDriver {
           sideEffect: t.mutates ? "mutates-state" : "readonly",
           planModeAllowed: !t.mutates,
         })),
-      searchCapabilities: async (provider, query, options) =>
-        provider === "mcp" && external
-          ? external
-              .snapshot(query, options)
-              .items.slice(0, options?.limit ?? 20)
-          : [],
-      searchCapabilitySnapshot: async (provider, query, options) =>
-        provider === "mcp" && external
-          ? external.snapshot(query, options)
-          : { items: [], complete: true, freshness: "unknown" },
-      describeCapability: async (_provider, id) =>
-        id.startsWith("mcp:")
-          ? assertExternal().describe(id)
-          : request.tools.find((t) => t.name === id),
+      searchCapabilities: async (provider, query, options) => {
+        if (provider !== "mcp" || !external || !allowed.has("mcp_search")) return [];
+        authorize("mcp_search", { query }); return external.snapshot(query, options).items.slice(0, options?.limit ?? 20);
+      },
+      searchCapabilitySnapshot: async (provider, query, options) => {
+        if (provider !== "mcp" || !external || !allowed.has("mcp_search")) return { items: [], complete: true, freshness: "unknown" };
+        authorize("mcp_search", { query }); return external.snapshot(query, options);
+      },
+      describeCapability: async (_provider, id) => {
+        if (id.startsWith("mcp:")) { authorize("mcp_describe", { id }); return assertExternal().describe(id); }
+        authorize(id); return request.tools.find(t => t.name === id);
+      },
       readCapability: async (_provider, id) => {
-        const result = await externalResult(id);
+        authorize("mcp_read_resource", { id });
+        const result = await externalResult(id, {}, "mcp_read_resource");
         return { ...result, kind: "resource" };
       },
       getCapabilityPrompt: async (_provider, id, args) =>
-        externalResult(id, args),
+        externalResult(id, args, "mcp_get_prompt"),
       getCapabilityPromptContext: async () => undefined,
       executeCapability: async (provider, id, args) => {
         if (provider === "mcp" && id.startsWith("mcp:"))
           return externalResult(id, args);
         if (provider !== "mcp" || !allowed.has(id) || this.stopping)
           throw new Error("当前运行不允许这个操作");
+        authorize(id, args);
         toolBoundary();
-        request.onEvent("operation.started", { name: id });
+        const operationId = `operation-${++operationSequence}`;
+        request.onEvent("operation.started", { id: operationId, name: id });
         try {
-          const result = await request.onTool(id, args);
-          request.onEvent("operation.completed", { name: id });
+          const result = await request.onTool(id, args, operationId);
+          request.onEvent("operation.completed", { id: operationId, name: id });
           return {
             kind: "tool",
             content: JSON.stringify(result),
@@ -248,7 +259,7 @@ export class KodaXDriver implements AgentDriver {
           };
         } catch (error) {
           const message = error instanceof Error ? error.message : "操作失败";
-          request.onEvent("operation.failed", { name: id, error: message });
+          request.onEvent("operation.failed", { id: operationId, name: id, error: message });
           return {
             kind: "tool",
             content: JSON.stringify({ error: message }),
@@ -264,21 +275,23 @@ export class KodaXDriver implements AgentDriver {
         if (event.type === "tool.started") toolBoundary();
         if (event.type === "tool.started" || event.type === "tool.finished") {
           const detail = (payload.tool ?? payload.result) as
-            { name?: string } | undefined;
+            { name?: string; id?: string } | undefined;
           if (detail?.name && request.nativeTools?.includes(detail.name))
             request.onEvent(
               event.type === "tool.started"
                 ? "capability.started"
                 : "capability.finished",
-              { name: detail.name },
+              { name: detail.name, ...(detail.id ? { id: detail.id } : {}) },
             );
         }
         if (event.type === "permission.requested") {
           const permission = event.payload as RuntimePermissionRequest;
+          let authorized = false;
+          try { authorize(permission.toolName); authorized = true; } catch { /* A revoked run must not gain a native capability. */ }
           void runtime.permissions
             .respond(
               permission.id,
-              allowed.has(permission.toolName)
+              authorized
                 ? { type: "allow_once" }
                 : { type: "reject", reason: "仅允许当前企业工作区的操作" },
             )
@@ -295,8 +308,11 @@ export class KodaXDriver implements AgentDriver {
           request.onEvent("run.progress", { iteration: Number(payload.iter) });
       },
     );
+    let timedOut = false;
     const timeout = setTimeout(() => {
-      void this.stop();
+      timedOut = true;
+      request.onEvent("run.timed_out", { reason: "运行超过240秒" });
+      void this.stop().catch(() => {});
     }, 240_000);
     try {
       this.handle = await runtime.runs.start({
@@ -340,6 +356,7 @@ export class KodaXDriver implements AgentDriver {
       return {
         sessionId: session.id,
         runId: this.handle.runId,
+        status: timedOut ? "timed_out" : failed ? "failed" : this.stopping || ["cancelled", "interrupted"].includes(result.phase) ? "stopped" : "completed",
         // lastText may refer to narration before the final tool call (for example at maxIter).
         // Only text produced after that call can be the user-facing answer.
         text: usedTool ? textAfterTool : result.result?.lastText ?? "",

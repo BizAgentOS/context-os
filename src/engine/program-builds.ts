@@ -1,3 +1,4 @@
+import {tableRowsSync} from "../data/table-rows.ts";
 import { prepareIdentityDecisionMigration } from "../live/identity-migration.ts";
 import { prepareCorrectionMigration } from "../live/correction-migration.ts";
 import { z } from "zod";
@@ -272,20 +273,21 @@ export class ProgramBuilds {
     }) });
   }
 
-  private fail(id: string, error: unknown) {
+  private fail(id: string, error: unknown, issues?: BuildIssue[]) {
     const job = this.memory.getArtifact(id);
     if (["cancelled", "interrupted"].includes(job.status)) return job;
     return this.memory.putArtifact({ ...job, expectedVersion: job.version, status: "failed", content: jsonData({ ...job.content,
-      outcome: "failed", finishedAt: now(), issues: [...dataArray(job.content.issues), { code: "build_failed", severity: "error", message: (error as Error).message }],
+      outcome: "failed", finishedAt: now(), issues: [...(issues ?? dataArray(job.content.issues)), { code: "build_failed", severity: "error", message: (error as Error).message }],
     }) });
   }
 
   /** Full-data path: sync snapshots, run Helix discovery over them, and compile entities into ADE concepts and mappings. */
   private async executeSnapshots(id: string, sources: Artifact[], snapshots: Snapshots): Promise<Artifact> {
+    let issues: BuildIssue[] | undefined;
     try {
       this.advance(id, "read");
       const content = this.memory.getArtifact(id).content as unknown as BuildContent;
-      const issues: BuildIssue[] = structuredClone(content.issues);
+      issues = structuredClone(content.issues);
       for (const source of sources) for (const cap of source.kind === "source" ? [] : dataArray(source.content.capabilities))
         if (cap.contentKind && cap.contentKind !== "records") issues.push({ code: "non_record_capability", severity: "info", sourceId: source.id, capability: String(cap.name), message: "知识片段或指标能力保留为依据入口，不自动映射成业务记录。" });
       const synced = sources.length ? await snapshots.sync({ operationId: `build:${content.operationId}`, sourceIds: sources.map(s => s.id) }) : null;
@@ -309,11 +311,11 @@ export class ProgramBuilds {
       const candidate = discovery ? this.compileDiscovery(id, discovery, usable, issues) : null;
       this.advance(id, "compile", true);
       return this.finish(id, sources, issues, await this.finishCandidate(id, issues, candidate));
-    } catch (error) { return this.fail(id, error); }
+    } catch (error) { return this.fail(id, error, issues); }
   }
 
   private async inspectCsv(source: Artifact, profiles: DatasetProfile[], issues: BuildIssue[]) {
-    const rows = dataArray(source.content.rows), fields = (source.content.columns as string[]) ?? [];
+    const rows = [...tableRowsSync(source,this.memory)], fields = (source.content.columns as string[]) ?? [];
     if (fields.length > 100) { issues.push({ code: "field_capacity", severity: "error", sourceId: source.id, message: "CSV 超过 100 列的执行范围，请显式缩小数据范围。未截断字段。" }); return; }
     const columns = profileColumns(fields, rows), key = ownKey(source.title, columns);
     if (!key) {
@@ -424,8 +426,8 @@ export class ProgramBuilds {
     // Legacy interpretation-built structures are replaced in the new version only.
     // Program provenance and explicitly adopted relations survive later builds and wording edits.
     const priorConcepts = dataArray(previous?.concepts), priorRelations = dataArray(previous?.relations);
-    const retiredConcepts = priorConcepts.filter(c => c.origin !== "program").map(c => String(c.id));
-    const concepts = priorConcepts.filter(c => c.origin === "program"), keptConcepts = new Set(concepts.map(c => c.id));
+    const retiredConcepts = priorConcepts.filter(c => c.origin !== "program" && c.governed !== true).map(c => String(c.id));
+    const concepts = priorConcepts.filter(c => c.origin === "program" || c.governed === true), keptConcepts = new Set(concepts.map(c => c.id));
     const relations = priorRelations.filter(r => (r.origin === "program" || r.governed === true) && keptConcepts.has(r.from) && keptConcepts.has(r.to));
     const retiredRelations = priorRelations.filter(r => !relations.includes(r)).map(r => String(r.id));
     const evidence = dataArray(previous?.evidence);
@@ -466,11 +468,16 @@ export class ProgramBuilds {
       const matches = (b: Data) => ids.has(String(b.sourceId)) && b.capability === c.capability;
       return types.find(matches) ?? types.find(type => dataArray(type.supplements).some(matches));
     };
+    const deprecatedSources = dataArray(previous?.deprecations).flatMap(item => dataArray(item.sourceBindings));
     const typeOf = new Map<string, Data>();
     // Which concept and relation each discovered entity and link became, so the adopted ontology can show its evidence.
     const entityConcepts: Record<string, string> = {}, linkRelations: Record<string, string> = {};
     for (const t of bundle.ontology) {
       const e = o.entities.find(x => x.id === t.entityId)!, anchor = byId.get(e.anchorDatasetId)!;
+      if (!boundTo(anchor) && deprecatedSources.some(binding => {
+        const connection = this.memory.getArtifact(String(binding.sourceId));
+        return (binding.sourceId === anchor.sourceId || (connection.content.localSource as Data | undefined)?.id === anchor.sourceId) && binding.capability === anchor.capability;
+      })) continue;
       // Extend an existing mapping instead of duplicating the object: the anchor's own, or else that of a member matched directly to it.
       // Newly discovered direct merges are added to it as supplements.
       const pivot = boundTo(anchor) ? undefined : e.members.slice(1).find(m => m.via?.targetDatasetId === e.anchorDatasetId && boundTo(byId.get(m.datasetId)!));
@@ -563,7 +570,7 @@ export class ProgramBuilds {
     const unknowns = dataArray(previous?.unknowns);
     // Retired definitions keep their full evidence in history, not as dependencies of
     // this new version. Governance explanations and program provenance remain live references.
-    const owners = [enterprise, ...concepts, ...relations, ...unknowns, ...conflicts,
+    const owners = [enterprise, ...concepts, ...relations, ...dataArray(previous?.properties), ...unknowns, ...conflicts,
       ...[...unknowns, ...conflicts].flatMap(item => [item.retained, item.proposed])
         .filter((item): item is Data => !!item && typeof item === "object" && !Array.isArray(item))];
     const evidenceIds = new Set(owners.flatMap(item => [

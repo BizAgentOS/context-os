@@ -1,3 +1,5 @@
+import { OntologyWorkspace } from "../semantic/workspace.ts";
+import { Workspace } from "./workspace.ts";
 import { historicalConsumption, LegacyConsumptionFrozen } from "../live/legacy-consumption.ts";
 import { sourceSummary } from "./source-summary.ts";
 import {ConsumerMigrations} from "../live/consumer-migrations.ts";
@@ -23,15 +25,19 @@ import { ChangeConflict } from "../engine/changes.ts";
 import { DelegationDenied } from "../engine/delegations.ts";
 import { reviewVerification } from "./maintenance.ts";
 import type { AgentDriver } from "./runtime.ts";
+import type { Artifact } from "./contracts.ts";
 import { ontologySceneAsset } from "./browser-assets.ts";
 import { WorkspaceEvents, snapshotScopes } from "./workspace-events.ts";
 
 const webRoot = fileURLToPath(new URL("../../web/agent/", import.meta.url));
 const staticFiles: Record<string, { file: string; type: string }> = {
-  ...Object.fromEntries(["workspace-store", "agent-panel", "task-center", "pending-center", "data-profile", "share-workspace", "page-region", "sessions"].map(name => [`/${name}.js`, { file: `${name}.js`, type: "text/javascript; charset=utf-8" }])),
+  ...Object.fromEntries(["ontology-workbench", "database-connection", "answer-card", "answer-visualization", "sync-settings", "sync-issue", "agent-mode-controls", "gap-detail", "run-card", "decision-card", "message-markdown", "workspace-store", "agent-panel", "task-center", "pending-center", "data-profile", "share-workspace", "page-region", "sessions"].map(name => [`/${name}.js`, { file: `${name}.js`, type: "text/javascript; charset=utf-8" }])),
   "/glass-theme.css": {file:"glass-theme.css",type:"text/css; charset=utf-8"},
   "/glass-ontology.css": {file:"glass-ontology.css",type:"text/css; charset=utf-8"},
+  "/ontology-workspace.css": {file:"ontology-workspace.css",type:"text/css; charset=utf-8"},
   "/engine.css": {file:"engine.css",type:"text/css; charset=utf-8"},
+  "/agent-panel.css": {file:"agent-panel.css",type:"text/css; charset=utf-8"},
+  "/pending-center.css": {file:"pending-center.css",type:"text/css; charset=utf-8"},
   "/ui-display.js": { file:"ui-display.js", type:"text/javascript; charset=utf-8" },
   "/engine-ui.js": {file:"engine-ui.js",type:"text/javascript; charset=utf-8"},
   "/engine-workspace.js": {file:"engine-workspace.js",type:"text/javascript; charset=utf-8"},
@@ -283,6 +289,13 @@ export async function createServer(
             `${cookieName}=${token}; HttpOnly; SameSite=Strict; Path=/api`,
           );
       }
+      if (request.method === "POST" && url.pathname === "/api/canvas/upload/table") {
+        if (request.headers["content-type"]?.split(";")[0].trim() !== "application/octet-stream") throw new Error("表格上传需要原始文件内容");
+        const options = url.searchParams.has("options") ? JSON.parse(url.searchParams.get("options")!) : undefined;
+        const result = await app.canvasTableUpload({ page: url.searchParams.get("page") ?? "setup", name: url.searchParams.get("name"),
+          sessionId: url.searchParams.get("sessionId") ?? undefined, options }, request);
+        send(200, result); return;
+      }
       const sessionRoute=/^\/api\/sessions\/([^/]+)(\/messages)?$/.exec(url.pathname);
       if(url.pathname==="/api/sessions"&&request.method==="GET") {
         app.memory.defaultSession();send(200,{sessions:app.memory.listSessions(url.searchParams.get("archived")==="true")});return;
@@ -302,6 +315,21 @@ export async function createServer(
         send(200,sessionRoute[2]?app.memory.sessionMessages(id,{before:url.searchParams.get("before")??undefined,limit:Number(url.searchParams.get("limit")??40)}):{session:app.memory.getSession(id)});return;
       }
       if (request.method === "GET") {
+        if (url.pathname === "/api/ontology/workspace" || url.pathname === "/api/ontology/detail") {
+          const workspace = new OntologyWorkspace(app.memory, app.foundation, app.live, app.pendingCenter, app.workspaceVersions);
+          send(200, url.pathname.endsWith("/workspace") ? workspace.overview() : workspace.detail({kind:url.searchParams.get("kind"), id:url.searchParams.get("id"), developer:url.searchParams.get("developer")==="true", evidenceOffset:Number(url.searchParams.get("evidenceOffset")??0)})); return;
+        }
+        if (url.pathname === "/api/foundation/evidence-list") {
+          send(200, app.foundation.listEvidence({ id: url.searchParams.get("id"), version: Number(url.searchParams.get("version")),
+            offset: Number(url.searchParams.get("offset") ?? 0), limit: Number(url.searchParams.get("limit") ?? 50) })); return;
+        }
+        if (url.pathname === "/api/foundation/adjudication") {
+          send(200, app.adjudication.list({ offset: Number(url.searchParams.get("offset") ?? 0), limit: Number(url.searchParams.get("limit") ?? 40) })); return;
+        }
+        if (url.pathname === "/api/foundation/adjudication/read") {
+          send(200, app.adjudication.read({ foundationRef: { id: url.searchParams.get("id"), version: Number(url.searchParams.get("version")) },
+            issue: { kind: url.searchParams.get("kind"), id: url.searchParams.get("issueId") } })); return;
+        }
         if (url.pathname === "/api/ontology/model") {
           send(200, app.live.readLayered(url.searchParams.get("id") ?? "", url.searchParams.has("version") ? Number(url.searchParams.get("version")) : undefined)); return;
         }
@@ -316,7 +344,23 @@ export async function createServer(
           const value = scope ? Object.fromEntries(snapshotScopes[scope].filter(key => Object.hasOwn(snapshot, key)).map(key => [key, (snapshot as Record<string, unknown>)[key]])) : snapshot;
           send(200, { ...value, eventCursor: events.cursor }); return;
         }
+        if (url.pathname === "/api/databases/tables") {
+          send(200, await app.live.sources.databases.tables(url.searchParams.get("id") ?? "")); return;
+        }
+        if (url.pathname === "/api/sources/rows") {
+          const id = url.searchParams.get("id") ?? "", version = Number(url.searchParams.get("version"));
+          const offset = Number(url.searchParams.get("offset") ?? 0), limit = Number(url.searchParams.get("limit") ?? 50);
+          if (!Number.isSafeInteger(version) || version < 1 || !Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("无效的资料分页范围");
+          if (app.memory.getArtifact(id, version).kind !== "source") throw new Error("需要资料来源引用");
+          send(200, await new Workspace(app.memory).execute("memory_read", { id, version, offset, limit })); return;
+        }
         if (url.pathname === "/api/sources/summary") { send(200, sourceSummary(app.memory)); return; }
+        if (url.pathname === "/api/pending") {
+          const q = url.searchParams;
+          send(200, app.pendingCenter.list({ ...Object.fromEntries(["category", "source", "object", "owner"].filter(key => q.has(key)).map(key => [key, q.get(key)])),
+            ...(q.has("limit") ? { limit: Number(q.get("limit")) } : {}), ...(q.has("offset") ? { offset: Number(q.get("offset")) } : {}) })); return;
+        }
+        if (url.pathname === "/api/pending/read") { send(200, { item: app.pendingCenter.read(url.searchParams.get("id") ?? "") }); return; }
         if (url.pathname === "/api/changes") {
           const q = url.searchParams;
           send(200, app.changes.list({ ...(q.get("status") ? { status: q.get("status") } : {}), ...(q.get("type") ? { type: q.get("type") } : {}),
@@ -329,10 +373,19 @@ export async function createServer(
         if (url.pathname === "/api/workspace-versions/read") { send(200, { version: app.workspaceVersions.read(Number(url.searchParams.get("number"))) }); return; }
         if (url.pathname === "/api/engine") { send(200, app.programBuilds.overview()); return; }
         if (url.pathname === "/api/data") { send(200, app.snapshots.overview()); return; }
+        if (url.pathname === "/api/data/sync-policy") { send(200,url.searchParams.has('sourceId')?app.syncGovernance.policy(url.searchParams.get('sourceId')!):{policies:app.syncGovernance.policies()}); return; }
+        if (url.pathname === "/api/data/issues/read") { send(200,{issue:app.syncGovernance.detail(url.searchParams.get('id')??'')}); return; }
         if (url.pathname === "/api/data/preview") {
           send(200, await app.snapshots.preview({ datasetId: url.searchParams.get("datasetId"), ...(url.searchParams.get("snapshotId") ? { snapshotId: url.searchParams.get("snapshotId") } : {}),
             offset: Number(url.searchParams.get("offset") ?? 0), limit: Number(url.searchParams.get("limit") ?? 50) })); return;
         }
+        if (url.pathname === "/api/qa/views") {
+          const reference=(item:Artifact)=>({id:item.id,version:item.version});
+          const releases=app.memory.listArtifacts("data_release").filter(item=>item.status==="published");
+          send(200,{releases:releases.map(item=>({ref:reference(item),title:item.title,createdAt:item.createdAt})),connections:app.memory.listArtifacts("release_connection").filter(item=>item.status==="active"&&releases.some(release=>JSON.stringify(reference(release))===JSON.stringify(item.content.releaseRef))).map(item=>({ref:reference(item),title:item.title,releaseRef:item.content.releaseRef}))}); return;
+        }
+        if (url.pathname === "/api/gaps") { send(200,{items:app.questionAnswering.gaps.list()}); return; }
+        if (url.pathname === "/api/gaps/read") { send(200,{gap:app.questionAnswering.gaps.get(url.searchParams.get("id")??"")}); return; }
         if (url.pathname === "/api/releases") { send(200, {...new Releases(app.memory, app.live).overview(), delegations: app.delegations.list()}); return; }
         if (url.pathname === "/api/releases/compare") {
           send(200, new Releases(app.memory, app.live).compare({
@@ -469,13 +522,8 @@ export async function createServer(
             (!Number.isInteger(version) || version < 1)
           )
             throw new Error("无效版本");
-          send(
-            200,
-            app.memory.getArtifact(
-              decodeURIComponent(url.pathname.slice("/api/artifacts/".length)),
-              version,
-            ),
-          );
+          const artifact = app.memory.getArtifact(decodeURIComponent(url.pathname.slice("/api/artifacts/".length)), version, {evidence:"compact"});
+          send(200, artifact.kind === "change_evidence_receipt" ? artifact : app.memory.getArtifact(artifact.id, artifact.version));
           return;
         }
         const normalized = url.pathname.startsWith("/agent/")
@@ -512,6 +560,40 @@ export async function createServer(
       }
       let result: unknown;
       switch (url.pathname) {
+        case "/api/data/sync-policy": result=app.syncGovernance.configure(body); break;
+        case "/api/data/issues/resolve": result=app.syncGovernance.resolve(body); break;
+        case "/api/gaps/handoff": result=app.questionAnswering.gaps.handoff(body); break;
+        case "/api/gaps/preview": result=await app.questionAnswering.gaps.preview(body); break;
+        case "/api/gaps/link": result=app.questionAnswering.gaps.linkChange(body); break;
+        case "/api/gaps/dismiss": result=app.questionAnswering.gaps.dismiss(body); break;
+        case "/api/gaps/reask": result=await app.questionAnswering.gaps.reask(body); break;
+        case "/api/semantic/query": {
+          const abort = new AbortController();
+          const closed = () => abort.abort(); response.once("close", closed);
+          try { result = await app.semanticQuery.execute(body, {signal:abort.signal}); }
+          finally { response.off("close", closed); }
+          break;
+        }
+        case "/api/databases/test":
+          result = await app.live.sources.databases.test(body); break;
+        case "/api/databases/connect":
+          result = await app.live.sources.databases.connect(body); break;
+        case "/api/databases/select":
+          result = await app.live.sources.databases.select(body); break;
+        case "/api/canvas/upload/batch/start":
+          result = app.canvasDocumentBatchStart(body); break;
+        case "/api/canvas/upload/batch/file":
+          result = { batch: app.documentUploads.add(body) }; break;
+        case "/api/canvas/upload/batch/finalize":
+          result = app.canvasDocumentBatchFinalize(body); break;
+        case "/api/canvas/upload/reparse":
+          result = await app.canvasTableReparse(body); break;
+        case "/api/foundation/adjudication/propose":
+          result = await app.adjudication.propose(body); break;
+        case "/api/changes/batch-adopt":
+          result = await app.changes.batchAdopt(body); break;
+        case "/api/changes/batch-reject":
+          result = app.changes.batchReject(body); break;
         case "/api/changes/propose": {
           const proposed = await app.changes.propose(body);
           send(proposed.suppressed ? 200 : 201, proposed); return;

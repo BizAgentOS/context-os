@@ -15,6 +15,7 @@ function assertPromptContract(text: string, request: RunRequest, label: string) 
   const available = new Set([
     ...request.tools.map((tool) => tool.name),
     ...(request.nativeTools ?? []),
+    "same_as", "belongs_to", "no_match", // Semantic rule/decision values, not callable tools.
   ]);
   for (const name of toolReferences(text)) {
     assert(available.has(name), `${label} mentions unavailable tool ${name}`);
@@ -44,14 +45,21 @@ test("identity and shared rules refer only to tools offered by each actual run",
       assertPromptContract(request.system, request, page);
       assert.match(request.system, /身份/);
       assert.match(request.system, /通用规则/);
-      assert.match(request.system, /单一模式/);
-      assert.doesNotMatch(request.system, /change_propose|gap_report|自动切换模式/);
+      assert.match(request.system, /构建模式/);
+      assert.match(request.system, /change_propose/);
+      assert.doesNotMatch(request.system, /gap_report|自动切换模式/);
     }
     await app.message({ text: "查看已有成果。" });
     await app.idle();
     const request = requests.at(-1)!;
     assertPromptContract(request.system, request, "legacy task");
-    assert.match(request.system, /不得新增概念或关系/);
+    assert.match(request.system, /结构变化|所有结构修改/);
+    await app.message({ text: "查询已有业务数据。", mode: "qa" });
+    await app.idle();
+    const qa = requests.at(-1)!;
+    assertPromptContract(qa.system, qa, "question-answer mode");
+    assert.match(qa.system, /问答模式/);
+    assert.doesNotMatch(qa.system, /change_propose/);
   } finally {
     await app.close();
     rmSync(directory, { recursive: true, force: true });
@@ -91,7 +99,7 @@ test("bundled methods remain compatible with interactive and document-only tool 
     await app.idle();
     const automatic = requests.find((request) => JSON.parse(request.input).mode === "automatic-document-ontology");
     assert(automatic, "the real document queue must assemble an automatic run");
-    const method = readFileSync(new URL("../../config/skills/company-foundation-ontology/SKILL.md", import.meta.url), "utf8");
+    const method = readFileSync(new URL("../../config/agent/automatic-document.md", import.meta.url), "utf8");
     assertPromptContract(method, automatic, "document-only method");
     assert.doesNotMatch(method, /新概念按需增加|明确确认采用|直接形成基础候选/);
   } finally {

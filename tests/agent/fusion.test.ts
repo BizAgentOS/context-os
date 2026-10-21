@@ -21,8 +21,12 @@ test("one object resolves complementary values and preserves conflict, absent, a
     directory,
     driver: {
       async run(request) {
-        assert(request.tools.some((t) => t.name === "live_propose"));
-        candidate = await request.onTool("live_propose", definition);
+        assert(request.tools.some((t) => t.name === "change_verify"));
+        assert(!request.tools.some((t) => t.name === "live_propose"));
+        const pending = await request.onTool("pending_list", {}) as any;
+        const change = pending.items.find((item: any) => item.ownerId === candidate.id);
+        assert(change, "the domain mapping candidate is available through the unified center");
+        await request.onTool("change_verify", { id: change.id, version: change.version, operationId: "verify-fusion" });
         const result = (await request.onTool("live_query", {
           modelId: (candidate as any).id,
           type: "投诉",
@@ -73,6 +77,7 @@ test("one object resolves complementary values and preserves conflict, absent, a
     ).saved;
     definition = fusionDefinition(primary.id, extra.id);
     definition.types[0].supplements[0].fields.constructor = "outcome";
+    candidate = await service.app.live.propose(definition);
     await api("/api/canvas/message", {
       page: "setup",
       text: "按投诉编号融合投诉和工单属性，不覆盖不同说法",

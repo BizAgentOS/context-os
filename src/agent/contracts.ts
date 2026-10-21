@@ -41,6 +41,7 @@ export interface Investigation {
   sourceVersions: Record<string, number>;
 }
 export interface Repository {
+  readonly directory?: string;
   getInvestigation?(taskId: string): Investigation | null;
   bindInvestigation?(context: WriteContext, scope: Investigation): void;
   getMessage?(id: string): {
@@ -51,7 +52,7 @@ export interface Repository {
     createdAt: string;
   } | null;
   listArtifacts(kind?: string): Artifact[];
-  getArtifact(id: string, version?: number): Artifact;
+  getArtifact(id: string, version?: number, options?: {evidence?: "hydrate" | "compact"}): Artifact;
   putArtifact(
     input: ArtifactInput,
     context?: WriteContext,

@@ -48,8 +48,15 @@ const hash = (value: unknown) =>
   createHash("sha256").update(canonical(value)).digest("hex");
 export const relationKey = (t: CorrectionTarget) => hash(t);
 /** A published release fixes the corrections it was published with: `id@version` of each adopted record. */
-export type PinnedCorrections = ReadonlySet<string>;
+export type PinnedCorrections = ReadonlySet<string> | { readonly records: readonly Artifact[] };
 export const correctionPin = (record: { id: string; version: number }) => `${record.id}@${record.version}`;
+/** Internal preview records carry a complete hypothetical set without creating repository artifacts. */
+export function correctionRecords(repo: Pick<MemoryStore, "listArtifacts" | "getArtifact">, pinned?: PinnedCorrections): readonly Artifact[] {
+  return pinned ? "records" in pinned ? pinned.records : [...pinned].map(pin => {
+    const split = pin.lastIndexOf("@");
+    return repo.getArtifact(pin.slice(0, split), Number(pin.slice(split + 1)));
+  }) : repo.listArtifacts("relation_correction");
+}
 export function activeCorrection(
   repo: Pick<MemoryStore, "listArtifacts" | "getArtifact">,
   target: CorrectionTarget,
@@ -58,9 +65,7 @@ export function activeCorrection(
   pinned?: PinnedCorrections,
 ) {
   // A pinned set reads the exact stored version, even if that record was superseded since publication.
-  const records = pinned
-    ? [...pinned].map((pin) => { const [id, version] = pin.split("@"); return repo.getArtifact(id, Number(version)); })
-    : repo.listArtifacts("relation_correction");
+  const records = correctionRecords(repo, pinned);
   return records.find((record) => {
     // Live: only the adopted decision. Pinned: that exact version, which may have been superseded since.
     if (!(pinned ? ["adopted", "superseded"] : ["adopted"]).includes(record.status)) return false;
@@ -122,6 +127,8 @@ export async function captureRelation(
       reading?.readMode === "release_pinned" ? reading.pins : undefined,
       reading,
       reading?.identityDecisionPins,
+      undefined,
+      false,
     );
     assertActive();
     if (
@@ -159,7 +166,10 @@ export async function captureRelation(
   live.assertModel(target.modelId, target.modelVersion, reading?.fixedSemantic ?? false, reading?.pins, modelDefinition);
   assertActive();
   const evidenceIdentity = (result: typeof origin) =>
-    result.evidence
+    // Main-only reads gained property evidence later. Keep the original relation fingerprint
+    // independent of that additive receipt, so previously published corrections still replay.
+    result.evidence?.some(object => object.matches.length)
+      ? result.evidence
       ?.slice()
       .sort((a, b) => String(a.objectId).localeCompare(String(b.objectId)))
       .map((object) => ({
@@ -181,7 +191,7 @@ export async function captureRelation(
             },
           ]),
         ),
-      })) ?? [];
+      })) ?? [] : [];
   const facts = {
     origin: origin.items,
     originEvidence: evidenceIdentity(origin),

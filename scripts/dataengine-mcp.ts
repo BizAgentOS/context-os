@@ -1,5 +1,6 @@
 import { readingDescription } from "../src/live/reading-contract.ts";
 import { consumerOperations } from "../src/live/consumer-contract.ts";
+import {externalObjectsSchema,externalSemanticOperations} from '../src/live/semantic-consumption.ts';
 import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { z } from "zod";
@@ -140,12 +141,13 @@ export function createMemoryMcpServer(config: BridgeConfig) {
       { name: "read_concept", path: "/v4/concept", description: "Read one permitted concept definition in the fixed ontology version.", schema: z.object({ conceptId: z.string().min(1).max(200) }).strict() },
       { name: "query_relations", path: "/v4/relations", description: "Read permitted ontology relations for a selected concept; these are definitions, not object links.", schema: z.object({ conceptId: z.string().min(1).max(200) }).strict() },
       { name: "describe_type", path: "/v4/types", description: `Describe the granted fields, relations, evidence and actual per-source reading policy of a business type listed in describe_dataset. ${readingDescription("release_pinned")}`, schema: z.object({ type: z.string().min(1).max(200) }).strict() },
-      { name: "query_objects", path: "/v4/objects", description: `Read up to 20 permitted business objects. ${readingDescription("release_pinned")} Historical datasets report their retained routing in describe_type. Unmapped ontology concepts have no business records.`, schema: z.object({ type: z.string().min(1).max(200), id: z.string().min(1).max(200).optional(), relation: z.string().min(1).max(200).optional(), fields: z.array(z.string().min(1).max(200).refine(v => !v.includes(","))).min(1).max(100).optional(), offset: z.number().int().nonnegative().safe().optional(), limit: z.number().int().min(1).max(20).optional() }).strict().refine(a => !a.relation || !!a.id, "A relation query requires id") },
+      { name: "query_objects", path: "/v4/objects", description: `Read up to 20 permitted business objects. Optional filters and sort use stable property IDs from search_ontology; every expression requires permission. ${readingDescription("release_pinned")} Historical datasets report their retained routing in describe_type. Unmapped ontology concepts have no business records.`, schema: externalObjectsSchema },
       { name: "read_evidence", path: "/v4/evidence", description: "Read an explicitly permitted evidenceRef from query_objects. This is a saved reading, not current source data.", schema: z.object({ ref: z.string().min(1).max(200) }).strict() },
     ]) {
       server.registerTool(op.name, { description: op.description, inputSchema: op.schema, annotations }, async (input: Record<string, unknown>) =>
-        readMemory(config, op.path, new URLSearchParams(Object.entries(input).map(([k, v]) => [k, Array.isArray(v) ? v.join(",") : String(v)]))));
+        readMemory(config, op.path, new URLSearchParams(Object.entries(input).filter(([,v])=>v!==undefined).map(([k, v]) => [k, ['filters','sort'].includes(k)?JSON.stringify(v):Array.isArray(v) ? v.join(",") : String(v)]))));
     }
+    for(const op of externalSemanticOperations)server.registerTool(op.name,{description:op.description,inputSchema:op.schema,annotations},async(input:Record<string,unknown>)=>readMemory(config,op.path,op.path==='/v4/search'?new URLSearchParams(Object.entries(input).map(([key,value])=>[key,String(value)])):new URLSearchParams({query:JSON.stringify(input)})));
     server.registerTool("submit_ade_task", {
       description:"Delegate a scoped investigation to ADE. Requires explicit owner-enabled delegation; cannot edit data or expand access. Reuse operationId only for an identical retry.",
       inputSchema:z.object({operationId:z.string().trim().min(1).max(200),prompt:z.string().trim().min(1).max(4000)}).strict(),

@@ -30,11 +30,10 @@ test("heating demo opens three populated pages, runs evidence checks locally and
     await service.app.canvasMessage({page: "ontology", text: "哪些投诉还缺恢复依据？", refreshSources: true});
     await service.app.idle();
     const records = service.app.memory.listArtifacts("verification");
-    assert.equal(records.length, before + 1);
-    const latest = records.filter((record) => record.content.question === "哪些投诉还缺恢复依据？")
-      .sort((a, b) => Number(b.content.runNumber) - Number(a.content.runNumber))[0];
-    const results = (latest.content.result as Data).results as Data;
-    const items = (results.recovery as Data).items as Data[];
+    assert.equal(records.length, before, "a read-only demonstration query does not create a governance verification");
+    const run = service.app.canvasState().agentRuns.at(-1)!;
+    assert.equal(run.status, "completed");
+    const items = run.tables.at(-1)!.rows as Data[];
     assert.equal(items.length, 6);
     assert.equal(items.filter((item) => item.status === "positive_callback_evidence").length, 2);
     assert.equal(items.filter((item) => item.status === "negative_callback_evidence").length, 2);
@@ -43,7 +42,7 @@ test("heating demo opens three populated pages, runs evidence checks locally and
 
     await service.app.canvasMessage({page: "ontology", text: "请用已保存的本体与真实对象验证这个业务问题：预计下月收入？。请保存实际查询结果和依据；如果资料不足，保留具体缺口。"});
     await service.app.idle();
-    assert.equal(service.app.memory.listArtifacts("verification").length, before + 1);
+    assert.equal(service.app.memory.listArtifacts("verification").length, before);
     assert.match(service.app.canvasState().messages.at(-1)!.content, /自定义问题需要接入真实模型/);
     assert.equal(service.app.consumption.list().length, 0, "fresh demos do not create frozen v1 grants");
     assert.equal(service.app.consumption.logs().length, 0);
@@ -54,7 +53,7 @@ test("heating demo opens three populated pages, runs evidence checks locally and
     service = await createHeatingDemo(directory);
     const statements = service.app.canvasState().profile!.content.statements as Data[];
     assert.equal(statements.find((item) => item.key === "company.goal")!.text, "保留这次演示中的修改");
-    assert.equal(service.app.memory.listArtifacts("verification").length, before + 1);
+    assert.equal(service.app.memory.listArtifacts("verification").length, before);
   } finally {
     await service.close();
     rmSync(directory, {recursive: true, force: true});

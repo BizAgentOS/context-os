@@ -1,3 +1,5 @@
+import { paginationSchema, flattenSchema } from "./source-pagination.ts";
+import { oauthSchema } from "./source-auth.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { parseDocument } from "yaml";
 import { z } from "zod";
@@ -25,17 +27,22 @@ const selectionSchema = z
     idType: z.enum(["string", "number"]),
     limitParam: label,
     offsetParam: label,
+    pagination: paginationSchema.optional(),
+    flatten: flattenSchema.optional(),
+    incrementalParam: label.optional(),
   })
   .strict();
 const authSchema = z
   .object({
-    type: z.enum(["none", "bearer", "apiKey", "basic"]),
+    type: z.enum(["none", "bearer", "apiKey", "basic", "oauth2"]),
+    oauth2: oauthSchema.optional(),
     headerName: z.string().max(100).optional(),
     secret: z.string().max(4000).optional(),
   })
   .strict();
 type AuthOption = {
-  type: "none" | "bearer" | "apiKey" | "basic";
+  type: "none" | "bearer" | "apiKey" | "basic" | "oauth2";
+  tokenUrl?: string;
   headerName?: string;
 };
 export type ImportOperation = {
@@ -205,6 +212,11 @@ function authOptions(
     }
     if (keys.length !== 1) continue;
     const scheme = resolve(schemes[keys[0]]);
+    if (scheme.type === "oauth2") {
+      const flow = object(object(scheme.flows).clientCredentials);
+      const tokenUrl = string(flow.tokenUrl || (scheme.flow === "application" ? scheme.tokenUrl : ""));
+      if (tokenUrl) options.push({ type: "oauth2", tokenUrl });
+    }
     if (
       scheme.type === "apiKey" &&
       scheme.in === "header" &&
@@ -292,7 +304,7 @@ function describe(
         entry.auth = authOptions(document, op, resolve);
         if (!entry.auth.length)
           throw new Error(
-            "暂不支持此认证方式（OAuth、Cookie、查询密钥或组合认证）",
+            "暂不支持此认证方式（交互授权、Cookie、查询密钥或组合认证）",
           );
         const params = [
           ...array(pathItem.parameters),
@@ -305,17 +317,12 @@ function describe(
         const offsetParam = query.find((p) =>
           /^(offset|_offset|\$skip|skip)$/.test(string(p.name)),
         )?.name;
-        if (
-          !offsetParam &&
-          query.some((p) =>
-            /^(page|pageNum|pageNumber|page_no|pageIndex|cursor|pageToken|nextToken)$/i.test(
-              string(p.name),
-            ),
-          )
-        )
-          throw new Error(
-            "页码或游标分页暂不支持，请提供 limit/offset 列表接口",
-          );
+        const incrementalParam = query.find(p => /^(updated_since|modified_since|updated_after|modified_after|updatedSince|modifiedSince)$/.test(string(p.name)) && !p.required)?.name;
+        const pageParameter = query.find(p => /^(page|pageNum|pageNumber|page_no|pageIndex)$/i.test(string(p.name)));
+        const cursorParameter = query.find(p => /^(cursor|pageToken|nextToken|after)$/i.test(string(p.name)));
+        let paging = offsetParam ? undefined : pageParameter ? paginationSchema.parse({ type: "page", pageParam: pageParameter.name,
+          startPage: /index/i.test(String(pageParameter.name)) || object(pageParameter.schema).default === 0 ? 0 : 1 })
+          : cursorParameter ? paginationSchema.parse({ type: "cursor", cursorParam: cursorParameter.name }) : undefined;
         entry.pagination = {
           limitDeclared: Boolean(limitParam),
           offsetDeclared: Boolean(offsetParam),
@@ -324,7 +331,7 @@ function describe(
           params.some(
             (p) =>
               p.required &&
-              ![String(limitParam), String(offsetParam)].includes(
+              ![String(limitParam), String(offsetParam), String(pageParameter?.name), String(cursorParameter?.name)].includes(
                 string(p.name),
               ),
           )
@@ -337,6 +344,7 @@ function describe(
               Object.keys(responses).find((k) => /^2\d\d$/.test(k)) ?? ""
             ],
         );
+        if (!paging && Object.keys(object(response.headers)).some(key => key.toLowerCase() === "link")) paging = paginationSchema.parse({ type: "link" });
         const content = object(response.content);
         const mediaKey = Object.keys(content).find(
           (k) =>
@@ -347,7 +355,7 @@ function describe(
             ? response.schema
             : object(content[mediaKey ?? ""]).schema;
         const lists: { path: string; schema: ObjectValue }[] = [];
-        const totals: string[] = [];
+        const totals: string[] = [], cursors: string[] = [];
         const visit = (value: unknown, path: string, depth: number) => {
           const current = resolve(value);
           if (current.type === "array") {
@@ -360,6 +368,7 @@ function describe(
           )) {
             if (key.includes(".")) continue;
             const next = path ? `${path}.${key}` : key;
+            if (/^(nextCursor|next_cursor|nextToken|next_page_token|nextPageToken|next)$/.test(key) && ["string", "number", "integer"].includes(string(resolve(child).type))) cursors.push(next);
             if (
               /^(total|totalCount|total_count)$/.test(key) &&
               ["integer", "number"].includes(string(resolve(child).type))
@@ -374,17 +383,18 @@ function describe(
             "返回值需要唯一的记录数组；对象详情或多个数组暂不支持",
           );
         const list = lists[0];
-        for (const [field, definition] of Object.entries(
-          object(list.schema.properties),
-        )) {
-          const property = resolve(definition);
-          const type = Array.isArray(property.type)
-            ? property.type.filter((t) => t !== "null")[0]
-            : property.type;
-          if (["string", "number", "integer", "boolean"].includes(string(type)))
-            entry.fieldTypes[field] =
-              type === "integer" ? "number" : String(type);
-        }
+        let expanded = false;
+        const fieldsOf = (schema: ObjectValue, prefix = "", depth = 0) => {
+          for (const [name, definition] of Object.entries(object(schema.properties))) {
+            const field = prefix ? `${prefix}.${name}` : name, property = resolve(definition);
+            const type = Array.isArray(property.type) ? property.type.filter(t => t !== "null")[0] : property.type;
+            if (type === "object" && depth < 3) { expanded = true; fieldsOf(property, field, depth + 1); }
+            else if (["object", "array"].includes(string(type))) { expanded = true; entry.fieldTypes[field] = "string"; }
+            else if (["string", "number", "integer", "boolean"].includes(string(type))) entry.fieldTypes[field] = type === "integer" ? "number" : String(type);
+          }
+        };
+        fieldsOf(list.schema);
+        if (paging?.type === "cursor" && cursors.length === 1) paging.nextCursorPath = cursors[0];
         const fields = Object.keys(entry.fieldTypes);
         if (!fields.length || fields.length > 100)
           throw new Error("记录需包含 1–100 个标量字段");
@@ -412,6 +422,9 @@ function describe(
           ...(totals.length === 1 ? { totalPath: totals[0] } : {}),
           limitParam: String(limitParam || "limit"),
           offsetParam: String(offsetParam || "offset"),
+          ...(paging ? { pagination: paging } : {}),
+          ...(incrementalParam ? { incrementalParam: String(incrementalParam) } : {}),
+          ...(expanded ? { flatten: flattenSchema.parse({ depth: 3 }) } : {}),
         };
         entry.supported = true;
       } catch (error) {
@@ -466,6 +479,7 @@ export class OpenApiImports {
       .object({
         url: z.string().max(2000).optional(),
         text: z.string().max(2_000_000).optional(),
+        allowInsecureHttp: z.boolean().optional(),
       })
       .strict()
       .parse(input);
@@ -476,7 +490,7 @@ export class OpenApiImports {
       throw new Error("导入草稿过多，请等待旧草稿过期后重试");
     let text = request.text ?? "";
     if (request.url) {
-      const url = sourceUrl(request.url);
+      const url = sourceUrl(request.url, request.allowInsecureHttp);
       try {
         const response = await fetchSource(url, {
           headers: {
@@ -485,6 +499,7 @@ export class OpenApiImports {
         });
         if (!response.ok) throw new Error("failed");
         text = await response.text();
+        if (Buffer.byteLength(text) > 2_000_000) throw new Error("文档最多 2 MB");
       } catch {
         throw new Error(
           "文档读取失败，请检查地址；受保护的文档可下载后上传或粘贴",
@@ -512,6 +527,7 @@ export class OpenApiImports {
         name: label,
         baseUrl: z.string().url().max(2000),
         auth: authSchema,
+        allowInsecureHttp: z.boolean().optional(),
         operations: z.array(selectionSchema).min(1).max(30),
       })
       .strict()
@@ -526,7 +542,7 @@ export class OpenApiImports {
       request.operations.length
     )
       throw new Error("请勿重复选择接口");
-    const baseUrl = sourceUrl(request.baseUrl);
+    const baseUrl = sourceUrl(request.baseUrl, request.allowInsecureHttp);
     const capabilities = request.operations.map((selected) => {
       const op = draft.catalog.operations.find((o) => o.id === selected.id);
       if (!op?.supported || !op.defaults) throw new Error("选择的接口不能导入");
@@ -549,6 +565,8 @@ export class OpenApiImports {
         selected.idType !== op.fieldTypes[selected.idField]
       )
         throw new Error("身份字段或返回字段与文档不一致");
+      if (selected.incrementalParam !== op.defaults.incrementalParam) throw new Error("增量参数与文档不一致");
+      if (JSON.stringify(selected.pagination) !== JSON.stringify(op.defaults.pagination) || JSON.stringify(selected.flatten) !== JSON.stringify(op.defaults.flatten)) throw new Error("分页策略或嵌套字段规则与文档不一致");
       if (
         selected.itemsPath !== op.defaults.itemsPath ||
         selected.totalPath !== op.defaults.totalPath ||
@@ -587,6 +605,7 @@ export class OpenApiImports {
       protocol: "http",
       url: baseUrl.origin,
       auth,
+      ...(request.allowInsecureHttp ? { allowInsecureHttp: true } : {}),
       ...(secret ? { token: secret } : {}),
       capabilities,
       importInfo: {
@@ -632,6 +651,7 @@ export class OpenApiImports {
         .connect(receipt.config)
         .then((saved) => {
           delete receipt.config.token;
+          if (receipt.config.auth?.oauth2) { delete receipt.config.auth.oauth2.clientSecret; delete receipt.config.auth.oauth2.refreshToken; }
           return saved;
         })
         .catch((error) => {

@@ -15,7 +15,8 @@ test("agent discovers and uses a KodaX Skill without granting embedded shell exe
     assert.match(JSON.stringify(found), /ontology-modeling/);
     const result = await hub.useSkill("ontology-modeling", "验证投诉");
     assert.match(result.content, /验证投诉/);
-    assert.match(result.content, /live_propose/);
+    assert.match(result.content, /change_propose/);
+    assert.doesNotMatch(result.content, /live_propose|foundation_propose/);
     await assert.rejects(hub.useSkill("../secret", ""));
     await assert.rejects(
       hub.installSkill(

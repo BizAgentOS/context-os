@@ -76,7 +76,8 @@ export function openApiImport({ api, onSaved, ask }) {
     saving = false,
     busy = false,
     catalog = null,
-    receipt = null;
+    receipt = null,
+    allowInsecureHttp = false;
   dialog.append(
     head,
     el(
@@ -170,8 +171,8 @@ export function openApiImport({ api, onSaved, ask }) {
             api(
               "/api/live/openapi/parse",
               mode === "url"
-                ? { url: input.value.trim() }
-                : { text: input.value },
+                ? { url: input.value.trim(), allowInsecureHttp }
+                : { text: input.value, allowInsecureHttp },
             ),
           (result) => {
             catalog = result;
@@ -265,9 +266,13 @@ export function openApiImport({ api, onSaved, ask }) {
       el(
         "p",
         "source-meta",
-        "支持 Swagger 2.0、OpenAPI 3.0 / 3.1；当前接入 GET 列表与 limit/offset 分页。",
+        "支持 Swagger 2.0、OpenAPI 3.0 / 3.1，识别偏移、页码、游标和 Link 分页；嵌套字段最多展开 3 层。",
       ),
     );
+    const insecure = el("label", "oi-field"), insecureBox = el("input");
+    insecureBox.type = "checkbox"; insecureBox.checked = allowInsecureHttp;
+    insecureBox.onchange = () => { allowInsecureHttp = insecureBox.checked; };
+    insecure.append(insecureBox, el("span", "", "允许这次连接使用内网 HTTP（不加密）")); inputPanel.append(insecure);
     grid.append(inputPanel, help);
     content.append(grid);
     footer.append(
@@ -352,7 +357,7 @@ export function openApiImport({ api, onSaved, ask }) {
           el(
             "p",
             "source-meta",
-            `记录路径：${mapping.itemsPath || "根数组"} · 分页：${mapping.limitParam} / ${mapping.offsetParam}`,
+            `记录路径：${mapping.itemsPath || "根数组"} · 分页：${({ page: "页码", cursor: "游标", link: "下一页链接", offset: "偏移" })[mapping.pagination?.type || "offset"]}${mapping.flatten ? " · 嵌套字段已展开，数组保留为文本" : ""}`,
           ),
         );
         for (const [key, declared, title] of [
@@ -363,6 +368,7 @@ export function openApiImport({ api, onSaved, ask }) {
             "偏移量参数（从 0 开始）",
           ],
         ]) {
+          if (key === "offsetParam" && mapping.pagination && mapping.pagination.type !== "offset") continue;
           if (!declared) {
             details.open = true;
             const parameter = field(
@@ -417,6 +423,7 @@ export function openApiImport({ api, onSaved, ask }) {
       ["bearer", "Bearer Token"],
       ["apiKey", "API Key（请求头）"],
       ["basic", "Basic（用户名 / 密码）"],
+      ["oauth2", "OAuth2（客户端凭据 / 刷新令牌）"],
     ]) {
       const option = el("option", "", title);
       option.value = type;
@@ -429,10 +436,17 @@ export function openApiImport({ api, onSaved, ask }) {
         "source-meta",
         "凭据仅保存在本机来源凭据文件，不进入对话和本体。",
       );
-    let header, secret, username;
+    let header, secret, username, tokenUrl, clientId, refreshToken, scope;
     const renderAuth = () => {
       authFields.replaceChildren();
-      header = secret = username = null;
+      header = secret = username = tokenUrl = clientId = refreshToken = scope = null;
+      if (authType.value === "oauth2") {
+        tokenUrl = field(authFields, "令牌地址", catalog.authOptions.find(a => a.type === "oauth2")?.tokenUrl || "", "url");
+        clientId = field(authFields, "Client ID");
+        secret = field(authFields, "Client Secret", "", "password");
+        refreshToken = field(authFields, "刷新令牌（可选）", "", "password");
+        scope = field(authFields, "授权范围（可选）"); return;
+      }
       if (authType.value === "apiKey")
         header = field(
           authFields,
@@ -491,7 +505,7 @@ export function openApiImport({ api, onSaved, ask }) {
       const auth = {
         type: authType.value,
         ...(header ? { headerName: header.value.trim() } : {}),
-        ...(token ? { secret: token } : {}),
+        ...(authType.value === "oauth2" ? { oauth2: { tokenUrl: tokenUrl.value.trim(), clientId: clientId.value.trim(), ...(secret.value ? { clientSecret: secret.value } : {}), ...(refreshToken.value ? { refreshToken: refreshToken.value } : {}), ...(scope.value.trim() ? { scope: scope.value.trim() } : {}) } } : token ? { secret: token } : {}),
       };
       invalidate();
       run(
@@ -500,7 +514,7 @@ export function openApiImport({ api, onSaved, ask }) {
             draftId: catalog.draftId,
             name: name.value.trim(),
             baseUrl: base.value.trim(),
-            auth,
+            auth, allowInsecureHttp,
             operations: [...selected].map(([id, mapping]) => ({
               id,
               ...mapping,

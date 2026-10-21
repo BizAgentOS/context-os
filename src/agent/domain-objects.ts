@@ -1,3 +1,4 @@
+import {tableRowsSync} from "../data/table-rows.ts";
 import { createHash, randomUUID } from "node:crypto";
 import type { Artifact, Data, Json, Repository } from "./contracts.ts";
 
@@ -105,7 +106,7 @@ export class ObjectView {
         if (!columns.includes(column))
           throw new Error(`来源缺少映射列 ${column}`);
       const ids = new Set<string>();
-      const entities = (source.content.rows as Data[]).map((row, index) => {
+      const entities = [...tableRowsSync(source,repo)].map((row, index) => {
         const id = String(row[type.idField] ?? "");
         if (!id.trim() || ids.has(id))
           throw new Error(`类型 ${type.name} 身份为空或重复：${id}`);

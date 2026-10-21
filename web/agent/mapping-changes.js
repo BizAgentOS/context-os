@@ -388,7 +388,7 @@ export function inspectChange(initial, api, saved) {
       content.append(btn("检查这份修订", () => act("check")));
       if (record.status === "checked")
         content.append(
-          btn("确认采用已检查的修订", () => act("adopt")),
+          btn("到待处理核对修订", () => { d.close(); requestPending({ ownerId: record.id }); }),
         );
       content.append(btn("取消未采用修订", () => act("cancel")));
     }
@@ -449,3 +449,4 @@ export function renderMappingChanges(model, { api, live, onSaved }) {
   queueMicrotask(load);
   return panel;
 }
+import { requestPending } from "./pending-center.js";

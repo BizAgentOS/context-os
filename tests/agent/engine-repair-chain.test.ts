@@ -7,6 +7,7 @@ import type { AddressInfo } from "node:net";
 import type { Artifact } from "../../src/agent/contracts.ts";
 import type { AgentDriver } from "../../src/agent/runtime.ts";
 import { createServer } from "../../src/agent/server.ts";
+import { proposeWording } from "./unified-wording-fixture.ts";
 
 const ref = (a: Artifact) => ({id: a.id, version: a.version});
 
@@ -20,13 +21,8 @@ test("program construction, Agent wording repair and versioned publication prese
       const input = JSON.parse(request.input);
       const foundation = (await request.onTool("foundation_read", {}) as any).current;
       await request.onTool("skill_use", {name: "company-foundation-ontology"});
-      const message = input.recentMessages.at(-1);
-      repaired = await request.onTool("foundation_propose", {
-        baseVersion: foundation.version, enterprise: foundation.content.enterprise,
-        concepts: [{id: foundation.content.concepts[0].id, name: "公司", description: "公司业务记录", evidenceRefs: ["repair"]}],
-        relations: [], evidence: [{id: "repair", messageId: message.id, quote: message.content}], unknowns: [], conflicts: [],
-      }) as unknown as Artifact;
-      return {text: "候选已保存，等待页面采用。", sessionId: "repair-chain", runId: `repair-chain-${calls}`};
+      repaired = await proposeWording(request, "concept", foundation.content.concepts[0].id, { name: "公司", description: "公司业务记录" }, "repair");
+      return {text: "名称和说明已按用户原话保存。", sessionId: "repair-chain", runId: `repair-chain-${calls}`};
     }, async stop() {}, async close() {},
   };
   const service = await createServer({directory, driver});
@@ -62,10 +58,8 @@ test("program construction, Agent wording repair and versioned publication prese
     await api("/api/canvas/navigate", {page: "ontology"});
     await api("/api/canvas/message", {page: "ontology", text: "把这个概念叫公司，含义为公司业务记录。", messageId: "repair"});
     await service.app.idle();
-    assert.equal(repaired?.status, "candidate");
-    assert.equal(service.app.foundation.read().adopted!.version, initial.version);
-    await api("/api/canvas/foundation/adopt", {page: "ontology", ...ref(repaired!)});
-    await service.app.idle();
+    assert.equal(repaired?.status, "adopted");
+    assert.ok(service.app.foundation.read().adopted!.version > initial.version);
     assert.equal((service.app.foundation.read().adopted!.content.concepts as any[])[0].name, "公司");
     assert.equal((await external(old.key, conceptPath)).concept.name, originalType.name);
     assert.equal((await external(old.key, originalObjectPath)).items[0].properties.name.value, "Example");

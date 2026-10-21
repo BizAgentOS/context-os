@@ -79,6 +79,7 @@ export interface PropertyEvidence {
   value: Json;
   evidence: ValueEvidence[];
   blockers: string[];
+  correction?: import('../agent/contracts.ts').Data;
 }
 export interface ObjectEvidence {
   objectId: string | number;
@@ -215,7 +216,7 @@ export async function fuseRows(
             : type.fields[s.match.primaryField]
         ];
       let page: Page | undefined;
-      const decided = position < 40 ? await identity?.(s, primary.items[index]) : undefined;
+      const decided = await identity?.(s, primary.items[index]);
       if (decided) {
         page = decided.page;
         match.status = decided.status; match.reason = decided.reason;
@@ -332,6 +333,6 @@ export async function fuseRows(
       Object.fromEntries(fields.map((f) => [f, o.properties[f].value])),
     ),
     evidence: objects,
-    reads,
+    reads:[...new Map(reads.map(read=>[JSON.stringify([read.sourceId,read.capability,(read as Receipt&{snapshotId?:string}).snapshotId,read.readAt]),read])).values()],
   };
 }

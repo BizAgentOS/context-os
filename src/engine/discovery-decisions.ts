@@ -10,6 +10,7 @@ import { prepareIdentityDecisionMigration } from "../live/identity-migration.ts"
 import { fingerprint } from "./release-diff.ts";
 import { quote } from "../data/executor/engine.ts";
 import { jsonData } from "../live/sources.ts";
+import { explicitDeprecationSubject, prepareExplicitDeprecation } from "./explicit-deprecation.ts";
 
 const name = z.string().trim().min(1).max(200);
 const column = z.object({ datasetId: name, column: name }).strict();
@@ -44,7 +45,8 @@ export function connectDiscoveryDecisions(memory: MemoryStore, foundation: Found
     assertCurrent();
     return { pins, connections, assertCurrent };
   };
-  changes.registerHandler("deprecation", { subject: deprecation, prepare: async change => {
+  changes.registerHandler("deprecation", { subject: z.union([deprecation, explicitDeprecationSubject]), prepare: async change => {
+    if (Object.hasOwn(change.content.subject as Data, "target")) return prepareExplicitDeprecation(memory, foundation, live, changes, change);
     const subject = deprecation.parse(change.content.subject), { base, model, layered } = current();
     const [firstFrom, firstTo, secondFrom, secondTo] = subject.path;
     if (firstFrom.datasetId !== subject.from.datasetId || firstTo.datasetId !== secondFrom.datasetId || secondTo.datasetId !== subject.to.datasetId || secondTo.column !== subject.to.column)

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import {tablePage,tableRowCount} from "../data/table-rows.ts";
 import type {
   Artifact,
   Data,
@@ -320,9 +321,7 @@ export class Workspace {
       sources: this.repo.listArtifacts("source").map((a) => ({
         ...summarize(a),
         columns: a.content.columns,
-        total: Array.isArray(a.content.rows)
-          ? a.content.rows.length
-          : undefined,
+        total: a.content.format === "csv" ? tableRowCount(a) : undefined,
       })),
       models: this.repo.listArtifacts("ontology").map(summarize),
       outlines: this.repo.listArtifacts("ontology_outline").map(summarize),
@@ -929,10 +928,13 @@ export class Workspace {
     );
   }
   private read(args: Record<string, unknown>): unknown {
-    const artifact = this.repo.getArtifact(
+    let artifact = this.repo.getArtifact(
       str(args.id, "成果 id"),
       args.version === undefined ? undefined : Number(args.version),
+      {evidence:"compact"},
     );
+    if (artifact.kind === "change_evidence_receipt") return artifact;
+    if (artifact.kind === "foundation" || artifact.kind === "engine_candidate") artifact = this.repo.getArtifact(artifact.id, artifact.version);
     if (artifact.kind !== "source") return artifact;
     const offset = Math.max(0, Number(args.offset) || 0);
     const limit = Math.min(100, Math.max(1, Number(args.limit) || 20));
@@ -942,10 +944,10 @@ export class Workspace {
         ...artifact,
         content: {
           ...rest,
-          rows: (rows as Json[]).slice(offset, offset + limit),
+          rows: tablePage(artifact,this.repo,offset,limit).rows,
           offset,
-          total: (rows as Json[]).length,
-          truncated: offset + limit < (rows as Json[]).length,
+          total: tableRowCount(artifact),
+          truncated: offset + limit < tableRowCount(artifact),
         },
       };
     const lines = String(raw).split("\n");
@@ -983,7 +985,7 @@ export class Workspace {
         ref.row !== undefined &&
         (!Number.isInteger(ref.row) ||
           Number(ref.row) < 1 ||
-          Number(ref.row) > (source.content.rows as Json[]).length)
+          Number(ref.row) > tableRowCount(source))
       )
         throw new Error("来源证据行号不存在");
       return {

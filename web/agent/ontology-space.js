@@ -416,6 +416,11 @@ export function renderOntologySpace(value, {selections, read, select, management
   if (!graph.concepts.length) {
     const empty = el("div", "os-empty"); empty.append(el("h2", "", "从第一个业务概念开始"), el("p", "", "接入数据后构建本体。检查候选并采用，随后可通过助手继续修订。")); root.append(empty);
   }
+  root.focusReferences = ids => {
+    const concept = graph.concepts.find(item => ids.includes(item.id));
+    if (!concept) return false;
+    nav.focus(concept.id); renderView(); root.querySelector(".os-local-summary")?.focus({preventScroll:true}); return true;
+  };
   root.dispose = () => {disposed = true; generation++; controlsResize.disconnect(); narrow.removeEventListener("change", placeFan); document.removeEventListener("keydown", onKeyDown); cancelAnimationFrame(fanFrame); fanResize.disconnect(); scene?.dispose();};
   let progressKey = JSON.stringify([automaticBuild, automaticApiBuild]);
   root.updateStatus = state => {

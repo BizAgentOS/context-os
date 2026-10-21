@@ -16,12 +16,13 @@ export interface ColumnProfile { name: string; type: string; nulls: number; dist
 export interface SnapshotProfile { rows: number; duplicateRows: number; columns: ColumnProfile[]; sample: Record<string, unknown>[]; fingerprint: string }
 export interface ExecutionInput { table: string; version: string; aliases?: string[]; filters?: { column: string; value: string | number | boolean | null }[] }
 export interface Execution {
-  mode: "ingest" | "query" | "materialize";
+  mode: "ingest" | "query" | "materialize" | "read";
   scope: string; version?: string; file?: string;
   inputs?: ExecutionInput[]; sql?: string; persist?: boolean; offset?: number; limit?: number;
 }
 export interface Executed { profile: SnapshotProfile; version?: string; rows: Record<string, Json>[] }
 export interface Materialized { version: string; count: number }
+export interface ReadResult { rows: Record<string, Json>[]; total: number; columns: Array<{ name: string; type: string }> }
 
 // Stored samples and examples keep only the start of a long value.
 export const SAMPLE_VALUE_LIMIT = 200;
@@ -57,9 +58,10 @@ async function rowGroupSize(c: DuckDBConnection, file: string, size: number, par
 
 /** Runs one job against immutable Parquet snapshots. The caller passes a scratch directory it always removes. */
 export async function execute(job: Execution & { mode: "materialize" }, root: string, scratch?: string): Promise<Materialized>;
+export async function execute(job: Execution & { mode: "read" }, root: string, scratch?: string): Promise<ReadResult>;
 export async function execute(job: Execution, root: string, scratch?: string): Promise<Executed>;
-export async function execute(job: Execution, root: string, scratch?: string): Promise<Executed | Materialized> {
-  if (!safePart(job.scope) || (job.version && !safePart(job.version)) || (job.mode !== "query" && !job.version) || (job.persist && !job.version)) throw new Error("Invalid storage identity");
+export async function execute(job: Execution, root: string, scratch?: string): Promise<Executed | Materialized | ReadResult> {
+  if (!safePart(job.scope) || (job.version && !safePart(job.version)) || (!["query", "read"].includes(job.mode) && !job.version) || (job.persist && !job.version)) throw new Error("Invalid storage identity");
   const out = job.version ? snapshotFile(root, job.scope, job.version) : resolve(scratchRoot(root), "none.parquet");
   if (job.version) await mkdir(dirname(out), { recursive: true });
   if (!scratch) await mkdir(scratchRoot(root), { recursive: true });
@@ -106,6 +108,11 @@ export async function execute(job: Execution, root: string, scratch?: string): P
     } else {
       for (const input of job.inputs || []) {
         if (!safePart(input.table) || !safePart(input.version)) throw new Error("Invalid input");
+        if (job.mode === "read") {
+          const filters = (input.filters ?? []).map(filter => `${quote(filter.column)} IS NOT DISTINCT FROM ${filter.value === null ? "NULL" : typeof filter.value === "string" ? lit(filter.value) : String(filter.value)}`);
+          await c.run(`CREATE VIEW ${quote(input.table)} AS SELECT * FROM read_parquet(${lit(snapshotFile(root, job.scope, input.version))})${filters.length ? ` WHERE ${filters.join(" AND ")}` : ""}`);
+          continue;
+        }
         await c.run(`CREATE TABLE ${quote(input.table)} AS SELECT * FROM read_parquet(${lit(snapshotFile(root, job.scope, input.version))})`);
         for (const filter of input.filters || []) {
           const value = filter.value === null ? "NULL" : typeof filter.value === "string" ? lit(filter.value) : String(filter.value);
@@ -123,9 +130,19 @@ export async function execute(job: Execution, root: string, scratch?: string): P
       const sql = job.sql?.trim().replace(/;\s*$/, "");
       if (!sql || !/^\s*(select|with)\b/i.test(sql)) throw new Error("Only a single SELECT query is allowed");
       if ((await c.extractStatements(sql)).count !== 1) throw new Error("Only a single SELECT query is allowed");
-      await c.run(`SET allowed_paths = [${lit(out)}]`);
+      const allowedPaths = job.mode === "read" ? (job.inputs ?? []).map(input => snapshotFile(root, job.scope, input.version)) : [out];
+      await c.run(`SET allowed_paths = [${allowedPaths.map(lit).join(", ")}]`);
       await c.run("SET enable_external_access = false");
       await c.run("SET lock_configuration = true");
+      if (job.mode === "read") {
+        const limit = job.limit ?? 100, offset = job.offset ?? 0;
+        if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000 || !Number.isSafeInteger(offset) || offset < 0) throw new Error("Invalid read page");
+        await c.run(`CREATE VIEW result AS ${sql}`);
+        const total = Number((await c.runAndReadAll("SELECT count(*) AS n FROM result")).getRowObjectsJson()[0].n);
+        const columns = (await c.runAndReadAll("DESCRIBE result")).getRowObjectsJson().map(column => ({ name: String(column.column_name), type: String(column.column_type) }));
+        const rows = (await c.runAndReadAll(`SELECT * FROM result LIMIT ${limit} OFFSET ${offset}`)).getRowObjectsJson();
+        return { rows, total, columns };
+      }
       if (job.mode === "materialize") {
         // One pass, no profile; the size cap stops a row-multiplying join long before the time limit.
         const limit = process.env.EXECUTOR_RESULT_LIMIT || "2GB", max = bytes(limit);

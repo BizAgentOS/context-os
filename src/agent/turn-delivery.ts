@@ -23,6 +23,8 @@ export class TurnDelivery {
     const receipt = object(result);
     if (!receipt?.error) this.failure = undefined;
     if (!receipt || receipt.error) return;
+    const change = object(receipt.change) ?? (receipt.kind === "ontology_change" ? receipt : undefined);
+    if (change?.kind === "ontology_change" && typeof change.id === "string") this.candidates.set(change.id, change as unknown as Artifact);
     if (typeof receipt.id === "string" && typeof receipt.kind === "string" && typeof receipt.version === "number") {
       const artifact = receipt as unknown as Artifact;
       if (["foundation", "live_ontology", "mapping_change", "relation_correction", "engine_candidate"].includes(artifact.kind))
@@ -45,34 +47,36 @@ export class TurnDelivery {
     let answer = userAnswer(text);
     const needsFallback = !answer;
     const candidates = [...this.candidates.values()].map(a => repo.getArtifact(a.id))
-      .filter(a => ["candidate", "checked", "ready"].includes(a.status));
+      .filter(a => ["candidate", "checked", "ready", "proposed", "verified", "failed"].includes(a.status));
+    const conflicts = [...this.candidates.values()].map(a => repo.getArtifact(a.id)).filter(a =>
+      a.kind === "ontology_change" && a.status === "adopted" && Array.isArray(object(a.content.effect)?.conflictIds) && (object(a.content.effect)!.conflictIds as Json[]).length);
     if (!answer && this.result) {
       const { question, verification, value } = this.result;
-      // Preserve coverage/partial flags verbatim; a count or a tool success is not business verification.
       const row = object(value);
-      const display = row ? Object.fromEntries(Object.entries(row).filter(([key]) =>
-        !["evidence", "snapshot", "sourceVersions"].includes(key))) : value;
-      const rendered = JSON.stringify(display, null, 2) ?? "null";
-      const excerpt = rendered.length > 4000 ? rendered.slice(0, 4000) : rendered;
-      const fence = "`".repeat(Math.max(3, ...[...excerpt.matchAll(/`+/g)].map(m => m[0].length + 1)));
+      const coverage = object(row?.coverage);
+      const count = typeof row?.count === "number" ? row.count : null;
+      const items = Array.isArray(row?.items) ? row.items : Array.isArray(row?.rows) ? row.rows : null;
       answer = chinese
-        ? `${verification ? `已保存「${question}」的验证记录（v${verification.version}），业务结论仍需核对。实际返回结果：` : "本次查询的实际返回结果如下。"}\n\n${fence}json\n${excerpt}\n${fence}`
-        : `${verification ? `Verification saved for “${question}” (v${verification.version}); the business conclusion still needs review.` : "The query returned the following results."}\n\n${fence}json\n${excerpt}\n${fence}`;
-      if (rendered.length > 4000) answer += chinese
-        ? `\n结果较长，此处仅展示片段；${verification ? "完整结果见已保存记录" : "可缩小查询范围继续查看"}。`
-        : `\nThis is an excerpt; ${verification ? "open the saved record for the complete result" : "narrow the query to inspect more results"}.`;
+        ? `${verification ? `已保存「${question}」的验证记录，业务结论仍需核对。` : "已返回查询结果。"}${count !== null ? `统计结果：${count}。` : items ? `本次返回 ${items.length} 条记录。` : "详情见本轮查询卡。"}`
+        : `${verification ? `Verification saved for “${question}”; the business conclusion still needs review.` : "Query results are available."} ${count !== null ? `Count: ${count}.` : items ? `${items.length} records returned.` : "See the query card for details."}`;
+      if (row?.partial === true) answer += chinese ? "这只是部分结果。" : "This is a partial result.";
+      if (coverage?.complete === false) answer += chinese ? "读取覆盖不完整，不能代表全量。" : "Read coverage is incomplete and does not represent the whole dataset.";
+      else if (coverage?.complete === true) answer += chinese ? "本次读取范围覆盖完整。" : "The requested reading scope is complete.";
+      else answer += chinese ? "读取覆盖范围尚未确认。" : "Read coverage has not been confirmed.";
     }
     if (candidates.length) {
-      const labels = candidates.map(a => `「${a.title}」v${a.version}（${a.id.slice(0, 8)}）`).join("、");
+      const labels = candidates.map(a => `「${a.kind === "ontology_change" ? ({ relation: "关系变更", entity: "对象变更", property: "属性变更", binding: "数据对应变更", identity_rule: "身份规则", identity_decision: "身份决定", naming: "命名变更", description: "说明变更", deprecation: "弃用建议" }[String(a.content.type)] ?? "本体变更") : a.title}」`).join("、");
       const needsCheck = candidates.some(a => ["mapping_change", "relation_correction"].includes(a.kind) && a.status !== "checked");
       answer += `${answer ? "\n\n" : ""}${chinese
-        ? `本轮候选尚未采用：${labels}。${needsCheck ? "请先检查候选，再在本体页确认具体版本。" : "请在本体页查看检查结果并确认采用具体版本。"}`
+        ? `本轮候选尚未采用：${labels}。请在待处理中心核对依据、复验与影响后决定。`
         : `This turn's candidates have not been adopted: ${labels}. ${needsCheck ? "Check the candidates first, then confirm the specific version on the ontology page." : "Review the checks and confirm the specific version on the ontology page."}`}`;
     }
+    if (conflicts.length) answer += `${answer ? "\n\n" : ""}${chinese
+      ? "资料存在分歧，原含义保持；请在待处理中心裁决。"
+      : "The evidence conflicts with the current meaning, which remains in effect. Resolve the disagreement in the pending center."}`;
     if (needsFallback && this.failure)
       answer += `${answer ? "\n\n" : ""}${chinese ? `最后一次操作未完成：${this.failure}。` : `The last operation did not complete: ${this.failure}.`}`;
-    if (pending?.question && !answer.includes(String(pending.question)))
-      answer += `${answer ? "\n\n" : ""}${pending.question}`;
+    if (pending?.question && !answer) answer = chinese ? "有一项需要你核对的决定，请查看决定卡。" : "A decision needs your review; open the decision card.";
     return answer || (chinese ? "本次未形成可交付的结论。已保存的内容仍可查看，请继续核对所需资料或查询范围。" : "This run did not produce a conclusion. Saved work is still available; the required evidence or query scope needs further review.");
   }
 }

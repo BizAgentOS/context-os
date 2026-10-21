@@ -1,6 +1,6 @@
 import { objectIdLimit } from "../semantic/values.ts";
 import { freezeLegacyConsumption } from "./legacy-consumption.ts";
-import { snapshotPinsForRelease, correctionPinsForRelease, identityDecisionPinsForRelease } from "./release-pins.ts";
+import { snapshotPinsForRelease, correctionPinsForRelease, identityDecisionPinsForRelease, propertyCorrectionPinsForRelease } from "./release-pins.ts";
 import type { SnapshotPins } from "./memory.ts";
 import type { ReadingReceipt } from "./reading-contract.ts";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -101,10 +101,10 @@ export class ConsumerViews {
     const definition = (release.content.definition as Data | undefined)?.model;
     if (!definition || typeof definition !== "object" || Array.isArray(definition)) throw new Error("发布版本缺少固定业务映射");
     const modelDefinition = jsonData({ ...definition, foundationRef: release.content.foundationRef });
-    const draft = this.proposeInternal(input, undefined, { fixedSemantic: true, snapshotPins: snapshotPinsForRelease(release.content.definition as Data), correctionPins: correctionPinsForRelease(release.content.definition as Data), identityDecisionPins: identityDecisionPinsForRelease(release.content.definition as Data), releaseRef, modelDefinition });
+    const draft = this.proposeInternal(input, undefined, { fixedSemantic: true, snapshotPins: snapshotPinsForRelease(release.content.definition as Data), correctionPins: correctionPinsForRelease(release.content.definition as Data), identityDecisionPins: identityDecisionPinsForRelease(release.content.definition as Data), propertyCorrectionPins: propertyCorrectionPinsForRelease(release.content.definition as Data), releaseRef, modelDefinition });
     return this.activateInternal({ id: draft.id, version: draft.version }).view;
   }
-  private proposeInternal(input: unknown, context?: WriteContext, options: { fixedSemantic?: boolean; snapshotPins?: SnapshotPins; correctionPins?: string[]; identityDecisionPins?: string[]; releaseRef?: { id: string; version: number }; modelDefinition?: Data } = {}) {
+  private proposeInternal(input: unknown, context?: WriteContext, options: { fixedSemantic?: boolean; snapshotPins?: SnapshotPins; correctionPins?: string[]; identityDecisionPins?: string[]; propertyCorrectionPins?: string[]; releaseRef?: { id: string; version: number }; modelDefinition?: Data } = {}) {
     const a = proposal.parse(input),
       actor = context ? `agent:${context.taskId}` : "local-admin";
     if (context) this.memory.assertWritable(context);
@@ -197,6 +197,7 @@ export class ConsumerViews {
             ...(options.snapshotPins !== undefined ? { snapshotPins: options.snapshotPins } : {}),
             ...(options.correctionPins !== undefined ? { correctionPins: options.correctionPins } : {}),
             ...(options.identityDecisionPins !== undefined ? { identityDecisionPins: options.identityDecisionPins } : {}),
+            ...(options.propertyCorrectionPins !== undefined ? { propertyCorrectionPins: options.propertyCorrectionPins } : {}),
             ...(options.releaseRef ? { releaseRef: options.releaseRef } : {}),
             ...(options.modelDefinition ? { modelDefinition: options.modelDefinition } : {}),
           }),
@@ -543,6 +544,8 @@ export class ConsumerViews {
           view.content.snapshotPins as SnapshotPins | undefined,
           undefined,
           view.content.identityDecisionPins !== undefined ? new Set(view.content.identityDecisionPins as string[]) : false,
+          undefined,
+          view.content.propertyCorrectionPins !== undefined ? new Set(view.content.propertyCorrectionPins as string[]) : false,
         );
         valid();
         const pendingEvidence: Array<{

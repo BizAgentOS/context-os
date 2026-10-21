@@ -60,7 +60,7 @@ test("maintenance attention follows saved evidence and persists across page visi
   const directory = mkdtempSync(join(tmpdir(), "de-maintenance-attention-"));
   const driver: AgentDriver = {
     async run(request) {
-      await request.onTool("task_ask", {
+      await request.onTool("decision_request", {
         question: "办结是否代表供暖恢复？",
         reason: "请确认业务含义",
       });
@@ -163,26 +163,16 @@ test("maintenance attention follows saved evidence and persists across page visi
   }
 });
 
-test("inspected nonempty documents can start conceptual modeling, but empty or unread sources cannot advance", async () => {
+test("reading documents preserves actual contents without claiming adopted concepts or page completion", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-maintenance-documents-"));
   const errors: string[] = [];
   const driver: AgentDriver = {
     async run(request) {
       const input = JSON.parse(request.input);
       assert.equal(input.page, "setup");
-      try {
-        await request.onTool("page_complete", {});
-      } catch (error) {
-        errors.push((error as Error).message);
-      }
-      const source = await request.onTool("memory_read", {
-        id: app.memory.listArtifacts("source")[0].id,
-      });
-      if ((source as { content: { raw: string } }).content.raw.trim()) {
-        await request.onTool("page_complete", {});
-      } else {
-        await assert.rejects(request.onTool("page_complete", {}), /读取.*资料/);
-      }
+      assert(!request.tools.some(tool => tool.name === "page_complete"));
+      const source = await request.onTool("memory_read", { id: app.memory.listArtifacts("source")[0].id });
+      errors.push((source as { content: { raw: string } }).content.raw.trim() ? "read" : "empty");
       return {
         text: "已检查资料。",
         sessionId: "documents",
@@ -211,7 +201,7 @@ test("inspected nonempty documents can start conceptual modeling, but empty or u
     await app.idle();
     const state = app.canvasState();
     assert.equal(state.currentPage, "setup");
-    assert.equal(state.pages.find((page) => page.id === "setup")?.ready, true);
+    assert.equal(state.pages.find((page) => page.id === "setup")?.ready, false, "reading alone does not adopt a business definition");
     assert.equal(
       state.pages.find((page) => page.id === "ontology")?.ready,
       false,
@@ -238,10 +228,10 @@ test("explicit re-verification refreshes source evidence within one page convers
   const directory = mkdtempSync(join(tmpdir(), "de-maintenance-refresh-"));
   const driver: AgentDriver = {
     async run(request) {
-      assert(request.tools.some((tool) => tool.name === "ontology_verify"));
+      assert(request.tools.some((tool) => tool.name === "object_execute"));
       // Rule-built structure removes the old creation tools; verification of adopted mappings remains available.
-      assert(!request.tools.some((tool) => tool.name === "ontology_outline" || tool.name === "ontology_propose"));
-      await request.onTool("ontology_verify", {
+      assert(!request.tools.some((tool) => tool.name === "ontology_verify" || tool.name === "ontology_propose"));
+      await request.onTool("object_execute", {
         question: "现在记录了多少条投诉？",
         operations: [
           { op: "query", type: "投诉", as: "tickets" },
@@ -287,6 +277,14 @@ test("explicit re-verification refreshes source evidence within one page convers
     await app.canvasNavigate({ page: "ontology" });
     await app.canvasMessage({ page: "ontology", text: "验证投诉总数" });
     await app.idle();
+    const saveLegacyCheck = () => {
+      const context = app.memory.beginExecution(app.canvasState().session.taskId);
+      try { return new Workspace(app.memory, context).execute("ontology_verify", {
+        question: "现在记录了多少条投诉？", operations: [{ op: "query", type: "投诉", as: "tickets" }, { op: "aggregate", input: "$tickets", as: "count" }],
+      }) as unknown as Artifact; } finally { app.memory.endExecution(context); }
+    };
+    // Historical verification remains covered through its domain service; the Agent uses read-only execution.
+    saveLegacyCheck();
     const first = app.canvasState().verifications[0];
     assert.equal(
       (first.content.sourceVersions as Record<string, number>)[source.id],
@@ -295,6 +293,7 @@ test("explicit re-verification refreshes source evidence within one page convers
     workspace.upload("投诉.csv", "id,status\nT1,closed\nT2,open\n");
     await app.canvasMessage({ page: "ontology", text: "继续核对刚才的结果" });
     await app.idle();
+    saveLegacyCheck();
     const pinned = app.canvasState().verifications[0];
     assert.equal(
       (pinned.content.sourceVersions as Record<string, number>)[source.id],
@@ -306,6 +305,7 @@ test("explicit re-verification refreshes source evidence within one page convers
       refreshSources: true,
     });
     await app.idle();
+    saveLegacyCheck();
     const refreshed = app.canvasState().verifications[0];
     assert.equal(
       (refreshed.content.sourceVersions as Record<string, number>)[source.id],

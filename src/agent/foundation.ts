@@ -9,7 +9,7 @@ import {
   isUnknownEnterprise,
   type FoundationEvidence,
 } from "./foundation-evidence.ts";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { MemoryStore } from "./memory.ts";
 import type { Artifact, Data, DomainTool, WriteContext } from "./contracts.ts";
@@ -19,7 +19,7 @@ const id = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
 const text = z.string().trim().min(1).max(1500);
 const refs = z.array(id).min(1).max(20);
 const concept = z
-  .object({ id, name: text, description: text, evidenceRefs: refs })
+  .object({ id, name: text, description: text, aliases: z.array(text).max(30).optional(), evidenceRefs: refs })
   .strict();
 const relation = concept.extend({ from: id, to: id }).strict();
 const issue = z
@@ -89,7 +89,7 @@ function keepProgram<T extends { id: string }>(previous: T[], updates: T[]): T[]
   return updates.map((item) => {
     const prior = previous.find((entry) => entry.id === item.id) as Record<string, unknown> | undefined;
     if (prior?.origin !== "program" && prior?.governed !== true) return item;
-    return { ...item, ...Object.fromEntries(PROGRAM_FIELDS.filter((key) => key in prior).map((key) => [key, prior[key]])) };
+    return { ...item, ...(prior.aliases && !("aliases" in item) ? { aliases: prior.aliases } : {}), ...Object.fromEntries(PROGRAM_FIELDS.filter((key) => key in prior).map((key) => [key, prior[key]])) };
   });
 }
 
@@ -138,15 +138,15 @@ export class FoundationService {
     this.live = live;
   }
 
-  read() {
-    const current = this.memory.listArtifacts("foundation")[0] ?? null;
+  read(options: { evidence?: "hydrate" | "compact" } = {}) {
+    const current = this.memory.listArtifacts("foundation", options)[0] ?? null;
     const adopted =
       current?.status === "adopted"
         ? current
         : current && content(current).adoptedVersion
           ? this.memory.getArtifact(
               current.id,
-              content(current).adoptedVersion!,
+              content(current).adoptedVersion!, options,
             )
           : null;
     return { current, adopted };
@@ -154,6 +154,10 @@ export class FoundationService {
 
   project(artifact: Artifact): Artifact {
     const result = structuredClone(artifact);
+    const evidencePage = Array.isArray(result.content.evidence) ? { total: content(result).evidence.length, items: content(result).evidence.slice(0, 50) } : this.memory.foundationEvidencePage(result.id, result.version, 0, 50);
+    const totalEvidence = evidencePage.total;
+    result.content.evidence = asData(evidencePage.items) as unknown as Data[];
+    result.content.evidenceSummary = { total: totalEvidence, shown: Math.min(totalEvidence, 50), nextOffset: totalEvidence > 50 ? 50 : null };
     for (const entry of content(result).evidence) {
       delete entry.webSnapshot;
       delete entry.knowledgeSnapshot;
@@ -201,7 +205,7 @@ export class FoundationService {
   }
 
   view() {
-    const { current, adopted } = this.read();
+    const { current, adopted } = this.read({ evidence: "compact" });
     return {
       current: current ? this.project(current) : null,
       adopted: adopted ? this.project(adopted) : null,
@@ -214,7 +218,7 @@ export class FoundationService {
     operationId: string,
     skillDigest: string,
     documents?: FoundationDocuments,
-    options: { lockStructure?: boolean } = {},
+    options: { lockStructure?: boolean; stage?: { current: Artifact | null; adopted: Artifact | null } } = {},
   ): Artifact {
     this.memory.assertWritable(context);
     if (!skillDigest)
@@ -223,7 +227,7 @@ export class FoundationService {
     const hash = createHash("sha256")
       .update(JSON.stringify(input))
       .digest("hex");
-    const receipt = this.memory.artifactOperation(context, operationId);
+    const receipt = options.stage ? null : this.memory.artifactOperation(context, operationId);
     if (receipt) {
       if (
         receipt.kind !== "foundation" ||
@@ -232,7 +236,7 @@ export class FoundationService {
         throw new Error("同一操作标识不能提交不同内容");
       return receipt;
     }
-    const { current, adopted } = this.read();
+    const { current, adopted } = options.stage ?? this.read();
     if (input.baseVersion !== (current?.version ?? 0))
       throw new Error("基础本体版本已变化，请 foundation_read 后再修改");
     const previous = current ? content(current) : null;
@@ -461,9 +465,7 @@ export class FoundationService {
     }
     if (
       concepts.length > 60 ||
-      relations.length > 120 ||
-      evidence.length > 200 ||
-      unknowns.length + conflicts.length > 100
+      relations.length > 120
     )
       throw new Error("基础定义超出当前范围，请缩小业务范围");
     const profile = this.memory.listArtifacts("profile")[0];
@@ -489,8 +491,7 @@ export class FoundationService {
             : [{ id: item.id, before, after: item }];
         })
       : [];
-    return this.memory.putArtifact(
-      {
+    const draft = {
         ...(current
           ? { id: current.id, expectedVersion: current.version }
           : {}),
@@ -520,7 +521,7 @@ export class FoundationService {
               },
               { ...previous?.documentVersions },
             ),
-          method: { name: "company-foundation-ontology", digest: skillDigest },
+          method: { name: options.stage ? "automatic-document-enrichment" : "company-foundation-ontology", digest: skillDigest },
           operation: { hash },
           enterpriseChange:
             baselineName && baselineName !== input.enterprise.name
@@ -541,10 +542,24 @@ export class FoundationService {
             reason: "尚未绑定并验证业务来源",
           },
         }),
-      },
-      context,
-      operationId,
-    );
+      };
+    if (options.stage) return { ...draft, id: current?.id ?? randomUUID(), version: (current?.version ?? 0) + 1, createdAt: new Date().toISOString() };
+    return this.memory.putArtifact(draft, context, operationId);
+  }
+
+  /** A document draft is checked with the same contract but remains invisible until its batch commits. */
+  stage(args: unknown, context: WriteContext, operationId: string, skillDigest: string, documents: FoundationDocuments, current: Artifact, adopted: Artifact | null) {
+    return this.propose(args, context, operationId, skillDigest, documents, { lockStructure: true, stage: { current, adopted } });
+  }
+
+  commitBatch(draft: Artifact, baseline: Artifact, context: WriteContext) {
+    return this.memory.atomic(() => {
+      this.memory.assertWritable(context);
+      const current = this.read().current;
+      if (current?.id !== baseline.id || current.version !== baseline.version) throw new Error("文档处理期间本体已变化，请重试本批文档");
+      const candidate = this.memory.putArtifact({ id: current.id, expectedVersion: current.version, kind: "foundation", title: draft.title, status: "candidate", content: draft.content }, context);
+      return this.adopt(candidate.id, candidate.version, { automatic: true });
+    });
   }
 
   evidence(id: string, version: number, evidenceId: string) {
@@ -555,6 +570,16 @@ export class FoundationService {
     );
     if (!evidence) throw new Error("依据不存在");
     return new FoundationDocuments(this.memory).locate(evidence);
+  }
+
+  listEvidence(args: unknown) {
+    const input = z.object({ id: z.string().min(1), version: z.number().int().positive(), offset: z.number().int().min(0).default(0), limit: z.number().int().min(1).max(100).default(50) }).strict().parse(args);
+    const page = this.memory.foundationEvidencePage(input.id, input.version, input.offset, input.limit);
+    const items = page.items.map(entry => {
+      const { webSnapshot, knowledgeSnapshot, apiSnapshot, ...item } = entry;
+      return item;
+    });
+    return { total: page.total, items, nextOffset: input.offset + items.length < page.total ? input.offset + items.length : null };
   }
 
   candidate(id: string, version: number) {

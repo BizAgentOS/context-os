@@ -1,8 +1,9 @@
+import { renderOntologyWorkspace } from "./ontology-workbench.js";
 import { createSessions } from "./sessions.js";
 import { createWorkspaceStore, connectWorkspaceEvents, createScopeQueue } from "./workspace-store.js";
 import { createAgentPanel } from "./agent-panel.js";
 import { createTaskCenter } from "./task-center.js";
-import { renderPendingCenter } from "./pending-center.js";
+import { renderPendingCenter, createPendingCenter } from "./pending-center.js";
 import { showWorkspaceHistory } from "./changes-workspace.js";
 import { createDataProfile } from "./data-profile.js";
 import { renderSharedAccess } from "./share-workspace.js";
@@ -166,6 +167,8 @@ const state = {
   consumers: [],
   accessLogs: [],
   pending: null,
+  pendingSummary: { total: 0, counts: {} },
+  agentRuns: [],
   demo: null,
   sourceSummary: { sources: [], total: 0, counts: {} },
   messagePage: { nextBefore: null },
@@ -204,7 +207,19 @@ const ui = {
 };
 
 const workspace = createWorkspaceStore(state);
-const { renderDialogue } = createAgentPanel({ state, ui, $, node, button, api, hasCanvasContent, inspectContext, errorMessage });
+const { renderDialogue } = createAgentPanel({ state, ui, $, node, button, api, hasCanvasContent, inspectContext, errorMessage,
+  modeChanged:()=>{rememberDraft();updateComposer();},modesDisabled:()=>!!shareMode||!!state.demo,
+  showAnswer:async answer=>{ui.linkedAnswer=answer;await navigate('ontology');const canvas=$("#canvas").firstElementChild;if(canvas?.showAnswer)canvas.showAnswer(answer);},
+  openPending: ref => pendingCenter.open(ref),
+  highlightRefs: async refs => {
+    const items = await Promise.all(refs.map(ref => api(`/api/pending/read?id=${encodeURIComponent(ref.id)}`)));
+    await navigate("ontology");
+    const ids = [...new Set(items.flatMap(({item}) => item.objects.map(object => object.id)))];
+    if (!$("#canvas").firstElementChild?.focusReferences?.(ids)) pendingCenter.open(refs[0]);
+  },
+  answerDecision: ({ question, option }) => askAssistant(`关于“${question}”，我的选择是：${option.label}`),
+  continueRun: ({ goal, runId }) => { ui.continuationRunId = runId; askAssistant(`请继续上次目标：${goal}。请核对已保存的成果，继续未完成的部分。`); },
+});
 const { renderAgentTask } = createTaskCenter({ state, ui, $, node, button, navigate, setChatMode, dataActions, openDefinitions, isOnboarding: () => onboardingDialog?.open });
 const { renderDataProfile } = createDataProfile({ state, ui, $, pageLabels, node, button, api, mutate, navigate, draftKey, applySnapshot, label, openStatement, resizeInput, rememberDraft, openComposer, foundationPanel, shareMode, showCredential, renderSources, renderCanvas, startOnboarding, setFocus, errorMessage, updateComposer });
 function openDefinitions() { $("#canvas").firstElementChild?.openDefinitions?.(); }
@@ -325,6 +340,7 @@ function rememberDraft() {
     text,
     focus: ui.focus,
     pendingMessage: ui.pendingMessage,
+    agentMode: ui.agentMode || (ui.page==='setup'?'build':'qa'), dataView:ui.dataView||{kind:'working'}, pendingReference: ui.pendingReference || null, continuationRunId: ui.continuationRunId || null,
     nextRefreshSources: ui.nextRefreshSources === true,
   };
   ui.drafts.set(draftKey(), draft);
@@ -334,6 +350,7 @@ function restoreDraft(draft) {
   $("#message-input").value = draft?.text || "";
   ui.focus = draft?.focus || null;
   ui.pendingMessage = draft?.pendingMessage || null;
+  ui.agentMode = draft?.agentMode || (ui.page==='setup'?'build':'qa'); ui.dataView=draft?.dataView||{kind:'working'}; ui.pendingReference = draft?.pendingReference || null; ui.continuationRunId = draft?.continuationRunId || null;
   ui.nextRefreshSources = draft?.nextRefreshSources === true;
   ui.draftRef = draft?.draftRef || { id: crypto.randomUUID(), revision: 0 };
   ui.contextRevision = draft?.contextRevision || 0;
@@ -368,7 +385,7 @@ function applySnapshot(snapshot, scope) {
       state.currentSessionId = savedSession || snapshot.currentSessionId || null;
     } catch { errorMessage("浏览器无法保存草稿，请复制内容后再关闭页面。"); }
   }
-  const agentKeys = ["session", "currentSessionId", "messages", "messagePage", "streaming", "busy", "pending", "prompt"];
+  const agentKeys = ["session", "currentSessionId", "messages", "messagePage", "streaming", "busy", "pending", "prompt", "agentRuns"];
   if (!shareMode && state.currentSessionId && snapshot.currentSessionId && snapshot.currentSessionId !== state.currentSessionId)
     snapshot = Object.fromEntries(Object.entries(snapshot).filter(([key]) => !agentKeys.includes(key)));
   if (snapshot.messages && (!snapshot.currentSessionId || snapshot.currentSessionId === state.currentSessionId)) {
@@ -389,6 +406,10 @@ function applySnapshot(snapshot, scope) {
   }
   if (scope) workspace.emit(scope, snapshot);
   render();
+  if(ui.page==='ontology'){
+    const latest=(state.agentRuns||[]).findLast(run=>run.answer);
+    if(latest&&ui.latestAnswerRun!==latest.id){ui.latestAnswerRun=latest.id;ui.linkedAnswer=latest.answer;$("#canvas").firstElementChild?.showAnswer?.(latest.answer);}
+  }
 }
 async function refresh(bootstrap = false) {
   if (ui.polling || ui.requesting) return;
@@ -460,6 +481,20 @@ async function navigate(page) {
   render(); await refresh();
 }
 const capabilityPanel = createCapabilitiesPanel(api, () => renderCanvas(true));
+const pendingCenter = createPendingCenter({ api, refresh,
+  handoffGap: result=>{ui.agentMode='build';ui.dataView={kind:'working'};ui.pendingReference=result.pendingRef;pendingCenter.close();askAssistant(result.message);renderDialogue();},
+  continueGap:gap=>{ui.agentMode='build';ui.dataView={kind:'working'};ui.pendingReference={id:gap.id,version:gap.version};pendingCenter.close();askAssistant(`请继续修复缺口「${gap.title}」，读取原查询与关联变更，复验并预览后交给我采用。`);renderDialogue();},
+  reaskedGap:()=>{ui.agentMode='qa';ui.dataView={kind:'working'};rememberDraft();renderDialogue();},
+  analyze: item => {
+  ui.pendingReference = { id: item.id, version: item.version };
+  ui.agentMode = "build";
+  askAssistant(`请分析待处理事项「${item.title}」，核对依据并说明可选处理方式。`);
+} });
+window.addEventListener("dataengine:pending", event => {
+  if (shareMode) return;
+  for (const dialog of document.querySelectorAll("dialog[open]")) dialog.close();
+  pendingCenter.open(event.detail || {});
+});
 
 /** FEATURE_041 T041-04c: the main UI shows the working version; other definition versions live in the developer view. */
 function syncWorkspaceVersion() {
@@ -483,6 +518,14 @@ function syncWorkspaceVersion() {
 
 function render() {
   syncWorkspaceVersion();
+  let pendingButton = document.getElementById("pending-center-button");
+  if (!pendingButton) {
+    pendingButton = button("待处理", "workspace-version", () => pendingCenter.open());
+    pendingButton.id = "pending-center-button"; document.querySelector(".topbar")?.append(pendingButton);
+  }
+  pendingButton.textContent = `待处理（${state.pendingSummary?.total ?? 0}）`;
+  pendingCenter.sync(state.pendingSummary);
+  pendingButton.hidden = !!shareMode;
   capabilityPanel.button.hidden = !!shareMode || !!state.demo || !developerView();
   $("#demo-badge").hidden = !state.demo;
   $("#demo-badge").title = shareMode
@@ -514,7 +557,7 @@ function renderCanvas(force = false) {
   ui.canvasDirty = false;
   if (samePage && current?.updateWorkspace?.(state) !== false && current?.updateWorkspace) return;
   const scroll = samePage ? canvas.scrollTop : 0;
-  const spatial = ui.page === "ontology" && !shareMode && !state.demo;
+  const spatial = false;
   $(".canvas-app").classList.toggle("is-ontology-space", spatial);
   for (const element of $$(".os-chat-metrics,.os-chat-footer")) element.hidden = !spatial;
   current?.dispose?.();
@@ -539,66 +582,9 @@ function renderCanvas(force = false) {
   canvas.scrollTop = scroll;
 }
 function renderOntologyBoard(actions) {
-  const managementContent = () => {
-  const management = node("div");
-  const directory = node("details", "live-legacy");
-  directory.append(node("summary", "", "定义与映射目录"), renderFoundationWorkspace(state.foundation, actions));
-  const full = node("details", "live-legacy");
-  full.append(node("summary", "", "完整基础定义与采用操作"), foundationPanel());
-  management.append(directory, full, renderLiveWorkspace("ontology", state.live, {
-    api, mutate, showCredential, selections:ui.graphSelections, onSelectContext:selectLiveContext, onSaved:refresh,
-  }));
-  return management;
-  };
-  const objectContent = () => {
-  const objects = node("div", "ontology-board-objects");
-  let loaded = false;
-  const loadObjects = () => {
-    if (loaded) return;
-    loaded = true;
-    const models = state.live.models;
-    if (!models.length) {
-      const empty = node("div", "ontology-object-empty");
-      empty.append(node("h2", "", "先让概念对应到真实记录"), node("p", "", "当前尚未建立执行映射。连接来源并完成映射后，这里展示具体对象与逐属性依据。"));
-      objects.append(empty); return;
-    }
-    const picker = node("select", "model-select"); picker.setAttribute("aria-label", "对象的执行映射");
-    for (const model of models) {
-      const option = node("option", "", `${model.title} · ${model.status === "adopted" ? "已采用" : "候选预览"} · ${developerView() ? `v${model.version}` : new Date(model.updatedAt || model.createdAt).toLocaleString("zh-CN", {hour12:false})}`);
-      option.value = model.id; picker.append(option);
-    }
-    const saved = ui.graphSelections.get("ontology-object-model");
-    picker.value = models.find(m => m.id === saved)?.id || models.find(m => m.status === "adopted")?.id || models[0].id;
-    const host = node("div"); objects.append(picker, host);
-    const show = () => {
-      const model = models.find(m => m.id === picker.value);
-      ui.graphSelections.set("ontology-object-model", model.id);
-      host.replaceChildren();
-      if (model.status !== "adopted") host.append(node("p", "source-meta", "候选映射下的对象预览，尚未采用。"));
-      host.append(renderLiveObjects(model, {api, selections: ui.graphSelections,
-        select: (m, t, scope, guard) => selectLiveContext(m, t, scope, false, () => objects.closest("dialog")?.open && (!guard || guard()))}));
-      host.append(technicalDetails({id:model.id,version:model.version}));
-    };
-    picker.onchange = show; show();
-  };
-  loadObjects(); return objects;
-  };
-  return renderOntologySpace(state.foundation, {
-    ...actions,
-    automaticBuild: state.automaticBuild,
-    automaticApiBuild: state.automaticApiBuild,
-    connectModel: openSettings,
-    retryBuild: () => mutate("/api/canvas/foundation/automatic", {}),
-    engine: state.engine,
-    sourceSummary: state.sourceSummary,
-    programBuild: () => showEngineBuilds(state, {...dataActions(),management:openDefinitions}),
-    management: managementContent,
-    objects: objectContent,
-    evidence: () => renderEvidenceWorkspace(state, {api, mutate}),
-    onLayout: updateOntologyComposer,
-    onSelection: followOntologySelection,
-  });
+  return renderOntologyWorkspace(state, {api, refresh, selections:ui.graphSelections, linkedAnswer:ui.linkedAnswer, exitAnswer:()=>{ui.linkedAnswer=null;}, ask:askAssistant, askBuild:text=>{ui.agentMode="build";ui.dataView={kind:'working'};askAssistant(text);renderDialogue();}, data:()=>navigate("setup"), select:actions.select});
 }
+
 function followOntologySelection(artifact, target, guard) {
   if (ui.page !== "ontology" || (ui.focus && ui.focus.source !== "viewport")) return;
   if (!target) {
@@ -622,8 +608,7 @@ function updateOntologyComposer({stage, stats}) {
     $("#chat-surface .composer-wrap").prepend(metrics);
     const footer = node("div", "os-chat-footer");
     footer.append(node("span", "", "DataEngine Agent"),
-      button("对话记录", "", () => setChatMode(ui.chatMode === "history" ? "composer" : "history")),
-      button("继续提问", "os-chat-discuss", openComposer));
+      button("对话记录", "", () => setChatMode(ui.chatMode === "history" ? "composer" : "history")));
     $("#chat-surface").append(footer);
   }
   metrics.replaceChildren();
@@ -653,7 +638,7 @@ function askAssistant(text) {
   const input=$("#message-input");input.value=input.value.trim()?`${input.value}\n${text}`:text;
   rememberDraft();resizeInput();openComposer();
 }
-function dataActions() {return {api,events:workspace,apply:applySnapshot,upload:()=>$("#file-input").click(),refresh,ask:askAssistant,ontology:()=>navigate("ontology")};}
+function dataActions() {return {api,events:workspace,apply:applySnapshot,fileDetails:source=>openSource(source),upload:()=>$("#file-input").click(),refresh,ask:askAssistant,ontology:()=>navigate("ontology")};}
 let onboardingDialog;
 let onboardingWorkspace;
 let onboardingClosing = false;
@@ -1680,6 +1665,14 @@ function openStatement(statement, artifact = state.profile) {
   );
 }
 function openSource(artifact, options = {}) {
+  if (artifact.content.rowStorage && !options.loaded) {
+    const generation = ++ui.detailRequest;
+    const offset = options.offset ?? (options.row ? Math.floor((options.row - 1) / 50) * 50 : 0);
+    api(`/api/sources/rows?id=${encodeURIComponent(artifact.id)}&version=${artifact.version}&offset=${offset}&limit=50`).then(value => {
+      if (generation === ui.detailRequest) openSource(value, {...options, offset, loaded: true});
+    }).catch(error => { if (generation === ui.detailRequest) errorMessage(error.message); });
+    return;
+  }
   ui.detailRequest += 1;
   const offset =
     options.offset ??
@@ -1711,8 +1704,11 @@ function openSource(artifact, options = {}) {
         `这份资料未能解析：${artifact.content.parseError}`,
       ),
     );
+  if (artifact.content.parseParameters && !shareMode) section.append(tableParsingEditor(artifact));
   const rows = artifact.content.rows;
   const columns = artifact.content.columns;
+  const pagedRows = !!artifact.content.rowStorage;
+  const rowCount = pagedRows ? artifact.content.total ?? artifact.content.rowCount : rows?.length;
   if (
     Array.isArray(rows) &&
     Array.isArray(columns) &&
@@ -1727,7 +1723,7 @@ function openSource(artifact, options = {}) {
     for (const column of columns) header.append(node("th", "", column));
     head.append(header);
     const body = node("tbody");
-    rows.slice(offset, offset + 50).forEach((row, index) => {
+    (pagedRows ? rows : rows.slice(offset, offset + 50)).forEach((row, index) => {
       const number = offset + index + 1;
       const line = node("tr", number === options.row ? "highlight" : "");
       line.append(node("td", "row-number", number));
@@ -1741,13 +1737,13 @@ function openSource(artifact, options = {}) {
     table.append(head, body);
     wrap.append(table);
     section.append(wrap);
-    if (rows.length > 50)
+    if (rowCount > 50)
       section.append(
         pagination(
           offset,
-          Math.min(50, rows.length - offset),
-          rows.length,
-          (next) => openSource(artifact, { ...options, offset: next }),
+          Math.min(50, rowCount - offset),
+          rowCount,
+          (next) => openSource(artifact, { ...options, offset: next, loaded: false }),
           50,
         ),
       );
@@ -1755,7 +1751,7 @@ function openSource(artifact, options = {}) {
       node(
         "p",
         "detail-note",
-        `${rows.length} 条记录`,
+        `${rowCount} 条记录`,
       ),
     );
   } else {
@@ -1772,6 +1768,34 @@ function openSource(artifact, options = {}) {
     { key: `source:${artifact.id}:${artifact.version}:${offset}`, artifact },
     section,
   );
+}
+function tableParsingEditor(source) {
+  const section = node("details", "table-parsing-editor"), parameters = source.content.parseParameters;
+  section.append(node("summary", "", `解析参数 · ${parameters.sheet || parameters.encoding || "表格"} · 表头第${parameters.headerRow || 1}行`));
+  const controls = {};
+  const add = (key, text, values) => {
+    const label = node("label", "engine-field"), input = node(values ? "select" : "input");
+    label.append(node("span", "", text));
+    if (values) for (const [value, title] of values) { const option = node("option", "", title); option.value = value; input.append(option); }
+    else { input.type = "number"; input.min = "1"; input.max = "1000"; }
+    input.value = parameters[key] ?? (key === "headerRow" ? 1 : ""); label.append(input); section.append(label); controls[key] = input;
+  };
+  if (source.content.fileFormat !== "xlsx") {
+    add("encoding", "编码", [["utf8", "UTF-8"], ["gbk", "GBK"], ["gb18030", "GB18030"]]);
+    add("delimiter", "分隔符", [[",", "逗号"], ["\t", "制表符"], [";", "分号"]]);
+  }
+  add("headerRow", "表头行", null);
+  const output = node("p", "engine-message"); output.setAttribute("role", "status");
+  const save = button("按这些参数重新解析", "quiet-button", async () => {
+    save.disabled = true; output.textContent = "正在重新解析…";
+    try {
+      const options = Object.fromEntries(Object.entries(controls).map(([key, input]) => [key, key === "headerRow" ? Number(input.value) : input.value]));
+      const result = await api("/api/canvas/upload/reparse", {sourceId: source.id, version: source.version, options, page: ui.page, sessionId: state.currentSessionId});
+      applySnapshot(result); openSource(result.tableImport.sources[0]);
+    } catch (error) { output.textContent = error.message; }
+    finally { save.disabled = false; }
+  });
+  section.append(node("p", "engine-muted", "重新解析会生成新的来源版本；历史快照与发布保留原来的内容。"), save, output); return section;
 }
 function sourcePolicyEditor(source) {
   const policy = state.sourcePolicies.find(
@@ -2145,7 +2169,7 @@ function setChatMode(mode) {
   $("#open-composer").hidden = mode !== "collapsed";
   $("#open-composer").setAttribute("aria-expanded", String(mode !== "collapsed"));
   $("#chat-surface").hidden = mode === "collapsed";
-  $("#dialogue").hidden = mode !== "history";
+  $("#dialogue").hidden = mode === "collapsed";
   $("#toggle-history").setAttribute("aria-expanded", String(mode === "history"));
   updateComposer();
   if (mode !== "collapsed") resizeInput();
@@ -2283,6 +2307,10 @@ async function sendMessage() {
     const body = {
       page: ui.page,
       sessionId: state.currentSessionId,
+      mode: ui.agentMode || "build",
+      dataView: ui.agentMode==='qa' ? structuredClone(ui.dataView||{kind:'working'}) : {kind:'working'},
+      ...(ui.pendingReference ? { pendingRef: structuredClone(ui.pendingReference) } : {}),
+      ...(ui.continuationRunId ? { continuationRunId: ui.continuationRunId } : {}),
       text,
       messageId: crypto.randomUUID(),
       ...(ui.page === "ontology" && ui.nextRefreshSources
@@ -2309,7 +2337,7 @@ async function sendMessage() {
     const draft = ui.drafts.get(origin.draftKey) ?? ui.draftStore?.read(origin.draftKey);
     if (draft?.pendingMessage?.body?.messageId !== pending.body.messageId) return;
     draft.pendingMessage = null;
-    if (accepted) draft.nextRefreshSources = false;
+    if (accepted) { draft.nextRefreshSources = false; draft.pendingReference = null; draft.continuationRunId = null; }
     if (accepted && draft.draftRef?.revision === pending.draftRevision && draft.contextRevision === pending.contextRevision && draft.text.trim() === pending.text) draft.text = "";
     ui.drafts.set(origin.draftKey, draft); ui.draftStore?.save(origin.draftKey, draft);
   };
@@ -2319,6 +2347,7 @@ async function sendMessage() {
     pending.body,
     () => {
       ui.pendingMessage = null;
+      ui.pendingReference = null; ui.continuationRunId = null;
       ui.nextRefreshSources = false;
       if (
         ui.draftRef.revision === pending.draftRevision &&
@@ -2347,50 +2376,48 @@ async function sendMessage() {
     },
   );
 }
-async function uploadFile(file) {
-  if (shareMode)
-    return errorMessage("离线演示只提供已保存的样本资料，不能上传或修改数据。");
-  if (!file || ui.requesting || ui.uploading) return;
-  if (ui.page === "consumption") {
-    errorMessage("请返回企业与数据页接入资料。");
-    return;
-  }
-  if (!/\.(csv|md|txt)$/i.test(file.name)) {
-    errorMessage("请先上传 CSV、Markdown 或 TXT 文件。");
-    return;
-  }
-  if (file.size > 5_000_000) {
-    errorMessage("请使用不超过 5 MB 的文件。");
-    return;
-  }
-  ui.uploading = true;
-  updateComposer();
+async function uploadFiles(fileList) {
+  if (shareMode) return errorMessage("离线演示不能上传或修改数据。");
+  const files = [...(fileList || [])];
+  if (!files.length || ui.requesting || ui.uploading) return;
+  if (ui.page === "consumption") return errorMessage("请返回企业与数据页接入资料。");
+  if (files.length > 100) return errorMessage("每批最多上传100份文件。");
+  const origin = { page: ui.page, sessionId: state.currentSessionId };
+  const documents = files.filter(file => /\.(md|txt)$/i.test(file.name));
+  const tables = files.filter(file => /\.(csv|tsv|xlsx)$/i.test(file.name));
+  if (documents.length + tables.length !== files.length) return errorMessage("请上传 CSV、TSV、Excel、Markdown 或 TXT 文件。");
+  ui.uploading = true; updateComposer(); errorMessage();
+  const errors = [];
   try {
-    let content;
-    try {
-      content = new TextDecoder("utf-8", { fatal: true }).decode(
-        await file.arrayBuffer(),
-      );
-    } catch {
-      throw new Error("文件不是有效的 UTF-8 文本，请转换编码后再上传。");
+    for (const file of tables) {
+      try {
+        if (file.size > 100_000_000) throw new Error("表格文件不能超过100 MB");
+        const query = new URLSearchParams({ ...origin, name: file.name });
+        const response = await fetch(`/api/canvas/upload/table?${query}`, { method: "POST", headers: { "X-DataEngine-Token": state.token, "Content-Type": "application/octet-stream" }, body: file });
+        const result = await response.json(); if (!response.ok) throw new Error(result.error || "上传失败");
+        if (origin.page === ui.page && origin.sessionId === state.currentSessionId) applySnapshot(result);
+        for (const warning of result.tableImport.warnings || []) errors.push(`${file.name}：${warning}`);
+      } catch (error) { errors.push(`${file.name}：${error.message}`); }
     }
-    await mutate(
-      "/api/canvas/upload",
-      { page: ui.page, name: file.name, content },
-      () => {
-        ui.detail = null;
-        ui.detailRequest += 1;
-        ui.canvasDirty = true;
-      },
-    );
-  } catch (error) {
-    errorMessage(error.message);
-  } finally {
-    ui.uploading = false;
-    $("#file-input").value = "";
-    updateComposer();
-  }
+    if (documents.length) {
+      const { batch } = await api("/api/canvas/upload/batch/start", { ...origin, operationId: crypto.randomUUID() });
+      for (const file of documents) {
+        const payload = { batchId: batch.id, operationId: crypto.randomUUID(), name: file.name };
+        try {
+          if (file.size > 5_000_000) throw new Error("文本资料不能超过5 MB");
+          payload.content = new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer());
+        } catch (error) { payload.error = error.message; }
+        await api("/api/canvas/upload/batch/file", payload);
+      }
+      const result = await api("/api/canvas/upload/batch/finalize", { batchId: batch.id });
+      if (origin.page === ui.page && origin.sessionId === state.currentSessionId) applySnapshot(result);
+      for (const error of result.uploadBatch.content.errors) errors.push(`${error.name}：${error.message}`);
+    }
+    ui.detail = null; ui.detailRequest++; ui.canvasDirty = true; await refresh();
+  } catch (error) { errors.push(error.message); }
+  finally { ui.uploading = false; $("#file-input").value = ""; updateComposer(); if (errors.length) errorMessage(errors.join("；")); }
 }
+
 function updateCustomApiFields() {
   const provider = $("#provider-input").value;
   const custom = provider === "custom";
@@ -2546,7 +2573,7 @@ $("#inspect-focus").addEventListener("click", () =>
 );
 $("#upload-button").addEventListener("click", () => $("#file-input").click());
 $("#file-input").addEventListener("change", (event) =>
-  uploadFile(event.target.files[0]),
+  uploadFiles(event.target.files),
 );
 $("#developer-view-input").addEventListener("change", event => {
   setDeveloperView(event.target.checked);
@@ -2643,7 +2670,7 @@ window.addEventListener("drop", (event) => {
     errorMessage("先接入一份资料，再继续添加下一份。");
     return;
   }
-  uploadFile(event.dataTransfer.files[0]);
+  uploadFiles(event.dataTransfer.files);
 });
 new ResizeObserver(([entry]) => {
   $(".canvas-app").style.setProperty(

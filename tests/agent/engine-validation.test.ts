@@ -9,6 +9,7 @@ import { FoundationService } from "../../src/agent/foundation.ts";
 import { LiveMemory } from "../../src/live/memory.ts";
 import { Workspace } from "../../src/agent/workspace.ts";
 import { Snapshots } from "../../src/data/snapshots.ts";
+import { SyncGovernance } from "../../src/data/sync-governance.ts";
 import { ProgramBuilds } from "../../src/engine/program-builds.ts";
 import { OntologyChanges } from "../../src/engine/changes.ts";
 import { connectRelationChanges } from "../../src/engine/relation-change.ts";
@@ -49,6 +50,14 @@ test("full-snapshot checks catch an identity duplicated across pages and a relat
       capabilities: [{ name: "customers", path: "/c", fields: ["id", "region"], idField: "id", totalPath: "total", filters: { id: "id", region: "region" } }] });
     f.workspace.upload("区域.csv", "区域编号,名称\nR1,华东\nR2,华南\n");
     await f.snapshots.sync({ operationId: "s" });
+    const dataset = f.snapshots.bindingDataset(conn.id, "customers")!;
+    assert.equal(dataset.content.activeVersion, null, "invalid identities do not become current data automatically");
+    assert.ok(dataset.content.pendingVersion);
+    const governance = new SyncGovernance(f.memory, f.snapshots);
+    const issue = governance.list().find(item => item.sources.some(source => source.id === conn.id))!;
+    assert.ok(issue, "the full-snapshot identity failure enters the common pending center");
+    assert.ok((governance.detail(issue.id).content.reasons as any[]).some(reason => reason.code === "identity_invalid"));
+    governance.resolve({ id: issue.id, version: issue.version, operationId: "inspect-invalid-data", decision: "accept", reason: "保存真实异常供映射检查" });
     const region = f.live.sources.connectUpload(f.memory.listArtifacts("source")[0].id, 1, "区域编号");
     const report = await validateDefinition(f.snapshots, f.live, {
       types: [{ name: "客户", sourceId: conn.id, capability: "customers", fields: { 编号: "id", 区域: "region" } },

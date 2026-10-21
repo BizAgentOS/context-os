@@ -53,7 +53,7 @@ function renderDataProfile() {
     files.append(
       state.sources.length
         ? renderSources()
-        : node("p", "muted", "可通过底部附件接入 CSV、Markdown 或 TXT。"),
+        : node("p", "muted", "可通过底部附件接入 CSV、Excel、Markdown 或 TXT。"),
     );
     sources.append(files);
   } else sources.append(renderSources());

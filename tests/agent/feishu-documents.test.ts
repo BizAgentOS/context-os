@@ -61,7 +61,7 @@ test("explicit Feishu reads persist inspectable, versioned sources and retain or
   } finally { memory.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
-test("saved Feishu documents enter the shared ontology flow with pinned evidence, visible candidate/adopted usage, and no invented model success", async () => {
+test("saved Feishu documents enter the shared ontology flow with pinned evidence, unified Agent wording and visible adopted usage, and no invented model success", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-feishu-flow-"));
   const memory = new MemoryStore(directory);
   const seed = new FeishuDocuments(memory, { async readDocument(url: string) { return {
@@ -91,13 +91,16 @@ test("saved Feishu documents enter the shared ontology flow with pinned evidence
       assert.equal(input.focus.version, 1);
       await request.onTool("skill_use", { name: "company-foundation-ontology" });
       const part = await request.onTool("foundation_document_read", { sourceId: doc.sourceId, version: 1 }) as any;
-      const candidate = await request.onTool("foundation_propose", {
-        baseVersion: ((await request.onTool("foundation_read", {})) as any).current.version, enterprise: { name: "澄川仓配", evidenceRefs: ["f1"] },
-        concepts: [{ id: "store", name: "门店", description: "接收补货", evidenceRefs: ["f1"] }], relations: [],
-        evidence: [{ id: "f1", kind: "document", readId: part.readId, quote: "澄川仓配的门店接收仓库补货。" }], unknowns: [], conflicts: [],
-      }) as any;
-      assert.deepEqual(candidate.content.concepts.map((item: any) => [item.id, item.origin]), [["store", "program"]]);
-      await request.onTool("task_ask", { question: "请核对门店定义", reason: "资料解释待采用", foundationId: candidate.id, version: candidate.version });
+      const baseline = (await request.onTool("pending_list", {}) as any).baseline;
+      const proposal = { operationId: "feishu-description", type: "description", baseline,
+        subject: { target: "concept", id: "store", description: "接收补货", evidence: [{ id: "f1", kind: "document", readId: part.readId, quote: "澄川仓配的门店接收仓库补货。" }] },
+        evidence: "已读取飞书企业说明中的门店职责" };
+      await assert.rejects(request.onTool("change_propose", { ...proposal, operationId: "fake-receipt", subject: { ...proposal.subject, evidence: [{ ...proposal.subject.evidence[0], readId: "invented" }] } }), /读取/);
+      const result = await request.onTool("change_propose", proposal) as any;
+      assert.equal(result.change.status, "adopted", "evidence-backed wording is applied by the host after verification");
+      const view = await request.onTool("foundation_read", {}) as any;
+      assert.deepEqual(view.adopted.content.concepts.map((item: any) => [item.id, item.origin]), [["store", "program"]]);
+      assert.equal(view.adopted.content.evidence.find((item: any) => item.id === "f1").sourceVersion, 1);
       return { text: "已生成有原文依据的候选。", sessionId: "feishu-docs", runId: "feishu-docs" };
     }, async stop() { stopped++; release(); }, async close() { release(); },
   };
@@ -125,9 +128,8 @@ test("saved Feishu documents enter the shared ontology flow with pinned evidence
     assert.equal(stopped, 0, "retrying a received request must not stop its active generation");
     release(); await service.app.idle();
     let usage = (await api("/api/connectors/feishu")).documents[0].usage;
-    assert.equal(usage.length, 1); assert.equal(usage[0].status, "candidate");
+    assert.equal(usage.length, 1, JSON.stringify((await api("/api/canvas")).messages)); assert.equal(usage[0].status, "adopted");
     assert.equal(usage[0].concepts[0].name, "门店");
-    await api("/api/canvas/foundation/adopt", { page: "ontology", id: usage[0].foundationId, version: usage[0].foundationVersion });
     usage = (await api("/api/connectors/feishu")).documents[0].usage;
     assert.equal(usage[0].status, "adopted");
     const citation = await api(`/api/foundation/evidence?foundationId=${usage[0].foundationId}&version=${usage[0].foundationVersion}&evidenceId=f1`);

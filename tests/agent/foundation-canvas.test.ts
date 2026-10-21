@@ -1,27 +1,24 @@
 import { test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { createServer } from "../../src/agent/server.ts";
 import type { AgentDriver } from "../../src/agent/runtime.ts";
+import { Workspace } from "../../src/agent/workspace.ts";
+import { foundationSession, runFoundationSession, type FoundationSession } from "./foundation-domain-fixture.ts";
 import { seedFoundation } from "./program-foundation-fixture.ts";
 
-test("a real Skill and quoted conversation refine the rule-built foundation while preserving unmapped structure across restart", async () => {
+test("host domain evidence and quoted conversation refine the rule-built foundation while preserving unmapped structure across restart", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-foundation-"));
   let ran = false;
-  const driver: AgentDriver = {
-    async run(request) {
-      assert(request.tools.some((tool) => tool.name === "foundation_propose"));
-      const input = JSON.parse(request.input);
-      const message = input.recentMessages.at(-1);
-      const loaded = await request.onTool("skill_use", {
-        name: "company-foundation-ontology",
-      });
-      assert.match(JSON.stringify(loaded), /foundation_propose/);
-      const saved = (await request.onTool("foundation_propose", {
+  const run = async (session: FoundationSession) => {
+      const input = { foundation: session.read().current, recentMessages: service.app.memory.messages(session.taskId) };
+      const message = session.message;
+      assert.match(readFileSync("config/skills/company-foundation-ontology/SKILL.md", "utf8"), /change_propose/);
+      const saved = (await session.propose( {
         baseVersion: input.foundation?.version ?? 0,
         enterprise: { name: "澄川热力", evidenceRefs: ["e1"] },
         concepts: [
@@ -55,24 +52,14 @@ test("a real Skill and quoted conversation refine the rule-built foundation whil
         conflicts: [],
       })) as any;
       assert.equal(saved.status, "candidate");
-      await assert.rejects(request.onTool("page_complete", {}), /采用/);
-      await request.onTool("task_ask", {
-        question: "请查看并采用基础定义。",
-        reason: "核对业务含义",
-        foundationId: saved.id,
-        version: saved.version,
-      });
       ran = true;
       return {
         text: "基础候选已保存，尚未绑定数据来源。",
         sessionId: "foundation",
         runId: "foundation",
       };
-    },
-    async stop() {},
-    async close() {},
   };
-  let service = await createServer({ directory, driver });
+  let service = await createServer({ directory });
   seedFoundation(service.app.memory, service.app.foundation, { enterprise: "澄川热力", concepts: [{ id: "heating", name: "供热服务", description: "来自供热表的记录。" }, { id: "resident", name: "居民", description: "来自居民表的记录。" }], relations: [{ id: "serves", name: "服务于", from: "heating", to: "resident", description: "供热表关联居民表。" }] });
   const start = async () => {
     await new Promise<void>((resolve) =>
@@ -94,12 +81,7 @@ test("a real Skill and quoted conversation refine the rule-built foundation whil
   };
   try {
     let api = await start();
-    await api("/api/canvas/message", {
-      page: "setup",
-      text: "澄川热力主营居民供热",
-      messageId: "foundation-user",
-    });
-    await service.app.idle();
+    await runFoundationSession(service.app, "澄川热力主营居民供热", run, { messageId: "foundation-user" });
     assert(ran, JSON.stringify((await api()).messages));
     const before = await api();
     const candidate = before.foundation.current;
@@ -137,7 +119,7 @@ test("a real Skill and quoted conversation refine the rule-built foundation whil
     });
     assert.equal(
       adopted.messages.filter((message: any) => message.role === "user").length,
-      2,
+      1,
     );
     assert.equal(
       adopted.messages.filter(
@@ -165,7 +147,7 @@ test("a real Skill and quoted conversation refine the rule-built foundation whil
       candidate.version + 1,
     );
     await service.close();
-    service = await createServer({ directory, driver });
+    service = await createServer({ directory });
     api = await start();
     const restored = await api("/api/canvas/navigate", { page: "ontology" });
     assert.equal(restored.foundation.adopted.id, candidate.id);
@@ -184,13 +166,10 @@ test("foundation revisions preserve adopted meaning and unknowns, rejecting fake
   const directory = mkdtempSync(join(tmpdir(), "de-foundation-revision-"));
   let runs = 0;
   let checked = 0;
-  const driver: AgentDriver = {
-    async run(request) {
+  const run = async (session: FoundationSession) => {
       const round = ++runs;
-      const input = JSON.parse(request.input);
-      const message = input.recentMessages
-        .filter((m: any) => m.role === "user")
-        .at(-1);
+      const input = { foundation: session.read().current, recentMessages: service.app.memory.messages(session.taskId) };
+      const message = session.message;
       const draft: any = {
         baseVersion: input.foundation?.version ?? 0,
         enterprise: { name: "澄川热力", evidenceRefs: ["e1"] },
@@ -217,24 +196,11 @@ test("foundation revisions preserve adopted meaning and unknowns, rejecting fake
           round === 1 ? [{ id: "area", description: "服务区域尚未提供" }] : [],
         conflicts: [],
       };
-      await assert.rejects(request.onTool("foundation_propose", draft), /加载/);
-      await request.onTool("skill_use", {
-        name: "company-foundation-ontology",
-      });
+      await assert.rejects(session.propose(draft, ""), /加载/);
       if (round === 1) {
-        await request.onTool("profile_update", {
-          statements: [
-            {
-              key: "company.name",
-              text: "澄川热力",
-              quote: "澄川热力",
-              origin: "user",
-              messageId: message.id,
-            },
-          ],
-        });
+        new Workspace(service.app.memory).editProfile("company.name", "澄川热力");
         await assert.rejects(
-          request.onTool("foundation_propose", {
+          session.propose( {
             ...draft,
             evidence: [
               {
@@ -247,7 +213,7 @@ test("foundation revisions preserve adopted meaning and unknowns, rejecting fake
           /真实用户原话/,
         );
         await assert.rejects(
-          request.onTool("foundation_propose", {
+          session.propose( {
             ...draft,
             relations: [
               {
@@ -262,20 +228,15 @@ test("foundation revisions preserve adopted meaning and unknowns, rejecting fake
           }),
           /端点|数据程序/,
         );
-        const saved = (await request.onTool(
-          "foundation_propose",
-          draft,
-        )) as any;
+        const saved = (await session.propose(draft)) as any;
         assert.equal(
-          ((await request.onTool("foundation_propose", draft)) as any).version,
+          ((await session.propose( draft)) as any).version,
           saved.version,
         );
       } else {
-        const assistant = input.recentMessages.find(
-          (m: any) => m.role === "assistant",
-        );
+        const assistant = service.app.memory.addMessage(session.taskId, "assistant", "未经用户确认的推测");
         await assert.rejects(
-          request.onTool("foundation_propose", {
+          session.propose( {
             ...draft,
             evidence: [
               { id: "fake", messageId: assistant.id, quote: assistant.content },
@@ -284,7 +245,7 @@ test("foundation revisions preserve adopted meaning and unknowns, rejecting fake
           /真实用户原话/,
         );
         await assert.rejects(
-          request.onTool("foundation_propose", {
+          session.propose( {
             ...draft,
             evidence: [
               { id: "e1", messageId: message.id, quote: message.content },
@@ -293,7 +254,7 @@ test("foundation revisions preserve adopted meaning and unknowns, rejecting fake
           /不可改写/,
         );
         await assert.rejects(
-          request.onTool("foundation_propose", {
+          session.propose( {
             ...draft,
             unknowns: [
               {
@@ -316,12 +277,9 @@ test("foundation revisions preserve adopted meaning and unknowns, rejecting fake
         draft.evidence = [
           { id: "e2", messageId: message.id, quote: "客服派发维修工单" },
         ];
-        const saved = (await request.onTool(
-          "foundation_propose",
-          draft,
-        )) as any;
+        const saved = (await session.propose(draft)) as any;
         assert.equal(saved.version, draft.baseVersion + 1);
-        const visible = (await request.onTool("foundation_read", {})) as any;
+        const visible = (await session.read()) as any;
         assert.equal(visible.adopted.version, draft.baseVersion);
         assert.equal(visible.current.content.concepts.length, 2);
         assert.equal(
@@ -330,7 +288,7 @@ test("foundation revisions preserve adopted meaning and unknowns, rejecting fake
         );
         assert.equal(visible.current.content.changes[0].after.name, "维修工单");
         await assert.rejects(
-          request.onTool("foundation_propose", { ...draft, concepts: [] }),
+          session.propose( { ...draft, concepts: [] }),
           /版本已变化/,
         );
       }
@@ -340,19 +298,11 @@ test("foundation revisions preserve adopted meaning and unknowns, rejecting fake
         sessionId: "revision",
         runId: "revision",
       };
-    },
-    async stop() {},
-    async close() {},
   };
-  const service = await createServer({ directory, driver });
+  const service = await createServer({ directory });
   seedFoundation(service.app.memory, service.app.foundation, { enterprise: "澄川热力", concepts: [{ id: "resident", name: "居民", description: "来自居民表的记录。" }, { id: "ticket", name: "工单", description: "来自工单表的记录。" }], relations: [] });
   try {
-    await service.app.canvasMessage({
-      page: "setup",
-      text: "澄川热力主营居民供热",
-      messageId: "revision-1",
-    });
-    await service.app.idle();
+    await runFoundationSession(service.app, "澄川热力主营居民供热", run, { messageId: "revision-1" });
     assert.equal(
       checked,
       1,
@@ -364,12 +314,7 @@ test("foundation revisions preserve adopted meaning and unknowns, rejecting fake
       id: initial.id,
       version: initial.version,
     });
-    await service.app.canvasMessage({
-      page: "setup",
-      text: "客服派发维修工单",
-      messageId: "revision-2",
-    });
-    await service.app.idle();
+    await runFoundationSession(service.app, "客服派发维修工单", run, { messageId: "revision-2" });
     assert.equal(
       checked,
       2,
@@ -406,124 +351,37 @@ test("foundation revisions preserve adopted meaning and unknowns, rejecting fake
   }
 });
 
-test("stopping foundation generation prevents late saves; unresolved conflicts block adoption", async () => {
+test("stopping a host foundation execution prevents late saves; unresolved conflicts block adoption", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-foundation-stop-"));
-  let release!: () => void;
-  let entered!: () => void;
-  const waiting = new Promise<void>((resolve) => {
-    entered = resolve;
+  const service = await createServer({ directory });
+  const seeded = seedFoundation(service.app.memory, service.app.foundation, { enterprise: "澄川热力", concepts: [{ id: "resident", name: "居民", description: "来自居民表的记录。" }] });
+  const draft = (session: FoundationSession) => ({ baseVersion: session.read().current!.version,
+    enterprise: { name: "澄川热力", evidenceRefs: ["e1"] },
+    concepts: [{ id: "resident", name: "居民", description: "供热用户", evidenceRefs: ["e1"] }], relations: [],
+    evidence: [{ id: "e1", messageId: session.message.id, quote: session.message.content }], unknowns: [],
+    conflicts: [{ id: "area", description: "服务区域尚待核对两个说法" }],
   });
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  let lateRejected = false;
-  let round = 0;
-  const driver: AgentDriver = {
-    async run(request) {
-      const input = JSON.parse(request.input);
-      const message = input.recentMessages
-        .filter((m: any) => m.role === "user")
-        .at(-1);
-      await request.onTool("skill_use", {
-        name: "company-foundation-ontology",
-      });
-      const proposal = {
-        baseVersion: input.foundation?.version ?? 0,
-        enterprise: { name: "澄川热力", evidenceRefs: ["e1"] },
-        concepts: [
-          {
-            id: "resident",
-            name: "居民",
-            description: "供热用户",
-            evidenceRefs: ["e1"],
-          },
-        ],
-        relations: [],
-        evidence: [
-          { id: "e1", messageId: message.id, quote: "澄川热力主营居民供热" },
-        ],
-        unknowns: [],
-        conflicts: [{ id: "area", description: "服务区域尚待核对两个说法" }],
-      };
-      if (++round === 1) {
-        entered();
-        await gate;
-        await assert.rejects(
-          request.onTool("foundation_propose", proposal),
-          /暂停|失效|结束|有效|中断/,
-        );
-        lateRejected = true;
-      } else {
-        await request.onTool("foundation_propose", proposal);
-      }
-      return { text: "已处理。", sessionId: "stop", runId: "stop" };
-    },
-    async stop() {
-      release();
-    },
-    async close() {},
-  };
-  const service = await createServer({ directory, driver });
-  const seeded = seedFoundation(service.app.memory, service.app.foundation, { enterprise: "澄川热力", concepts: [{ id: "resident", name: "居民", description: "来自居民表的记录。" }], relations: [] });
   try {
-    await service.app.canvasMessage({
-      page: "setup",
-      text: "澄川热力主营居民供热",
-      messageId: "stop-1",
-    });
-    await waiting;
-    await service.app.canvasStop({ page: "setup" });
-    await service.app.idle();
-    assert.equal(lateRejected, true);
-    assert.equal(service.app.canvasState().foundation.current!.version, seeded.version, "a stopped run saves nothing");
-    await service.app.canvasMessage({
-      page: "setup",
-      text: "澄川热力主营居民供热",
-      messageId: "stop-2",
-    });
-    await service.app.idle();
-    const candidate = service.app.canvasState().foundation.current!;
-    assert(candidate);
-    await assert.rejects(
-      service.app.canvasFoundationAdopt({
-        page: "setup",
-        id: candidate.id,
-        version: candidate.version,
-      }),
-      /冲突/,
-    );
-    assert.equal(service.app.canvasState().foundation.adopted!.version, seeded.version);
-  } finally {
-    await service.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
+    const stopped = foundationSession(service.app, "澄川热力主营居民供热");
+    service.app.memory.pauseTask(stopped.taskId, "用户已停止");
+    await assert.rejects(stopped.propose(draft(stopped)), /暂停|失效|结束|有效|中断/);
+    stopped.close();
+    assert.equal(service.app.foundation.read().current!.version, seeded.version);
+    const candidate = await runFoundationSession(service.app, "澄川热力主营居民供热", session => session.propose(draft(session))) as any;
+    await assert.rejects(service.app.canvasFoundationAdopt({ page: "setup", id: candidate.id, version: candidate.version }), /冲突/);
+    assert.equal(service.app.foundation.read().adopted!.version, seeded.version);
+  } finally { await service.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
 test("an explicit same-enterprise name correction retains semantic identity and awaits adoption", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-foundation-name-"));
   let checked = 0;
-  const driver: AgentDriver = {
-    async run(request) {
-      const input = JSON.parse(request.input);
-      const message = input.recentMessages
-        .filter((m: any) => m.role === "user")
-        .at(-1);
+  const run = async (session: FoundationSession) => {
+      const input = { foundation: session.read().current, recentMessages: service.app.memory.messages(session.taskId) };
+      const message = session.message;
       const revision = message.id !== "name-1";
       const name = revision ? "澄川热力有限公司" : "澄川热力";
-      await request.onTool("skill_use", {
-        name: "company-foundation-ontology",
-      });
-      await request.onTool("profile_update", {
-        statements: [
-          {
-            key: "company.name",
-            text: name,
-            quote: name,
-            origin: "user",
-            messageId: message.id,
-          },
-        ],
-      });
+      new Workspace(service.app.memory).editProfile("company.name", name);
       const draft: any = {
         baseVersion: input.foundation?.version ?? 0,
         enterprise: { name, evidenceRefs: [revision ? "e2" : "e1"] },
@@ -550,7 +408,7 @@ test("an explicit same-enterprise name correction retains semantic identity and 
       };
       if (revision) {
         await assert.rejects(
-          request.onTool("foundation_propose", draft),
+          session.propose( draft),
           /主体|名称/,
         );
         draft.identityCorrection = {
@@ -559,14 +417,14 @@ test("an explicit same-enterprise name correction retains semantic identity and 
         };
       } else {
         await assert.rejects(
-          request.onTool("foundation_propose", {
+          session.propose( {
             ...draft,
             relations: [{ id: "resident", name: "认识", description: "同类关系", from: "resident", to: "resident", evidenceRefs: ["e1"] }],
           }),
           /数据程序/,
         );
         await assert.rejects(
-          request.onTool("foundation_propose", {
+          session.propose( {
             ...draft,
             // The duplicate must use an existing concept: new relations fail the structure lock first.
             concepts: [draft.concepts[0], { ...draft.concepts[0] }],
@@ -574,22 +432,14 @@ test("an explicit same-enterprise name correction retains semantic identity and 
           /标识重复/,
         );
       }
-      await request.onTool("foundation_propose", draft);
+      await session.propose( draft);
       checked++;
       return { text: "已保存名称纠正候选。", runId: "name", sessionId: "name" };
-    },
-    async stop() {},
-    async close() {},
   };
-  const service = await createServer({ directory, driver });
+  const service = await createServer({ directory });
   seedFoundation(service.app.memory, service.app.foundation, { enterprise: "澄川热力", concepts: [{ id: "resident", name: "居民", description: "来自居民表的记录。" }], relations: [] });
   try {
-    await service.app.canvasMessage({
-      page: "setup",
-      text: "澄川热力主营居民供热",
-      messageId: "name-1",
-    });
-    await service.app.idle();
+    await runFoundationSession(service.app, "澄川热力主营居民供热", run, { messageId: "name-1" });
     assert.equal(
       checked,
       1,
@@ -601,12 +451,7 @@ test("an explicit same-enterprise name correction retains semantic identity and 
       id: initial.id,
       version: initial.version,
     });
-    await service.app.canvasMessage({
-      page: "setup",
-      text: "还是同一家企业，正式全称是澄川热力有限公司，请把简称改成全称。",
-      messageId: "name-2",
-    });
-    await service.app.idle();
+    await runFoundationSession(service.app, "还是同一家企业，正式全称是澄川热力有限公司，请把简称改成全称。", run, { messageId: "name-2" });
     assert.equal(
       checked,
       2,

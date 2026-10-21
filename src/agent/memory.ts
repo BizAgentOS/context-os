@@ -1,3 +1,4 @@
+import { FoundationEvidenceLibrary } from "./foundation-library.ts";
 import { normalizeCanvasPage } from "./canvas-pages.ts";
 import type { ResolvedWorkContext } from "./work-context.ts";
 import { EventEmitter } from "node:events";
@@ -22,6 +23,7 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   createdAt: string;
+  binding?: Data;
   workContext?: ResolvedWorkContext;
 }
 export interface ConversationSession {
@@ -65,7 +67,9 @@ const messageFingerprint = (role: string, content: string, binding?: Data) =>
     .digest("hex");
 
 export class MemoryStore implements Repository {
+  readonly directory: string;
   private db: DatabaseSync;
+  private evidenceLibrary: FoundationEvidenceLibrary;
   readonly changes = new EventEmitter();
   private pendingChanges: Data[] = [];
   private written: Artifact[] = [];
@@ -82,6 +86,7 @@ export class MemoryStore implements Repository {
   }
 
   constructor(directory: string) {
+    this.directory = directory;
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(join(directory, "memory.sqlite"));
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
@@ -94,6 +99,20 @@ export class MemoryStore implements Repository {
       CREATE TABLE IF NOT EXISTS operations (id TEXT PRIMARY KEY, body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS consumer_evidence_cache (id TEXT PRIMARY KEY, view_id TEXT NOT NULL, expires_at INTEGER NOT NULL, body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY, body TEXT NOT NULL);`);
+    this.evidenceLibrary = new FoundationEvidenceLibrary(this.db);
+    // Upgrade historical foundations and idempotent receipts atomically; no semantic version changes.
+    this.atomic(() => {
+      for (const row of this.db.prepare("SELECT id,version,body FROM artifacts WHERE kind IN ('foundation','engine_candidate')").all() as { id: string; version: number; body: string }[]) {
+        const artifact = parse<Artifact>(row);
+        if (artifact.content.evidenceLibrary && !Array.isArray(artifact.content.evidence)) continue;
+        this.db.prepare("UPDATE artifacts SET body=? WHERE id=? AND version=?").run(JSON.stringify(this.evidenceLibrary.encode(artifact)), row.id, row.version);
+      }
+      for (const row of this.db.prepare("SELECT id,body FROM operations WHERE json_extract(body,'$.kind') IN ('foundation','engine_candidate')").all() as { id: string; body: string }[]) {
+        const artifact = parse<Artifact>(row);
+        this.db.prepare("UPDATE operations SET body=? WHERE id=?").run(JSON.stringify(this.evidenceLibrary.encode(artifact)), row.id);
+      }
+      this.collectFoundationEvidence();
+    });
     this.db.prepare("DELETE FROM consumer_evidence_cache WHERE expires_at <= ?").run(Date.now());
     for (const task of this.listTasks()) {
       if (task.executionId) {
@@ -128,6 +147,22 @@ export class MemoryStore implements Repository {
   }
   deleteConsumerEvidence(viewId:string) { this.db.prepare('DELETE FROM consumer_evidence_cache WHERE view_id=?').run(viewId); }
 
+  foundationEvidencePage(id: string, version: number, offset: number, limit: number) {
+    if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("依据分页参数无效");
+    return this.evidenceLibrary.page(this.getArtifact(id, version, { evidence: "compact" }), offset, limit);
+  }
+  foundationEvidenceFor(id: string, version: number, ids: string[], offset = 0, limit = 20) {
+    if (ids.length > 100 || !Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("依据分页参数无效");
+    return this.evidenceLibrary.select(this.getArtifact(id, version, {evidence:"compact"}), ids, offset, limit);
+  }
+  foundationEvidenceStats() { return this.evidenceLibrary.stats(); }
+  collectFoundationEvidence() {
+    return this.atomic(() => {
+      const owners = this.db.prepare("SELECT id,version,kind FROM artifacts WHERE kind IN ('foundation','engine_candidate','change_evidence_receipt')").all() as { id: string; version: number; kind: string }[];
+      return this.evidenceLibrary.collect(new Set(owners.map(owner => `${owner.id}${owner.kind === "engine_candidate" ? "#foundation" : ""}@${owner.version}`)));
+    });
+  }
+
   close() {
     this.db.close();
   }
@@ -161,7 +196,7 @@ export class MemoryStore implements Repository {
     return this.transaction(fn);
   }
 
-  listArtifacts(kind?: string): Artifact[] {
+  listArtifacts(kind?: string, options: { evidence?: "hydrate" | "compact" } = {}): Artifact[] {
     const rows = this.db
       .prepare(
         `SELECT a.body FROM artifacts a JOIN
@@ -171,10 +206,11 @@ export class MemoryStore implements Repository {
       .all();
     return rows
       .map((row) => parse<Artifact>(row))
-      .filter((a) => (!kind || a.kind === kind) && !(a.kind === "source" && a.status === "removed") && !(a.kind === "foundation" && a.status === "discarded"));
+      .filter((a) => (!kind || a.kind === kind) && !(a.kind === "source" && a.status === "removed") && !(a.kind === "foundation" && a.status === "discarded"))
+      .map(a => options.evidence === "compact" ? a : this.evidenceLibrary.decode(a));
   }
 
-  getArtifact(id: string, version?: number): Artifact {
+  getArtifact(id: string, version?: number, options: { evidence?: "hydrate" | "compact" } = {}): Artifact {
     const row =
       version === undefined
         ? this.db
@@ -186,7 +222,8 @@ export class MemoryStore implements Repository {
             .prepare("SELECT body FROM artifacts WHERE id=? AND version=?")
             .get(id, version);
     if (!row) throw new Error("成果不存在或该版本不可用");
-    return parse<Artifact>(row);
+    const artifact = parse<Artifact>(row);
+    return options.evidence === "compact" ? artifact : this.evidenceLibrary.decode(artifact);
   }
 
   artifactOperation(
@@ -197,7 +234,7 @@ export class MemoryStore implements Repository {
     const row = this.db
       .prepare("SELECT body FROM operations WHERE id=?")
       .get(`${context.executionId}:${operationId}`);
-    return row ? parse<Artifact>(row) : null;
+    return row ? this.evidenceLibrary.decode(parse<Artifact>(row)) : null;
   }
 
   putArtifact(
@@ -214,7 +251,7 @@ export class MemoryStore implements Repository {
         const previous = this.db
           .prepare("SELECT body FROM operations WHERE id=?")
           .get(key);
-        if (previous) return parse<Artifact>(previous);
+        if (previous) return this.evidenceLibrary.decode(parse<Artifact>(previous));
       }
       const prior = input.id ? this.getArtifact(input.id) : null;
       if (
@@ -238,12 +275,12 @@ export class MemoryStore implements Repository {
           artifact.id,
           artifact.version,
           artifact.kind,
-          JSON.stringify(artifact),
+          JSON.stringify(this.evidenceLibrary.encode(artifact)),
         );
       if (key)
         this.db
           .prepare("INSERT INTO operations VALUES (?,?)")
-          .run(key, JSON.stringify(artifact));
+          .run(key, JSON.stringify(this.evidenceLibrary.encode(artifact)));
       this.written.push(artifact);
       if (context) this.attachArtifact(context.taskId, artifact);
       this.changed({kind:"artifact",id:artifact.id,version:artifact.version,artifactKind:artifact.kind});
@@ -256,7 +293,7 @@ export class MemoryStore implements Repository {
     return this.transaction(() => {
       if (this.db.prepare("SELECT 1 FROM artifacts WHERE id=? LIMIT 1").get(id)) throw new Error("成果标识已存在");
       const artifact: Artifact = { id, kind: input.kind, title: input.title, status: input.status, content: input.content, version: 1, createdAt: now() };
-      this.db.prepare("INSERT INTO artifacts VALUES (?,?,?,?)").run(artifact.id, artifact.version, artifact.kind, JSON.stringify(artifact));
+      this.db.prepare("INSERT INTO artifacts VALUES (?,?,?,?)").run(artifact.id, artifact.version, artifact.kind, JSON.stringify(this.evidenceLibrary.encode(artifact)));
       this.changed({kind:"artifact",id:artifact.id,version:artifact.version,artifactKind:artifact.kind});
       return artifact;
     });
@@ -487,6 +524,7 @@ export class MemoryStore implements Repository {
       role,
       content,
       createdAt: now(),
+      ...(binding ? { binding: structuredClone(binding) } : {}),
       ...(workContext ? { workContext } : {}),
     };
     const fingerprint = messageFingerprint(role, content, binding);

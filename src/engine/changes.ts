@@ -46,7 +46,7 @@ const subjects = {
   description: z.object({ target: z.enum(["concept", "relation"]), id: name, description: z.string().trim().min(1).max(1500) }).strict(),
   relation: relationSubjectSchema,
 };
-const RESERVED = ["entity", "property", "binding", "identity_rule", "identity_decision", "local_correction", "deprecation", "restore", "data_issue"] as const;
+const RESERVED = ["entity", "property", "binding", "identity_rule", "identity_decision", "local_correction", "deprecation", "restore", "data_issue", "adjudication", "gap"] as const;
 const typeNames = ["naming", "description", "relation", ...RESERVED] as const;
 const proposeInput = z.object({
   operationId: name, origin, type: z.enum(typeNames), baseline, subject: z.record(z.string(), z.unknown()),
@@ -55,6 +55,9 @@ const proposeInput = z.object({
 const act = z.object({ operationId: name, id: name, version: z.number().int().positive() }).strict();
 const adoptInput = act.extend({ acknowledgeReview: z.boolean().default(false) }).strict();
 const reasonInput = act.extend({ reason: text }).strict();
+const batchInput = z.object({operationId:name,items:z.array(ref).min(1).max(50)}).strict();
+const batchAdoptInput = batchInput.extend({acknowledgeReview:z.boolean().default(false)}).strict();
+const batchRejectInput = batchInput.extend({reason:text}).strict();
 const listInput = z.object({ status: z.string().optional(), type: z.string().optional(),
   limit: z.number().int().min(1).max(rules.limits.listPageSize).default(rules.limits.listPageSize), offset: z.number().int().min(0).default(0) }).strict();
 
@@ -62,11 +65,17 @@ type Subjects = { [K in keyof typeof subjects]: z.infer<(typeof subjects)[K]> };
 type VerifiedType = keyof Subjects;
 interface Metrics { [key: string]: number | boolean | string | null }
 export interface Verification { ruleVersion: number; result: "passed" | "review" | "failed"; metrics: Metrics; notes: string[]; inputs: Data; checkedAt: string }
-export interface PreparedChange { verification: Omit<Verification, "ruleVersion" | "checkedAt">; apply: () => Data }
+export interface PreparedChange { verification: Omit<Verification, "ruleVersion" | "checkedAt">; previewDefinition?: Data; previewFoundation?: Artifact; previewCorrections?: { relations?: Artifact[]; properties?: Artifact[] }; apply: () => Data }
 export interface ChangeHandler {
   subject: z.ZodType;
-  prepare: (change: Artifact) => Promise<PreparedChange>;
+  prepare: (change: Artifact, assertActive?: () => void) => Promise<PreparedChange>;
 }
+export interface ChangeBatchHandler {
+  accepts: (changes:Artifact[])=>boolean;
+  prepare: (changes:Artifact[],prepared:PreparedChange[])=>Promise<()=>Data[]>;
+}
+export interface BatchChangeResult {changes:Artifact[];batchRef:{id:string;version:number};}
+export const changeCategory=(type:string)=>["naming","description"].includes(type)?"naming":["adjudication","gap","data_issue"].includes(type)?type:"structure";
 
 const isVerifiedType = (type: string): type is VerifiedType => Object.hasOwn(subjects, type);
 const round = (value: number) => Math.round(value * 10000) / 10000;
@@ -84,6 +93,7 @@ export class OntologyChanges {
   private snapshots: Snapshots;
   private handlers = new Map<string, ChangeHandler>();
   private ownerHandlers = new Map<string, ChangeHandler>();
+  private batchHandlers:ChangeBatchHandler[]=[];
 
   constructor(memory: MemoryStore, foundation: FoundationService, snapshots: Snapshots) {
     this.memory = memory; this.foundation = foundation; this.snapshots = snapshots;
@@ -91,6 +101,7 @@ export class OntologyChanges {
 
   registerHandler(type: string, handler: ChangeHandler) { this.handlers.set(type, handler); }
   registerOwnerHandler(kind: string, handler: ChangeHandler) { this.ownerHandlers.set(kind, handler); }
+  registerBatchHandler(handler:ChangeBatchHandler){this.batchHandlers.push(handler);}
   private handler(change: Artifact) { return this.ownerHandlers.get(String((change.content.owner as Data | undefined)?.kind)) ?? this.handlers.get(String(change.content.type)); }
 
   /** What every change is proposed against; a change made against anything older is rejected as stale. */
@@ -207,19 +218,36 @@ export class OntologyChanges {
     });
   }
 
-  async verify(input: unknown) {
+  async preparePreview(input: { id: string; version: number }, assertActive: () => void = () => {}) {
+    assertActive();
+    const change = this.open(ref.parse(input));
+    this.assertBaseline(change.content.baseline as z.infer<typeof baseline>);
+    const prepared = await this.handler(change)?.prepare(change, assertActive);
+    assertActive();
+    this.open(input);
+    this.assertBaseline(change.content.baseline as z.infer<typeof baseline>);
+    if (!prepared) throw new Error("该变更尚未接入预演服务");
+    return { verification: prepared.verification, ...(prepared.previewDefinition ? { definition: prepared.previewDefinition } : {}),
+      ...(prepared.previewFoundation ? { foundation: prepared.previewFoundation } : {}),
+      ...(prepared.previewCorrections ? { corrections: prepared.previewCorrections } : {}) };
+  }
+
+  async verify(input: unknown, assertActive: () => void = () => {}) {
+    assertActive();
     const args = act.parse(input), actor = "local-admin", signature = fingerprint({ method: "verify", args });
     const replay = this.previous(actor, args.operationId, signature);
     if (replay) return replay;
     const change = this.open(args);
     this.assertBaseline(change.content.baseline as z.infer<typeof baseline>);
     let verification: Verification;
-    try { verification = await this.check(change); }
+    try { verification = await this.check(change, assertActive); }
     catch (error) {
       if (error instanceof ChangeConflict) throw error;
       verification = { ruleVersion: 1, result: "failed", metrics: {}, notes: [(error as Error).message], inputs: {}, checkedAt: new Date().toISOString() };
     }
+    assertActive();
     return this.memory.atomic(() => {
+      assertActive();
       const again = this.previous(actor, args.operationId, signature);
       if (again) return again;
       if (this.read(change.id).version !== change.version) throw new ChangeConflict("version_conflict", "变更版本已变化，请重新读取");
@@ -230,7 +258,8 @@ export class OntologyChanges {
     });
   }
 
-  async adopt(input: unknown) {
+  async adopt(input: unknown, assertActive: () => void = () => {}) {
+    assertActive();
     const args = adoptInput.parse(input), actor = "local-admin", signature = fingerprint({ method: "adopt", args });
     const replay = this.previous(actor, args.operationId, signature);
     if (replay) return replay;
@@ -238,15 +267,17 @@ export class OntologyChanges {
     if (change.status !== "verified") throw new ChangeConflict("not_verified", "请先复验该变更，再采用具体版本");
     const stored = change.content.verification as unknown as Verification;
     if (stored.result === "review" && !args.acknowledgeReview) throw new ChangeConflict("review_required", "复验结果为待审，需明确确认后才能采用");
-    const prepared = await this.handler(change)?.prepare(change);
+    const prepared = await this.handler(change)?.prepare(change, assertActive);
+    assertActive();
     const applier = prepared ? () => prepared.apply() : undefined;
     if (!applier) throw new Error(`“${change.content.type}”类变更的采用尚未接入统一流程`);
     this.assertBaseline(change.content.baseline as z.infer<typeof baseline>);
     // Adoption re-reads the facts: a result that moved since verification is no longer what was approved.
-    const fresh = prepared ? { ruleVersion: 1, checkedAt: new Date().toISOString(), ...prepared.verification } : await this.check(change);
+    const fresh = prepared ? { ruleVersion: 1, checkedAt: new Date().toISOString(), ...prepared.verification } : await this.check(change, assertActive);
     if (fresh.result !== stored.result || fingerprint(fresh.metrics) !== fingerprint(stored.metrics) || fingerprint(fresh.inputs) !== fingerprint(stored.inputs))
       throw new ChangeConflict("verification_changed", "来源数据或定义已变化，复验结果与已核对的版本不一致，请重新复验");
     return this.memory.atomic(() => {
+      assertActive();
       const again = this.previous(actor, args.operationId, signature);
       if (again) return again;
       if (this.read(change.id).version !== change.version) throw new ChangeConflict("version_conflict", "变更版本已变化，请重新读取");
@@ -261,6 +292,70 @@ export class OntologyChanges {
   }
 
   reject(input: unknown) { return this.close("reject", input, "rejected"); }
+
+  private batchReplay(operationId:string,signature:string):BatchChangeResult|null {
+    const receipt=this.memory.listArtifacts("change_receipt").find(item=>item.content.actor==="local-admin"&&item.content.operationId===operationId);
+    if(!receipt)return null;
+    if(receipt.content.signature!==signature)throw new ChangeConflict("operation_conflict","幂等操作标识已绑定不同请求");
+    return {changes:(receipt.content.changes as Data[]).map(item=>this.read(String(item.id),Number(item.version))),batchRef:{id:receipt.id,version:receipt.version}};
+  }
+  private batchItems(items:Array<{id:string;version:number}>){
+    if(new Set(items.map(item=>item.id)).size!==items.length)throw new ChangeConflict("batch_conflict","批量操作不能重复选择同一变更");
+    const changes=items.map(item=>this.open(item));
+    if(new Set(changes.map(change=>changeCategory(String(change.content.type)))).size!==1)throw new ChangeConflict("batch_category","只能批量处理同一类别的事项");
+    return changes;
+  }
+  private saveBatch(operationId:string,signature:string,changes:Artifact[]):BatchChangeResult{
+    const receipt=this.memory.putArtifact({kind:"change_receipt",title:"批量变更回执",status:"saved",content:{actor:"local-admin",operationId,signature,changes:changes.map(change=>({id:change.id,version:change.version}))}});
+    return {changes,batchRef:{id:receipt.id,version:receipt.version}};
+  }
+
+  async batchAdopt(input:unknown):Promise<BatchChangeResult>{
+    const args=batchAdoptInput.parse(input),signature=fingerprint({method:"batch-adopt",args}),replay=this.batchReplay(args.operationId,signature);
+    if(replay)return replay;
+    const selected=this.batchItems(args.items),prepared:PreparedChange[]=[];
+    const workingRevision=()=>{const latest=this.memory.listArtifacts("workspace_version").sort((a,b)=>Number(b.content.number)-Number(a.content.number))[0];return latest?`${latest.id}@${latest.version}`:null;};
+    const working=workingRevision();
+    for(const change of selected){
+      if(change.status!=="verified")throw new ChangeConflict("not_verified","请先复验全部选中变更");
+      this.assertBaseline(change.content.baseline as z.infer<typeof baseline>);
+      const stored=change.content.verification as unknown as Verification;
+      if(stored.result==="review"&&!args.acknowledgeReview)throw new ChangeConflict("review_required","选中项包含待审结果，需要明确确认后采用");
+      const fresh=await this.handler(change)?.prepare(change);
+      if(!fresh)throw new ChangeConflict("batch_conflict","选中变更尚未接入采用服务");
+      if(fresh.verification.result!==stored.result||fingerprint(fresh.verification.metrics)!==fingerprint(stored.metrics)||fingerprint(fresh.verification.inputs)!==fingerprint(stored.inputs))throw new ChangeConflict("verification_changed","选中变更的来源或定义已变化，请重新复验");
+      prepared.push(fresh);
+    }
+    const handler=this.batchHandlers.find(handler=>handler.accepts(selected));
+    if(selected.length>1&&!handler)throw new ChangeConflict("batch_conflict","所选变更会覆盖同一完整定义，不能安全合并；请逐项处理并重新复验");
+    const apply=handler?await handler.prepare(selected,prepared):()=>[prepared[0].apply()];
+    return this.memory.atomic(()=>{
+      const replay=this.batchReplay(args.operationId,signature);if(replay)return replay;
+      if(workingRevision()!==working)throw new ChangeConflict("verification_changed","批量复验期间工作版或治理决定已变化，请重新复验");
+      for(const change of selected){this.open({id:change.id,version:change.version});this.assertBaseline(change.content.baseline as z.infer<typeof baseline>);}
+      const before=this.applying;this.applying=true;let effects:Data[];
+      try{effects=apply();}finally{this.applying=before;}
+      if(effects.length!==selected.length)throw new Error("批量采用回执数量不完整");
+      const changes=selected.map((change,i)=>this.move(change,"adopted",{...change.content,effect:effects[i],decision:{actor:"local-admin",at:new Date().toISOString(),verifiedVersion:change.version,acknowledgedReview:args.acknowledgeReview,batchOperation:args.operationId}}));
+      return this.saveBatch(args.operationId,signature,changes);
+    });
+  }
+
+  batchReject(input:unknown):BatchChangeResult{
+    const args=batchRejectInput.parse(input),signature=fingerprint({method:"batch-reject",args}),replay=this.batchReplay(args.operationId,signature);
+    if(replay)return replay;
+    return this.memory.atomic(()=>{
+      const replay=this.batchReplay(args.operationId,signature);if(replay)return replay;
+      const selected=this.batchItems(args.items);
+      for(const change of selected)if(!TRANSITIONS[change.status as ChangeStatus]?.includes("rejected"))throw new ChangeConflict("invalid_transition","选中项包含已经处理的变更");
+      const changes=selected.map(change=>{
+        const metrics=((change.content.verification as Data|undefined)?.metrics??change.content.observed??null) as Data|null;
+        return this.move(change,"rejected",{...change.content,disposition:"rejected",closedReason:args.reason,closedBy:"local-admin",closedAt:new Date().toISOString(),batchOperation:args.operationId,
+          rejectedMetrics:metrics?{matchRate:metrics.matchRate??null,targetUnique:metrics.targetUnique??null}:null});
+      });
+      return this.saveBatch(args.operationId,signature,changes);
+    });
+  }
 
   /** Legacy entry points call this only after their owning service has revalidated its inputs. */
   commitOwned<T>(owner: Artifact, save: () => T, readings: Data = {}): T {
@@ -358,7 +453,6 @@ export class OntologyChanges {
       const again = this.previous(actor, args.operationId, signature);
       if (again) return again;
       const change = this.open(args);
-      this.assertBaseline(change.content.baseline as z.infer<typeof baseline>);
       const verification = change.content.verification as Data | undefined;
       // A rejection remembers the measured facts so the same program proposal is not repeated until they move.
       const metrics = (verification?.metrics ?? change.content.observed ?? null) as Data | null;
@@ -382,11 +476,12 @@ export class OntologyChanges {
   }
 
   /** Deterministic verification: every number is recomputed here from the workspace, never taken from the proposer. */
-  private async check(change: Artifact): Promise<Verification> {
+  private async check(change: Artifact, assertActive: () => void = () => {}): Promise<Verification> {
+    assertActive();
     const type = String(change.content.type) as VerifiedType;
     const base = { ruleVersion: 1, checkedAt: new Date().toISOString() };
     const handler = this.handler(change);
-    if (handler) return { ...base, ...(await handler.prepare(change)).verification };
+    if (handler) return { ...base, ...(await handler.prepare(change, assertActive)).verification };
     if (type === "relation") return { ...base, ...await this.checkRelation(change.content.subject as unknown as Subjects["relation"]) };
     return { ...base, ...this.checkWording(type, change.content.subject as unknown as Subjects["naming"] & Subjects["description"]) };
   }

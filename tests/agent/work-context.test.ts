@@ -8,6 +8,7 @@ import type { ResolvedWorkContext } from "../../src/agent/work-context.ts";
 import type { Data } from "../../src/agent/contracts.ts";
 import type { RunRequest } from "../../src/agent/runtime.ts";
 import { createServer } from "../../src/agent/server.ts";
+import { seedFoundation } from "./program-foundation-fixture.ts";
 import {
   createHeatingSources,
   connectHeatingSources,
@@ -300,7 +301,7 @@ test("stopping a bound run rejects its late write and reopening never replays th
   }
 });
 
-test("a bound profile edit can retry its own saved operation and ask a follow-up", async () => {
+test("a bound semantic edit can retry its own saved operation and ask a follow-up", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-context-own-write-"));
   let finished = false;
   const service = await createServer({ automaticApi: false,
@@ -309,23 +310,11 @@ test("a bound profile edit can retry its own saved operation and ask a follow-up
       async run(request) {
         const input = JSON.parse(request.input);
         const user = input.recentMessages.at(-1);
-        const args = {
-          statements: [
-            {
-              key: "company.business",
-              text: "居民供热",
-              origin: "user",
-              messageId: user.id,
-              quote: "居民供热",
-            },
-          ],
-        };
-        const result = await request.onTool("profile_update", args);
-        assert.deepEqual(await request.onTool("profile_update", args), result);
-        await request.onTool("task_ask", {
-          question: "主要服务哪些区域？",
-          reason: "需要补充业务范围",
-        });
+        const args = { operationId: "business-wording", type: "description", baseline: (await request.onTool("pending_list", {}) as any).baseline,
+          subject: { target: "concept", id: "service", description: "居民供热", evidence: [{ id: "user-business", messageId: user.id, quote: "居民供热" }] }, evidence: "用户原话" };
+        const result = await request.onTool("change_propose", args);
+        assert.deepEqual(await request.onTool("change_propose", args), result);
+        await request.onTool("decision_request", { question: "主要服务哪些区域？", reason: "需要补充业务范围" });
         finished = true;
         return {
           text: "主要服务哪些区域？",
@@ -338,27 +327,24 @@ test("a bound profile edit can retry its own saved operation and ask a follow-up
     },
   });
   try {
-    const { Workspace } = await import("../../src/agent/workspace.ts");
-    const profile = new Workspace(service.app.memory).editProfile(
-      "company.name",
-      "澄川热力",
-    );
+    const profile = seedFoundation(service.app.memory, service.app.foundation, { enterprise: "澄川热力", concepts: [{ id: "service", name: "供热业务", description: "待明确服务范围" }] });
     const context = {
-      view: "setup.company",
+      view: "ontology.definitions",
       revision: 1,
       selection: [
         {
           spaceId: service.app.canvasState().workspaceId,
-          kind: "artifact",
+          kind: "foundation_concept",
           id: profile.id,
           version: profile.version,
+          member: "service",
         },
       ],
       scope: { where: {}, offset: 0, limit: 20 },
       draftRef: { id: "company-edit", revision: 1 },
     };
     await service.app.canvasMessage({
-      page: "setup",
+      page: "ontology",
       text: "业务是居民供热",
       messageId: "company-edit",
       workContext: context,
@@ -366,8 +352,8 @@ test("a bound profile edit can retry its own saved operation and ask a follow-up
     await service.app.idle();
     assert.equal(finished, true);
     const state = service.app.canvasState();
-    assert.match(JSON.stringify(state.profile), /居民供热/);
-    assert.equal(state.profile!.version, profile.version + 1);
+    assert.match(JSON.stringify(state.foundation.adopted), /居民供热/);
+    assert.equal(state.foundation.adopted!.version, profile.version + 1);
     assert.deepEqual(state.messages.at(-1)?.workContext?.context, context);
   } finally {
     await service.close();

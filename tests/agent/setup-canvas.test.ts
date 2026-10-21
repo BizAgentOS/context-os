@@ -12,7 +12,7 @@ import { seedFoundation } from "./program-foundation-fixture.ts";
 
 test("one setup page saves company facts, reads a source and stays open after completion", async () => {
   const directory = mkdtempSync(join(tmpdir(), "dataengine-setup-"));
-  let runs = 0;
+  let runs = 0, inspectedCompany = false;
   const driver: AgentDriver = {
     async run(request) {
       runs++;
@@ -21,26 +21,12 @@ test("one setup page saves company facts, reads a source and stays open after co
       if (runs === 1) {
         assert.equal(input.page, "setup");
         assert(request.tools.some((t) => t.name === "live_read"));
-        const message = input.recentMessages.at(-1);
-        await request.onTool("profile_update", {
-          statements: [
-            {
-              key: "company.name",
-              text: "澄川热力",
-              origin: "user",
-              messageId: message.id,
-              quote: "澄川热力",
-            },
-            {
-              key: "company.business",
-              text: "居民供热",
-              origin: "user",
-              messageId: message.id,
-              quote: "居民供热",
-            },
-          ],
-        });
-        await assert.rejects(request.onTool("page_complete", {}), /来源|资料/);
+        assert(!request.tools.some(t => ["profile_update", "page_complete"].includes(t.name)));
+        assert.equal(input.workSummary.enterpriseName, "澄川热力");
+        const workspace = await request.onTool("workspace_overview", {}) as any;
+        assert.match(JSON.stringify(workspace.profile), /澄川热力/);
+        assert.match(JSON.stringify(workspace.profile), /居民供热/);
+        inspectedCompany = true;
         return {
           text: "企业信息已保存，可以继续接入资料。",
           sessionId: "one",
@@ -91,6 +77,9 @@ test("one setup page saves company facts, reads a source and stays open after co
       ["setup", "ontology", "consumption"],
     );
     assert.equal(initial.layoutVersion, 2);
+    const onboarding = await (await fetch(`${base}/api/onboarding`, { headers })).json();
+    await post("/api/onboarding/company", { expectedVersion: onboarding.version, profileVersion: onboarding.currentProfileVersion,
+      name: "澄川热力", industry: "energy", business: "居民供热" });
     await post("/api/canvas/message", {
       page: "company",
       text: "澄川热力主营居民供热",
@@ -98,6 +87,8 @@ test("one setup page saves company facts, reads a source and stays open after co
     });
     await service.app.idle();
     assert.equal((await read()).currentPage, "setup");
+    assert.equal(inspectedCompany, true, JSON.stringify(service.app.canvasState().agentRuns));
+    assert.equal(service.app.memory.listArtifacts("agent_run")[0].status, "completed");
     const navigation = await post("/api/canvas/navigate", { page: "sources" });
     assert.equal(navigation.currentPage, "setup");
     assert.equal(navigation.setupSection, "sources");
@@ -169,7 +160,7 @@ test("legacy pages migrate once without replaying work or rewriting history and 
     async stop() {},
     async close() {},
   };
-  let service = await createServer({ directory, driver });
+  let service = await createServer({ directory, driver, automaticApi: false });
   try {
     seedHeatingDemo(service.app);
     const memory = service.app.memory;
@@ -218,7 +209,7 @@ test("legacy pages migrate once without replaying work or rewriting history and 
       ),
     );
     await service.close();
-    service = await createServer({ directory, driver });
+    service = await createServer({ directory, driver, automaticApi: false });
     await new Promise<void>((resolve) =>
       service.server.listen(0, "127.0.0.1", resolve),
     );

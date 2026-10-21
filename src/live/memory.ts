@@ -1,3 +1,8 @@
+import {prepareFusionBatch} from "./query-fusion.ts";
+import {propertyCorrectionsForModel,validatePropertyCorrections,preparePropertyCorrectionMigration,type PropertyCorrectionPins} from "./property-corrections.ts";
+import {SemanticQuery} from "../semantic/query.ts";
+import type {ExecutionInput,ReadResult} from "../data/executor/engine.ts";
+import type {ExecutionOptions} from "../data/executor/jobs.ts";
 import { prepareIdentityDecisionMigration } from "./identity-migration.ts";
 import { prepareCorrectionMigration } from "./correction-migration.ts";
 import { identityDecisionsForModel, resolveIdentity, identityRecordId, type IdentityDecisionPins, type IdentityReading } from "./identity.ts";
@@ -126,6 +131,7 @@ export function assertSnapshotImpact(impact: Data | undefined) {
   if (newErrors.length) throw new Error(`修订在全量快照上引入新的问题：${newErrors.join("、")}；请调整后重新提出`);
 }
 export interface PinnedReader {
+  read?(inputs:ExecutionInput[],sql:string,options?:ExecutionOptions&{limit?:number;offset?:number}):Promise<ReadResult>;
   bindingDataset?(sourceId: string, capability: string): Artifact | undefined;
   readPinned(snapshotId: string, cap: Capability, binding: { sourceId: string; connectionVersion: number }, where: Data, offset: number, limit: number):
     ReturnType<SourceConnections["readRecords"]>;
@@ -188,30 +194,51 @@ export class LiveMemory {
         if (!definition) continue;
         const name = String(definition.name);
         if (item.name !== name && !item.aliases.includes(item.name)) item.aliases.push(item.name);
+        item.aliases = [...new Set([...item.aliases, ...((definition.aliases ?? []) as string[])])];
         item.name = name;item.description = String(definition.description);
       }
+    }
+    for (const item of layered.semantic.properties) {
+      const definition = ((current.content.properties ?? []) as Data[]).find(entry => entry.id === item.id);
+      if (!definition) continue;
+      const previousName = item.name;
+      for (const key of ["name", "description", "aliases", "valueType", "unit", "enumValues", "isIdentity"] as const)
+        if (definition[key] !== undefined) Object.assign(item, { [key]: definition[key] });
+      item.aliases = [...new Set([...item.aliases, ...(previousName !== item.name ? [previousName] : [])])];
     }
     return {...artifact,content:jsonData({...artifact.content,...projectLegacyModel(layered,{allowTransforms:true}),layered,
       foundationRef:{id:current.id,version:current.version}})};
   }
   /** Trusted bounded identity reads use exactly the query's authorization and snapshot mode. */
-  identityReader(artifact: Artifact, options: IdentityReading = {}) {
+  identityReader(artifact: Artifact, options: IdentityReading & {modelGuard?:()=>void} = {}) {
     const model = options.modelDefinition ? { ...artifact, content: options.modelDefinition } : this.projectModel(artifact, options.fixedSemantic);
     const definition = this.definition(model);
     const readMode = options.readMode ?? (options.pins !== undefined ? "release_pinned" : "active_snapshot");
     const pins = options.pins ?? this.resolvePins(definition, readMode);
     const source = this.sourcesFor(pins);
     const assertValid = () => {
-      this.checkConnections(definition, undefined, options.fixedSemantic ?? false, source);
-      if (this.repo.getArtifact(artifact.id).version !== artifact.version) throw new Error("身份读取的本体版本已变化");
+      options.assertActive?.();
+      this.checkConnections(definition, options.preparedFoundation, options.fixedSemantic ?? false, source);
+      if(options.modelGuard)options.modelGuard();
+      else if (this.repo.getArtifact(artifact.id).version !== artifact.version) throw new Error("身份读取的本体版本已变化");
     };
     assertValid();
     const sources = {
       list: () => source.list(),
       capability: (id: string, capability: string, version?: number) => source.capability(id, capability, version ?? definition.connections[id]),
-      readRecords: (id: string, capability: string, where: Data = {}, offset = 0, limit = 20, version?: number) => source.readRecords(id, capability, where, offset, limit, version ?? definition.connections[id]),
+      readRecords: async (id: string, capability: string, where: Data = {}, offset = 0, limit = 20, version?: number) => {
+        assertValid();
+        const result=await source.readRecords(id, capability, where, offset, limit, version ?? definition.connections[id]);
+        assertValid();return result;
+      },
     };
     return { model, layered: definition.layered!, sources, pins, readMode, assertValid };
+  }
+  /** Host-only first-model preview: validates real source access and a supplied baseline guard without saving an artifact. */
+  preparedReader(definition:Data,foundation:Artifact,assertUnchanged:()=>void,pins?:SnapshotPins){
+    assertUnchanged();
+    const ephemeral:Artifact={id:`preview:${foundation.id}`,version:0,kind:'live_ontology',title:'尚未采用的查询预演',status:'adopted',createdAt:'',content:definition};
+    return this.identityReader(ephemeral,{modelDefinition:definition,preparedFoundation:foundation,fixedSemantic:true,readMode:'active_snapshot',pins,modelGuard:assertUnchanged});
   }
   /** Specifying an artifact version reads its original immutable wording. */
   readLayered(id: string, version?: number): LayeredModel {
@@ -255,6 +282,23 @@ export class LiveMemory {
       active[pinKey(b.sourceId, b.capability)] = String(dataset.content.activeVersion);
     }
     return active;
+  }
+  /** A hypothetical comparison must replay one immutable working data set on both sides. */
+  capturePreviewReading(modelRef: { id: string; version: number }, previewDefinition: Data): { readMode: "active_snapshot"; pins: SnapshotPins } {
+    const stored = this.model(modelRef.id);
+    if (stored.version !== modelRef.version) throw new Error("本体版本已变化，请重新读取目标");
+    const definitions = [this.definition(this.projectModel(stored)), this.definition({ ...stored, content: previewDefinition })];
+    const pins: SnapshotPins = {};
+    for (const definition of definitions) {
+      const resolved = this.resolvePins(definition, "active_snapshot");
+      const bindings = [...definition.types.flatMap(type => [type, ...(type.supplements ?? [])]), ...definition.relations.flatMap(relation => relation.linkTable ? [relation.linkTable] : [])];
+      for (const binding of bindings) {
+        const key = pinKey(binding.sourceId, binding.capability);
+        if (!resolved[key]) throw new Error("查询预览需要可固定的来源快照；实时来源不能用于前后效果比较");
+        pins[key] = resolved[key];
+      }
+    }
+    return { readMode: "active_snapshot", pins };
   }
   readCapability(modelId: string, modelVersion: number, sourceId: string, capability: string, readMode: ReadMode = "active_snapshot") {
     const model = this.model(modelId);
@@ -651,7 +695,10 @@ export class LiveMemory {
     if (d.foundationRef) this.checkExecutionBase(d.baseModelRef);
     assertActive();
     const canonical = layered ?? (base?.content.layered ? reconcileLayeredModel(base.content.layered as unknown as LayeredModel, this.layerLegacy(d)) : this.layerLegacy(d));
-    return jsonData({...d,layered: canonical,connections,checks,base:base ? {id:base.id,version:base.version} : null});
+    const definition = jsonData({...d,layered: canonical,connections,checks,base:base ? {id:base.id,version:base.version} : null});
+    const propertyCorrectionMigration = await preparePropertyCorrectionMigration(this.repo, this, definition);
+    assertActive();
+    return jsonData({ ...definition, ...(propertyCorrectionMigration ? { propertyCorrectionMigration } : {}) });
   }
 
   async adopt(
@@ -660,7 +707,9 @@ export class LiveMemory {
     commit: (save: () => Artifact) => Artifact = (save) => save(),
     inspectFusion?: (type: string, evidence: ObjectEvidence[]) => void,
     inspectReading?: (facts: Data) => void,
+    assertActive: () => void = () => {},
   ) {
+    assertActive();
     const readingFacts: Data[] = [];
     const inspect = (facts: Data) => { readingFacts.push(facts); inspectReading?.(facts); };
     const a = this.model(id);
@@ -676,6 +725,7 @@ export class LiveMemory {
     )
       throw new Error("基础本体已变化，请重新提出候选");
     for (const t of d.types) {
+      assertActive();
       const sample = await this.sources.readRecords(
         t.sourceId,
         t.capability,
@@ -684,6 +734,7 @@ export class LiveMemory {
         3,
         d.connections[t.sourceId],
       );
+      assertActive();
       if (d.foundationRef && !sample.items.length)
         throw new Error("需要实际记录重新验证概念映射");
       this.validateValues(t, sample.items);
@@ -696,6 +747,7 @@ export class LiveMemory {
           this.sources,
           d.connections,
           () => {
+            assertActive();
             this.checkConnections(d);
             this.checkExecutionBase(a.content.base);
           },
@@ -711,6 +763,7 @@ export class LiveMemory {
       }
     }
     assertSnapshotImpact(await this.snapshotImpact(base ? this.definition(base) : null, d));
+    assertActive();
     this.checkConnections(d);
     if (
       (this.active()?.id ?? null) !== (base?.id ?? null) ||
@@ -718,12 +771,18 @@ export class LiveMemory {
     )
       throw new Error("基础本体已变化");
     const migrateCorrections = await prepareCorrectionMigration(this.repo, this, a.content);
+    assertActive();
     const migrateIdentities = await prepareIdentityDecisionMigration(this.repo, this, a.content);
+    assertActive();
+    const propertyCorrectionMigration = await preparePropertyCorrectionMigration(this.repo, this, a.content);
+    assertActive();
     return commit(() => {
+      assertActive();
       const save = () => { const adopted = this.repo.putArtifact({
         ...a,
         expectedVersion: version,
         status: "adopted",
+        content: { ...a.content, ...(propertyCorrectionMigration ? { propertyCorrectionMigration } : {}) },
       }); migrateCorrections(adopted); migrateIdentities(adopted); return adopted; };
       return this.onGovernanceAdopt ? this.onGovernanceAdopt(a, save, readingFacts) : save();
     });
@@ -738,6 +797,9 @@ export class LiveMemory {
     pins?: SnapshotPins,
     reading?: { readMode: ReadMode; pins: SnapshotPins },
     identityDecisionPins: IdentityDecisionPins = true,
+    /** Host-compiled hypothetical foundation for read-only change previews; never accepted from query input. */
+    preparedFoundation?: Artifact,
+    propertyCorrectionPins: PropertyCorrectionPins = true,
   ): Promise<ReadingReceipt & {
     model: { id: string; version: number };
     type: string;
@@ -792,13 +854,13 @@ export class LiveMemory {
     if (readMode === "release_pinned" && pins === undefined) throw new Error("release_pinned 需要发布固定的快照范围");
     if (pins !== undefined && args.readMode && args.readMode !== "release_pinned") throw new Error("发布读取不能覆盖固定读取模式");
     const selectedPins = reading?.pins ?? this.resolvePins(d, readMode, pins);
-    const identityOptions = { readMode, pins: selectedPins, fixedSemantic, modelDefinition: model.content };
+    const identityOptions = { readMode, pins: selectedPins, fixedSemantic, modelDefinition: model.content, preparedFoundation };
     const identityDecisions = identityDecisionsForModel(this.repo, model, identityDecisionPins);
     const src = this.sourcesFor(selectedPins);
     const receipt = (reads: Parameters<LiveMemory["receipt"]>[2]) => this.receipt(model, readMode, reads);
     const assertValid = () => {
       assertActive();
-      this.checkConnections(d, undefined, fixedSemantic, src);
+      this.checkConnections(d, preparedFoundation, fixedSemantic, src);
       if (this.repo.getArtifact(model.id).version !== model.version)
         throw new Error("本体版本已变化，请重新读取目标");
     };
@@ -811,6 +873,41 @@ export class LiveMemory {
     if (type && args.type && type.name !== args.type)
       throw new Error("类型与概念引用不一致");
     if (!type) throw new Error("业务类型不存在或概念未绑定");
+    const propertyRecords = propertyCorrectionsForModel(this.repo, model, propertyCorrectionPins)
+      .filter(record => record.content.entityTypeId === type.conceptId && (args.id === undefined || record.content.objectId === args.id));
+    const currentPropertyRecords = () => propertyCorrectionsForModel(this.repo, model)
+      .filter(record => record.content.entityTypeId === type.conceptId && (args.id === undefined || record.content.objectId === args.id));
+    const assertPropertyRecords = () => {
+      assertValid();
+      if (propertyCorrectionPins === true && JSON.stringify(currentPropertyRecords().map(record => [record.id,record.version])) !== JSON.stringify(propertyRecords.map(record => [record.id,record.version])))
+        throw new Error("属性纠正决定已变化，请重新读取");
+    };
+    const propertyName = (id: string) => d.layered!.semantic.properties.find(property => property.id === id)?.name;
+    if (!args.relation && Object.keys(args.where ?? {}).some(field => propertyRecords.some(record => propertyName(String(record.content.propertyId)) === field))) {
+      if (!this.snapshots?.read) throw new Error("纠正后的属性过滤需要固定快照查询服务");
+      const filters = Object.entries(args.where ?? {}).filter(([field]) => field !== "$id").map(([field,value]) => {
+        const property = d.layered!.semantic.properties.find(property => property.entityTypeId === type.conceptId && property.name === field);
+        if (!property) throw new Error("业务字段不存在");
+        return {propertyId:property.id,op:"eq",value};
+      });
+      const whereId = args.where?.$id === undefined ? undefined : String(args.where.$id);
+      if (whereId !== undefined && args.id !== undefined && whereId !== args.id) throw new Error("对象编号条件不一致");
+      const fixedPropertyPins = propertyCorrectionPins === true ? new Set(propertyRecords.map(record => `${record.id}@${record.version}`)) : propertyCorrectionPins;
+      const selected = await new SemanticQuery(this.repo,this,{read:(...args)=>this.snapshots!.read!(...args),bindingDataset:(...args)=>this.snapshots!.bindingDataset?.(...args)})
+        .execute({target:{entityTypeId:type.conceptId,id:args.id ?? whereId},fields:[],filters,page:{offset:args.offset,limit:args.limit}},
+          {modelRef:{id:model.id,version:model.version},...identityOptions,identityDecisionPins,propertyCorrectionPins:fixedPropertyPins,assertActive:assertPropertyRecords});
+      const items:Data[]=[],evidence:ObjectEvidence[]=[],reads:Awaited<ReturnType<LiveMemory["query"]>>["reads"]=[];
+      for (const item of selected.items) {
+        const result=await this.query({...args,where:undefined,id:item.$id,offset:0,limit:1},assertPropertyRecords,applyCorrections,previewDefinition,fixedSemantic,
+          readMode === "release_pinned" ? selectedPins : undefined,{readMode,pins:selectedPins},identityDecisionPins,preparedFoundation,fixedPropertyPins);
+        items.push(...result.items);evidence.push(...(result.evidence??[]));reads.push(...result.reads);
+      }
+      assertPropertyRecords();
+      const {sources,consistency,multiSourceTime,versions}=selected;
+      return {model:{id:model.id,version:model.version},type:type.name,items,evidence,reads,coverage:selected.coverage,
+        ...(d.foundationRef?{conceptRef:{foundationId:d.foundationRef.id,foundationVersion:d.foundationRef.version,conceptId:type.conceptId!}}:{}),
+        readMode,sources,consistency,multiSourceTime,versions:{...versions,mapping:{id:model.id,version:model.version}}};
+    }
     const { cap } = src.capability(
       type.sourceId,
       type.capability,
@@ -888,10 +985,13 @@ export class LiveMemory {
           )
         )
           throw new Error("业务字段不存在");
-        const page = snapshot.targets.slice(
+        const selected = snapshot.targets.slice(
           args.offset,
           args.offset + args.limit,
         );
+        const page = [];
+        for (const target of selected) page.push(await this.query({modelId:model.id,modelVersion:model.version,type:targetType.name,id:String(target.items[0].$id),fields,readMode,limit:1},
+          assertValid,applyCorrections,previewDefinition,fixedSemantic,readMode === "release_pinned" ? selectedPins : undefined,{readMode,pins:selectedPins},identityDecisionPins,preparedFoundation,propertyCorrectionPins));
         return {
           model: { id: model.id, version: model.version },
           type: rel.to,
@@ -944,7 +1044,7 @@ export class LiveMemory {
         const reader = this.identityReader(model, identityOptions), items: Data[] = [], evidence: ObjectEvidence[] = [];
         const reads = [origin.provenance, ...resolved.reads];
         for (const row of resolved.items.slice(args.offset, args.offset + args.limit)) {
-          const result = await this.query({ modelId: model.id, modelVersion: model.version, type: target.name, id: identityRecordId(reader, binding, row), fields: args.fields, readMode }, assertActive, applyCorrections, previewDefinition, fixedSemantic, readMode === "release_pinned" ? selectedPins : undefined, { readMode, pins: selectedPins }, identityDecisionPins);
+          const result = await this.query({ modelId: model.id, modelVersion: model.version, type: target.name, id: identityRecordId(reader, binding, row), fields: args.fields, readMode }, assertActive, applyCorrections, previewDefinition, fixedSemantic, readMode === "release_pinned" ? selectedPins : undefined, { readMode, pins: selectedPins }, identityDecisionPins, preparedFoundation,propertyCorrectionPins);
           items.push(...result.items); evidence.push(...(result.evidence ?? [])); reads.push(...result.reads);
         }
         assertValid();
@@ -976,7 +1076,7 @@ export class LiveMemory {
         let targetsComplete = true, unmatchedTargets = 0;
         for (const key of [...keys.values()].slice(args.offset, args.offset + args.limit)) {
           const objectId = identityValue(key, target.identityFields?.length ? target.identityFields : [targetCap.idField], targetCap.idField);
-          const result = await this.query({ modelId: model.id, modelVersion: model.version, type: target.name, id: String(objectId), fields: args.fields, readMode, limit: 1 }, assertActive, applyCorrections, previewDefinition, fixedSemantic, readMode === "release_pinned" ? selectedPins : undefined, { readMode, pins: selectedPins }, identityDecisionPins);
+          const result = await this.query({ modelId: model.id, modelVersion: model.version, type: target.name, id: String(objectId), fields: args.fields, readMode, limit: 1 }, assertActive, applyCorrections, previewDefinition, fixedSemantic, readMode === "release_pinned" ? selectedPins : undefined, { readMode, pins: selectedPins }, identityDecisionPins, preparedFoundation,propertyCorrectionPins);
           items.push(...result.items); evidence.push(...(result.evidence ?? [])); reads.push(...result.reads);
           targetsComplete &&= result.coverage.complete && result.items.length === 1;
           if (result.items.length !== 1) unmatchedTargets++;
@@ -987,8 +1087,17 @@ export class LiveMemory {
           relationOrigin: { type: type.name, id: String(identityValue(origin.items[0], identity, cap.idField)) }, reads, ...receipt(reads) };
       }
       const value = origin.items[0][sourceField(rel.fromField)];
-      if (value === null || value === "")
-        throw new Error("关联字段为空，无法解析关系");
+      const foreignKey = rel.fromColumns?.map(column => origin.items[0][column]) ?? [value];
+      if (foreignKey.some(value => value === undefined)) throw new Error("关联字段缺失，无法解析关系");
+      if (foreignKey.some(value => value === null || value === "")) {
+        assertValid();
+        const reads = [origin.provenance];
+        return { model: { id: model.id, version: model.version }, type: rel.to, items: [],
+          coverage: { offset: args.offset, shown: 0, total: 0, complete: origin.coverage.complete && args.offset === 0 },
+          relationOrigin: { type: type.name, id: String(identityValue(origin.items[0], identity, cap.idField)) }, reads, ...receipt(reads) };
+      }
+      const targetType=d.types.find(target=>target.name===rel.to)!;
+      const correctedTargets=propertyCorrectionsForModel(this.repo,model,propertyCorrectionPins).some(record=>record.content.entityTypeId===targetType.conceptId);
       const result = await this.query(
         {
           modelId: model.id,
@@ -1004,7 +1113,7 @@ export class LiveMemory {
             if (!field) throw new Error("关系目标列没有业务属性绑定");
             return [field, origin.items[0][rel.fromColumns![index]]];
           })) : { [rel.toField]: value },
-          fields: args.fields,
+          fields: correctedTargets?["$id"]:args.fields,
           offset: args.offset,
           limit: args.limit,
         },
@@ -1015,8 +1124,19 @@ export class LiveMemory {
         readMode === "release_pinned" ? selectedPins : undefined,
         { readMode, pins: selectedPins },
         identityDecisionPins,
+        preparedFoundation,
+        correctedTargets?false:propertyCorrectionPins,
       );
-      this.checkConnections(d, undefined, fixedSemantic, src);
+      if(correctedTargets){
+        const items:Data[]=[],evidence:ObjectEvidence[]=[];
+        for(const row of result.items){
+          const target=await this.query({modelId:model.id,modelVersion:model.version,type:rel.to,id:String(row.$id),fields:args.fields,readMode,limit:1},
+            assertValid,applyCorrections,previewDefinition,fixedSemantic,readMode === "release_pinned" ? selectedPins : undefined,{readMode,pins:selectedPins},identityDecisionPins,preparedFoundation,propertyCorrectionPins);
+          items.push(...target.items);evidence.push(...(target.evidence??[]));result.reads.push(...target.reads);
+        }
+        result.items=items;result.evidence=evidence;
+      }
+      this.checkConnections(d, preparedFoundation, fixedSemantic, src);
       if (this.repo.getArtifact(model.id).version !== model.version)
         throw new Error("本体版本已变化，请重新读取目标");
       return { ...result, relationOrigin:{type:type.name,id:String(origin.items[0][cap.idField])}, reads: [origin.provenance, ...result.reads], ...receipt([origin.provenance, ...result.reads]) };
@@ -1037,8 +1157,8 @@ export class LiveMemory {
       d.connections[type.sourceId],
     );
     assertValid();
-    const fusion = type.supplements?.length
-      ? await fuseRows(
+    const batchedFusion=type.supplements?.length?await prepareFusionBatch(this.repo,this,model,type,result,fields,identityDecisions,identityOptions,assertValid):undefined;
+    const fusion = await fuseRows(
           type,
           result,
           fields,
@@ -1046,6 +1166,7 @@ export class LiveMemory {
           d.connections,
           assertValid,
           async (supplement, row) => {
+            if(batchedFusion)return batchedFusion(supplement,row);
             const primary = d.layered!.bindings.entities.find(binding => binding.role === "primary" && binding.entityTypeId === type.conceptId);
             const source = d.layered!.bindings.entities.find(binding => binding.role === "supplement" && binding.entityTypeId === type.conceptId && binding.dataset.sourceId === supplement.sourceId && binding.dataset.capability === supplement.capability && binding.name === supplement.name);
             const rule = d.layered!.bindings.identityRules.find(rule => rule.kind === "same_as" && rule.left.bindingId === source?.id && rule.right.bindingId === primary?.id);
@@ -1053,8 +1174,19 @@ export class LiveMemory {
             const result = await resolveIdentity(this, model, rule, "right", row, identityDecisions, identityOptions);
             return { page: { items: result.items, coverage: { offset: 0, shown: result.items.length, total: result.total, complete: result.complete }, provenance: result.reads[0] }, status: result.status, reason: result.reason, reads: result.reads };
           },
-        )
-      : null;
+        );
+    const validatedProperties = await validatePropertyCorrections(this,model,propertyRecords,{...identityOptions,identityDecisionPins,assertActive:assertPropertyRecords});
+    for (const record of validatedProperties) {
+      const field=propertyName(String(record.content.propertyId));
+      if (!field || !fields.includes(field)) continue;
+      const index=fusion.evidence.findIndex(object=>String(object.objectId)===record.content.objectId);
+      if(index<0)continue;
+      const original=fusion.evidence[index].properties[field];
+      fusion.items[index][field]=record.content.value;
+      fusion.evidence[index].properties[field]={...original,status:"resolved",value:record.content.value,blockers:[],
+        correction:{id:record.id,version:record.version,reason:record.content.reason,evidence:record.content.evidence,originalStatus:original.status,originalBlockers:original.blockers,snapshot:record.content.snapshot}};
+    }
+    assertPropertyRecords();
     const readReceipt = receipt(fusion?.reads ?? [result.provenance]);
     const missingReads = (fusion?.evidence ?? []).flatMap(object => object.matches)
       .filter(match => !readReceipt.sources.some(source => source.id === match.sourceId && source.capability === match.capability));

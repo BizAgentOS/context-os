@@ -11,11 +11,12 @@ import { fingerprint } from "./release-diff.ts";
 import { ChangeConflict } from "./changes.ts";
 import { prepareIdentityDecisionMigration } from "../live/identity-migration.ts";
 import { identityDecisionsForModel } from "../live/identity.ts";
+import { propertyCorrectionsForModel, validatePropertyCorrections } from "../live/property-corrections.ts";
 
 const ref = z.object({ id: z.string().trim().min(1).max(200), version: z.number().int().positive() }).strict();
 export const workspaceRestoreSubject = z.object({ workspaceVersionRef: ref }).strict();
 const compositionSchema = z.object({ semantic: ref.nullable(), bindings: ref.nullable(),
-  identityDecisions: z.array(z.string()).default([]), corrections: z.array(z.string()),
+  identityDecisions: z.array(z.string()).default([]), corrections: z.array(z.string()), propertyCorrections: z.array(z.string()).default([]),
   snapshots: z.array(z.object({ datasetId: z.string(), snapshotId: z.string() }).strict()) }).strict();
 const reference = (artifact: Artifact) => ({ id: artifact.id, version: artifact.version });
 
@@ -46,7 +47,7 @@ export class WorkspaceRestore {
       throw new Error("历史工作版引用的已采用定义或绑定不可用");
     if ((binding.content.foundationRef as Data | undefined)?.id !== semantic.id) throw new Error("历史语义定义与绑定不属于同一本体");
     const layered = this.live.readLayered(binding.id, binding.version);
-    for (const [items, definitions] of [[layered.semantic.entityTypes, semantic.content.concepts], [layered.semantic.relationTypes, semantic.content.relations]] as const) {
+    for (const [items, definitions] of [[layered.semantic.entityTypes, semantic.content.concepts], [layered.semantic.relationTypes, semantic.content.relations], [layered.semantic.properties, semantic.content.properties ?? layered.semantic.properties]] as const) {
       for (const item of items) {
         const definition = (definitions as Data[]).find(entry => entry.id === item.id);
         if (!definition) throw new Error("历史绑定引用的语义对象不存在");
@@ -121,6 +122,10 @@ export class WorkspaceRestore {
     const restoreIdentityDecisions = await prepareIdentityDecisionMigration(this.memory, this.live, definition, {
       baseModel: binding, decisionPins: new Set(composition.identityDecisions), readMode: "release_pinned", pins, fixedSemantic: true,
     });
+    const propertyCorrections = propertyCorrectionsForModel(this.memory, binding, new Set(composition.propertyCorrections));
+    if (propertyCorrections.length !== composition.propertyCorrections.length) throw new Error("历史属性纠正不属于所选工作版");
+    await validatePropertyCorrections(this.live, binding, propertyCorrections, { readMode: "release_pinned", pins, fixedSemantic: true,
+      modelDefinition: definition, identityDecisionPins: new Set(composition.identityDecisions) });
     const inputs = jsonData({ workspaceVersionRef, workspaceBaseline, composition, sourceState: [...tracked.values()].map(artifact => ({ ...reference(artifact), status: artifact.status })), liveInputs });
     const assertUnchanged = () => {
       if (fingerprint(currentWorkspaceRef()) !== fingerprint(workspaceBaseline)) throw new ChangeConflict("verification_changed", "当前工作版的治理决定或数据已变化，请重新复验恢复");
@@ -133,7 +138,7 @@ export class WorkspaceRestore {
     assertUnchanged();
     return {
       metrics: { workspaceNumber: Number(historical.content.number), entities: (definition.types as Data[]).length, relations: (definition.relations as Data[]).length,
-        snapshots: composition.snapshots.length, corrections: corrections.length, identityDecisions: composition.identityDecisions.length, liveBindings: liveInputs.length },
+        snapshots: composition.snapshots.length, corrections: corrections.length, propertyCorrections: propertyCorrections.length, identityDecisions: composition.identityDecisions.length, liveBindings: liveInputs.length },
       inputs,
       notes: liveInputs.length ? ["实时来源仅恢复绑定，读取当前数据，不承诺历史重放。"] : ["恢复使用已保留的历史快照，并生成新的工作版。"],
       apply: () => {
@@ -157,6 +162,10 @@ export class WorkspaceRestore {
             ...correction.content, target, targetKey: relationKey(target), modelDefinition: restoredDefinition, restoredFrom: reference(correction), adoptedAt: now,
           } }));
         });
+        const propertyCorrectionRefs = propertyCorrections.map(correction => reference(this.memory.putArtifact({
+          kind: "property_correction", title: correction.title, status: "adopted", content: { ...correction.content,
+            modelRef: reference(restoredBinding), restoredFrom: reference(correction), adoptedAt: now },
+        })));
         for (const dataset of datasets) {
           const content = dataset.content as unknown as DatasetContent;
           const snapshot = historicalSnapshots.get(dataset.id);
@@ -166,7 +175,7 @@ export class WorkspaceRestore {
             ...(liveDatasets.has(dataset.id) ? { materialization: "live" } : {}),
             ...(content.pendingVersion === snapshot?.id ? { pendingVersion: null, pendingChanges: [] } : {}), restoredWorkspace: workspaceVersionRef }) });
         }
-        return jsonData({ workspaceVersionRef, foundationRef: reference(restoredSemantic), modelRef: reference(restoredBinding), correctionRefs, identityDecisionRefs });
+        return jsonData({ workspaceVersionRef, foundationRef: reference(restoredSemantic), modelRef: reference(restoredBinding), correctionRefs, propertyCorrectionRefs, identityDecisionRefs });
       },
     };
   }

@@ -5,7 +5,7 @@ import { technicalDetails } from "./ui-display.js";
 export function createTaskCenter({ state, ui, $, node, button, navigate, setChatMode, dataActions, openDefinitions, isOnboarding }) {
 function renderAgentTask() {
   let host=$("#agent-task-status");
-  if(!host){host=node("aside","agent-task-status");host.id="agent-task-status";host.setAttribute("aria-label","ADE 助手任务");$(".canvas-app").append(host);}
+  if(!host){host=node("aside","agent-task-status");host.id="agent-task-status";host.setAttribute("aria-label","ADE 助手任务");($(".agent-panel-shell .history-panel")||$(".canvas-app")).append(host);}
   const task=state.agentTask;host.hidden=!task||!!isOnboarding()||!!state.demo;
   if(host.hidden)return;
   const key=JSON.stringify(task);if(host.dataset.key===key)return;host.dataset.key=key;host.replaceChildren();

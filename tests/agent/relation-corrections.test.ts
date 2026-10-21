@@ -12,13 +12,14 @@ import {
   heatingDefinition,
 } from "../../src/live/heating-sources.ts";
 
-test("local relation correction preserves source baseline, requires checked decision, and rejects duplicate, stale, concurrent and stopped writes", async () => {
+test("local relation correction preserves source baseline, requires checked decision, and rejects duplicate, stale, concurrent and stopped writes", { timeout: 25000 }, async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-relation-")),
     upstream = await createHeatingSources();
   let gate: Promise<void> | undefined,
     entered: (() => void) | undefined,
     release: (() => void) | undefined;
   const proxy = httpServer(async (req, res) => {
+    proxyCalls++;
     entered?.();
     await gate;
     const r = await fetch(upstream.apiUrl + req.url);
@@ -29,17 +30,26 @@ test("local relation correction preserves source baseline, requires checked deci
   let draft: any,
     agentSaved: any,
     stopPhase = false;
+  let unifiedSubject: any, pendingVerification: any;
+  let proxyCalls = 0;
   const service = await createServer({
     directory,
     automaticApi: false,
     driver: {
       async run(request) {
-        const call = request.onTool("relation_correction_propose", {
-          ...draft,
-          operationId: stopPhase ? "agent-stop" : "agent-save",
-        });
-        if (stopPhase) await assert.rejects(call);
-        else agentSaved = await call;
+        const proposed = (await request.onTool("change_propose", {
+          operationId: stopPhase ? "agent-stop" : "agent-save", type: "local_correction",
+          baseline: (await request.onTool("pending_list", {}) as any).baseline, subject: unifiedSubject,
+          evidence: "管理员核对原始登记，指定取消错误关联",
+        }) as any).change;
+        pendingVerification = proposed;
+        const call = request.onTool("change_verify", { id: proposed.id, version: proposed.version, operationId: "verify-correction" });
+        if (stopPhase) await assert.rejects(call, /已失效|停止|运行/);
+        else {
+          agentSaved = await call;
+          const detail = await request.onTool("pending_read", { id: agentSaved.id, version: agentSaved.version }) as any;
+          assert.equal(detail.change.content.subject.objectId, "TS002");
+        }
         return {
           text: "候选处理完毕",
           sessionId: "correction",
@@ -213,6 +223,10 @@ test("local relation correction preserves source baseline, requires checked deci
       operationId: "cancel-draft",
     });
     assert.equal(cancelled.status, "cancelled");
+    const layered = service.app.live.readLayered(model.id);
+    const entity = layered.semantic.entityTypes.find(item => item.name === "投诉")!;
+    const relation = layered.semantic.relationTypes.find(item => item.from === entity.id && item.name === "回访记录")!;
+    unifiedSubject = { kind: "relation", entityTypeId: entity.id, objectId: "TS002", relationTypeId: relation.id, targetIds: [], reason: draft.reason, evidence: draft.evidence };
     await service.app.canvasNavigate({ page: "ontology" });
     await api("/api/canvas/message", {
       page: "ontology",
@@ -220,10 +234,12 @@ test("local relation correction preserves source baseline, requires checked deci
       messageId: "agent-propose",
     });
     await service.app.idle();
-    assert.equal(agentSaved.status, "candidate");
+    assert.equal(agentSaved.status, "verified");
+    assert.equal(agentSaved.content.verification.result, "passed");
     const countBeforeStop = (await api("/api/live/corrections/list", {})).items
       .length;
     stopPhase = true;
+    const callsBeforeStop = proxyCalls;
     let started: Promise<void> = new Promise((r) => (entered = r));
     gate = new Promise((r) => (release = r));
     await api("/api/canvas/message", {
@@ -237,6 +253,8 @@ test("local relation correction preserves source baseline, requires checked deci
     await service.app.idle();
     const all = await api("/api/live/corrections/list", {});
     assert.equal(all.items.length, countBeforeStop);
+    assert.equal(service.app.changes.read(pendingVerification.id).version, pendingVerification.version, "stopping cannot commit a late verification");
+    assert.equal(proxyCalls - callsBeforeStop, 1, "stopping prevents the next source read");
     assert(!("snapshot" in all.items[0].content));
     const retained = await api("/api/live/corrections/read", {
       id: candidate.id,

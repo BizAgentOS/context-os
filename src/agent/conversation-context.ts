@@ -46,3 +46,14 @@ export function conversationContext(memory:MemoryStore,taskId:string,system:stri
   }
   return {input,estimatedTokens:countTokens(system+input),limit:conversationTokenLimit,summaryCharacters:String(context.sessionSummary).length,recentCount:messages.length};
 }
+
+/** QA can reuse only messages from the same explicitly bound view. Build history and global summaries stay out. */
+export function qaConversationContext(memory:MemoryStore,taskId:string,system:string,envelope:Data,selection:Data) {
+  const session=memory.sessionForTask(taskId),history=session?memory.sessionHistory(session.id):memory.messages(taskId);
+  const view=JSON.stringify(selection),recent=history.filter(message=>message.binding?.mode==='qa'&&JSON.stringify(message.binding.dataView??{kind:'working'})===view).slice(-12);
+  const context:Data={...envelope,recentMessages:recent.map(({id,role,content})=>({id,role,content}))};
+  let input=JSON.stringify(context),messages=context.recentMessages as Data[];
+  while(countTokens(system+input)>conversationTokenLimit&&messages.length>1){messages.shift();input=JSON.stringify(context);}
+  if(countTokens(system+input)>conversationTokenLimit)throw new Error('本轮问答超过上下文预算，请缩小问题或引用范围');
+  return {input,estimatedTokens:countTokens(system+input),limit:conversationTokenLimit,summaryCharacters:0,recentCount:messages.length};
+}

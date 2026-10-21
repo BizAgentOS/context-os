@@ -2,7 +2,7 @@ import { el, action, ref, when, dialog, message, transact, table, field, check }
 import { technicalDetails } from "./ui-display.js";
 
 const states = { proposed: "待复验", verified: "已复验", failed: "复验未通过", adopted: "已采用", rejected: "已拒绝", deprecated: "已弃用", superseded: "已替代" };
-const kinds = { entity: "实体", property: "属性", relation: "关系", binding: "数据对应", naming: "命名", description: "说明", local_correction: "局部纠正", identity_rule: "身份规则", identity_decision: "身份决定", deprecation: "弃用", restore: "恢复工作版", data_issue: "数据问题" };
+const kinds = { entity: "实体", property: "属性", relation: "关系", binding: "数据对应", naming: "命名", description: "说明", local_correction: "局部纠正", identity_rule: "身份规则", identity_decision: "身份决定", deprecation: "弃用", restore: "恢复工作版", data_issue: "数据问题", adjudication: "资料裁决", gap: "问题缺口" };
 const origins = { program: "程序发现", human: "人工提议", agent: "助手提议", qa: "问答反馈" };
 const results = { passed: "通过", review: "需要核对", failed: "未通过" };
 const metricNames = { matchRate: "匹配率", matched: "匹配记录", total: "检查记录", targetUnique: "目标唯一", targetExists: "目标存在", nameUnique: "名称唯一", complete: "覆盖完整", valid: "检查通过", rows: "记录数", changes: "变更数", snapshots: "快照数", maxDepth: "最大层级", acyclic: "无环", typeCompatible: "类型相容", sourceNonNullRate: "起点非空率", cardinalityValid: "符合关系数量约束", cycleDetected: "存在循环", withinMaxDepth: "未超过层级上限", leftRecords: "起点记录", rightRecords: "目标记录", ambiguous: "目标不唯一的记录", reverseAmbiguous: "补充来源不唯一的对象", multipleSourceTargets: "对应多个来源记录的目标", empty: "匹配字段为空", botRecords: "疑似机器人记录", leftExists: "起点记录存在", rightExists: "指定目标记录存在", explicitExclusion: "明确排除", records: "记录数", hasTime: "存在有效时间字段" };
@@ -19,16 +19,17 @@ const changeTitle = change => {
 };
 
 /** A concrete change record, shared by the history and build entry points. Full pending-center navigation belongs to 044. */
-export function showChange(reference, actions, onChanged = () => {}) {
-  const d = dialog("变更详情", true), output = message(d.body), host = el("div", null, "change-detail");
+export function showChange(reference, actions, onChanged = () => {}, container) {
+  if (!container) { window.dispatchEvent(new CustomEvent("dataengine:pending", { detail: reference })); return; }
+  const d = Object.assign(container, { body: container }), output = message(d.body), host = el("div", null, "change-detail");
   d.body.append(host);
   let current, scopeArtifact, scopeVersion, datasets = [], request = 0;
   const operations = new Map();
   async function scope(change) {
     const subject = change.content.subject || {}, target = subject.candidateRef || subject.ownerRef;
     const workspace = subject.workspaceVersionRef ? await actions.api(`/api/artifacts/${encodeURIComponent(subject.workspaceVersionRef.id)}?version=${subject.workspaceVersionRef.version}`) : null;
-    const governed = ["identity_rule", "identity_decision", "data_issue"].includes(change.content.type) || change.content.type === "deprecation" && subject.path;
-    const definition = workspace?.content.composition.semantic || target || (governed ? change.content.baseline?.modelRef : null);
+    const governed = ["identity_rule", "identity_decision", "data_issue", "local_correction", "entity", "property", "binding", "deprecation"].includes(change.content.type) || change.content.type === "deprecation" && subject.path;
+    const definition = workspace?.content.composition.semantic || target || (change.content.type === "adjudication" ? subject.foundationRef : null) || (governed ? change.content.baseline?.modelRef : null);
     const artifact = definition ? await actions.api(`/api/artifacts/${encodeURIComponent(definition.id)}?version=${definition.version}`) : null;
     const data = subject.from?.datasetId || governed ? await actions.api("/api/data") : null;
     if (artifact?.content.layered && ["identity_rule", "identity_decision"].includes(change.content.type)) {
@@ -106,6 +107,35 @@ export function showChange(reference, actions, onChanged = () => {}) {
 
 function renderScope(host, change, artifact, datasets, workspace) {
   const subject = change.content.subject || {}, content = artifact?.content || {};
+  if (change.content.type === "adjudication") {
+    const issues = content[subject.issue?.kind === "conflict" ? "conflicts" : "unknowns"] || [];
+    const issue = issues.find(item => item.id === subject.issue?.id);
+    host.append(el("h4", "本次裁决"), el("p", issue?.description || "资料中的待核对问题"), el("p", `处理方式：${({choose_retained:"选择已保留含义",choose_proposed:"选择资料中的含义",retain_disagreement:"保留双方分歧",explain:"补充说明",close:"关闭此项"})[subject.action] || "待核对"}`));
+    for (const [key, title] of [["retained", "已保留的含义"], ["proposed", "资料提出的含义"]]) if (issue?.[key]) host.append(el("h4", title), el("p", `${issue[key].name || ""}：${issue[key].description || ""}`));
+    if (subject.explanation) host.append(el("p", `补充说明：${subject.explanation}`));
+    host.append(el("p", `决定理由：${subject.reason}`), el("p", "原问题与双方依据将继续保留。", "engine-muted")); return;
+  }
+  if (["entity", "property", "binding"].includes(change.content.type) && !subject.ownerRef) {
+    const item = subject.entity || subject.property || subject.binding;
+    if (item) {
+      const semantic = content.layered?.semantic || {}, definitions = [...(semantic.entityTypes || content.concepts || []), ...(semantic.properties || content.properties || []), ...(semantic.relationTypes || content.relations || [])];
+      const prior = definitions.find(value => value.id === item.id);
+      host.append(el("h4", "本次结构变更"), el("p", `${({add:"新增",update:"修改",remove:"移除"})[subject.action] || "调整"} · ${item.name || prior?.name || kinds[change.content.type]}`));
+      const fields = {name:"名称",description:"说明",aliases:"别名",valueType:"属性类型",unit:"单位",isIdentity:"作为身份属性",kind:"对象类别",role:"来源角色",column:"来源字段",keyColumns:"身份字段"};
+      const rows = Object.entries(item).filter(([key]) => fields[key]).map(([key, value]) => ({label:fields[key],before:prior?.[key]??"未设置",after:value}));
+      if (rows.length) host.append(table(rows, [["内容",row=>row.label],["当前",row=>row.before],["提议",row=>row.after]]));
+      if (subject.properties?.length) host.append(table(subject.properties, [["属性",value=>definitions.find(item=>item.id===value.propertyId)?.name||"新属性"],["来源字段",value=>value.column]]));
+      host.append(el("p", "采用后更新工作版；历史发布继续使用其固定的定义与快照。", "engine-muted"));
+      return;
+    }
+  }
+  if (change.content.type === "local_correction" && subject.kind) {
+    const semantic = content.layered?.semantic || {}, entity = semantic.entityTypes?.find(item=>item.id===subject.entityTypeId), property=semantic.properties?.find(item=>item.id===subject.propertyId), relation=semantic.relationTypes?.find(item=>item.id===subject.relationTypeId);
+    host.append(el("h4", "仅此对象的纠正"),el("p",`${entity?.name || "业务对象"} · ${subject.objectId}`));
+    if (subject.kind === "property") host.append(el("p",`${property?.name || "属性"}：${subject.value === null ? "明确清空" : subject.value}`));
+    else host.append(el("p",`${relation?.name || "关系"}：${subject.targetIds?.join("、") || "无关联对象"}`));
+    host.append(el("p",`理由：${subject.reason}`),el("p",`依据：${subject.evidence}`),el("p","只纠正这一条对象记录，保留原始来源值和决定历史。","engine-muted")); return;
+  }
   const selection = subject.selection;
   const layered = content.layered;
   const datasetName = id => datasets.find(item => item.id === id)?.content.name || "数据集";

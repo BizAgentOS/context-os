@@ -12,8 +12,11 @@
     <link rel="stylesheet" href="./engine.css" />
     <link rel="stylesheet" href="./glass-theme.css" />
     <link rel="stylesheet" href="./glass-ontology.css" />
+    <link rel="stylesheet" href="./pending-center.css" />
+    <link rel="stylesheet" href="./agent-panel.css" />
     <script src="./app.js" type="module"></script>
-  </head>
+  <link rel="stylesheet" href="./ontology-workspace.css">
+</head>
   <body class="haizhi-glass">
     <svg
       class="icon-definitions"
@@ -137,7 +140,7 @@
                   id="upload-button"
                   type="button"
                   aria-label="上传企业资料"
-                  title="上传 CSV、Markdown 或 TXT"
+                  title="上传 CSV、Excel、Markdown 或 TXT"
                 >
                   <svg class="icon" aria-hidden="true">
                     <use href="#i-plus" />
@@ -182,7 +185,7 @@
       </section>
     </div>
 
-    <input type="file" id="file-input" accept=".csv,.md,.txt" hidden />
+    <input type="file" id="file-input" multiple accept=".csv,.tsv,.xlsx,.md,.txt" hidden />
     <div class="drop-overlay" id="drop-overlay" hidden>
       <span>松开，接入这份资料</span>
     </div>

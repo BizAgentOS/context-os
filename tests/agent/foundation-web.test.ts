@@ -7,6 +7,7 @@ import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { createServer } from "../../src/agent/server.ts";
 import type { AgentDriver } from "../../src/agent/runtime.ts";
+import { runFoundationSession, type FoundationSession } from "./foundation-domain-fixture.ts";
 import { seedFoundation } from "./program-foundation-fixture.ts";
 
 test("confirmed company web evidence comes from actual HTTP body and survives page change and service restart", async () => {
@@ -22,11 +23,10 @@ test("confirmed company web evidence comes from actual HTTP body and survives pa
   const url = `http://127.0.0.1:${(site.address() as AddressInfo).port}/company`;
   let saved = false;
   let resumed = false;
-  const driver: AgentDriver = {
-    async run(request) {
+  const run = async (session: FoundationSession) => {
       if (saved) {
-        const current = (await request.onTool("foundation_read", {})) as any;
-        const read = (await request.onTool("foundation_web_read", {
+        const current = (await session.read()) as any;
+        const read = (await session.documents.web!.read( {
           url,
           identity: {
             foundationId: current.current.id,
@@ -35,10 +35,7 @@ test("confirmed company web evidence comes from actual HTTP body and survives pa
         })) as any;
         assert.equal(read.identity.name, "澄川热力");
         assert(read.text.includes("澄川热力仅向工业企业供热。"));
-        await request.onTool("skill_use", {
-          name: "company-foundation-ontology",
-        });
-        const proposal = (await request.onTool("foundation_propose", {
+        const proposal = (await session.propose( {
           baseVersion: current.current.version,
           enterprise: current.current.content.enterprise,
           concepts: [
@@ -73,20 +70,15 @@ test("confirmed company web evidence comes from actual HTTP body and survives pa
           runId: "resume-web",
         };
       }
-      const user = JSON.parse(request.input)
-        .recentMessages.filter((m: any) => m.role === "user")
-        .at(-1);
-      await request.onTool("skill_use", {
-        name: "company-foundation-ontology",
-      });
-      const read = (await request.onTool("foundation_web_read", {
+      const user = session.message;
+      const read = (await session.documents.web!.read( {
         url,
         identity: { name: "澄川热力", messageId: user.id, quote: user.content },
       })) as any;
       assert(read.text.includes("澄川热力向城北居民提供供热服务。"));
       assert.equal(read.url, url);
       const draft = {
-        baseVersion: ((await request.onTool("foundation_read", {})) as any).current.version,
+        baseVersion: ((await session.read()) as any).current.version,
         enterprise: { name: "澄川热力", evidenceRefs: ["name"] },
         concepts: [
           {
@@ -110,7 +102,7 @@ test("confirmed company web evidence comes from actual HTTP body and survives pa
         conflicts: [],
       };
       await assert.rejects(
-        request.onTool("foundation_propose", {
+        session.propose( {
           ...draft,
           evidence: [
             draft.evidence[0],
@@ -119,23 +111,18 @@ test("confirmed company web evidence comes from actual HTTP body and survives pa
         }),
         /读取/,
       );
-      const proposed = (await request.onTool(
-        "foundation_propose",
-        draft,
-      )) as any;
+      const proposed = (await session.propose(draft)) as any;
       assert.equal(
         proposed.content.evidence.find((e: any) => e.kind === "web")
           .webSnapshot,
         undefined,
       );
-      const generic = (await request.onTool("memory_read", {
-        id: proposed.id,
-      })) as any;
+      const generic = (await service.app.foundation.project(service.app.memory.getArtifact(proposed.id))) as any;
       assert.equal(
         generic.content.evidence.find((e: any) => e.kind === "web").webSnapshot,
         undefined,
       );
-      const view = (await request.onTool("foundation_read", {})) as any;
+      const view = (await session.read()) as any;
       assert.equal(
         view.current.content.evidence.find((e: any) => e.kind === "web")
           .webSnapshot,
@@ -143,14 +130,9 @@ test("confirmed company web evidence comes from actual HTTP body and survives pa
       );
       saved = true;
       return { text: "已保存公开资料候选。", sessionId: "web", runId: "web" };
-    },
-    async stop() {},
-    async close() {},
   };
   let service = await createServer({
     directory,
-    driver,
-    researchTestOrigins: new Set([new URL(url).origin]),
   });
   seedFoundation(service.app.memory, service.app.foundation, {
     enterprise: "澄川热力",
@@ -159,12 +141,7 @@ test("confirmed company web evidence comes from actual HTTP body and survives pa
     ],
   });
   try {
-    await service.app.canvasMessage({
-      page: "setup",
-      text: "请研究澄川热力，主体是城北供热公司。",
-      messageId: "company",
-    });
-    await service.app.idle();
+    await runFoundationSession(service.app, "请研究澄川热力，主体是城北供热公司。", run, { messageId: "company", origins: new Set([new URL(url).origin]) });
     assert(saved, JSON.stringify(service.app.canvasState().messages));
     const current = service.app.canvasState().foundation.current!;
     assert.deepEqual((current.content.concepts as any[]).map((item) => [item.id, item.origin]), [["heating", "program"]]);
@@ -177,8 +154,6 @@ test("confirmed company web evidence comes from actual HTTP body and survives pa
     changed = true;
     service = await createServer({
       directory,
-      driver,
-      researchTestOrigins: new Set([new URL(url).origin]),
     });
     await new Promise<void>((r) => service.server.listen(0, "127.0.0.1", r));
     const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
@@ -195,12 +170,7 @@ test("confirmed company web evidence comes from actual HTTP body and survives pa
     assert(evidence.readAt);
     assert.equal(evidence.coverage.complete, true);
     await service.app.canvasNavigate({ page: "ontology" });
-    await service.app.canvasMessage({
-      page: "ontology",
-      text: "按已经确认的公司继续核对官网。",
-      messageId: "continue-web",
-    });
-    await service.app.idle();
+    await runFoundationSession(service.app, "按已经确认的公司继续核对官网。", run, { messageId: "continue-web", origins: new Set([new URL(url).origin]) });
     assert(resumed, JSON.stringify(service.app.canvasState().messages));
     await assert.rejects(
       service.app.canvasFoundationAdopt({
@@ -237,18 +207,15 @@ test("web reading rejects false identity, HTTP failures and broken encoding; bou
   await new Promise<void>((r) => site.listen(0, "127.0.0.1", r));
   const url = `http://127.0.0.1:${(site.address() as AddressInfo).port}`;
   let checked = false;
-  const driver: AgentDriver = {
-    async run(request) {
-      const user = JSON.parse(request.input)
-        .recentMessages.filter((m: any) => m.role === "user")
-        .at(-1);
+  const run = async (session: FoundationSession) => {
+      const user = session.message;
       const identity = {
         name: "澄川热力",
         messageId: user.id,
         quote: user.content,
       };
       await assert.rejects(
-        request.onTool("foundation_web_read", {
+        session.documents.web!.read( {
           url: url + "/long",
           identity: { ...identity, messageId: "fabricated" },
         }),
@@ -256,13 +223,13 @@ test("web reading rejects false identity, HTTP failures and broken encoding; bou
       );
       for (const path of ["failed", "broken", "empty", "redirect"])
         await assert.rejects(
-          request.onTool("foundation_web_read", {
+          session.documents.web!.read( {
             url: url + "/" + path,
             identity,
           }),
           /HTTP|编码|正文|公开研究/,
         );
-      const read = (await request.onTool("foundation_web_read", {
+      const read = (await session.documents.web!.read( {
         url: url + "/long",
         identity,
         limit: 20,
@@ -271,11 +238,8 @@ test("web reading rejects false identity, HTTP failures and broken encoding; bou
       assert.equal(read.coverage.complete, false);
       assert.equal(read.coverage.sourceTruncated, true);
       assert.equal(read.coverage.nextOffset, 20);
-      await request.onTool("skill_use", {
-        name: "company-foundation-ontology",
-      });
       const draft = {
-        baseVersion: ((await request.onTool("foundation_read", {})) as any).current.version,
+        baseVersion: ((await session.read()) as any).current.version,
         enterprise: { name: "澄川热力", evidenceRefs: ["w"] },
         concepts: [
           {
@@ -293,18 +257,18 @@ test("web reading rejects false identity, HTTP failures and broken encoding; bou
         conflicts: [],
       };
       await assert.rejects(
-        request.onTool("foundation_propose", draft),
+        session.propose( draft),
         /实际读取/,
       );
       await assert.rejects(
-        request.onTool("foundation_propose", {
+        session.propose( {
           ...draft,
           enterprise: { name: "另一家公司", evidenceRefs: ["w"] },
           evidence: [{ ...draft.evidence[0], quote: "澄川热力向居民供热。" }],
         }),
         /主体/,
       );
-      const saved = (await request.onTool("foundation_propose", {
+      const saved = (await session.propose( {
         ...draft,
         evidence: [{ ...draft.evidence[0], quote: "澄川热力向居民供热。" }],
       })) as any;
@@ -315,14 +279,9 @@ test("web reading rejects false identity, HTTP failures and broken encoding; bou
         sessionId: "bounded-web",
         runId: "bounded-web",
       };
-    },
-    async stop() {},
-    async close() {},
   };
   const service = await createServer({
     directory,
-    driver,
-    researchTestOrigins: new Set([new URL(url).origin]),
   });
   seedFoundation(service.app.memory, service.app.foundation, {
     enterprise: "澄川热力",
@@ -331,12 +290,7 @@ test("web reading rejects false identity, HTTP failures and broken encoding; bou
     ],
   });
   try {
-    await service.app.canvasMessage({
-      page: "setup",
-      text: "研究澄川热力。",
-      messageId: "bounded",
-    });
-    await service.app.idle();
+    await runFoundationSession(service.app, "研究澄川热力。", run, { messageId: "bounded", origins: new Set([new URL(url).origin]) });
     assert(checked, JSON.stringify(service.app.canvasState().messages));
   } finally {
     await service.close();

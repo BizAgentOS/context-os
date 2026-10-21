@@ -23,12 +23,11 @@ async function runConversation(text: string, run: (request: RunRequest) => Promi
   } finally { await app.close(); rmSync(directory, { recursive: true, force: true }); }
 }
 
-test("a run ending after verification delivers actual results instead of preparatory English", async () => {
+test("a run ending after a real query delivers actual results instead of preparatory English", { timeout: 20_000 }, async () => {
   const answer = await runConversation("共有多少条投诉？", async request => {
     const preamble = "I have what I need. Let me record this as a verification.";
     request.onEvent("assistant.delta", { text: preamble });
-    await request.onTool("ontology_verify", {
-      question: "共有多少条投诉？",
+    await request.onTool("object_execute", {
       operations: [{ op: "query", type: "投诉", as: "complaints" }, { op: "aggregate", input: "$complaints", as: "count" }],
     });
     return preamble;
@@ -36,7 +35,7 @@ test("a run ending after verification delivers actual results instead of prepara
   assert.doesNotMatch(answer, /I have what I need|Let me/);
   assert.match(answer, /6/);
   assert.match(answer, /结果|统计/);
-  assert.match(answer, /核对|验证/);
+  assert.match(answer, /读取范围|覆盖/);
 });
 
 test("empty and analysis-only replies never claim success; ordinary English answers remain English", async () => {
@@ -65,9 +64,10 @@ test("fallback preserves partial coverage and later tool failures", async () => 
     await assert.rejects(request.onTool("object_execute", { operations: [{ op: "query", type: "不存在" }] }));
     return "";
   });
-  assert.match(answer, /"count": 1/);
-  assert.match(answer, /"partial": true/);
-  assert.match(answer, /"complete": false/);
+  assert.match(answer, /统计结果：1/);
+  assert.match(answer, /部分/);
+  assert.match(answer, /覆盖不完整/);
+  assert.doesNotMatch(answer, /```json|"count"|"partial"|"complete"/);
   assert.match(answer, /最后一次操作未完成/);
   assert.doesNotMatch(answer, /全量.*通过|成功/);
 });
@@ -78,6 +78,6 @@ test("a corrected query delivers its result without reporting the recovered fail
     await request.onTool("object_execute", {operations:[{op:"query", type:"投诉", as:"complaints"}, {op:"aggregate", input:"$complaints"}]});
     return "";
   });
-  assert.match(answer, /"count": 6/);
+  assert.match(answer, /统计结果：6/);
   assert.doesNotMatch(answer, /最后一次操作未完成|不存在/);
 });

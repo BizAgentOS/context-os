@@ -1,0 +1,17 @@
+.pending-drawer { position:fixed; z-index:120; top:72px; right:16px; bottom:16px; width:min(560px,calc(100vw - 32px)); padding:20px; overflow:auto; background:rgba(255,255,255,.97); border:1px solid #d8e3ef; border-radius:20px; box-shadow:0 18px 60px #18355730; color:#182739; }
+.pending-drawer>header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; }
+.pending-drawer h2 { font-size:20px; margin:0; }
+.pending-drawer select { padding:8px 12px; max-width:100%; }
+.pending-item { padding:16px 0; border-bottom:1px solid #e1e7ed; }
+.pending-item-title { font-weight:600; text-align:left; border:0; background:transparent; color:#214f93; cursor:pointer; padding:0; overflow-wrap:anywhere; }
+.pending-evidence { font-size:13px; line-height:1.6; overflow-wrap:anywhere; }
+.pending-detail { min-width:0; }
+.pending-drawer .engine-table table { min-width:0; table-layout:fixed; width:100%; }
+.pending-drawer th,.pending-drawer td,.pending-drawer p { overflow-wrap:anywhere; }
+.pending-drawer [hidden] { display:none!important; }
+@media(max-width:680px) { .pending-drawer { inset:64px 8px 8px; width:auto; padding:16px; } }
+
+.pending-filters { display:flex; flex-wrap:wrap; gap:8px; }
+.pending-select { display:inline-flex; gap:5px; margin-right:10px; font-size:12px; }
+.pending-batch:not(:empty) { padding:12px; background:#eef4f7; border-radius:10px; margin:12px 0; }
+.pending-batch > button { margin:6px; }

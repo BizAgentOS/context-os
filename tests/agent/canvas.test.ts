@@ -10,8 +10,20 @@ import { seedFoundation } from "./program-foundation-fixture.ts";
 import { createServer } from "../../src/agent/server.ts";
 import { AgentApplication } from "../../src/agent/app.ts";
 import type { Artifact } from "../../src/agent/contracts.ts";
+import { Workspace } from "../../src/agent/workspace.ts";
 
-test("a failed message save can be retried with the same id and then really executes", async () => {
+const companyFixture = (app: AgentApplication) => {
+  const workspace = new Workspace(app.memory);
+  workspace.editProfile("company.name", "澄川热力");
+  workspace.editProfile("company.business", "居民供热");
+};
+const within = async <T>(promise: Promise<T>) => {
+  let timer: ReturnType<typeof setTimeout>;
+  try { return await Promise.race([promise, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Agent fixture did not reach its public checkpoint")), 8000); })]); }
+  finally { clearTimeout(timer!); }
+};
+
+test("a failed message save can be retried with the same id and then really executes", { timeout: 20000 }, async () => {
   const directory = mkdtempSync(
     join(tmpdir(), "dataengine-canvas-write-failure-"),
   );
@@ -19,7 +31,7 @@ test("a failed message save can be retried with the same id and then really exec
   const driver: AgentDriver = {
     async run(request) {
       runs++;
-      await request.onTool("task_ask", {
+      await request.onTool("decision_request", {
         question: "企业主要做什么？",
         reason: "了解业务",
       });
@@ -92,7 +104,7 @@ test("a failed message save can be retried with the same id and then really exec
   }
 });
 
-test("the canvas saves real company facts and remains on setup after the run settles", async () => {
+test("the canvas keeps user-edited company facts and remains on setup after the run settles", { timeout: 20000 }, async () => {
   const directory = mkdtempSync(join(tmpdir(), "dataengine-canvas-"));
   let finish!: () => void;
   let saved!: () => void;
@@ -113,31 +125,8 @@ test("the canvas saves real company facts and remains on setup after the run set
           ),
         ),
       );
-      await assert.rejects(
-        request.onTool("page_complete", {}),
-        /企业名称.*业务/,
-      );
-      const input = JSON.parse(request.input);
-      const user = input.recentMessages.at(-1);
-      await request.onTool("profile_update", {
-        statements: [
-          {
-            key: "company.name",
-            text: "澄川热力",
-            origin: "user",
-            messageId: user.id,
-            quote: "澄川热力",
-          },
-          {
-            key: "company.business",
-            text: "居民供热",
-            origin: "user",
-            messageId: user.id,
-            quote: "居民供热",
-          },
-        ],
-      });
-      await assert.rejects(request.onTool("page_complete", {}), /来源|资料/);
+      assert(!request.tools.some(tool => ["page_complete", "profile_update"].includes(tool.name)));
+      await request.onTool("task_checkpoint", { nextStep: "请补充企业资料来源" });
       saved();
       await finishPromise;
       return {
@@ -169,6 +158,7 @@ test("the canvas saves real company facts and remains on setup after the run set
     assert.equal(initial.profile, null);
     assert.equal(requests.length, 0);
     assert(!("tasks" in initial) && !("events" in initial));
+    companyFixture(service.app);
     const headers = {
       "content-type": "application/json",
       "x-dataengine-token": initial.token,
@@ -194,7 +184,7 @@ test("the canvas saves real company facts and remains on setup after the run set
         messageId: "company-one",
       }),
     });
-    await savedPromise;
+    await within(savedPromise);
     const during = await (
       await fetch(`${url}/api/canvas`, {
         headers: { "x-dataengine-token": service.adminToken },
@@ -245,7 +235,7 @@ test("the canvas saves real company facts and remains on setup after the run set
   }
 });
 
-test("one cross-page conversation has bounded model context while saved enterprise memory and complete history survive", async () => {
+test("one cross-page conversation has bounded model context while saved enterprise memory and complete history survive", { timeout: 20000 }, async () => {
   const directory = mkdtempSync(join(tmpdir(), "dataengine-canvas-context-"));
   const requests: RunRequest[] = [];
   const driver: AgentDriver = {
@@ -253,21 +243,7 @@ test("one cross-page conversation has bounded model context while saved enterpri
       requests.push(request);
       request.onSession(`session-${requests.length}`);
       const input = JSON.parse(request.input);
-      if (requests.length === 1) {
-        const user = input.recentMessages.at(-1);
-        await request.onTool("profile_update", {
-          statements: [
-            {
-              key: "company.name",
-              text: "澄川热力",
-              origin: "user",
-              messageId: user.id,
-              quote: "澄川热力",
-            },
-          ],
-        });
-      }
-      await request.onTool("task_ask", {
+      await request.onTool("decision_request", {
         question: "主要提供什么服务？",
         reason: "还需要了解企业业务",
       });
@@ -282,6 +258,7 @@ test("one cross-page conversation has bounded model context while saved enterpri
   };
   let app = new AgentApplication(directory, driver);
   try {
+    companyFixture(app);
     await app.canvasMessage({
       page: "company",
       text: "澄川热力",
@@ -310,7 +287,7 @@ test("one cross-page conversation has bounded model context while saved enterpri
     );
     assert(requests.every((request) => request.sessionId === undefined));
     assert.match(JSON.stringify(canvas.profile), /澄川热力/);
-    assert.match(JSON.stringify(canvas.profile), /first-user-fact/);
+    assert.match(JSON.stringify(canvas.profile), /userEdited/);
     // Network retries stay idempotent after the model history window has moved.
     await app.canvasMessage({
       page: "company",
@@ -329,7 +306,7 @@ test("one cross-page conversation has bounded model context while saved enterpri
   }
 });
 
-test("sources require inspected records, and the ontology page offers no tool that writes structure around the data program", async () => {
+test("source inspection uses real records and every build page offers only unified structural proposals", { timeout: 20000 }, async () => {
   const directory = mkdtempSync(join(tmpdir(), "dataengine-canvas-stages-"));
   let offered: string[] = [];
   const driver: AgentDriver = {
@@ -340,51 +317,14 @@ test("sources require inspected records, and the ontology page offers no tool th
           ["report_save", "task_complete"].includes(tool.name),
         ),
       );
-      if (input.page === "setup" && !input.focus) {
-        const user = input.recentMessages.at(-1);
-        await request.onTool("profile_update", {
-          statements: [
-            {
-              key: "company.name",
-              text: "澄川热力",
-              origin: "user",
-              messageId: user.id,
-              quote: "澄川热力",
-            },
-            {
-              key: "company.business",
-              text: "居民供热",
-              origin: "user",
-              messageId: user.id,
-              quote: "居民供热",
-            },
-          ],
-        });
-        await assert.rejects(request.onTool("page_complete", {}), /来源|资料/);
-      } else if (input.page === "setup") {
-        assert(
-          input.recentMessages.some((message: { content: string }) =>
-            message.content.includes("公司叫"),
-          ),
-        );
-        await assert.rejects(
-          request.onTool("page_complete", {}),
-          /读取.*来源|资料/,
-        );
-        const source = (await request.onTool("memory_read", {
-          id: input.focus.id,
-        })) as unknown as Artifact;
-        if (
-          source.content.format === "csv" &&
-          Array.isArray(source.content.rows) &&
-          source.content.rows.length
-        )
-          await request.onTool("page_complete", {});
-        else
-          await request.onTool("task_ask", {
-            question: "请再上传一份有业务记录的 CSV。",
-            reason: "需要实际记录来创建对象",
-          });
+      if (input.page === "setup") {
+        assert(!request.tools.some(tool => tool.name === "page_complete"));
+        if (input.focus) {
+          const source = await request.onTool("memory_read", { id: input.focus.id }) as unknown as Artifact;
+          if (source.content.format === "csv" && Array.isArray(source.content.rows) && source.content.rows.length)
+            await request.onTool("task_checkpoint", { nextStep: "已读取记录，准备提出对象定义" });
+          else await request.onTool("decision_request", { question: "请再上传一份有业务记录的 CSV。", reason: "需要实际记录来创建对象" });
+        }
       } else {
         offered = request.tools.map((tool) => tool.name);
       }
@@ -399,6 +339,7 @@ test("sources require inspected records, and the ontology page offers no tool th
   };
   const app = new AgentApplication(directory, driver, new Set(), false);
   try {
+    companyFixture(app);
     await app.canvasMessage({
       page: "company",
       text: "公司叫澄川热力，业务是居民供热。",
@@ -429,9 +370,8 @@ test("sources require inspected records, and the ontology page offers no tool th
     assert(app.canvasState("ontology").messages.length > 0, "page navigation keeps the same conversation history");
     await app.canvasMessage({ page: "ontology", text: "建立投诉对象。" });
     await app.idle();
-    // Concepts and relations come from the rules; the assistant only corrects them.
-    assert(offered.includes("foundation_propose") && offered.includes("engine_build"));
-    for (const name of ["ontology_outline", "ontology_propose"]) assert(!offered.includes(name), name);
+    for (const name of ["change_propose", "change_verify", "ontology_outline", "engine_build"]) assert(offered.includes(name), name);
+    for (const name of ["foundation_propose", "live_propose", "ontology_propose", "change_adopt", "profile_update", "page_complete"]) assert(!offered.includes(name), name);
     await app.canvasNavigate({ page: "company" });
     assert.match(JSON.stringify(app.canvasState().profile), /居民供热/);
   } finally {
@@ -440,7 +380,7 @@ test("sources require inspected records, and the ontology page offers no tool th
   }
 });
 
-test("explicit cancellation after navigation invalidates pending writes, and failed completion cannot advance the canvas", async () => {
+test("explicit cancellation after navigation invalidates pending writes, and failed completion cannot advance the canvas", { timeout: 20000 }, async () => {
   const directory = mkdtempSync(join(tmpdir(), "dataengine-canvas-stop-"));
   let release!: () => void;
   let entered!: () => void;
@@ -453,41 +393,14 @@ test("explicit cancellation after navigation invalidates pending writes, and fai
     async run(request) {
       const input = JSON.parse(request.input);
       if (mode === "company") {
-        const user = input.recentMessages.at(-1);
-        await request.onTool("profile_update", {
-          statements: [
-            {
-              key: "company.name",
-              text: "澄川热力",
-              origin: "user",
-              messageId: user.id,
-              quote: "澄川热力",
-            },
-            {
-              key: "company.business",
-              text: "居民供热",
-              origin: "user",
-              messageId: user.id,
-              quote: "居民供热",
-            },
-          ],
-        });
-        await assert.rejects(request.onTool("page_complete", {}), /来源|资料/);
+        await request.onTool("task_checkpoint", { nextStep: "检查已有资料" });
       } else if (mode === "late") {
         entered();
         await new Promise<void>((resolve) => {
           release = resolve;
         });
         try {
-          await request.onTool("profile_update", {
-            statements: [
-              {
-                key: "company.goal",
-                text: "不应保存的迟到内容",
-                origin: "suggestion",
-              },
-            ],
-          });
+          await request.onTool("task_checkpoint", { nextStep: "不应保存的迟到内容" });
         } catch {
           lateRejected = true;
         }
@@ -510,17 +423,18 @@ test("explicit cancellation after navigation invalidates pending writes, and fai
   };
   const app = new AgentApplication(directory, driver);
   try {
+    companyFixture(app);
     await app.canvasMessage({ page: "company", text: "澄川热力，居民供热" });
     await app.idle();
     mode = "late";
     await app.canvasMessage({ page: "sources", text: "查看已有资料" });
-    await enteredPromise;
+    await within(enteredPromise);
     await app.canvasNavigate({ page: "company" });
     assert.equal(app.canvasState().busy, true);
     await app.canvasStop({ page: "company" });
     assert.equal(lateRejected, true);
     assert.equal(app.canvasState().currentPage, "setup");
-    assert.doesNotMatch(JSON.stringify(app.canvasState().profile), /迟到内容/);
+    assert.doesNotMatch(JSON.stringify(app.memory.listTasks()), /迟到内容/);
     await app.canvasNavigate({ page: "sources" });
     assert.equal(
       app

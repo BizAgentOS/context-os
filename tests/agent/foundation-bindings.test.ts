@@ -12,8 +12,9 @@ import {
   connectHeatingSources,
 } from "../../src/live/heating-sources.ts";
 import { seedFoundation } from "./program-foundation-fixture.ts";
+import { foundationSession } from "./foundation-domain-fixture.ts";
 
-test("adopted foundation concepts bind a checked execution subset, retain unbound concepts and reject stale dependencies", async () => {
+test("adopted foundation concepts bind a checked execution subset, retain unbound concepts and reject stale dependencies", { timeout: 30000 }, async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-binding-"));
   const upstream = await createHeatingSources();
   let unavailable = false;
@@ -29,20 +30,31 @@ test("adopted foundation concepts bind a checked execution subset, retain unboun
   await new Promise<void>((r) => proxy.listen(0, "127.0.0.1", r));
   const sourceUrl = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
   let inspected: any;
-  let phase = "foundation",
-    mapping: any,
-    proposed: any;
+  let mapping: any, proposed: any;
   const driver = {
     async run(request: any) {
-      if (phase === "inspect") {
-        inspected = await request.onTool("context_read", {});
-      } else if (phase === "foundation") {
-        const message = JSON.parse(request.input).recentMessages.at(-1);
-        await request.onTool("skill_use", {
-          name: "company-foundation-ontology",
-        });
-        const previous = await request.onTool("foundation_read", {});
-        await request.onTool("foundation_propose", {
+      inspected = await request.onTool("context_read", {});
+      return { text: "已读取选中定义。", sessionId: "binding", runId: "binding" };
+    }, async stop() {}, async close() {},
+  };
+  let service = await createServer({ directory, driver, automaticApi: false });
+  seedFoundation(service.app.memory, service.app.foundation, {
+    enterprise: "澄川热力",
+    concepts: [
+      { id: "callback", name: "回访", description: "来自回访表的记录，业务含义待核对。" },
+      { id: "complaint", name: "投诉", description: "来自投诉表的记录，业务含义待核对。" },
+      { id: "resident", name: "居民", description: "来自居民表的记录，业务含义待核对。" },
+    ],
+    relations: [
+      { id: "has_callback", name: "回访记录", from: "complaint", to: "callback", description: "结构化数据中的回访记录关联。" },
+    ],
+  });
+  // Foundation and mapping compatibility are host-domain contracts; the Agent retains only the current read-only context seam.
+  const proposeFoundation = async (messageId: string) => {
+    const session = foundationSession(service.app, "澄川热力向居民供热，投诉是居民反映的供热问题，处理后通过回访了解居民反馈。", { messageId });
+    try {
+      const message = session.message, previous = session.read();
+      await session.propose({
           baseVersion: previous.current?.version ?? 0,
           enterprise: { name: "澄川热力", evidenceRefs: [message.id] },
           concepts: [
@@ -81,46 +93,8 @@ test("adopted foundation concepts bind a checked execution subset, retain unboun
           unknowns: [],
           conflicts: [],
         });
-      } else {
-        assert(request.tools.some((tool: any) => tool.name === "live_propose"));
-        assert(request.tools.some((tool: any) => tool.name === "live_query"));
-        proposed = await request.onTool("live_propose", mapping);
-        const preview = await request.onTool("live_query", {
-          modelId: proposed.id,
-          modelVersion: proposed.version,
-          conceptId: "complaint",
-          limit: 2,
-        });
-        assert.equal(preview.conceptRef.conceptId, "complaint");
-        assert.equal(preview.items.length, 1);
-        await request.onTool("task_ask", {
-          question: "请核对并采用此执行子集",
-          reason: "核对业务映射",
-          candidateId: proposed.id,
-          version: proposed.version,
-        });
-      }
-      return {
-        text: "候选已保存，请核对后采用",
-        sessionId: "binding",
-        runId: "binding",
-      };
-    },
-    async stop() {},
-    async close() {},
+    } finally { session.close(); }
   };
-  let service = await createServer({ directory, driver, automaticApi: false });
-  seedFoundation(service.app.memory, service.app.foundation, {
-    enterprise: "澄川热力",
-    concepts: [
-      { id: "callback", name: "回访", description: "来自回访表的记录，业务含义待核对。" },
-      { id: "complaint", name: "投诉", description: "来自投诉表的记录，业务含义待核对。" },
-      { id: "resident", name: "居民", description: "来自居民表的记录，业务含义待核对。" },
-    ],
-    relations: [
-      { id: "has_callback", name: "回访记录", from: "complaint", to: "callback", description: "结构化数据中的回访记录关联。" },
-    ],
-  });
   const start = async () => {
     await new Promise<void>((r) => service.server.listen(0, "127.0.0.1", r));
     const url = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
@@ -144,12 +118,7 @@ test("adopted foundation concepts bind a checked execution subset, retain unboun
       ...upstream,
       apiUrl: sourceUrl,
     });
-    await api("/api/canvas/message", {
-      page: "setup",
-      text: "澄川热力向居民供热，投诉是居民反映的供热问题，处理后通过回访了解居民反馈。",
-      messageId: "binding-user",
-    });
-    await service.app.idle();
+    await proposeFoundation("binding-user");
     const current = (await api()).foundation.current;
     assert(current, JSON.stringify((await api()).messages));
     assert.deepEqual(current.content.concepts.map((item: any) => [item.id, item.origin]), [["callback", "program"], ["complaint", "program"], ["resident", "program"]]);
@@ -183,7 +152,6 @@ test("adopted foundation concepts bind a checked execution subset, retain unboun
     assert.equal(selected.target.label, "居民");
     assert.equal(selected.target.definition.mappingStatus, "unbound");
     assert.deepEqual(selected.target.definition.bindings, []);
-    phase = "inspect";
     await api("/api/canvas/message", {
       page: "ontology",
       text: "解释选中的定义，不创建实例",
@@ -261,15 +229,14 @@ test("adopted foundation concepts bind a checked execution subset, retain unboun
         toField: "投诉编号",
       },
     ];
-    phase = "mapping";
     await api("/api/canvas/navigate", { page: "setup" });
-    await api("/api/canvas/message", {
-      page: "setup",
-      text: "把投诉绑定受理系统，居民暂不映射",
-      messageId: "bind-records",
-    });
-    await service.app.idle();
-    assert(proposed, JSON.stringify((await api()).messages));
+    proposed = (await api("/api/live/propose", mapping)).saved;
+    const preview = await api("/api/live/query", { modelId: proposed.id, modelVersion: proposed.version, conceptId: "complaint", limit: 2 });
+    assert.equal(preview.conceptRef.conceptId, "complaint");
+    assert.equal(preview.items.length, 1);
+    const decisionContext = service.app.memory.beginExecution((await api()).session.taskId);
+    try { service.app.memory.ask(decisionContext, { question: "请核对并采用此执行子集", reason: "核对业务映射", candidateId: proposed.id, version: proposed.version }); }
+    finally { service.app.memory.endExecution(decisionContext); }
     assert.equal(proposed.content.foundationRef.id, adopted.id);
     const before = (await api()).foundation.current;
     assert.equal(
@@ -421,14 +388,8 @@ test("adopted foundation concepts bind a checked execution subset, retain unboun
       version: smallerAdopted.version,
     };
     const pending = (await api("/api/live/propose", mapping)).saved;
-    phase = "foundation";
     await api("/api/canvas/navigate", { page: "setup" });
-    await api("/api/canvas/message", {
-      page: "setup",
-      text: "澄川热力向居民供热，投诉是居民反映的供热问题，处理后通过回访了解居民反馈。",
-      messageId: "binding-revision",
-    });
-    await service.app.idle();
+    await proposeFoundation("binding-revision");
     // A new draft does not invalidate the still adopted semantic version.
     assert.equal((await api("/api/live/query", query)).items[0].$id, "TS002");
     const retained = await api("/api/canvas/context/read", {

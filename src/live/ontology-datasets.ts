@@ -10,6 +10,8 @@ import { FoundationService } from "../agent/foundation.ts";
 import type { LiveMemory } from "./memory.ts";
 import { jsonData } from "./sources.ts";
 import { ConsumerViews, consumerGrant } from "./consumer-views.ts";
+import {SemanticConsumption,externalSemanticOperations} from './semantic-consumption.ts';
+import {ConsumerScopeError} from './consumer-semantic.ts';
 
 const name = z.string().trim().min(1).max(200);
 const ref = z.object({ id: name, version: z.number().int().positive() }).strict();
@@ -164,7 +166,7 @@ export class OntologyDatasets {
         args: [fileURLToPath(new URL("../../scripts/dataengine-mcp.ts", import.meta.url))],
         env: { DATAENGINE_URL: origin, DATAENGINE_CONSUMER_KEY: "<本数据集接入密钥>" },
       } } },
-      tools: ["describe_dataset", "read_concept", "query_relations", "describe_type", "query_objects", "read_evidence"],
+      tools: ["describe_dataset", "read_concept", "query_relations", "describe_type", "query_objects", "read_evidence",...externalSemanticOperations.map(item=>item.name)],
     };
   }
   authenticate(key: string) {
@@ -199,6 +201,31 @@ export class OntologyDatasets {
       const common = { datasetRef: { id: a.id, version: a.version }, ...(a.content.releaseRef ? { releaseRef: a.content.releaseRef } : {}), foundationRef: a.content.foundationRef, name: a.title, reading: "fixed_ontology_definition" };
       const concepts = a.content.concepts as Data[], relations = a.content.relations as Data[];
       const business = a.content.business as Data | null;
+      if(externalSemanticOperations.some(operation=>operation.path===path)||path==='/v4/objects'&&(params.has('filters')||params.has('sort'))){
+        let input:Record<string,unknown>;
+        try{
+          if(new Set(params.keys()).size!==[...params.keys()].length)throw new Error('duplicate parameters');
+          if(path==='/v4/traverse'||path==='/v4/aggregate'){
+            if([...params.keys()].length!==1||!params.has('query'))throw new Error('query required');
+            input=JSON.parse(params.get('query')!);
+          }else{
+            input=Object.fromEntries(params);
+            for(const key of ['offset','limit'])if(params.has(key))input[key]=Number(params.get(key));
+            if(path==='/v4/objects'){
+              if(params.has('fields'))input.fields=params.get('fields')!.split(',');
+              for(const key of ['filters','sort'])if(params.has(key))input[key]=JSON.parse(params.get(key)!);
+            }
+          }
+        }catch{return{status:400,body:{error:'无效的结构化查询参数'}};}
+        try{
+          const result=await new SemanticConsumption(this.memory,this.live).execute(a,path,input,authorized);
+          authorized();this.recordRead(a,path);return{status:200,body:jsonData({...result,datasetRef:common.datasetRef,releaseRef:common.releaseRef})};
+        }catch(error){
+          if(error instanceof z.ZodError)return{status:400,body:{error:'查询参数不符合执行合同'}};
+          if(error instanceof ConsumerScopeError)return{status:403,body:{error:error.message}};
+          throw error;
+        }
+      }
       if (["/v4/types", "/v4/objects", "/v4/evidence"].includes(path)) {
         if (!business) return { status: 403, body: { error: "此数据集只开放本体知识，未开放业务记录" } };
         const result = await new ConsumerViews(this.memory, this.live).readLinkedView(business.viewRef as { id: string; version: number }, path.replace("/v4/", "/v3/"), params, authorized);

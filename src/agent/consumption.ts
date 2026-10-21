@@ -1,3 +1,4 @@
+import {tableRowsSync} from "../data/table-rows.ts";
 import { freezeLegacyConsumption } from "../live/legacy-consumption.ts";
 import { DatabaseSync } from "node:sqlite";
 import { chmodSync, mkdirSync } from "node:fs";
@@ -314,7 +315,7 @@ export class ConsumptionService {
           result.nextSourceVersions[type.sourceId],
         );
         const columns = [type.idField, ...Object.values(type.fields)];
-        for (const [index, row] of (source.content.rows as Data[]).entries()) {
+        for (const [index, row] of [...tableRowsSync(source,this.memory)].entries()) {
           if (
             !row ||
             typeof row !== "object" ||

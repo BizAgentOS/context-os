@@ -8,7 +8,7 @@ import { fingerprint } from "../engine/release-diff.ts";
 import { jsonData } from "./sources.ts";
 
 export type IdentityDecisionPins = true | false | ReadonlySet<string>;
-export interface IdentityReading { readMode?: ReadMode; pins?: SnapshotPins; fixedSemantic?: boolean; modelDefinition?: Data }
+export interface IdentityReading { readMode?: ReadMode; pins?: SnapshotPins; fixedSemantic?: boolean; modelDefinition?: Data; preparedFoundation?: Artifact; assertActive?:()=>void }
 const name = z.string().trim().min(1).max(200);
 const record = z.object({ bindingId: name, recordId: z.string().trim().min(1).max(objectIdLimit) }).strict();
 export const identityRuleSubject = identityRuleSchema.omit({ id: true, legacy: true }).extend({ id: name.optional(), relationName: name.optional() });

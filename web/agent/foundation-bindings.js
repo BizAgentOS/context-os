@@ -288,12 +288,8 @@ export function bindConcept(artifact, concept, live, api, mutate) {
               api,
             ),
           ),
-          button("采用此执行子集", async () => {
-            const adopted = await mutate("/api/live/adopt", {
-              id: model.id,
-              version: model.version,
-            });
-            if (adopted) dialog.close();
+          button("到待处理核对执行子集", () => {
+            dialog.close(); requestPending({ ownerId: model.id });
           }),
         );
       },
@@ -307,3 +303,4 @@ export function bindConcept(artifact, concept, live, api, mutate) {
     }
   };
 }
+import { requestPending } from "./pending-center.js";

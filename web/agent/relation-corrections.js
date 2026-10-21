@@ -205,7 +205,7 @@ export function inspectCorrection(initial, api, after = () => {}) {
       content.append(btn("检查当前候选", () => act("check")));
       if (record.status === "checked")
         content.append(
-          btn("确认采用已检查的纠正", () => act("adopt")),
+          btn("到待处理核对纠正", () => { dialog.close(); requestPending({ ownerId: record.id }); }),
         );
       content.append(btn("取消未采用候选", () => act("cancel")));
     }
@@ -275,3 +275,4 @@ export function renderCorrections(model, { api }) {
   queueMicrotask(load);
   return panel;
 }
+import { requestPending } from "./pending-center.js";

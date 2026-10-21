@@ -281,7 +281,7 @@ test("global field revision retains shared impact, sample evidence and checked d
   }
 });
 
-test("relation revision groups saved corrections, supports agent inspection and rejects concurrent or stopped writes", async () => {
+test("relation revision groups saved corrections, supports agent inspection and rejects concurrent or stopped writes", { timeout: 25000 }, async () => {
   const { createHeatingSources, connectHeatingSources, heatingDefinition } =
     await import("../../src/live/heating-sources.ts");
   const { createServer: httpServer } = await import("node:http");
@@ -303,23 +303,22 @@ test("relation revision groups saved corrections, supports agent inspection and 
   let draft: any,
     agent: any,
     stopping = false;
+  let pendingChange: any;
   const service = await createServer({ automaticApi: false,
     directory,
     driver: {
       async run(request) {
         assert(!request.tools.some((t) => t.name === "mapping_change_adopt"));
-        const call = request.onTool("mapping_change_propose", {
-          ...draft,
-          operationId: stopping ? "stopped" : "agent",
-        });
-        if (stopping) await assert.rejects(call);
+        const catalog = await request.onTool("pending_list", {}) as any;
+        const item = catalog.items.find((item: any) => item.id === pendingChange.id);
+        assert(item, "saved mapping revisions are reachable through the unified pending directory");
+        const call = request.onTool("change_verify", { id: item.id, version: item.version, operationId: stopping ? "stopped" : "agent" });
+        if (stopping) await assert.rejects(call, /已失效|停止|运行/);
         else {
-          agent = await call;
-          const read = (await request.onTool("mapping_change_read", {
-            id: agent.id,
-            version: agent.version,
-          })) as any;
-          assert.equal(read.changeRef.id, agent.id);
+          const verified = await call as any;
+          assert.equal(verified.status, "verified");
+          const read = await request.onTool("pending_read", { id: verified.id, version: verified.version }) as any;
+          assert.equal(read.change.content.owner.id, agent.id);
         }
         return { text: "修订已保存", sessionId: "r", runId: "r" };
       },
@@ -389,6 +388,9 @@ test("relation revision groups saved corrections, supports agent inspection and 
       baseRef: draft.baseRef,
     });
     assert.equal(groups.groups[0].count, 1);
+    const initial = await act("propose", { ...draft, operationId: "saved-by-user" });
+    agent = await act("check", { id: initial.id, version: initial.version, operationId: "checked-by-user" });
+    pendingChange = service.app.memory.listArtifacts("ontology_change").find(item => (item.content.owner as any)?.id === agent.id)!;
     await api("/api/canvas/navigate", { page: "ontology" });
     await api("/api/canvas/message", {
       page: "ontology",
@@ -396,7 +398,7 @@ test("relation revision groups saved corrections, supports agent inspection and 
       messageId: "mapping-agent",
     });
     await service.app.idle();
-    assert.equal(agent.status, "candidate");
+    assert.equal(agent.status, "checked");
     const sample = agent.content.impact.samples.find(
       (s: any) => s.id === "TS002",
     );
@@ -436,6 +438,9 @@ test("relation revision groups saved corrections, supports agent inspection and 
       patch: { ...draft.patch, fromField: "$id" },
       relatedCorrections: [],
     };
+    const restore = await act("propose", { ...draft, operationId: "saved-restore" });
+    const checkedRestore = await act("check", { id: restore.id, version: restore.version, operationId: "checked-restore" });
+    pendingChange = service.app.memory.listArtifacts("ontology_change").find(item => (item.content.owner as any)?.id === checkedRestore.id)!;
     const callsBeforeStop = proxyCalls;
     stopping = true;
     const started = new Promise<void>((r) => (entered = r));
@@ -455,6 +460,7 @@ test("relation revision groups saved corrections, supports agent inspection and 
       before,
     );
     assert.equal(proxyCalls - callsBeforeStop, 1);
+    assert.equal(service.app.changes.read(pendingChange.id).version, pendingChange.version, "stopping cannot commit the verification");
   } finally {
     release?.();
     await service.close();

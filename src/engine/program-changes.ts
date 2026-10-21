@@ -2,7 +2,7 @@ import { ownerVerificationInputs } from "./owner-verification.ts";
 import { z } from "zod";
 import type { Artifact, Data } from "../agent/contracts.ts";
 import type { MemoryStore } from "../agent/memory.ts";
-import { OntologyChanges } from "./changes.ts";
+import { ChangeConflict, OntologyChanges } from "./changes.ts";
 import { ProgramBuilds, structuralDelta, type Selection, type AdoptedBuild } from "./program-builds.ts";
 import { fingerprint } from "./release-diff.ts";
 import { jsonData } from "../live/sources.ts";
@@ -81,6 +81,31 @@ export function connectProgramChanges(memory: MemoryStore, engine: ProgramBuilds
       apply: () => { const result = finish(candidate, args.selection ?? undefined, save!); return { candidateRef: { id: result.candidate.id, version: result.candidate.version },
         foundationRef: { id: result.foundation.id, version: result.foundation.version }, modelRef: { id: result.model.id, version: result.model.version } }; } };
   } });
+  changes.registerBatchHandler({
+    accepts: selected => selected.every(change => (change.content.owner as Data | undefined)?.kind === "engine_candidate"),
+    prepare: async selected => {
+      const choices = selected.map(change => schema.parse(change.content.subject));
+      const candidateRef = choices[0].candidateRef;
+      if (choices.some(choice => fingerprint(choice.candidateRef) !== fingerprint(candidateRef) || !choice.selection))
+        throw new ChangeConflict("batch_conflict", "批量结构发现必须来自同一候选的明确选项，请逐项处理");
+      const selection: Selection = { entities: [], relations: [], merges: [], retired: [] }, touched = new Set<string>();
+      for (const choice of choices) for (const key of ["entities", "relations", "merges", "retired"] as const) for (const id of choice.selection![key] ?? []) {
+        if (touched.has(id)) throw new ChangeConflict("batch_conflict", "选中结构变更重复涉及同一对象，请逐项处理");
+        touched.add(id); selection[key]!.push(id);
+      }
+      const candidate = memory.getArtifact(candidateRef.id);
+      let commit: (() => AdoptedBuild) | undefined;
+      await engine.adopt({ ...candidateRef, selection, operationId: `batch:${fingerprint(selected.map(item => ({ id: item.id, version: item.version })))}` }, undefined,
+        save => { commit = save; return { status: "adopted", candidate, foundation: candidate, model: candidate }; });
+      if (!commit) throw new ChangeConflict("batch_conflict", "批量候选没有可提交的内容");
+      return () => {
+        const result = finish(candidate, selection, commit!);
+        const effect = { candidateRef: { id: result.candidate.id, version: result.candidate.version },
+          foundationRef: { id: result.foundation.id, version: result.foundation.version }, modelRef: { id: result.model.id, version: result.model.version } };
+        return selected.map(() => effect);
+      };
+    },
+  });
   const previous = memory.beforeCommit;
   memory.beforeCommit = written => {
     for (const candidate of [...written]) track(candidate);
