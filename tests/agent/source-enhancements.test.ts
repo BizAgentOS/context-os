@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type RequestListener } from "node:http";
 import { mkdtempSync, rmSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { MemoryStore } from "../../src/agent/memory.ts";
 import { LiveMemory } from "../../src/live/memory.ts";
@@ -10,13 +10,13 @@ import { Snapshots } from "../../src/data/snapshots.ts";
 import { OpenApiImports } from "../../src/live/openapi-import.ts";
 
 const records = Array.from({ length: 7 }, (_, id) => ({ id: String(id), name: `客户${id}` }));
-async function fixture(handler: RequestListener) {
+async function fixture(handler: RequestListener, host = "127.0.0.1") {
   const upstream = createServer(handler);
-  await new Promise<void>(resolve => upstream.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>(resolve => upstream.listen(0, host, resolve));
   const directory = mkdtempSync(join(tmpdir(), "ade-source-enhancement-"));
   const memory = new MemoryStore(directory), live = new LiveMemory(directory, memory), snapshots = new Snapshots(memory, live, directory);
   return { directory, memory, live, snapshots, url: `http://127.0.0.1:${(upstream.address() as { port: number }).port}`,
-    async close() { await snapshots.close(); memory.close(); upstream.closeAllConnections(); await new Promise<void>(resolve => upstream.close(() => resolve())); rmSync(directory, { recursive: true, force: true }); } };
+    async close() { await snapshots.close(); memory.close(); upstream.closeAllConnections(); await new Promise<void>(resolve => upstream.close(() => resolve())); rmSync(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }); } };
 }
 
 test("cursor, page and Link sources sync every short page and preserve bounded object reads", { timeout: 20000 }, async () => {
@@ -81,6 +81,56 @@ test("OAuth refresh, bounded transient retries and explicit flattening preserve 
     assert.equal(grants.length, 2, "a valid token survives host restart without a fresh grant");
     reopened.disable(source.id, source.version);
     assert.doesNotMatch(readFileSync(join(f.directory, "source-oauth.json"), "utf8"), /fixture-(?:client-secret|refresh-secret|access-)/);
+  } finally { await f.close(); }
+});
+
+test("a token expiring between snapshot pages refreshes and completes the full synchronized dataset", { timeout: 20000 }, async () => {
+  const rows = Array.from({ length: 205 }, (_, index) => ({ id: String(index), name: `完整记录${index}` }));
+  const grants: string[] = [], acceptedPages: number[] = [];
+  let token = "";
+  const f = await fixture(async (request, response) => {
+    response.setHeader("content-type", "application/json");
+    const url = new URL(request.url!, "http://localhost");
+    if (url.pathname === "/token") {
+      let body = ""; for await (const chunk of request) body += chunk;
+      const grant = new URLSearchParams(body); grants.push(grant.get("grant_type")!);
+      if (grants.length > 1) assert.equal(grant.get("refresh_token"), "snapshot-refresh-secret");
+      token = `snapshot-access-${grants.length}`;
+      response.end(JSON.stringify({ access_token: token, token_type: "Bearer", expires_in: 300, refresh_token: "snapshot-refresh-secret" })); return;
+    }
+    const offset = Number(url.searchParams.get("offset") ?? 0), limit = Number(url.searchParams.get("limit") ?? 100);
+    if (offset >= 100 && token === "snapshot-access-1") { response.writeHead(401).end("{}"); return; }
+    assert.equal(request.headers.authorization, `Bearer ${token}`); acceptedPages.push(offset);
+    response.end(JSON.stringify({ items: rows.slice(offset, offset + limit), total: rows.length }));
+  });
+  try {
+    const source = await f.live.sources.connect({ name: "同步中令牌到期", protocol: "http", url: f.url,
+      auth: { type: "oauth2", oauth2: { tokenUrl: f.url + "/token", clientId: "snapshot-client", clientSecret: "snapshot-client-secret" } },
+      capabilities: [{ name: "records", path: "/records", fields: ["id", "name"], totalPath: "total" }] });
+    const synced = await f.snapshots.sync({ operationId: "refresh-through-all-pages", sourceIds: [source.id] });
+    assert.equal(synced.content.outcome, "synced", JSON.stringify(synced.content.issues));
+    assert.deepEqual(grants, ["client_credentials", "refresh_token"]);
+    assert.deepEqual(acceptedPages, [0, 100, 200]);
+    const dataset = f.snapshots.datasets()[0];
+    assert.deepEqual(dataset.content.coverage, { rows: 205, total: 205, complete: true });
+    assert.equal((await f.snapshots.preview({ datasetId: dataset.id, offset: 204, limit: 1 })).rows[0].name, "完整记录204");
+    assert.doesNotMatch(JSON.stringify(f.memory.listArtifacts()), /snapshot-(?:access-|refresh-secret|client-secret)/);
+  } finally { await f.close(); }
+});
+
+test("an explicitly permitted non-default HTTP host returns real records and synchronizes", { timeout: 15000 }, async () => {
+  let requests = 0;
+  const f = await fixture((_request, response) => { requests++; response.setHeader("content-type", "application/json"); response.end(JSON.stringify({ items: [{ id: "HTTP1", name: "内网实际记录" }], total: 1 })); }, "0.0.0.0");
+  try {
+    const host = Object.values(networkInterfaces()).flat().find(address => address?.family === "IPv4" && !address.internal)?.address ?? "localhost.";
+    const config = { name: "明确放行的HTTP", protocol: "http", url: f.url.replace("127.0.0.1", host), capabilities: [{ name: "records", path: "/records", fields: ["id", "name"], totalPath: "total" }] };
+    await assert.rejects(f.live.sources.connect(config), /HTTPS/);
+    assert.equal(requests, 0, "an unapproved address is rejected before network access");
+    const source = await f.live.sources.connect({ ...config, allowInsecureHttp: true });
+    assert.equal((await f.live.sources.readRecords(source.id, "records")).items[0].name, "内网实际记录");
+    assert.equal((await f.snapshots.sync({ operationId: "permitted-http", sourceIds: [source.id] })).content.outcome, "synced");
+    assert.equal((await f.snapshots.preview({ datasetId: f.snapshots.datasets()[0].id })).rows[0].id, "HTTP1");
+    assert(requests >= 2, "both ordinary reads and snapshot synchronization reached the HTTP service");
   } finally { await f.close(); }
 });
 

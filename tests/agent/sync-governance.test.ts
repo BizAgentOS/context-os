@@ -8,6 +8,7 @@ import { MemoryStore } from "../../src/agent/memory.ts";
 import { LiveMemory } from "../../src/live/memory.ts";
 import { Snapshots } from "../../src/data/snapshots.ts";
 import { SyncGovernance, SyncScheduler } from "../../src/data/sync-governance.ts";
+import { sourceSummary } from "../../src/agent/source-summary.ts";
 
 async function fixture() {
   let rows = Array.from({ length: 6 }, (_, index) => ({ id: String(index), value: `记录${index}` }));
@@ -68,6 +69,48 @@ test("daily schedules persist, run once when due and can be switched to manual",
     f.governance.configure({ sourceId: f.source.id, schedule: { mode: "manual" } }, due);
     await scheduler.tick(new Date(due.getTime() + 86400000));
     assert.equal(f.memory.listArtifacts("data_sync").length, 1);
+  } finally { await scheduler?.close(); await f.close(); }
+});
+
+test("hourly and weekly schedules read updated source data only at their stated due times", { timeout: 20000 }, async () => {
+  for (const scenario of [
+    { schedule: { mode: "hourly" }, before: new Date(2026, 9, 21, 10, 59, 59), due: new Date(2026, 9, 21, 11, 0, 0), label: "每小时更新" },
+    { schedule: { mode: "weekly", weekday: 5, time: "09:30" }, before: new Date(2026, 9, 23, 9, 29, 59), due: new Date(2026, 9, 23, 9, 30, 0), label: "每周更新" },
+  ]) {
+    const f = await fixture(); let scheduler: SyncScheduler | undefined;
+    try {
+      await f.snapshots.sync({ operationId: "schedule-baseline" });
+      const datasetId = f.snapshots.datasets()[0].id;
+      f.governance.configure({ sourceId: f.source.id, schedule: scenario.schedule }, new Date(2026, 9, 21, 10, 0, 0));
+      f.setRows(Array.from({ length: 6 }, (_, index) => ({ id: String(index), value: scenario.label + index })));
+      scheduler = new SyncScheduler(f.memory, f.snapshots, f.governance);
+      await scheduler.tick(scenario.before);
+      assert.equal((await f.snapshots.preview({ datasetId })).rows[0].value, "记录0");
+      await scheduler.tick(scenario.due);
+      assert.equal((await f.snapshots.preview({ datasetId })).rows[0].value, scenario.label + "0");
+      assert.equal(f.memory.listArtifacts("data_sync").length, 2, "one baseline plus one due synchronization");
+      await scheduler.tick(scenario.due);
+      assert.equal(f.memory.listArtifacts("data_sync").length, 2, "the same scheduled slot cannot run twice");
+    } finally { await scheduler?.close(); await f.close(); }
+  }
+});
+
+test("a daily automatic refresh advances the source cutoff only after adopting the actual updated data", { timeout: 15000 }, async () => {
+  const f = await fixture(); let scheduler: SyncScheduler | undefined;
+  try {
+    await f.snapshots.sync({ operationId: "daily-cutoff-baseline" });
+    const before = sourceSummary(f.memory).sources.find(source => source.id === f.source.id)!;
+    f.governance.configure({ sourceId: f.source.id, schedule: { mode: "daily", time: "02:00" } }, new Date(2026, 9, 21, 1, 0, 0));
+    f.setRows(Array.from({ length: 6 }, (_, index) => ({ id: String(index), value: `今日记录${index}` })));
+    scheduler = new SyncScheduler(f.memory, f.snapshots, f.governance);
+    await scheduler.tick(new Date(2026, 9, 21, 1, 59, 59));
+    assert.equal(sourceSummary(f.memory).sources.find(source => source.id === f.source.id)!.dataAsOf, before.dataAsOf);
+    await scheduler.tick(new Date(2026, 9, 21, 2, 0, 0));
+    const current = sourceSummary(f.memory).sources.find(source => source.id === f.source.id)!;
+    assert(current.dataAsOf && before.dataAsOf && current.dataAsOf > before.dataAsOf);
+    assert.equal(current.readMode, "active_snapshot");
+    assert.equal((await f.snapshots.preview({ datasetId: f.snapshots.datasets()[0].id })).rows[0].value, "今日记录0");
+    assert.equal(f.governance.list().length, 0);
   } finally { await scheduler?.close(); await f.close(); }
 });
 

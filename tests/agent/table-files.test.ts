@@ -15,10 +15,35 @@ import {sourceSummary} from "../../src/agent/source-summary.ts";
 import {tableDirectory} from "../../src/data/table-rows.ts";
 import {FoundationService} from "../../src/agent/foundation.ts";
 import {ProgramBuilds} from "../../src/engine/program-builds.ts";
+import type {Data} from "../../src/agent/contracts.ts";
 
 function fixture(){
   const directory=mkdtempSync(join(tmpdir(),"ade-table-files-")),memory=new MemoryStore(directory),live=new LiveMemory(directory,memory),snapshots=new Snapshots(memory,live,directory);
   return {directory,memory,live,snapshots,files:new TableFiles(memory,directory),async close(){await snapshots.close();memory.close();rmSync(directory,{recursive:true,force:true});}};
+}
+
+async function buildAndQuery(f:ReturnType<typeof fixture>,expected:Array<{sourceId:string;id:string;fields:Record<string,string>}>) {
+  const engine=new ProgramBuilds(f.memory,new FoundationService(f.memory,f.live),f.live,f.snapshots);
+  try{
+    const run=await engine.build({operationId:'format-build'});
+    assert.equal(run.content.outcome,'candidate',JSON.stringify(run.content.issues));
+    const candidate=engine.overview().candidate!,checked=await engine.check({id:candidate.id,version:candidate.version});
+    assert.equal((checked.content.checks as Data).valid,true,JSON.stringify(checked.content.checks));
+    await engine.adopt({id:checked.id,version:checked.version,operationId:'format-adopt'});
+    const model=f.live.overview().models.find(item=>item.status==='adopted')!;
+    for(const entry of expected){
+      const connection=f.live.sources.list().find(source=>(source.content.localSource as Data | undefined)?.id===entry.sourceId)!;
+      const type=(model.content.types as Data[]).find(type=>type.sourceId===connection.id)!;
+      assert.ok(type,`the uploaded source ${entry.sourceId} has an executable entity binding`);
+      const result=await f.live.query({modelId:model.id,type:String(type.name),id:entry.id});
+      assert.equal(result.items.length,1);assert.equal(result.items[0].$id,entry.id);
+      for(const [column,value] of Object.entries(entry.fields)){
+        const field=Object.entries(type.fields as Data).find(([,source])=>source===column)?.[0];
+        assert.ok(field,`source column ${column} is bound`);assert.equal(result.items[0][field],value);
+      }
+      assert.equal(result.coverage.complete,true);
+    }
+  }finally{await engine.close();}
 }
 
 test("a GBK tab-separated upload preserves identifiers through source paging and immutable snapshots",async()=>{
@@ -37,6 +62,7 @@ test("a GBK tab-separated upload preserves identifiers through source paging and
     const dataset=f.snapshots.datasets()[0],preview=await f.snapshots.preview({datasetId:dataset.id});
     assert.deepEqual(preview.rows.map(row=>row["企业编号"]),["001","002"]);
     assert.equal(preview.rows[0]["备注"],"含制表符\t和换行\n下一行");
+    await buildAndQuery(f,[{sourceId:source.id,id:'001',fields:{企业名称:'青山',备注:'含制表符\t和换行\n下一行'}}]);
   }finally{await f.close();}
 });
 
@@ -64,10 +90,29 @@ test("Excel worksheets become separate sources with detected headers, expanded m
     ]);
     const order=f.snapshots.datasets().find(d=>d.content.sourceId===result.sources[1].id)!;
     assert.equal((await f.snapshots.preview({datasetId:order.id})).rows[0]["合计"],"5");
+    await buildAndQuery(f,[
+      {sourceId:p.id,id:'000002',fields:{部门:'研发',姓名:'李二',入职日期:'2024-03-01T08:30:00.000Z'}},
+      {sourceId:result.sources[1].id,id:'O001',fields:{人员编号:'000001',合计:'5'}},
+    ]);
     const again=await f.files.import({name:"企业.xlsx",input:Readable.from([bytes])});
     assert.deepEqual(again.sources.map(s=>s.id),result.sources.map(s=>s.id));
     assert.deepEqual(again.sources.map(s=>s.version),[2,2]);
   }finally{await f.close();}
+});
+
+test('GBK comma CSV and UTF-8 TSV each build an ontology with queryable original identifiers',async(t)=>{
+  for(const format of [{name:'企业-gbk.csv',encoding:'gbk',delimiter:','},{name:'企业.tsv',encoding:'utf8',delimiter:'\t'}]){
+    await t.test(format.name,async()=>{
+      const f=fixture();
+      try{
+        const text=['企业编号','企业名称'].join(format.delimiter)+'\n'+['0007','青山公司'].join(format.delimiter)+'\n'+['0008','海川公司'].join(format.delimiter)+'\n';
+        const {sources:[source]}=await f.files.import({name:format.name,input:Readable.from([iconv.encode(text,format.encoding)])});
+        assert.equal((source.content.parseParameters as Data).delimiter,format.delimiter);
+        assert.equal((source.content.parseParameters as Data).encoding,format.encoding);
+        await buildAndQuery(f,[{sourceId:source.id,id:'0007',fields:{企业名称:'青山公司'}}]);
+      }finally{await f.close();}
+    });
+  }
 });
 
 test("50,001 streamed rows remain complete beyond preview and build a queryable ontology",async()=>{

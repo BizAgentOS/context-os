@@ -95,7 +95,7 @@ test('100,000 real snapshot rows support numeric ordering, full aggregates and t
   }finally{await w.close();}
 });
 
-test('twenty objects with three supplements resolve all sixty values through batched snapshot matching',async()=>{
+test('twenty objects with three supplements resolve all sixty values through batched snapshot matching',async(t)=>{
   const {queryTableFixture}=await import('./query-table-fixture.ts'),{Readable}=await import('node:stream');
   const w=await queryTableFixture('id,name\n'+Array.from({length:20},(_,i)=>`P${i},人员${i}\n`).join(''));
   try{
@@ -108,12 +108,56 @@ test('twenty objects with three supplements resolve all sixty values through bat
     await w.snapshots.sync({operationId:'supplements'});
     const candidate=await w.live.propose({purpose:'批量补充',rationale:'已授权补充规则',types:[{name:'对象',description:'测试对象',sourceId:w.connection.id,capability:'records',fields:{name:'name'},supplements}],relations:[]});
     const model=await w.live.adopt(candidate.id,candidate.version);
+    const reads=t.mock.method(w.snapshots,'read',w.snapshots.read.bind(w.snapshots));
     const old=await w.live.query({modelId:model.id,type:'对象',limit:20});
     assert.equal(old.items.length,20);assert.ok(old.items.every(row=>[1,2,3].every(n=>typeof row['属性'+n]==='string')));
     assert.ok(old.evidence!.every(e=>e.matches.every(m=>m.status==='unique')));
+    const legacyReads=reads.mock.callCount();
+    assert.ok(legacyReads<=4,`one primary and at most one batch per supplement, observed ${legacyReads} executor reads`);
+    assert.equal(new Set(reads.mock.calls.flatMap(call=>call.arguments[0].map(input=>input.version))).size,4,'all four real snapshots are used');
     const layer=w.live.readLayered(model.id),entity=layer.semantic.entityTypes[0];
     const result=await w.query.execute({target:{entityTypeId:entity.id}},{modelRef:ref(model)});
     assert.equal(result.items.length,20);assert.ok(result.evidence.every(e=>Object.values(e.properties).every(p=>p.status==='resolved')));
+    const semanticReads=reads.mock.callCount()-legacyReads;
+    assert.ok(semanticReads<=2,`one semantic result plus at most one coverage read, observed ${semanticReads} executor reads`);
+    t.diagnostic(`20 objects × 3 supplements: legacy ${legacyReads} executor reads; semantic ${semanticReads} executor reads`);
+  }finally{await w.close();}
+});
+
+test('one semantic request answers blocked tasks in a release and another counts requirements by product',async()=>{
+  const {queryTableFixture}=await import('./query-table-fixture.ts'),{Readable}=await import('node:stream');
+  const w=await queryTableFixture('id,requirement_id,status,title\nT1,R1,被阻塞,接口联调\nT2,R1,进行中,文档更新\nT3,R2,被阻塞,安装验证\nT4,R3,被阻塞,下期任务\n');
+  try{
+    const importTable=async(name:string,csv:string)=>{const source=(await w.files.import({name,input:Readable.from([Buffer.from(csv)])})).sources[0];return w.live.sources.connectUpload(source.id,source.version,'id');};
+    const releases=await importTable('releases.csv','id,name\nV1,当前版本\nV2,后续版本\n');
+    const projects=await importTable('projects.csv','id,release_id\nA,V1\nB,V2\n');
+    const requirements=await importTable('requirements.csv','id,project_id,product_id\nR1,A,P1\nR2,A,P2\nR3,B,P1\n');
+    const products=await importTable('products.csv','id,name\nP1,产品甲\nP2,产品乙\n');
+    await w.snapshots.sync({operationId:'business-query-data'});
+    const candidate=await w.live.propose({purpose:'版本任务与产品需求',rationale:'明确来源绑定与关系',types:[
+      {name:'任务',description:'实际任务',sourceId:w.connection.id,capability:'records',fields:{标题:'title',状态:'status',需求编号:'requirement_id'}},
+      {name:'版本',description:'计划版本',sourceId:releases.id,capability:'records',fields:{名称:'name'}},
+      {name:'项目',description:'所属项目',sourceId:projects.id,capability:'records',fields:{版本编号:'release_id'}},
+      {name:'需求',description:'业务需求',sourceId:requirements.id,capability:'records',fields:{项目编号:'project_id',产品编号:'product_id'}},
+      {name:'产品',description:'业务产品',sourceId:products.id,capability:'records',fields:{名称:'name'}},
+    ],relations:[
+      {name:'所属需求',from:'任务',to:'需求',fromField:'需求编号',toField:'$id'},
+      {name:'所属项目',from:'需求',to:'项目',fromField:'项目编号',toField:'$id'},
+      {name:'计划版本',from:'项目',to:'版本',fromField:'版本编号',toField:'$id'},
+      {name:'所属产品',from:'需求',to:'产品',fromField:'产品编号',toField:'$id'},
+    ]});
+    const model=await w.live.adopt(candidate.id,candidate.version),layer=w.live.readLayered(model.id);
+    const entity=(name:string)=>layer.semantic.entityTypes.find(item=>item.name===name)!;
+    const property=(owner:string,name:string)=>layer.semantic.properties.find(item=>item.entityTypeId===entity(owner).id&&item.name===name)!;
+    const relation=(name:string)=>layer.semantic.relationTypes.find(item=>item.name===name)!;
+    const blocked=await w.query.execute({target:{entityTypeId:entity('版本').id,id:'V1'},traverse:['计划版本','所属项目','所属需求'].map(name=>({relationTypeId:relation(name).id,direction:'in'})),
+      fields:[property('任务','标题').id],filters:[{propertyId:property('任务','状态').id,op:'eq',value:'被阻塞'}]},{modelRef:ref(model)});
+    assert.deepEqual(blocked.items.map(item=>item.$id),['T1','T3']);
+    assert.equal(blocked.coverage.complete,true);assert.ok(blocked.paths!.every(path=>path.traces.every(trace=>trace.relationTypeIds.length===3)));
+    const product=property('需求','产品编号').id;
+    const counts=await w.query.execute({target:{entityTypeId:entity('需求').id},aggregate:{groupBy:[product],measures:[{as:'需求数',op:'count'}]}},{modelRef:ref(model)});
+    assert.deepEqual(counts.items.map(item=>item.values),[{[product]:'P1',需求数:2},{[product]:'P2',需求数:1}]);
+    assert.equal(counts.coverage.complete,true);assert.ok(counts.sources.every(source=>source.snapshotId));
   }finally{await w.close();}
 });
 

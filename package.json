@@ -10,7 +10,7 @@
     "start": "node src/agent/server.ts",
     "demo": "node src/demo/server.ts",
     "mcp": "node scripts/dataengine-mcp.ts",
-    "test": "node --test tests/agent/*.test.ts",
+    "test": "node --test --test-concurrency=4 tests/agent/*.test.ts",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test",
     "export:html": "node scripts/export-heating-html.ts",
