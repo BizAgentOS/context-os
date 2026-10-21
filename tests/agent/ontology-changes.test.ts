@@ -82,9 +82,9 @@ test("a stale baseline is a 409 with a code; unknown change types are refused in
     const stale = await w.call("/api/changes/propose", proposal(w, { baseline: { foundationRef: { id: "gone", version: 9 }, modelRef: null } }));
     assert.equal(stale.status, 409, JSON.stringify(stale.body));
     assert.equal(stale.body.code, "stale_baseline");
-    const reserved = await w.call("/api/changes/propose", { ...proposal(w), type: "identity_rule", subject: {} });
+    const reserved = await w.call("/api/changes/propose", { ...proposal(w), type: "unrecognized_change", subject: {} });
     assert.equal(reserved.status, 400);
-    assert.match(reserved.body.error, /尚未接入/);
+    assert.match(reserved.body.error, /Invalid option|无效/);
     const unaudited = await w.call("/api/changes/propose", proposal(w, { evidence: undefined }));
     assert.equal(unaudited.status, 400, "program and agent proposals must carry evidence");
   } finally { await w.close(); }

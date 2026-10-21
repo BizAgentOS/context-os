@@ -33,7 +33,7 @@ async function api(routes: Record<string, Array<Record<string, unknown>>>) {
   return { url: `http://127.0.0.1:${(server.address() as { port: number }).port}`, close: () => new Promise(resolve => server.close(resolve)) };
 }
 
-test("the same company in an upload and a CRM API merges into one entity; orders link to it by a Chinese key column", async () => {
+test("matching company codes propose identity without merging independent records; orders retain their Chinese foreign key", async () => {
   const f = fixture();
   const crm = await api({ "/companies": Array.from({ length: 30 }, (_, i) => ({ code: `A${String(i).padStart(3, "0")}`, owner: `销售${i % 4}` })) });
   try {
@@ -45,37 +45,35 @@ test("the same company in an upload and a CRM API merges into one entity; orders
     assert.equal(run.content.outcome, "synced", JSON.stringify(run.content));
 
     const o = await f.discover();
-    const company = o.entities.find(e => e.members.length === 2)!;
+    const company = o.entities.find(e => e.name === "企业")!;
     assert.ok(company, JSON.stringify(o.entities.map(e => [e.name, e.members.length])));
     assert.equal(company.name, "企业");
     assert.equal(company.key, "企业编号");
-    assert.deepEqual(company.members.map(m => m.datasetName).sort(), ["CRM · companies", "企业.csv"]);
-    assert.equal(company.members[1].via!.column, "code");
-    assert.equal(company.members[1].matched, 30);
+    assert.equal(o.entities.length, 3);
+    assert.ok(o.entities.every(e => e.members.length === 1));
+    const identity = o.reviews!.find(r => r.kind === "value_overlap" && new Set([r.from?.column, r.to?.column]).has("code"));
+    assert.ok(identity, "cross-system string keys create an identity proposal instead of a merge");
+    assert.equal(identity.matchedRows, 30);
     const order = o.entities.find(e => e.name === "订单")!;
     assert.equal(order.key, "订单号");
     const link = o.links.find(l => l.from === order.id && l.to === company.id)!;
     assert.equal(link.fromColumn, "企业编号");
     assert.equal(link.name, "属于");
     assert.equal(link.matchedRows, 60);
-    assert.ok(o.notes.some(n => n.kind === "merged" && n.text.includes("30 条中 30 条匹配")));
-    assert.match(o.summary, /2 个实体/);
+    assert.ok(!o.notes.some(n => n.kind === "merged"));
+    assert.match(o.summary, /3 个实体/);
 
     const reversed = await f.discover(f.snapshots.datasets().map(d => d.id).reverse());
     assert.equal(reversed.hash, o.hash, "deterministic regardless of input order");
 
     const bundle = ontologyBundle(o, new Map(f.snapshots.datasets().map(d => [d.id, { id: d.id, name: d.content.name as string, data: { activeVersion: d.content.activeVersion as string, profile: d.content.profile as any } }])));
-    const pipeline = bundle.pipelines.find(p => p.entityId === company.id)!;
-    assert.match(pipeline.sql, /LEFT JOIN/);
-    const result = await f.snapshots.query(pipeline.inputs, pipeline.sql, { limit: 100 });
-    assert.equal(result.profile.rows, 30);
-    assert.ok(result.profile.columns.some(c => c.name.endsWith("_owner")), "merged source columns keep a source prefix");
+    assert.equal(bundle.pipelines.length, 0, "unconfirmed identity does not create an executable join");
     assert.deepEqual(bundle.capacity, { omittedEntities: [], anchorOnlyEntities: [], omittedRelationships: [] });
     assert.throws(() => confirmOntology(o, { hash: o.hash, excluded: ["missing"], names: {} }), /不在建议中/);
   } finally { await crm.close(); await f.close(); }
 });
 
-test("a direct link that a two-hop path already gives is left to traversal", async () => {
+test("a direct link that a two-hop path already gives is retained for an explicit deprecation decision", async () => {
   const f = fixture();
   try {
     f.workspace.upload("accounts.csv", "account_id,name\n" + Array.from({ length: 10 }, (_, i) => `ac${i},n${i}`).join("\n") + "\n");
@@ -86,7 +84,8 @@ test("a direct link that a two-hop path already gives is left to traversal", asy
     const id = (name: string) => o.entities.find(e => e.name.toLowerCase() === name)!.id;
     assert.ok(o.links.some(l => l.from === id("invoice") && l.to === id("subscription")));
     assert.ok(o.links.some(l => l.from === id("subscription") && l.to === id("account")));
-    assert.ok(!o.links.some(l => l.from === id("invoice") && l.to === id("account")), JSON.stringify(o.links.map(l => l.id)));
+    assert.ok(o.links.some(l => l.from === id("invoice") && l.to === id("account")), JSON.stringify(o.links.map(l => l.id)));
+    assert.ok(o.reviews!.some(r => r.kind === "implied_link" && r.matchedRows === 40));
   } finally { await f.close(); }
 });
 
@@ -102,6 +101,19 @@ test("serial integer ids in different systems do not merge records by coincidenc
     assert.equal(o.entities.length, 2);
     assert.ok(o.entities.every(e => e.members.length === 1));
   } finally { await other.close(); await f.close(); }
+});
+
+test("equal string primary keys in independent tables remain identity proposals even in a small sample", async () => {
+  const f = fixture();
+  try {
+    f.workspace.upload("customers.csv", "id,name\nC1,甲\nC2,乙\n");
+    f.workspace.upload("registry.csv", "id,phone\nC1,10001\nC2,10002\n");
+    await f.snapshots.sync({ operationId: "shared-keys" });
+    const o = await f.discover();
+    assert.equal(o.entities.length, 2);
+    assert.equal(o.links.length, 0);
+    assert.ok(o.reviews!.some(r => r.kind === "value_overlap" && r.from?.column === "id" && r.to?.column === "id"));
+  } finally { await f.close(); }
 });
 
 

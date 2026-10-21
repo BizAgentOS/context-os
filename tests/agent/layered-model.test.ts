@@ -183,6 +183,7 @@ test("reconciliation remaps identity, supplement matches and relation endpoints 
   identity.id = "human-identity";
   previous.semantic.entityTypes[0].identityKeys = [identity.id];
   previous.bindings.entities[0].id = "human-primary";
+  previous.bindings.identityRules[0].right.bindingId = "human-primary";
   previous.bindings.entities[1].match!.primaryPropertyId = identity.id;
   for (const binding of previous.bindings.properties) {
     if (binding.propertyId === oldPropertyId) binding.propertyId = identity.id;

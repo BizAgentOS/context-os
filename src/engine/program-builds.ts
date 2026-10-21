@@ -1,3 +1,4 @@
+import { prepareIdentityDecisionMigration } from "../live/identity-migration.ts";
 import { prepareCorrectionMigration } from "../live/correction-migration.ts";
 import { z } from "zod";
 import type { Artifact, Data } from "../agent/contracts.ts";
@@ -10,6 +11,7 @@ import { discoverLinks, entityName, fingerprint, ownKey, profileColumns, type Bu
 import type { DatasetContent, Snapshots } from "../data/snapshots.ts";
 import { entityColumns, ontologyBundle, type Bundle, type Resource, type SuggestedOntology } from "./helix-discovery.ts";
 import { discoverFromSnapshots } from "./snapshot-discovery.ts";
+import { verifySnapshotRelation } from "./relation-verification.ts";
 import { describeReport, validateDefinition } from "./validation.ts";
 import { confirmedEnterpriseEvidence, isUnknownEnterprise } from "../agent/foundation-evidence.ts";
 import { migrateLegacyModel, reconcileLayeredModel, type LayeredModel, type LegacyModel } from "../semantic/model.ts";
@@ -82,6 +84,7 @@ function enterpriseIdentity(previous: Data | undefined, profile: Artifact | unde
 
 export class ProgramBuilds {
   onAdopt?: (candidate: Artifact, selection: Selection | undefined, save: () => AdoptedBuild) => AdoptedBuild;
+  onDiscovery?: () => Promise<void>;
   private memory: MemoryStore;
   private foundation: FoundationService;
   private live: LiveMemory;
@@ -136,10 +139,12 @@ export class ProgramBuilds {
 
   async build(args: unknown, assertActive: () => void = () => {}): Promise<Artifact> {
     const job = this.start(args, assertActive);
-    return this.running.get(job.id) ?? this.memory.getArtifact(job.id);
+    const result = await (this.running.get(job.id) ?? this.memory.getArtifact(job.id));
+    await this.onDiscovery?.();
+    return result;
   }
 
-  async idle() { while (this.running.size) await Promise.all([...this.running.values()]); }
+  async idle() { while (this.running.size) await Promise.all([...this.running.values()]); await this.onDiscovery?.(); }
   async close() {
     this.closing = true;
     for (const id of this.running.keys()) {
@@ -458,7 +463,8 @@ export class ProgramBuilds {
     };
     const boundTo = (c: DatasetContent) => {
       const ids = new Set([c.sourceId, ...this.live.sources.list().filter(x => (x.content.localSource as Data | undefined)?.id === c.sourceId).map(x => x.id)]);
-      return types.find(type => [type, ...dataArray(type.supplements)].some(b => ids.has(String(b.sourceId)) && b.capability === c.capability));
+      const matches = (b: Data) => ids.has(String(b.sourceId)) && b.capability === c.capability;
+      return types.find(matches) ?? types.find(type => dataArray(type.supplements).some(matches));
     };
     const typeOf = new Map<string, Data>();
     // Which concept and relation each discovered entity and link became, so the adopted ontology can show its evidence.
@@ -539,24 +545,13 @@ export class ProgramBuilds {
       if (!fromField || !toField || !Object.hasOwn(cap.filters, l.toColumn)) { skip("：目标来源不支持按关联字段过滤，保留为待核对关联。"); continue; }
       const kept = modelRelations.find(x => x.from === from.name && x.to === to.name && x.fromField === fromField);
       if (kept) { if (kept.relationId) linkRelations[l.id] = String(kept.relationId); continue; }
-      let name = l.name;
-      for (let n = 2; modelRelations.some(x => x.from === from.name && x.name === name); n++) name = `${l.name}${n}`;
-      const relationId = `rel_${fingerprint([from.conceptId, l.fromColumn, to.conceptId]).slice(0, 24)}`;
-      if (!relations.some(x => x.id === relationId)) {
-        const fromConcept = concepts.find(c => c.id === from.conceptId)!;
-        relations.push({ id: relationId, name, from: String(from.conceptId), to: String(to.conceptId), origin: "program", mappingStatus: "unbound", evidenceRefs: [(fromConcept.evidenceRefs as string[])[0]],
-          description: `程序发现：${l.totalRows} 条中 ${l.matchedRows} 条的 ${l.fromColumn} 能在${toEntity.name}中找到；业务含义待核对。` });
-        addedRelations.push(relationId);
-      }
-      const relation = relations.find(x => x.id === relationId)!;
-      linkRelations[l.id] = relationId;
-      modelRelations.push({ name: String(relation.name), from: String(from.name), to: String(to.name), fromField, toField, relationId });
+      skip("：独立实体采用后进入变更提议，复验并明确采用后才加入执行关系。");
     }
     // Discovery reviews describe observed ambiguity; they never change the executable structure.
     for (const review of o.reviews ?? []) {
       const concept = concepts.find(c => c.id === entityConcepts[review.entities[0]]);
       if (review.kind === "entity_name" && concept && concept.name !== review.originalName) continue;
-      const code = { value_overlap: "possible_identity_overlap", implied_link: "relationship_pruned", entity_name: "entity_name_review" }[review.kind];
+      const code = { value_overlap: "possible_identity_overlap", implied_link: "relationship_deprecation", entity_name: "entity_name_review", activity: "activity_candidate" }[review.kind];
       issues.push({ code, severity: review.kind === "entity_name" ? "info" : "warning", message: review.text,
         details: jsonData({ ...review, concepts: review.entities.map(id => entityConcepts[id]).filter(Boolean) }) });
     }
@@ -706,6 +701,25 @@ export class ProgramBuilds {
     return { id: current?.id ?? "engine-new-foundation", version: (current?.version ?? 0) + 2, kind: "foundation", status: "adopted", title: "数据底座本体", createdAt: now(), content: content.foundation };
   }
 
+  private async verifyGovernedRelations(definition: Data) {
+    if (!this.snapshots) return [];
+    const layered = definition.layered as unknown as LayeredModel;
+    const checks: Data[] = [];
+    for (const binding of layered.bindings.relations) {
+      if (binding.kind !== "foreign_key" || binding.fromColumns.length !== 1 || binding.toColumns.length !== 1) continue;
+      const semantic = layered.semantic.relationTypes.find(r => r.id === binding.relationTypeId)!;
+      const from = layered.bindings.entities.find(b => b.id === binding.fromBindingId)!, to = layered.bindings.entities.find(b => b.id === binding.toBindingId)!;
+      const a = this.snapshots.bindingDataset(from.dataset.sourceId, from.dataset.capability), b = this.snapshots.bindingDataset(to.dataset.sourceId, to.dataset.capability);
+      if (!a || !b || a.content.materialization === "live" || b.content.materialization === "live") continue;
+      const checked = await verifySnapshotRelation(this.snapshots, { from: { datasetId: a.id, column: binding.fromColumns[0] }, to: { datasetId: b.id, column: binding.toColumns[0] },
+        ...(semantic.acyclic !== undefined ? { acyclic: semantic.acyclic } : {}), ...(semantic.maxDepth ? { maxDepth: semantic.maxDepth } : {}),
+        ...(semantic.cardinality === "1:1" ? { cardinality: "1:1" as const } : {}) });
+      if (checked.result === "failed") throw new Error(`已采用关系「${semantic.name}」复验失败：${checked.notes.join("；")}`);
+      checks.push(jsonData({ relationId: semantic.id, ...checked }));
+    }
+    return checks;
+  }
+
   private async prepare(candidate: Artifact, assertActive: () => void = () => {}, override?: CandidateContent) {
     assertActive();
     const content = override ?? candidate.content as unknown as CandidateContent;
@@ -719,10 +733,12 @@ export class ProgramBuilds {
         + (Array.isArray(content.diff.retiredConcepts) && content.diff.retiredConcepts.length ? "旧解读结构已由规则结果替换，旧定义仅保留在历史版本。" : "")
         + "未决关系未自动加入执行映射。",
     }, foundation, () => { assertActive(); this.assertInputs(content); });
+    const relationChecks = await this.verifyGovernedRelations(definition);
     assertActive();
     this.assertInputs(content);
     const migrateCorrections = await prepareCorrectionMigration(this.memory, this.live, definition);
-    return { foundation, definition, migrateCorrections };
+    const migrateIdentities = await prepareIdentityDecisionMigration(this.memory, this.live, definition);
+    return { foundation, definition, migrateCorrections, migrateIdentities, relationChecks };
   }
 
   async check(args: unknown, assertActive: () => void = () => {}): Promise<Artifact> {
@@ -767,7 +783,7 @@ export class ProgramBuilds {
       if (!checked.valid) throw new Error(describeReport(checked));
     }
     const prepared = await this.prepare(candidate, assertActive, selected);
-    inspectVerification?.({ checks: dataArray(prepared.definition.checks).map(check => ({ type: check.type, factsFingerprint: check.factsFingerprint })) });
+    inspectVerification?.({ checks: dataArray(prepared.definition.checks).map(check => ({ type: check.type, factsFingerprint: check.factsFingerprint })), relations: prepared.relationChecks });
     const save = () => this.memory.atomic(() => {
       assertActive();
       this.candidate({ id: input.id, version: input.version });
@@ -781,13 +797,16 @@ export class ProgramBuilds {
       }
       const model = this.memory.putArtifact({ kind: "live_ontology", status: "adopted", title: "程序构建的数据底座", content: { ...prepared.definition, foundationRef: jsonData(ref(adopted)), programBuildId: content.jobId } });
       prepared.migrateCorrections(model);
+      prepared.migrateIdentities(model);
       const saved = this.memory.putArtifact({ ...candidate, expectedVersion: candidate.version, status: "adopted", content: { ...candidate.content, adoption: jsonData({ operationId: input.operationId, inputVersion: input.version, selection: input.selection ?? null, foundationRef: ref(adopted), modelRef: ref(model) }) } });
       const job = this.memory.getArtifact(content.jobId);
       this.memory.putArtifact({ ...job, expectedVersion: job.version, content: { ...job.content, outcome: "adopted", candidateRef: jsonData(ref(saved)) } });
       return { status: "adopted" as const, candidate: saved, foundation: adopted!, model };
     });
     if (commit) return commit(save);
-    return this.onAdopt ? this.onAdopt(candidate, input.selection, save) : save();
+    const result = this.onAdopt ? this.onAdopt(candidate, input.selection, save) : save();
+    try { await this.onDiscovery?.(); } catch { /* The coordinator persists failed proposals for its next retry. */ }
+    return result;
   }
 }
 

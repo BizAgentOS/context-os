@@ -138,6 +138,7 @@ export async function fuseRows(
   sources: Pick<SourceConnections, "capability" | "readRecords" | "list">,
   connections: Record<string, number>,
   assertValid: () => void,
+  identity?: (supplement: Supplement, primary: Record<string, import("../agent/contracts.ts").Json>) => Promise<{ page: Page; status: Match["status"]; reason: string; reads: Receipt[] } | undefined>,
 ) {
   const primaryCap = sources.capability(
     type.sourceId,
@@ -214,7 +215,13 @@ export async function fuseRows(
             : type.fields[s.match.primaryField]
         ];
       let page: Page | undefined;
-      if (position >= 40) {
+      const decided = position < 40 ? await identity?.(s, primary.items[index]) : undefined;
+      if (decided) {
+        page = decided.page;
+        match.status = decided.status; match.reason = decided.reason;
+        match.coverage = page.coverage; match.readAt = page.provenance.readAt;
+        reads.push(...decided.reads);
+      } else if (position >= 40) {
         match.reason = "本次附来源读取预算40次已用尽，请缩小主来源分页";
       } else if (key === null || (typeof key === "string" && !key.trim())) {
         match.status = "missing_key";

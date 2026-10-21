@@ -5,8 +5,8 @@ import { z } from "zod";
 import type { Artifact, Data } from "../agent/contracts.ts";
 import type { MemoryStore } from "../agent/memory.ts";
 import type { FoundationService } from "../agent/foundation.ts";
-import type { Snapshots, DatasetContent } from "../data/snapshots.ts";
-import { quote } from "../data/executor/engine.ts";
+import type { Snapshots } from "../data/snapshots.ts";
+import { relationSubjectSchema, verifySnapshotRelation } from "./relation-verification.ts";
 import { jsonData } from "../live/sources.ts";
 import { fingerprint } from "./release-diff.ts";
 
@@ -38,14 +38,13 @@ const baseline = z.object({ foundationRef: ref.nullable(), modelRef: ref.nullabl
 const text = z.string().trim().min(1).max(rules.limits.evidenceTextChars);
 const origin = z.enum(["program", "human", "agent", "qa"]);
 const observed = z.object({ matchRate: z.number().min(0).max(1), targetUnique: z.boolean() }).strict();
-const column = z.object({ datasetId: name, column: name }).strict();
 
 // Types whose verification is wired. The rest are reserved names (blueprint §10.2) that later tickets and
 // FEATURE_042 attach; proposing one now fails clearly instead of being accepted without a check.
 const subjects = {
   naming: z.object({ target: z.enum(["concept", "relation"]), id: name, name }).strict(),
   description: z.object({ target: z.enum(["concept", "relation"]), id: name, description: z.string().trim().min(1).max(1500) }).strict(),
-  relation: z.object({ from: column, to: column }).strict(),
+  relation: relationSubjectSchema,
 };
 const RESERVED = ["entity", "property", "binding", "identity_rule", "identity_decision", "local_correction", "deprecation", "restore", "data_issue"] as const;
 const typeNames = ["naming", "description", "relation", ...RESERVED] as const;
@@ -123,6 +122,19 @@ export class OntologyChanges {
     return change;
   }
 
+  /** Refresh only an undecided discovery proposal; a check against an older workspace never carries forward. */
+  rebaseProgramProposal(id: string): Artifact {
+    return this.memory.atomic(() => {
+      const change = this.read(id);
+      if (change.content.origin !== "program" || change.content.owner || !["proposed", "verified", "failed"].includes(change.status))
+        throw new ChangeConflict("invalid_transition", "只能刷新未决的程序发现提议");
+      const baseline = this.currentBaseline();
+      if (fingerprint(change.content.baseline) === fingerprint(baseline)) return change;
+      const { verification: _, ...content } = change.content;
+      return this.memory.putArtifact({ ...change, expectedVersion: change.version, status: "proposed", content: { ...content, baseline } });
+    });
+  }
+
   private previous(actor: string, operationId: string, signature: string) {
     const receipt = this.memory.listArtifacts("change_receipt").find(item => item.content.actor === actor && item.content.operationId === operationId);
     if (!receipt) return null;
@@ -165,12 +177,20 @@ export class OntologyChanges {
     if ((args.origin === "agent" || args.origin === "program") && !args.evidence) throw new Error("程序与 Agent 的提议必须附依据");
     const subject = (handler?.subject ?? subjects[type as VerifiedType]).parse(args.subject) as Subjects[VerifiedType];
     this.assertBaseline(args.baseline);
-    if (type === "relation" && args.origin === "program") {
-      const measured = await this.checkRelation(subject as Subjects["relation"]);
-      args.observed = { matchRate: Number(measured.metrics.matchRate), targetUnique: Boolean(measured.metrics.targetUnique) };
+    if (args.origin === "program") {
+      // Rejection memory uses measurements produced by the owning service, never caller-supplied observations.
+      args.observed = undefined;
+      try {
+        const measured = type === "relation" ? await this.checkRelation(subject as Subjects["relation"])
+          : handler ? (await handler.prepare({ id: `proposal:${args.operationId}`, version: 1, kind: "ontology_change", title: "程序发现", status: "proposed",
+            createdAt: "", content: jsonData({ subject, baseline: args.baseline, evidence: args.evidence }) })).verification : null;
+        if (measured && typeof measured.metrics.matchRate === "number" && typeof measured.metrics.targetUnique === "boolean")
+          args.observed = { matchRate: measured.metrics.matchRate, targetUnique: measured.metrics.targetUnique };
+      } catch { /* Invalid proposals remain inspectable and fail explicitly during verification. */ }
       this.assertBaseline(args.baseline);
     }
-    const fp = fingerprint({ type, subject: isVerifiedType(type) ? this.identity(type, subject) : subject });
+    const identity = isVerifiedType(type) ? this.identity(type, subject) : Object.fromEntries(Object.entries(subject).filter(([key]) => !["reason", "evidence"].includes(key)));
+    const fp = fingerprint({ type, subject: identity });
     if (args.origin === "program") {
       const rejected = this.suppressedBy(fp, args.observed);
       if (rejected) return this.memory.atomic(() => { this.receipt(actor, args.operationId, signature, rejected); return { change: rejected, suppressed: true }; });
@@ -390,30 +410,6 @@ export class OntologyChanges {
   }
 
   async checkRelation(subject: Subjects["relation"]) {
-    const dataset = (id: string) => {
-      const artifact = this.snapshots.dataset(id), content = artifact.content as unknown as DatasetContent;
-      if (!content.activeVersion || content.materialization === "live") throw new Error("该数据集没有可核对的已采用快照");
-      return { id, content };
-    };
-    const from = dataset(subject.from.datasetId), to = dataset(subject.to.datasetId);
-    for (const [side, col] of [[from, subject.from.column], [to, subject.to.column]] as const)
-      if (!side.content.profile?.columns.some(item => item.name === col)) throw new Error(`字段不存在：${col}`);
-    const a = this.snapshots.table(from.id), b = this.snapshots.table(to.id);
-    const fromCol = `a.${quote(subject.from.column)}`, toCol = `b.${quote(subject.to.column)}`;
-    const cast = (value: string) => `CAST(${value} AS VARCHAR)`;
-    const refs = [from.id, to.id];
-    const side = (await this.snapshots.query(refs, `SELECT count(*) FILTER (WHERE ${fromCol} IS NOT NULL) AS total, count(*) FILTER (WHERE ${fromCol} IS NOT NULL AND ${cast(fromCol)} IN (SELECT ${cast(toCol)} FROM ${b} b WHERE ${toCol} IS NOT NULL)) AS matched FROM ${a} a`, { limit: 1 })).rows[0];
-    const target = (await this.snapshots.query(refs, `SELECT count(${toCol}) AS filled, count(DISTINCT ${cast(toCol)}) AS distinct_values FROM ${b} b`, { limit: 1 })).rows[0];
-    const total = Number(side.total), matched = Number(side.matched);
-    const matchRate = total ? round(matched / total) : 0, targetUnique = Number(target.filled) > 0 && Number(target.filled) === Number(target.distinct_values);
-    const notes: string[] = [];
-    if (!total) notes.push("起点列没有非空值，无法验证");
-    if (rules.relation.requireUniqueTarget && !targetUnique) notes.push("目标列的值不唯一，关联会指向多条记录");
-    let result: Verification["result"] = "passed";
-    if (total && matchRate < rules.relation.reviewMatchRate) notes.push(`匹配率 ${matchRate} 低于最低线 ${rules.relation.reviewMatchRate}，起点值大多在目标中找不到`);
-    if (!total || matchRate < rules.relation.reviewMatchRate || (rules.relation.requireUniqueTarget && !targetUnique)) result = "failed";
-    else if (matchRate < rules.relation.passMatchRate) { result = "review"; notes.push(`匹配率 ${matchRate} 低于通过线 ${rules.relation.passMatchRate}，需人工判断`); }
-    return { result, metrics: { total, matched, matchRate, targetUnique }, notes,
-      inputs: { snapshots: { [from.id]: from.content.activeVersion, [to.id]: to.content.activeVersion } } as Data };
+    return verifySnapshotRelation(this.snapshots, subject);
   }
 }

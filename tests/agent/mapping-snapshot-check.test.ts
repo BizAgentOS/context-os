@@ -1,5 +1,4 @@
 import { test } from "node:test";
-import { OntologyChanges } from "../../src/engine/changes.ts";
 import { connectChanges } from "../../src/engine/change-integration.ts";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -14,6 +13,7 @@ import { MappingChanges } from "../../src/live/mapping-changes.ts";
 import { Snapshots } from "../../src/data/snapshots.ts";
 import { ProgramBuilds } from "../../src/engine/program-builds.ts";
 import { validateDefinition } from "../../src/engine/validation.ts";
+import { adoptDiscoveredRelations } from "./discovery-test-helpers.ts";
 
 const code = (i: number) => `A${String(i).padStart(3, "0")}`;
 
@@ -30,12 +30,13 @@ test("a mapping revision reports its full-snapshot effect, and one that breaks a
     await engine.build({ operationId: "build" });
     const candidate = engine.overview().candidate!;
     const checked = await engine.check({ id: candidate.id, version: candidate.version });
-    const { model } = await engine.adopt({ id: checked.id, version: checked.version, operationId: "adopt" });
+    await engine.adopt({ id: checked.id, version: checked.version, operationId: "adopt" });
+    const lifecycle = await adoptDiscoveredRelations(memory, foundation, live, snapshots, engine);
+    const model = live.overview().models.find(item => item.status === "adopted")!;
     const relation = (model.content.relations as any[])[0];
-    assert.ok(relation, "the build linked orders to companies");
+    assert.ok(relation, "the discovered order-to-company relationship was explicitly adopted");
     const baseRef = { id: model.id, version: model.version };
 
-    const lifecycle = new OntologyChanges(memory, foundation, snapshots);
     connectChanges(memory, foundation, live, lifecycle);
     const broken = await changes.execute("propose", { operationId: "break", baseRef, reason: "测试", evidence: "测试",
       patch: { kind: "relation", type: relation.from, relation: relation.name, fromField: "金额", toField: relation.toField } });

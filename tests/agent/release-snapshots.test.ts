@@ -12,6 +12,8 @@ import { OntologyDatasets } from "../../src/live/ontology-datasets.ts";
 import { Snapshots } from "../../src/data/snapshots.ts";
 import { ProgramBuilds } from "../../src/engine/program-builds.ts";
 import { Releases } from "../../src/engine/releases.ts";
+import { OntologyChanges } from "../../src/engine/changes.ts";
+import { connectIdentityChanges } from "../../src/engine/identity-changes.ts";
 
 const ref = (a: { id: string; version: number }) => ({ id: a.id, version: a.version });
 
@@ -22,8 +24,10 @@ function fixture() {
   const foundation = new FoundationService(memory, live);
   const snapshots = new Snapshots(memory, live, directory);
   const engine = new ProgramBuilds(memory, foundation, live, snapshots);
+  const changes = new OntologyChanges(memory, foundation, snapshots);
+  connectIdentityChanges(memory, foundation, live, changes);
   const releases = new Releases(memory, live), datasets = new OntologyDatasets(memory, live);
-  return { memory, live, snapshots, engine, releases, datasets, workspace: new Workspace(memory),
+  return { memory, live, snapshots, engine, changes, releases, datasets, workspace: new Workspace(memory),
     read: async (key: string, type: string, id: string) => datasets.handle("/v4/objects", new URLSearchParams({ type, id }), "Bearer " + key),
     async adoptBuild(operationId: string) {
       await engine.build({ operationId });
@@ -132,7 +136,21 @@ test("a release whose object merges a second source can be checked and read thro
       capabilities: [{ name: "companies", path: "/companies", fields: ["id", "tier"], idField: "id", totalPath: "total", filters: { id: "id" } }] });
     f.workspace.upload("企业.csv", "企业编号,企业名称\n" + rows.map((r, i) => `${r.id},公司${i}`).join("\n") + "\n");
     const adopted = await f.adoptBuild("merged");
-    const type = (adopted.model.content.types as any[])[0];
+    const independentTypes = adopted.model.content.types as any[];
+    assert.equal(independentTypes.length, 2, "matching identifiers remain separate objects until an identity rule is adopted");
+    assert.ok(independentTypes.every(type => !type.supplements?.length));
+    const layered = f.live.readLayered(adopted.model.id);
+    const primary = layered.bindings.entities.find(binding => binding.dataset.capability === "companies")!;
+    const supplement = layered.bindings.entities.find(binding => binding.role === "primary" && binding.id !== primary.id)!;
+    const proposal = await f.changes.propose({ operationId: "company-identity", origin: "human", type: "identity_rule", baseline: f.changes.currentBaseline(),
+      subject: { kind: "same_as", left: { bindingId: supplement.id, columns: ["企业编号"] }, right: { bindingId: primary.id, columns: ["id"] },
+        reason: "企业目录与企业名册描述同一家公司", evidence: "逐项核对企业编号和名称" } });
+    const verified = await f.changes.verify({ operationId: "verify-company-identity", ...ref(proposal.change) });
+    assert.equal(verified.status, "verified", JSON.stringify(verified.content.verification));
+    const governed = await f.changes.adopt({ operationId: "adopt-company-identity", ...ref(verified), acknowledgeReview: true });
+    const modelRef = (governed.content.effect as any).modelRef;
+    const model = f.memory.getArtifact(modelRef.id, modelRef.version);
+    const type = (model.content.types as any[]).find(type => type.conceptId === primary.entityTypeId);
     assert.equal(type.supplements?.length, 1, JSON.stringify(adopted.model.content.types));
     const v1 = await f.publish("v1");
     const props = [...Object.keys(type.fields), ...Object.keys(type.supplements[0].fields)];

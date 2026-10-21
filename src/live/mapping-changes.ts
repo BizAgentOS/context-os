@@ -1,3 +1,4 @@
+import { prepareIdentityDecisionMigration } from "./identity-migration.ts";
 import { prepareCorrectionMigration } from "./correction-migration.ts";
 import { createHash } from "node:crypto";
 import { z } from "zod";
@@ -465,6 +466,7 @@ export class MappingChanges {
     )
       throw new Error("来源或治理依据已变化，请重新提出修订");
     if (method === "check" || method === "adopt") assertSnapshotImpact(((captured as unknown as Data).impact as Data).snapshotCheck as Data | undefined);
+    const migrateIdentities = method === "adopt" ? await prepareIdentityDecisionMigration(this.memory, this.live, captured!.definition) : undefined;
     const migrateCorrections = method === "adopt" ? await prepareCorrectionMigration(this.memory, this.live, captured!.definition) : undefined;
     const save = () => this.memory.atomic(() => {
       valid();
@@ -509,6 +511,7 @@ export class MappingChanges {
           },
         });
         migrateCorrections!(result);
+        migrateIdentities!(result);
         content.resultModel = { id: result.id, version: result.version };
         content.decision = {
           actor,

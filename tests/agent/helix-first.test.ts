@@ -13,6 +13,7 @@ import { Workspace } from "../../src/agent/workspace.ts";
 import { Snapshots } from "../../src/data/snapshots.ts";
 import { ProgramBuilds } from "../../src/engine/program-builds.ts";
 import { validateDefinition } from "../../src/engine/validation.ts";
+import { adoptDiscoveredRelations } from "./discovery-test-helpers.ts";
 
 const people = "employee_no,name,team_id\nE1,王晨,T1\nE2,李琪,T1\nE3,高远,T2\n";
 const teams = "team_id,team_name\nT1,研发组\nT2,平台组\n";
@@ -66,6 +67,7 @@ test("the assistant and documents cannot add concepts or move relation endpoints
     const workspace = new Workspace(memory);
     workspace.upload("people.csv", people); workspace.upload("teams.csv", teams);
     assert.equal((await engine.build({ operationId: "build", autoAdopt: true })).content.outcome, "adopted");
+    await adoptDiscoveredRelations(memory, foundation, live, snapshots, engine);
     const adopted = foundation.read().adopted!;
     const { id, name, from, to, description } = (adopted.content.relations as any[])[0];
     const relation = { id, name, from, to, description };
@@ -80,7 +82,8 @@ test("the assistant and documents cannot add concepts or move relation endpoints
     const renamed = propose({ relations: [{ ...relation, name: "隶属", evidenceRefs: ["said"] }] }, "renamed");
     const kept = (renamed.content.relations as any[]).find(r => r.id === relation.id);
     assert.equal(kept.name, "隶属");
-    assert.equal(kept.origin, "program");
+    assert.equal(kept.origin, "human");
+    assert.equal(kept.governed, true, "renaming keeps the explicit relationship decision");
     memory.endExecution(context);
   } finally { await engine.close(); await snapshots.close(); memory.close(); rmSync(directory, { recursive: true, force: true }); }
 });
@@ -94,6 +97,7 @@ test("a revision may only use data the program processed, and a relation must ma
     const workspace = new Workspace(memory);
     workspace.upload("people.csv", people); workspace.upload("teams.csv", teams);
     await engine.build({ operationId: "build", autoAdopt: true });
+    await adoptDiscoveredRelations(memory, foundation, live, snapshots, engine);
     const model = live.overview().models.find(item => item.status === "adopted")!, base = foundation.read().adopted!;
     const unseen = workspace.upload("badges.csv", "badge,employee_no\nB1,E1\n");
     const connection = live.sources.connectUpload(unseen.id, unseen.version, "badge");
@@ -112,7 +116,7 @@ test("a revision may only use data the program processed, and a relation must ma
   } finally { await engine.close(); await snapshots.close(); memory.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
-test("an adopted foundation keeps the program discovery: merged sources, link match counts and review state per concept", async () => {
+test("an adopted foundation keeps source discovery, explicitly adopted links and review state per concept", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-helix-projection-"));
   const memory = new MemoryStore(directory), live = new LiveMemory(directory, memory), foundation = new FoundationService(memory, live);
   const snapshots = new Snapshots(memory, live, directory), engine = new ProgramBuilds(memory, foundation, live, snapshots);
@@ -120,6 +124,7 @@ test("an adopted foundation keeps the program discovery: merged sources, link ma
     const workspace = new Workspace(memory);
     workspace.upload("people.csv", people); workspace.upload("teams.csv", teams);
     await engine.build({ operationId: "build", autoAdopt: true });
+    await adoptDiscoveredRelations(memory, foundation, live, snapshots, engine);
     // A later build keeps the adopted relation; the projection must still know which link it came from.
     workspace.upload("sites.csv", "site_id,city\nS1,杭州\n");
     const rebuild = await engine.build({ operationId: "rebuild", autoAdopt: true });

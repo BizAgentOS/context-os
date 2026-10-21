@@ -1,3 +1,5 @@
+import { connectDiscoveryChanges } from "../engine/discovery-changes.ts";
+import { connectIdentityChanges } from "../engine/identity-changes.ts";
 import { freezeLegacyConsumption } from "../live/legacy-consumption.ts";
 import { z } from "zod";
 import { readingDescription, workspaceReadModeSchema } from "../live/reading-contract.ts";
@@ -228,6 +230,8 @@ export class AgentApplication {
     this.changes = new OntologyChanges(this.memory, this.foundation, this.snapshots);
     this.workspaceVersions = new WorkspaceVersions(this.memory, this.foundation, this.live);
     connectChanges(this.memory, this.foundation, this.live, this.changes);
+    connectIdentityChanges(this.memory, this.foundation, this.live, this.changes);
+    connectDiscoveryChanges(this.memory, this.foundation, this.live, this.snapshots, this.programBuilds, this.changes);
     connectProgramChanges(this.memory, this.programBuilds, this.changes);
     connectRelationChanges(this.memory, this.foundation, this.live, this.snapshots, this.changes);
     const restore = new WorkspaceRestore(this.memory, this.foundation, this.live, this.snapshots);

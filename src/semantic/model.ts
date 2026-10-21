@@ -29,7 +29,7 @@ const relationType = z.object({
   id: name, name, aliases: z.array(name).max(100).default([]), description,
   from: name, to: name, direction: z.enum(["directed", "undirected"]).default("directed"),
   cardinality: z.enum(["1:1", "N:1", "1:N", "N:N"]).default("N:1"),
-  allowSelf: z.boolean().default(false), acyclic: z.boolean().optional(), inverseName: name.optional(),
+  allowSelf: z.boolean().default(false), acyclic: z.boolean().optional(), maxDepth: z.number().int().min(1).max(10).optional(), inverseName: name.optional(),
 }).strict();
 const entityBinding = z.object({
   id: name, entityTypeId: name, name: name.optional(), role: z.enum(["primary", "supplement"]), dataset,
@@ -49,6 +49,13 @@ const relationBinding = z.discriminatedUnion("kind", [
   relationBindingBase.extend({ kind: z.literal("foreign_key") }).strict(),
   relationBindingBase.extend({ kind: z.literal("link_table"), dataset }).strict(),
 ]);
+const identityEnd = z.object({ bindingId: name, columns: columns.min(1) }).strict();
+export const identityRuleSchema = z.object({
+  id: name, kind: z.enum(["same_as", "belongs_to"]), left: identityEnd, right: identityEnd,
+  transform: transformSchema.default({ op: "none" }), relationTypeId: name.optional(), legacy: z.boolean().default(false),
+  reason: z.string().trim().min(1).max(2000), evidence: z.string().trim().min(1).max(4000),
+}).strict();
+export type IdentityRule = z.infer<typeof identityRuleSchema>;
 
 export interface ModelLimits { maxEntityTypes: number; maxRelationTypes: number; maxSupplementsPerEntity: number }
 export const DEFAULT_MODEL_LIMITS: Readonly<ModelLimits> = Object.freeze({ maxEntityTypes: 20, maxRelationTypes: 40, maxSupplementsPerEntity: 3 });
@@ -64,7 +71,7 @@ export function createLayeredModelSchema(config: Partial<ModelLimits> = {}) {
       entityTypes: z.array(entityType).max(limits.maxEntityTypes),
       properties: z.array(property), relationTypes: z.array(relationType).max(limits.maxRelationTypes),
     }).strict(),
-    bindings: z.object({ entities: z.array(entityBinding), properties: z.array(propertyBinding), relations: z.array(relationBinding) }).strict(),
+    bindings: z.object({ entities: z.array(entityBinding), properties: z.array(propertyBinding), relations: z.array(relationBinding), identityRules: z.array(identityRuleSchema).max(100).default([]) }).strict(),
   }).strict().superRefine((model, ctx) => {
     const fail = (message: string, path: (string | number)[] = []) => ctx.addIssue({ code: "custom", message, path });
     const unique = (entries: { id: string }[], path: string[]) => {
@@ -129,12 +136,30 @@ export function createLayeredModelSchema(config: Partial<ModelLimits> = {}) {
       if (item.kind === "foreign_key" && item.fromColumns.length !== item.toColumns.length) fail("外键两端维度不一致");
       if (item.kind === "link_table" && (item.fromColumns.length !== from.keyColumns.length || item.toColumns.length !== to.keyColumns.length)) fail("中间表列与两端身份维度不一致");
     }
+    for (const rule of model.bindings.identityRules) {
+      const left = bindings.get(rule.left.bindingId), right = bindings.get(rule.right.bindingId);
+      if (!left || !right || left.id === right.id) { fail("身份规则需要两个不同的有效实体绑定"); continue; }
+      if (rule.left.columns.length !== rule.right.columns.length) fail("身份规则两端匹配列维度不一致");
+      if (rule.kind === "same_as" && (left.role !== "supplement" || right.role !== "primary" || left.entityTypeId !== right.entityTypeId)) fail("同一身份规则需要同实体的补充绑定接入主绑定");
+      if (rule.kind === "belongs_to") {
+        const relation = relations.get(rule.relationTypeId ?? "");
+        if (left.role !== "primary" || right.role !== "primary" || left.entityTypeId === right.entityTypeId || !relation || relation.from !== left.entityTypeId || relation.to !== right.entityTypeId) fail("归属规则需要不同实体主绑定及对应关系");
+      }
+    }
   });
 }
 export const layeredModelSchema = createLayeredModelSchema();
 export type LayeredModel = z.infer<typeof layeredModelSchema>;
 export function parseLayeredModel(input: unknown, limits: Partial<ModelLimits> = {}): LayeredModel {
-  return createLayeredModelSchema(limits).parse(input);
+  const model = createLayeredModelSchema(limits).parse(input);
+  for (const binding of model.bindings.entities.filter(binding => binding.role === "supplement" && binding.match)) {
+    const primary = model.bindings.entities.find(item => item.role === "primary" && item.entityTypeId === binding.entityTypeId);
+    if (!primary || model.bindings.identityRules.some(rule => rule.kind === "same_as" && rule.left.bindingId === binding.id && rule.right.bindingId === primary.id)) continue;
+    const column = binding.match!.primaryPropertyId === "$id" ? primary.keyColumns[0] : model.bindings.properties.find(item => item.entityBindingId === primary.id && item.propertyId === binding.match!.primaryPropertyId)?.column;
+    if (!column) continue;
+    model.bindings.identityRules.push({ id: stable("identity_rule", binding.id, primary.id), kind: "same_as", left: { bindingId: binding.id, columns: [binding.match!.sourceColumn] }, right: { bindingId: primary.id, columns: [column] }, transform: { op: "none" }, legacy: true, reason: "迁移已有明确采用的补充绑定", evidence: binding.rationale || "已有补充绑定" });
+  }
+  return model;
 }
 
 export interface LegacySupplement {
@@ -162,7 +187,7 @@ const stable = (prefix: string, ...parts: string[]) => `${prefix}_${createHash("
 
 /** No source row identifier is inferred from a column name; the caller supplies its source contract. */
 export function migrateLegacyModel(legacy: LegacyModel, options: MigrationOptions = {}): LayeredModel {
-  const model: LayeredModel = { schemaVersion: 1, semantic: { entityTypes: [], properties: [], relationTypes: [] }, bindings: { entities: [], properties: [], relations: [] } };
+  const model: LayeredModel = { schemaVersion: 1, semantic: { entityTypes: [], properties: [], relationTypes: [] }, bindings: { entities: [], properties: [], relations: [], identityRules: [] } };
   const byName = new Map<string, { type: LegacyType; id: string; bindingId: string; idField?: string }>();
   const entityOccurrences = new Map<string, number>();
   for (const type of legacy.types) {
@@ -207,6 +232,8 @@ export function migrateLegacyModel(legacy: LegacyModel, options: MigrationOption
       const matchId = supplement.match.primaryField === "$id" ? "$id" : properties.get(supplement.match.primaryField);
       if (!matchId) throw new Error("旧附来源匹配起点不存在");
       model.bindings.entities.push({ id: supplementId, entityTypeId: id, name: supplement.name, role: "supplement", dataset: { sourceId: supplement.sourceId, capability: supplement.capability }, keyColumns: [supplement.match.sourceField], match: { primaryPropertyId: matchId, sourceColumn: supplement.match.sourceField }, rationale: supplement.rationale, ...(supplement.rowFilter ? { rowFilter: supplement.rowFilter } : {}) });
+      const rightColumn = supplement.match.primaryField === "$id" ? cap?.idField : type.fields[supplement.match.primaryField];
+      if (rightColumn) model.bindings.identityRules.push({ id: stable("identity_rule", supplementId, bindingId), kind: "same_as", left: { bindingId: supplementId, columns: [supplement.match.sourceField] }, right: { bindingId, columns: [rightColumn] }, transform: { op: "none" }, legacy: true, reason: "迁移已有明确采用的补充绑定", evidence: supplement.rationale || "已有补充绑定" });
       for (const [key, column] of Object.entries(supplement.fields)) addProperty(key, column, supplementId, false, supplement.propertyTransforms?.[key]);
     }
   }
@@ -325,5 +352,14 @@ export function reconcileLayeredModel(previousInput: LayeredModel, nextInput: La
     if (prior) usedRelations.add(prior.id);
     return { ...binding, id: prior?.id ?? binding.id, fromBindingId, toBindingId };
   });
+  const currentRules = new Map(next.bindings.identityRules.map(rule => [rule.id, rule]));
+  for (const rule of previous.bindings.identityRules) {
+    if (!next.bindings.entities.some(binding => binding.id === rule.left.bindingId) || !next.bindings.entities.some(binding => binding.id === rule.right.bindingId)) continue;
+    for (const [id, candidate] of currentRules) if (candidate.kind === rule.kind && candidate.left.bindingId === rule.left.bindingId && candidate.right.bindingId === rule.right.bindingId) currentRules.delete(id);
+    currentRules.set(rule.id, rule);
+  }
+  next.bindings.identityRules = [...currentRules.values()].map(rule => ({ ...rule,
+    left: { ...rule.left, bindingId: bindingIds.get(rule.left.bindingId) ?? rule.left.bindingId },
+    right: { ...rule.right, bindingId: bindingIds.get(rule.right.bindingId) ?? rule.right.bindingId } }));
   return parseLayeredModel(next);
 }

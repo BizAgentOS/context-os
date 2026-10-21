@@ -3,7 +3,8 @@ import type { Artifact, Data } from "../agent/contracts.ts";
 import type { MemoryStore } from "../agent/memory.ts";
 import { FoundationService } from "../agent/foundation.ts";
 import type { LiveMemory } from "../live/memory.ts";
-import { snapshotPinsForRelease } from "../live/release-pins.ts";
+import { snapshotPinsForRelease, identityDecisionPinsForRelease } from "../live/release-pins.ts";
+import { captureIdentityDecision, identityDecisionsForModel } from "../live/identity.ts";
 import type { DatasetContent, Snapshots } from "../data/snapshots.ts";
 import { OntologyDatasets } from "../live/ontology-datasets.ts";
 import { consumerGrant } from "../live/consumer-views.ts";
@@ -113,6 +114,8 @@ export class Releases {
       .filter(a => a.status === "adopted" && (a.content.target as Data).modelId === model.id && (a.content.target as Data).modelVersion === model.version)
       .map(a => ({ id: a.id, version: a.version, target: a.content.target, targetIds: a.content.targetIds, fingerprint: a.content.fingerprint, reason: a.content.reason }))
       .sort((a, b) => a.id.localeCompare(b.id)) : [];
+    const identityDecisions = model ? identityDecisionsForModel(this.memory, model)
+      .map(decision => ({ ...decision.content, ...reference(decision) })).sort((a, b) => a.id.localeCompare(b.id)) : [];
     const definition = jsonData({
       enterprise: adopted?.content.enterprise ?? null,
       concepts, relations,
@@ -121,6 +124,7 @@ export class Releases {
       sourceAccess,
       snapshots,
       corrections,
+      identityDecisions,
       accessPolicy: { facts: "per_source_strategy", snapshot: snapshots.length ? "pinned" : "none", consistency: allPinned ? "pinned_snapshot" : "not_atomic", historicalReplay: allPinned },
     });
     const workspace = this.latestWorkspace();
@@ -201,12 +205,26 @@ export class Releases {
     const issues = [...working.issues];
     const samples: Data[] = [];
     if (!issues.some(i => i.severity === "error") && working.modelRef) {
+      const model = this.memory.getArtifact(working.modelRef.id, working.modelRef.version);
+      for (const decision of identityDecisionsForModel(this.memory, model, new Set(identityDecisionPinsForRelease(working.definition)))) {
+        try {
+          const captured = await captureIdentityDecision(this.live, model, decision.content, {
+            readMode: "release_pinned", pins: releasePins(working.definition), fixedSemantic: true, modelDefinition: working.definition.model as Data,
+          });
+          if (captured.fingerprint !== decision.content.fingerprint || captured.scopeFingerprint !== decision.content.scopeFingerprint)
+            throw new Error("身份决定依赖的事实或规则已变化，请先重新核对");
+        } catch (error) {
+          issues.push({ code: "identity_decision_unavailable", severity: "error", message: error instanceof Error ? error.message : "身份决定无法复验" });
+        }
+      }
+    }
+    if (!issues.some(i => i.severity === "error") && working.modelRef) {
       for (const t of ((working.definition.model as Data).types as Data[])) {
         try {
           const fields = [...new Set(["$id", ...Object.keys(t.fields as Data), ...((t.supplements ?? []) as Data[]).flatMap(s => Object.keys(s.fields as Data))])];
           const sample = await this.live.query({ modelId: working.modelRef.id, modelVersion: working.modelRef.version, type: t.name, fields, limit: 1 }, () => {
             if (this.working().inputHash !== working.inputHash) throw new Error("检查过程中工作版本已变化");
-          }, false, working.definition.model as Data, false, releasePins(working.definition));
+          }, false, working.definition.model as Data, false, releasePins(working.definition), undefined, new Set(identityDecisionPinsForRelease(working.definition)));
           if (sample.evidence?.some(o => o.matches.some(m => m.status === "unavailable"))) throw new Error("附来源读取失败，请恢复连接后重新检查");
           samples.push(jsonData({ type: t.name, coverage: sample.coverage, reads: sample.reads }));
         } catch (error) { issues.push({ code: "source_check_failed", severity: "error", message: `${String(t.name)}：${error instanceof Error ? error.message : "来源读取失败"}` }); }

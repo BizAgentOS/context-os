@@ -12,3 +12,9 @@ export function correctionPinsForRelease(definition: Data | undefined): string[]
   const corrections = (definition?.corrections ?? []) as Array<{ id: string; version: number }>;
   return corrections.map(item => `${item.id}@${item.version}`).sort();
 }
+
+/** Missing identity decisions mean the historical empty set, never the latest working decisions. */
+export function identityDecisionPinsForRelease(definition: Data | undefined): string[] {
+  const decisions = (definition?.identityDecisions ?? []) as Array<{ id: string; version: number }>;
+  return decisions.map(item => `${item.id}@${item.version}`).sort();
+}

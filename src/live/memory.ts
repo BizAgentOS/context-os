@@ -1,4 +1,6 @@
+import { prepareIdentityDecisionMigration } from "./identity-migration.ts";
 import { prepareCorrectionMigration } from "./correction-migration.ts";
+import { identityDecisionsForModel, resolveIdentity, identityRecordId, type IdentityDecisionPins, type IdentityReading } from "./identity.ts";
 import { freezeLegacyConsumption } from "./legacy-consumption.ts";
 import { activeCorrection, captureRelation, type PinnedCorrections } from "./relation-corrections.ts";
 import {
@@ -170,7 +172,7 @@ export class LiveMemory {
   }
   private definition(a: Artifact) {
     const stored = a.content as unknown as Definition;
-    const layered = stored.layered ?? this.layerLegacy(stored);
+    const layered = stored.layered ? parseLayeredModel(stored.layered) : this.layerLegacy(stored);
     return { ...stored, ...projectLegacyModel(layered, { allowTransforms: true }), layered } as Definition;
   }
   /** Current wording is a read projection over stable semantic IDs. Neither the
@@ -191,6 +193,25 @@ export class LiveMemory {
     }
     return {...artifact,content:jsonData({...artifact.content,...projectLegacyModel(layered,{allowTransforms:true}),layered,
       foundationRef:{id:current.id,version:current.version}})};
+  }
+  /** Trusted bounded identity reads use exactly the query's authorization and snapshot mode. */
+  identityReader(artifact: Artifact, options: IdentityReading = {}) {
+    const model = options.modelDefinition ? { ...artifact, content: options.modelDefinition } : this.projectModel(artifact, options.fixedSemantic);
+    const definition = this.definition(model);
+    const readMode = options.readMode ?? (options.pins !== undefined ? "release_pinned" : "active_snapshot");
+    const pins = options.pins ?? this.resolvePins(definition, readMode);
+    const source = this.sourcesFor(pins);
+    const assertValid = () => {
+      this.checkConnections(definition, undefined, options.fixedSemantic ?? false, source);
+      if (this.repo.getArtifact(artifact.id).version !== artifact.version) throw new Error("身份读取的本体版本已变化");
+    };
+    assertValid();
+    const sources = {
+      list: () => source.list(),
+      capability: (id: string, capability: string, version?: number) => source.capability(id, capability, version ?? definition.connections[id]),
+      readRecords: (id: string, capability: string, where: Data = {}, offset = 0, limit = 20, version?: number) => source.readRecords(id, capability, where, offset, limit, version ?? definition.connections[id]),
+    };
+    return { model, layered: definition.layered!, sources, pins, readMode, assertValid };
   }
   /** Specifying an artifact version reads its original immutable wording. */
   readLayered(id: string, version?: number): LayeredModel {
@@ -697,12 +718,13 @@ export class LiveMemory {
     )
       throw new Error("基础本体已变化");
     const migrateCorrections = await prepareCorrectionMigration(this.repo, this, a.content);
+    const migrateIdentities = await prepareIdentityDecisionMigration(this.repo, this, a.content);
     return commit(() => {
       const save = () => { const adopted = this.repo.putArtifact({
         ...a,
         expectedVersion: version,
         status: "adopted",
-      }); migrateCorrections(adopted); return adopted; };
+      }); migrateCorrections(adopted); migrateIdentities(adopted); return adopted; };
       return this.onGovernanceAdopt ? this.onGovernanceAdopt(a, save, readingFacts) : save();
     });
   }
@@ -715,6 +737,7 @@ export class LiveMemory {
     fixedSemantic = false,
     pins?: SnapshotPins,
     reading?: { readMode: ReadMode; pins: SnapshotPins },
+    identityDecisionPins: IdentityDecisionPins = true,
   ): Promise<ReadingReceipt & {
     model: { id: string; version: number };
     type: string;
@@ -769,6 +792,8 @@ export class LiveMemory {
     if (readMode === "release_pinned" && pins === undefined) throw new Error("release_pinned 需要发布固定的快照范围");
     if (pins !== undefined && args.readMode && args.readMode !== "release_pinned") throw new Error("发布读取不能覆盖固定读取模式");
     const selectedPins = reading?.pins ?? this.resolvePins(d, readMode, pins);
+    const identityOptions = { readMode, pins: selectedPins, fixedSemantic, modelDefinition: model.content };
+    const identityDecisions = identityDecisionsForModel(this.repo, model, identityDecisionPins);
     const src = this.sourcesFor(selectedPins);
     const receipt = (reads: Parameters<LiveMemory["receipt"]>[2]) => this.receipt(model, readMode, reads);
     const assertValid = () => {
@@ -844,7 +869,7 @@ export class LiveMemory {
           originalTarget,
           correction.content.targetIds as string[],
           assertValid,
-          { readMode, pins: selectedPins, fixedSemantic, modelDefinition:originalDefinition },
+          { readMode, pins: selectedPins, fixedSemantic, modelDefinition:originalDefinition, identityDecisionPins },
         ); } catch (error) { throw new Error(`局部纠正的原始范围无法复验，请重新检查关系纠正：${error instanceof Error?error.message:"定义或来源已变化"}`); }
         if (snapshot.fingerprint !== correction.content.fingerprint)
           throw new Error("局部纠正依赖的源事实已变化，请重新检查关系纠正");
@@ -909,6 +934,24 @@ export class LiveMemory {
           ]),
         };
       }
+      const identityRule = d.layered?.bindings.identityRules.find(rule => rule.kind === "belongs_to" && rule.relationTypeId === rel.relationId);
+      if (identityRule) {
+        const resolved = await resolveIdentity(this, model, identityRule, "left", origin.items[0], identityDecisions, identityOptions);
+        if (resolved.status === "ambiguous") throw new Error("身份对应不唯一，未选择任何对象；请明确记录级决定");
+        if (resolved.status === "unknown") throw new Error("身份读取覆盖不完整，无法确认唯一对应；请明确记录级决定");
+        const target = d.types.find(t => t.name === rel.to)!;
+        const binding = d.layered!.bindings.entities.find(binding => binding.id === identityRule.right.bindingId)!;
+        const reader = this.identityReader(model, identityOptions), items: Data[] = [], evidence: ObjectEvidence[] = [];
+        const reads = [origin.provenance, ...resolved.reads];
+        for (const row of resolved.items.slice(args.offset, args.offset + args.limit)) {
+          const result = await this.query({ modelId: model.id, modelVersion: model.version, type: target.name, id: identityRecordId(reader, binding, row), fields: args.fields, readMode }, assertActive, applyCorrections, previewDefinition, fixedSemantic, readMode === "release_pinned" ? selectedPins : undefined, { readMode, pins: selectedPins }, identityDecisionPins);
+          items.push(...result.items); evidence.push(...(result.evidence ?? [])); reads.push(...result.reads);
+        }
+        assertValid();
+        return { model: { id: model.id, version: model.version }, type: target.name, items, ...(evidence.length ? { evidence } : {}), reads,
+          coverage: { offset: args.offset, shown: items.length, total: resolved.total, complete: resolved.complete && args.offset === 0 && items.length === resolved.items.length },
+          relationOrigin: { type: type.name, id: String(identityValue(origin.items[0], identity, cap.idField)) }, ...receipt(reads) };
+      }
       if (rel.linkTable) {
         const link = rel.linkTable, fromColumns = rel.fromColumns ?? identity;
         const filter = Object.fromEntries(link.fromColumns.map((column, index) => [column, origin.items[0][fromColumns[index]]]));
@@ -933,7 +976,7 @@ export class LiveMemory {
         let targetsComplete = true, unmatchedTargets = 0;
         for (const key of [...keys.values()].slice(args.offset, args.offset + args.limit)) {
           const objectId = identityValue(key, target.identityFields?.length ? target.identityFields : [targetCap.idField], targetCap.idField);
-          const result = await this.query({ modelId: model.id, modelVersion: model.version, type: target.name, id: String(objectId), fields: args.fields, readMode, limit: 1 }, assertActive, applyCorrections, previewDefinition, fixedSemantic, readMode === "release_pinned" ? selectedPins : undefined, { readMode, pins: selectedPins });
+          const result = await this.query({ modelId: model.id, modelVersion: model.version, type: target.name, id: String(objectId), fields: args.fields, readMode, limit: 1 }, assertActive, applyCorrections, previewDefinition, fixedSemantic, readMode === "release_pinned" ? selectedPins : undefined, { readMode, pins: selectedPins }, identityDecisionPins);
           items.push(...result.items); evidence.push(...(result.evidence ?? [])); reads.push(...result.reads);
           targetsComplete &&= result.coverage.complete && result.items.length === 1;
           if (result.items.length !== 1) unmatchedTargets++;
@@ -971,6 +1014,7 @@ export class LiveMemory {
         fixedSemantic,
         readMode === "release_pinned" ? selectedPins : undefined,
         { readMode, pins: selectedPins },
+        identityDecisionPins,
       );
       this.checkConnections(d, undefined, fixedSemantic, src);
       if (this.repo.getArtifact(model.id).version !== model.version)
@@ -1001,6 +1045,14 @@ export class LiveMemory {
           src,
           d.connections,
           assertValid,
+          async (supplement, row) => {
+            const primary = d.layered!.bindings.entities.find(binding => binding.role === "primary" && binding.entityTypeId === type.conceptId);
+            const source = d.layered!.bindings.entities.find(binding => binding.role === "supplement" && binding.entityTypeId === type.conceptId && binding.dataset.sourceId === supplement.sourceId && binding.dataset.capability === supplement.capability && binding.name === supplement.name);
+            const rule = d.layered!.bindings.identityRules.find(rule => rule.kind === "same_as" && rule.left.bindingId === source?.id && rule.right.bindingId === primary?.id);
+            if (!rule || rule.legacy && !identityDecisions.some(decision => decision.content.ruleId === rule.id)) return undefined;
+            const result = await resolveIdentity(this, model, rule, "right", row, identityDecisions, identityOptions);
+            return { page: { items: result.items, coverage: { offset: 0, shown: result.items.length, total: result.total, complete: result.complete }, provenance: result.reads[0] }, status: result.status, reason: result.reason, reads: result.reads };
+          },
         )
       : null;
     const readReceipt = receipt(fusion?.reads ?? [result.provenance]);

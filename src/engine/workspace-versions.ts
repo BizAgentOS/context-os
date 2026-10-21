@@ -5,13 +5,14 @@ import type { LiveMemory } from "../live/memory.ts";
 import type { Snapshots, DatasetContent } from "../data/snapshots.ts";
 import { jsonData } from "../live/sources.ts";
 import { fingerprint } from "./release-diff.ts";
+import { identityDecisionsForModel } from "../live/identity.ts";
 
 /**
  * The user-visible "工作版 vN": one combination of semantic definition, bindings, identity decisions,
  * local corrections and the active snapshot set (blueprint §10.4). A new version is recorded in the same
  * transaction that changes any of its parts, so there is never an adopted state without a version for it.
  */
-const SOURCES = new Set(["foundation", "live_ontology", "relation_correction", "data_dataset", "ontology_change"]);
+const SOURCES = new Set(["foundation", "live_ontology", "relation_correction", "identity_decision", "data_dataset", "ontology_change"]);
 const isAdopted = (artifact: Artifact) => {
   if (artifact.kind === "data_dataset") return true;
   return artifact.status === "adopted";
@@ -47,7 +48,8 @@ export class WorkspaceVersions {
     const corrections = model ? this.memory.listArtifacts("relation_correction")
       .filter(item => item.status === "adopted" && (item.content.target as Data).modelId === model.id && (item.content.target as Data).modelVersion === model.version)
       .map(item => `${item.id}@${item.version}`).sort() : [];
-    return jsonData({ semantic: ref(adopted), bindings: ref(model), identityDecisions: [], corrections, snapshots });
+    const identityDecisions = model ? identityDecisionsForModel(this.memory, model).map(item => `${item.id}@${item.version}`).sort() : [];
+    return jsonData({ semantic: ref(adopted), bindings: ref(model), identityDecisions, corrections, snapshots });
   }
 
   list() {

@@ -10,6 +10,8 @@ import { LiveMemory } from "../../src/live/memory.ts";
 import { Workspace } from "../../src/agent/workspace.ts";
 import { Snapshots } from "../../src/data/snapshots.ts";
 import { ProgramBuilds } from "../../src/engine/program-builds.ts";
+import { OntologyChanges } from "../../src/engine/changes.ts";
+import { connectRelationChanges } from "../../src/engine/relation-change.ts";
 import { validateDefinition } from "../../src/engine/validation.ts";
 import { dataOverviewForAgent, discoveryExplainForAgent, engineTools, ontologySnapshotCheckForAgent, snapshotQueryForAgent } from "../../src/engine/tools.ts";
 
@@ -20,7 +22,9 @@ function fixture() {
   const foundation = new FoundationService(memory, live);
   const snapshots = new Snapshots(memory, live, directory);
   const engine = new ProgramBuilds(memory, foundation, live, snapshots);
-  return { memory, live, snapshots, engine, workspace: new Workspace(memory),
+  const changes = new OntologyChanges(memory, foundation, snapshots);
+  connectRelationChanges(memory, foundation, live, snapshots, changes);
+  return { memory, live, snapshots, engine, changes, workspace: new Workspace(memory),
     async close() { await engine.close(); await snapshots.close(); memory.close(); rmSync(directory, { recursive: true, force: true }); } };
 }
 
@@ -70,15 +74,26 @@ test("full-snapshot checks catch an identity duplicated across pages and a relat
   } finally { await source.close(); await f.close(); }
 });
 
-test("a candidate check runs merge pipelines on snapshots and refuses a candidate whose snapshots changed", async () => {
+test("a candidate checks explicitly adopted relations on snapshots and refuses a candidate whose snapshots changed", async () => {
   const f = fixture();
   let orders = [{ id: "O1", company_id: "A001" }, { id: "O2", company_id: "A002" }, { id: "O3", company_id: "A001" }];
   const source = await api(() => orders);
   try {
     f.workspace.upload("企业.csv", "企业编号,企业名称\nA001,青山\nA002,海川\n");
-    await f.live.sources.connect({ name: "订单系统", protocol: "http", url: source.url,
+    const orderSource = await f.live.sources.connect({ name: "订单系统", protocol: "http", url: source.url,
       capabilities: [{ name: "orders", path: "/o", fields: ["id", "company_id"], idField: "id", totalPath: "total", filters: { id: "id", company_id: "company_id" } }] });
     await f.engine.build({ operationId: "b1" });
+    const first = f.engine.overview().candidate!;
+    assert.deepEqual(first.content.modelRelations, [], "discovered relations remain proposals until explicitly adopted");
+    const initialCheck = await f.engine.check({ id: first.id, version: first.version });
+    await f.engine.adopt({ id: initialCheck.id, version: initialCheck.version, operationId: "adopt-entities" });
+    const orderDataset = f.snapshots.bindingDataset(orderSource.id, "orders")!;
+    const companyDataset = f.snapshots.datasets().find(dataset => dataset.content.name === "企业.csv")!;
+    const { change: proposed } = await f.changes.propose({ operationId: "propose-order-company", origin: "human", type: "relation", baseline: f.changes.currentBaseline(),
+      subject: { from: { datasetId: orderDataset.id, column: "company_id" }, to: { datasetId: companyDataset.id, column: "企业编号" } } });
+    const verified = await f.changes.verify({ id: proposed.id, version: proposed.version, operationId: "verify-order-company" });
+    await f.changes.adopt({ id: verified.id, version: verified.version, operationId: "adopt-order-company" });
+    await f.engine.build({ operationId: "b2" });
     const candidate = f.engine.overview().candidate!;
     const checked = await f.engine.check({ id: candidate.id, version: candidate.version });
     const checks = checked.content.checks as any;

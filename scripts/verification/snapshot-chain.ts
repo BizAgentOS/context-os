@@ -1,4 +1,4 @@
-/** Snapshot chain acceptance over the admin and consumer HTTP boundary; no model calls. `npm run verify:snapshots [-- --keep]` */
+/** Snapshot chain acceptance over admin/consumer HTTP. Human decisions below are automated simulations, not real model calls. `npm run verify:snapshots [-- --keep]` */
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer as httpServer } from "node:http";
@@ -48,6 +48,13 @@ const api = async (path: string, body?: unknown) => {
   return r.body;
 };
 const ref = (a: { id: string; version: number }) => ({ id: a.id, version: a.version });
+// Exercise the same explicit propose/verify/adopt flow as the UI; this script supplies the fictional human decisions.
+const decide = async (type: string, subject: Record<string, unknown>, operationId: string) => {
+  const proposed = (await api("/api/changes/propose", { operationId, origin: "human", type, subject, baseline: (await api("/api/changes")).baseline })).change;
+  const verified = (await api("/api/changes/verify", { ...ref(proposed), operationId: `${operationId}-verify` })).change;
+  assert.equal(verified.status, "verified", JSON.stringify(verified.content.verification));
+  return (await api("/api/changes/adopt", { ...ref(verified), operationId: `${operationId}-adopt`, acknowledgeReview: true })).change;
+};
 const finished = async (path: string, id: string) => {
   for (let i = 0; i < 600; i++) {
     const job = (await api(path)).jobs.find((j: any) => j.id === id);
@@ -79,17 +86,33 @@ try {
   assert.equal(build.content.outcome, "candidate", JSON.stringify(build.content.issues));
   let candidate = (await api("/api/engine")).candidate;
   const types = candidate.content.types as any[], relations = candidate.content.modelRelations as any[];
-  const company = types.find(t => t.supplements?.length);
-  assert.ok(company, `没有形成跨来源合并：${JSON.stringify(types.map(t => t.name))}`);
-  assert.equal(types.length, 2);
-  assert.equal(relations.length, 1);
-  record("构建本体", `${types.length} 个对象；${company.name} 合并 ${company.supplements.map((s: any) => s.name).join("、")}；关系 ${relations[0].from}→${relations[0].to}`);
+  const crmType = types.find(t => t.capability === "companies"), registryType = types.find(t => t.capability === "registry"), orderType = types.find(t => t.capability === "orders");
+  assert.ok(crmType && registryType && orderType, `来源没有形成独立对象：${JSON.stringify(types.map(t => t.name))}`);
+  assert.equal(types.length, 3);
+  assert.equal(relations.length, 0, "发现的关系在明确采用前不能成为执行映射");
+  assert.ok(types.every(type => !type.supplements?.length), "匹配字符串不能静默合并来源");
+  record("构建本体", "3 个来源各自形成独立对象；身份与关系等待明确决定");
 
   candidate = await api("/api/engine/check", ref(candidate));
   assert.equal(candidate.content.checks.valid, true, JSON.stringify(candidate.content.checks));
   const adopted = await api("/api/engine/adopt", { ...ref(candidate), operationId: "adopt-1" });
   assert.ok(adopted.model);
-  record("全量检查并采用", "通过");
+  record("全量检查并采用实体", "通过");
+  const primaryBinding = (conceptId: string) => adopted.model.content.layered.bindings.entities.find((binding: any) => binding.entityTypeId === conceptId && binding.role === "primary").id;
+  await decide("identity_rule", { kind: "same_as", left: { bindingId: primaryBinding(registryType.conceptId), columns: ["company_code"] },
+    right: { bindingId: primaryBinding(crmType.conceptId), columns: ["code"] }, reason: "工商登记与 CRM 公司编号对应同一企业", evidence: "自动化验收模拟人工核对：30 条企业编号一致，工商登记补充企业名称与城市" }, "company-identity");
+  const related = await decide("relation", { from: { datasetId: (await dataset("订单系统")).id, column: "company_id" },
+    to: { datasetId: (await dataset("CRM")).id, column: "code" } }, "order-company");
+  const governedRef = related.content.effect.modelRef;
+  const governed = await api(`/api/artifacts/${governedRef.id}?version=${governedRef.version}`);
+  const company = governed.content.types.find((type: any) => type.conceptId === crmType.conceptId);
+  assert.equal(governed.content.types.length, 3, "身份采用保留原来源对象");
+  assert.equal(company.supplements.length, 1);
+  assert.equal(governed.content.relations.length, 1);
+  const relation = governed.content.relations[0];
+  const linked = await api("/api/live/query", { modelId: governed.id, type: orderType.name, id: "O1001", relation: relation.name });
+  assert.equal(linked.items[0].$id, code(1));
+  record("模拟人工明确采用身份与关系", `${company.name} 补充工商登记；${relation.from}→${relation.to} 已查询验证；未调用真实模型`);
 
   const publish = async (name: string) => {
     const check = await api("/api/releases/check", { inputHash: (await api("/api/releases")).working.inputHash });
@@ -100,7 +123,7 @@ try {
   assert.ok(v1, "v1 发布检查未通过");
   const working = (await api("/api/releases")).working;
   const conceptIds = working.definition.concepts.map((c: any) => c.id), relationIds = working.definition.relations.map((r: any) => r.id);
-  const grants = (working.definition.model.types as any[]).map(t => ({ type: t.name, fields: ["$id", ...Object.keys(t.fields), ...(t.supplements ?? []).flatMap((s: any) => Object.keys(s.fields))],
+  const grants = (working.definition.model.types as any[]).map(t => ({ type: t.name, fields: [...new Set(["$id", ...Object.keys(t.fields), ...(t.supplements ?? []).flatMap((s: any) => Object.keys(s.fields))])],
     relations: (working.definition.model.relations as any[]).filter(r => r.from === t.name).map(r => r.name) }));
   const connection = await api("/api/releases/connect", { operationId: "connect", name: "链路验收接入方", releaseRef: ref(v1), conceptIds, relationIds, business: { grants } });
   const v1Key = connection.key as string;
@@ -108,9 +131,12 @@ try {
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.equal(r.body.consistency, "pinned_snapshot");
   assert.equal(props(r).tier, "标准");
-  const merged = Object.keys(company.supplements[0].fields)[0];
+  const merged = Object.entries(company.supplements[0].fields).find(([, column]) => column === "name")?.[0];
+  assert.ok(merged, "明确采用的工商登记没有提供企业名称属性");
   assert.ok(props(r)[merged], `合并字段 ${merged} 没有值`);
-  assert.ok(merged.startsWith("工商登记_"), `合并属性应以来源名称为前缀：${merged}`);
+  assert.equal(props(r)[merged], "链路验收企业1");
+  const fused = await api("/api/live/query", { modelId: governed.id, type: company.name, id: code(1) });
+  assert.ok(fused.evidence[0].properties[merged].evidence.some((e: any) => e.sourceTitle === "工商登记" && e.field === "name"), "融合属性须保留工商登记原始来源依据");
   record("发布 v1 并接入", `${code(1)} tier=标准，${merged}=${props(r)[merged]}，pinned_snapshot`);
 
   await fetch(sourceUrl + "/admin/update");

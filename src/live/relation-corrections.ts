@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { LiveMemory, SnapshotPins } from "./memory.ts";
 import type { ReadMode } from "./reading-contract.ts";
+import type { IdentityDecisionPins } from "./identity.ts";
 import type { MemoryStore } from "../agent/memory.ts";
 import type {
   Artifact,
@@ -92,7 +93,7 @@ export async function captureRelation(
   target: CorrectionTarget,
   targetIds: string[],
   assertActive: () => void,
-  reading?: { readMode: ReadMode; pins: SnapshotPins; fixedSemantic: boolean; modelDefinition?: Data },
+  reading?: { readMode: ReadMode; pins: SnapshotPins; fixedSemantic: boolean; modelDefinition?: Data; identityDecisionPins?: IdentityDecisionPins },
   definitionOverride?: Data,
 ) {
   const modelDefinition=definitionOverride??reading?.modelDefinition;
@@ -120,6 +121,7 @@ export async function captureRelation(
       reading?.fixedSemantic ?? false,
       reading?.readMode === "release_pinned" ? reading.pins : undefined,
       reading,
+      reading?.identityDecisionPins,
     );
     assertActive();
     if (

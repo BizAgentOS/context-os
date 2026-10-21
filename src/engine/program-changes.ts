@@ -61,6 +61,15 @@ export function connectProgramChanges(memory: MemoryStore, engine: ProgramBuilds
   changes.registerOwnerHandler("engine_candidate", { subject: schema, prepare: async change => {
     const args = schema.parse(change.content.subject), candidate = memory.getArtifact(args.candidateRef.id);
     if (candidate.version !== args.candidateRef.version) throw new Error("程序候选已变化，请重新读取变更");
+    // Stored candidates from before explicit discovery decisions still use this owner adapter.
+    const discovery = candidate.content.discovery as Data | undefined;
+    const linkRelations = discovery?.linkRelations as Data | undefined;
+    for (const link of rows(discovery?.links)) {
+      const relationId = linkRelations?.[String(link.id)];
+      if (!relationId || args.selection && !args.selection.relations.includes(String(relationId))) continue;
+      const checked = await changes.checkRelation({ from: { datasetId: String(link.fromDatasetId), column: String(link.fromColumn) }, to: { datasetId: String(link.toDatasetId), column: String(link.toColumn) } });
+      if (checked.result !== "passed") throw new Error(`旧程序关系需要重新提出并复验：${checked.notes.join("；")}`);
+    }
     let save: (() => AdoptedBuild) | undefined;
     let actualChecks: Data = {};
     await engine.adopt({ ...args.candidateRef, operationId: `change:${change.id}`, ...(args.selection ? { selection: args.selection } : {}) }, undefined,

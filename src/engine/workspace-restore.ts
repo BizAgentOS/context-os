@@ -9,6 +9,8 @@ import { jsonData } from "../live/sources.ts";
 import { projectLegacyModel } from "../semantic/model.ts";
 import { fingerprint } from "./release-diff.ts";
 import { ChangeConflict } from "./changes.ts";
+import { prepareIdentityDecisionMigration } from "../live/identity-migration.ts";
+import { identityDecisionsForModel } from "../live/identity.ts";
 
 const ref = z.object({ id: z.string().trim().min(1).max(200), version: z.number().int().positive() }).strict();
 export const workspaceRestoreSubject = z.object({ workspaceVersionRef: ref }).strict();
@@ -111,10 +113,14 @@ export class WorkspaceRestore {
       if (correction.kind !== "relation_correction" || correction.status !== "adopted" || target.modelId !== binding.id || target.modelVersion !== binding.version)
         throw new Error("历史纠正不属于所选工作版绑定");
       const captured = await captureRelation(this.live, target, correction.content.targetIds as string[], () => {},
-        { readMode: "release_pinned", pins, fixedSemantic: true, modelDefinition: (correction.content.modelDefinition ?? binding.content) as Data });
+        { readMode: "release_pinned", pins, fixedSemantic: true, modelDefinition: (correction.content.modelDefinition ?? binding.content) as Data,
+          identityDecisionPins: new Set(composition.identityDecisions) });
       if (captured.fingerprint !== correction.content.fingerprint) throw new Error("历史快照无法复现该工作版的纠正依据，不能恢复");
       corrections.push(correction);
     }
+    const restoreIdentityDecisions = await prepareIdentityDecisionMigration(this.memory, this.live, definition, {
+      baseModel: binding, decisionPins: new Set(composition.identityDecisions), readMode: "release_pinned", pins, fixedSemantic: true,
+    });
     const inputs = jsonData({ workspaceVersionRef, workspaceBaseline, composition, sourceState: [...tracked.values()].map(artifact => ({ ...reference(artifact), status: artifact.status })), liveInputs });
     const assertUnchanged = () => {
       if (fingerprint(currentWorkspaceRef()) !== fingerprint(workspaceBaseline)) throw new ChangeConflict("verification_changed", "当前工作版的治理决定或数据已变化，请重新复验恢复");
@@ -127,7 +133,7 @@ export class WorkspaceRestore {
     assertUnchanged();
     return {
       metrics: { workspaceNumber: Number(historical.content.number), entities: (definition.types as Data[]).length, relations: (definition.relations as Data[]).length,
-        snapshots: composition.snapshots.length, corrections: corrections.length, liveBindings: liveInputs.length },
+        snapshots: composition.snapshots.length, corrections: corrections.length, identityDecisions: composition.identityDecisions.length, liveBindings: liveInputs.length },
       inputs,
       notes: liveInputs.length ? ["实时来源仅恢复绑定，读取当前数据，不承诺历史重放。"] : ["恢复使用已保留的历史快照，并生成新的工作版。"],
       apply: () => {
@@ -138,6 +144,8 @@ export class WorkspaceRestore {
         const restoredDefinition: Data = { ...definition, foundationRef: reference(restoredSemantic), restoredFrom: reference(binding), restoredWorkspace: workspaceVersionRef };
         // The old model must stay immutable: existing consumers still require its exact adopted reference.
         const restoredBinding = this.memory.putArtifact({ kind: "live_ontology", title: binding.title, status: "adopted", content: restoredDefinition });
+        restoreIdentityDecisions(restoredBinding);
+        const identityDecisionRefs = identityDecisionsForModel(this.memory, restoredBinding).map(reference);
         const correctionRefs = corrections.map(correction => {
           const oldTarget = correction.content.target as unknown as CorrectionTarget;
           const oldDefinition = (correction.content.modelDefinition ?? binding.content) as Data;
@@ -158,7 +166,7 @@ export class WorkspaceRestore {
             ...(liveDatasets.has(dataset.id) ? { materialization: "live" } : {}),
             ...(content.pendingVersion === snapshot?.id ? { pendingVersion: null, pendingChanges: [] } : {}), restoredWorkspace: workspaceVersionRef }) });
         }
-        return jsonData({ workspaceVersionRef, foundationRef: reference(restoredSemantic), modelRef: reference(restoredBinding), correctionRefs });
+        return jsonData({ workspaceVersionRef, foundationRef: reference(restoredSemantic), modelRef: reference(restoredBinding), correctionRefs, identityDecisionRefs });
       },
     };
   }

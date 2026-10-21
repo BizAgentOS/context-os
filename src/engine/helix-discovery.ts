@@ -22,7 +22,7 @@ export interface OntologyNote { kind: "merged" | "unmatched" | "case" | "unlinke
 export interface ReviewColumn { datasetId: string; datasetName: string; column: string }
 /** Observed ambiguities, not proposed business facts or executable relationships. */
 export interface DiscoveryReview {
-  id: string; kind: "value_overlap" | "implied_link" | "entity_name"; entities: string[]; text: string;
+  id: string; kind: "value_overlap" | "implied_link" | "entity_name" | "activity"; entities: string[]; text: string;
   from?: ReviewColumn; to?: ReviewColumn; path?: ReviewColumn[];
   matchedRows?: number; totalRows?: number; matchedDistinct?: number; distinct?: number;
   caseInsensitive?: boolean; originalName?: string;
@@ -46,9 +46,8 @@ export const datasetTable = (id: string) => "d_" + id.replaceAll("-", "");
 export const pipelineId = (entityId: string) => "pipeline_" + digest(entityId).slice(0, 16);
 export const LIMITS = { entities: 20, pipelines: 10, relationships: 30 };
 
-// Suggests a condensed ontology from the connected data: datasets that describe the
-// same real-world thing in different systems are merged into one entity, and value
-// overlap between key columns becomes links. Deterministic; one executor call.
+// Suggest independent entities and evidence-backed links. Identity, deprecation and
+// activity classification remain reviewable proposals until an explicit decision.
 
 type Info = {
   d: Resource;
@@ -241,6 +240,7 @@ const sameStem = (a: string, b: string) =>
   a === b ||
   (Math.min(a.length, b.length) >= 3 && (a.startsWith(b) || b.startsWith(a)));
 const noun = (s: string) => singular(words(s).at(-1) || "");
+const responsibilityColumn = (name: string) => /assignee|owner|manager|lead|blocked_by|负责人|责任人|经办人|汇报|阻塞/i.test(name);
 
 // A dataset's own key: a unique non-null column named for the table (ticket_id in
 // support_tickets). The profile flag alone also marks names and timestamps, so only
@@ -386,8 +386,8 @@ export async function suggestOntology(
     for (const c of x.columns) {
       if (
         keyType(c.type) &&
-        (keyName(c.name) || refersTo(x, c.name)) &&
-        c.distinct >= 2
+        (keyName(c.name) || refersTo(x, c.name) || responsibilityColumn(c.name)) &&
+        c.distinct >= 1
       )
         column(x, c);
       // Ordinary high-cardinality text can suggest a question (for example a shared
@@ -410,18 +410,22 @@ export async function suggestOntology(
   for (const r of rows) {
     const A = cols[r.a],
       B = cols[r.b];
-    if (!A || !B || B.field || A.reviewOnly || B.reviewOnly) continue;
+    if (!A || !B || B.field) continue;
+    const responsibility = responsibilityColumn(A.name);
+    if (A.reviewOnly && !responsibility || B.reviewOnly && !B.key) continue;
     const isDeclared = declaredPairs.has(A.i + ":" + B.i),
       bOwn = B.ds.key === B.name,
       bAlt = B.ds.alt.has(B.name),
       aOwn = !A.field && A.ds.key === A.name,
       aKey = aOwn || (!A.field && A.ds.alt.has(A.name));
+    // A shared contact address is an identity question, never an inferred foreign key.
+    if (!isDeclared && (email(A.name) || email(B.name))) continue;
     // Targets are a table's own key (or an alternate email/code key), which drops
     // transitive overlap such as invoices.customer_id -> subscriptions.customer_id.
     if (
       isDeclared
         ? !B.key
-        : !(bOwn || bAlt) ||
+        : !(bOwn || bAlt || responsibility && B.key) ||
           (bAlt && aOwn) ||
           ((A.integer || B.integer) && !sameStem(stem(A), stem(B)))
     )
@@ -452,9 +456,10 @@ export async function suggestOntology(
       A.unique &&
       B.key &&
       A.ds.system !== B.ds.system &&
+      !isDeclared &&
       // An email match alone cannot establish that two business identities are one.
       !email(A.name) && !email(B.name) &&
-      !(A.ds.source === "upload" && B.ds.source === "upload" && conventional) &&
+      (!conventional || aOwn) && !responsibility &&
       exact;
     // A table keyed by another table's key (user_profiles.user_id) extends it 1:1.
     const extension =
@@ -465,7 +470,7 @@ export async function suggestOntology(
       (isDeclared || m / distinct >= 0.8) &&
       noun(A.ds.table) !== stem(A) &&
       noun(B.ds.table) === stem(A);
-    if (aKey && !identity && !extension) continue;
+    if (!isDeclared && !identity && !extension && (aOwn || aKey && !conventional && !responsibility)) continue;
     const nameMatch =
       aw.join("_") === bw.join("_") ||
       aw.map(singular).includes(stem(B)) ||
@@ -514,30 +519,12 @@ export async function suggestOntology(
     );
   edges.sort(strength);
 
-  // Union-find over 1:1 cross-system links; an entity holds at most one dataset per
-  // system, which stops an email match from merging accounts with users.
-  const parent = infos.map((_, i) => i),
-    systems = infos.map((x) => new Set([x.system]));
-  const find = (i: number): number =>
-    parent[i] === i ? i : (parent[i] = find(parent[i]));
-  const tree: Edge[] = [],
-    corroborating: Edge[] = [];
-  for (const e of edges.filter((e) => e.identity)) {
-    const a = find(e.A.ds.index),
-      b = find(e.B.ds.index);
-    if (a === b) corroborating.push(e);
-    else if ([...systems[b]].some((s) => systems[a].has(s))) e.identity = false;
-    else {
-      parent[b] = a;
-      systems[a] = new Set([...systems[a], ...systems[b]]);
-      tree.push(e);
-    }
-  }
+  // Cross-system identity is a proposal. Discovery never joins independent records.
   const candidates = edges.filter(
     (e) =>
       !e.identity &&
       !e.A.field &&
-      (e.extension || !(e.A.ds.key === e.A.name || e.A.ds.alt.has(e.A.name))),
+      (e.declared || e.extension || e.A.ds.key !== e.A.name),
   );
   // A key matching several tables refers to the one named for it: user_id points
   // at users, not at user_profiles, which is keyed by user_id too.
@@ -548,76 +535,16 @@ export async function suggestOntology(
       named(e) ||
       !candidates.some((o) => o.A === e.A && o.B.ds !== e.B.ds && named(o)),
   );
-  const degree = new Map<Info, number>();
-  for (const e of [...tree, ...corroborating, ...references])
-    for (const x of [e.A.ds, e.B.ds]) degree.set(x, (degree.get(x) || 0) + 1);
-  const groups = new Map<number, Info[]>();
-  for (const x of infos)
-    groups.set(find(x.index), [...(groups.get(find(x.index)) || []), x]);
-
-  const drafts: Draft[] = [],
-    unplaced: string[] = [],
-    entityOf = new Map<Info, Draft>();
-  const appDb = (x: Info) =>
-    ["planetscale", "postgres", "mysql"].includes(x.source) ? 1 : 0;
-  for (const group of groups.values()) {
-    const anchor = group
-      .filter((x) => x.key || x.alt.size)
-      .sort(
-        (a, b) =>
-          appDb(b) - appDb(a) ||
-          (degree.get(b) || 0) - (degree.get(a) || 0) ||
-          b.rows - a.rows ||
-          cmp(a.d.name, b.d.name),
-      )[0];
-    if (!anchor) {
-      unplaced.push(...group.map((x) => x.d.id));
-      continue;
-    }
-    const member = (
-      x: Info,
-      via: SuggestedEntity["members"][number]["via"],
-    ) => ({
-      datasetId: x.d.id,
-      datasetName: x.d.name,
-      source: x.source,
-      key: x.key || via?.column || [...x.alt][0],
-      rows: x.rows,
-      matched: x.rows,
-      via,
-    });
+  const drafts: Draft[] = [], unplaced: string[] = [], entityOf = new Map<Info, Draft>();
+  for (const anchor of infos) {
+    const key = anchor.key || [...anchor.alt][0];
+    if (!key) { unplaced.push(anchor.d.id); continue; }
     const draft: Draft = {
-      members: [member(anchor, null)],
-      anchor,
-      key: anchor.key || [...anchor.alt][0],
-      kind: "record",
-      degree: 0,
-      name: "",
-      id: "",
+      members: [{ datasetId: anchor.d.id, datasetName: anchor.d.name, source: anchor.source,
+        key, rows: anchor.rows, matched: anchor.rows, via: null }],
+      anchor, key, kind: "record", degree: 0, name: "", id: "",
     };
-    const joined = new Set([anchor]);
-    for (let grew = true; grew; ) {
-      grew = false;
-      for (const e of tree) {
-        const [inner, outer] = joined.has(e.A.ds)
-          ? [e.A, e.B]
-          : joined.has(e.B.ds)
-            ? [e.B, e.A]
-            : [];
-        if (!inner || !outer || joined.has(outer.ds)) continue;
-        joined.add(outer.ds);
-        draft.members.push({
-          ...member(outer.ds, {
-            column: outer.name,
-            targetDatasetId: inner.ds.d.id,
-            targetColumn: inner.name,
-          }),
-          matched: e.exact,
-        });
-        grew = true;
-      }
-    }
-    for (const x of group) entityOf.set(x, draft);
+    entityOf.set(anchor, draft);
     drafts.push(draft);
   }
 
@@ -641,9 +568,8 @@ export async function suggestOntology(
   }
   const { refs, removed } = await withoutImplied(query, [...best.values()]);
   const hasTime = (x: Info) =>
-    x.columns.some((c) => /^(TIMESTAMP|DATE)/.test(c.type));
-  // Large event streams feed metrics but are not stored as records. A large orders
-  // table is still a record, so the stream must also look like one.
+    x.columns.some((c) => /^(TIMESTAMP|DATE)/.test(c.type) || /(?:_at|_on|date|time|时间|日期)$/i.test(c.name));
+  // Size and event shape suggest a classification question; neither changes the entity.
   const eventLike = (x: Info) =>
     x.source === "posthog" ||
     x.rows > 50000 ||
@@ -665,9 +591,7 @@ export async function suggestOntology(
         !refs.some((r) => r.to === d),
     ),
   );
-  for (const d of streams)
-    if (refs.some((r) => r.from === d && !streams.has(r.to)))
-      d.kind = "activity";
+  // A stream-shaped table remains a record until its classification is adopted.
   for (const r of refs) {
     r.from.degree++;
     r.to.degree++;
@@ -767,8 +691,9 @@ export async function suggestOntology(
     const from = entityOf.get(a.ds), to = entityOf.get(b.ds), key = pairKey(a, b);
     if (!from || !to || from === to || representedPairs.has(key) || reviewedPairs.has(key)) continue;
     // A review is useful for substantial observed overlap, not a common status value.
-    if (row.m_ci < 3 || row.m_ci / row.a_distinct_ci < 0.8) continue;
-    if (!a.reviewOnly && !b.reviewOnly && !email(a.name) && !email(b.name)) continue;
+    const identityCandidate = edges.some(e => e.identity && pairKey(e.A, e.B) === key);
+    if (row.m_ci < 3 && !identityCandidate || row.m_ci / row.a_distinct_ci < 0.8) continue;
+    if (!a.reviewOnly && !b.reviewOnly && !email(a.name) && !email(b.name) && !identityCandidate) continue;
     reviewedPairs.add(key);
     const ci = row.a_rows_ci > row.a_rows_exact;
     reviews.push({ id: `overlap_${digest(key).slice(0, 20)}`, kind: "value_overlap", entities: [from.id, to.id],
@@ -781,64 +706,16 @@ export async function suggestOntology(
     reviews.push({ id: `implied_${digest(pairKey(e.A, e.B)).slice(0, 20)}`, kind: "implied_link", entities: [from.id, to.id, first.to.id],
       from: columnRef(e.A), to: columnRef(e.B), path: [columnRef(first.e.A), columnRef(first.e.B), columnRef(second.e.A), columnRef(second.e.B)],
       matchedRows: matched, totalRows: total, caseInsensitive: e.caseRows > 0 || first.e.caseRows > 0 || second.e.caseRows > 0,
-      text: `「${e.A.ds.d.name}」.${e.A.name} →「${e.B.ds.d.name}」.${e.B.name} 已按两跳规则去冗余，未生成直接关系。经「${first.e.B.ds.d.name}」.${second.e.A.name} 的路径与直接字段在 ${matched}/${total} 条非空起点记录上一致；数据吻合不代表业务关系含义相同。请核对是否仍需保留独立的直接关系${matched < total ? `；另有 ${total - matched} 条未吻合` : ""}。` });
+      text: `「${e.A.ds.d.name}」.${e.A.name} →「${e.B.ds.d.name}」.${e.B.name} 保留直接关系并提出弃用建议。经「${first.e.B.ds.d.name}」.${second.e.A.name} 的路径与直接字段在 ${matched}/${total} 条非空起点记录上一致；数据吻合不代表业务关系含义相同，采用弃用前不会删除直接关系${matched < total ? `；另有 ${total - matched} 条未吻合` : ""}。` });
   }
+  for (const draft of streams) reviews.push({ id: `activity_${digest(draft.anchor.d.id).slice(0, 20)}`, kind: "activity", entities: [draft.id],
+    text: `「${draft.anchor.d.name}」有 ${draft.anchor.rows} 条带时间的事件式记录，建议核对是否属于活动流。采用前保持普通实体及对象查询。` });
   for (const entity of entities) if (/[A-Za-z]/.test(entity.name) && !/\p{Script=Han}/u.test(entity.name)) {
     reviews.push({ id: `name_${digest(entity.id).slice(0, 20)}`, kind: "entity_name", entities: [entity.id], originalName: entity.name,
       text: `“${entity.name}”沿用了数据集「${byDataset.get(entity.anchorDatasetId)!.name}」的英文表名。如需中文业务名称，请提供名称并让助手只修正该概念的名称与说明；稳定标识及来源字段不变。` });
   }
 
   const notes: SuggestedOntology["notes"] = [];
-  const info = (id: string) => infos.find((x) => x.d.id === id)!;
-  // Other 1:1 matches inside an entity, struct fields included, confirm the merge;
-  // the join's own column pair, read in reverse, is not a second match.
-  const confirmedBy = (d: Draft, datasetId: string) => {
-    const via = d.members.find((m) => m.datasetId === datasetId)?.via;
-    const join = new Set(
-      via
-        ? [
-            [datasetId, via.column, via.targetDatasetId, via.targetColumn],
-            [via.targetDatasetId, via.targetColumn, datasetId, via.column],
-          ].map((p) => p.join("\u0000"))
-        : [],
-    );
-    return [
-      ...new Set(
-        [...corroborating, ...edges.filter((e) => e.A.field)]
-          .filter(
-            (e) =>
-              entityOf.get(e.A.ds) === d &&
-              entityOf.get(e.B.ds) === d &&
-              (e.A.ds.d.id === datasetId || e.B.ds.d.id === datasetId) &&
-              !join.has(
-                [e.A.ds.d.id, e.A.name, e.B.ds.d.id, e.B.name].join("\u0000"),
-              ),
-          )
-          .map((e) => (e.A.ds.d.id === datasetId ? e.A.name : e.B.name)),
-      ),
-    ];
-  };
-  for (const d of drafts.filter((d) => d.members.length > 1))
-    notes.push({
-      kind: "merged",
-      entities: [d.id],
-      text: `${d.name}以「${d.anchor.d.name}」为主，合并了${zhList(
-        d.members.slice(1).map((m) => {
-          const also = confirmedBy(d, m.datasetId);
-          return `「${m.datasetName}」（${m.rows.toLocaleString("zh-CN")} 条中 ${m.matched.toLocaleString("zh-CN")} 条匹配${also.length ? "，另由 " + zhList(also) + " 印证" : ""}）`;
-        }),
-      )}。`,
-    });
-  for (const d of drafts)
-    for (const m of d.members.slice(1))
-      if (m.rows > m.matched) {
-        const n = m.rows - m.matched;
-        notes.push({
-          kind: "unmatched",
-          entities: [d.id],
-          text: `「${info(m.datasetId).d.name}」有 ${n.toLocaleString("zh-CN")} 条记录未匹配到任何${d.name}。`,
-        });
-      }
   for (const [i, { e, to }] of refs.entries()) {
     const n = e.total - links[i].matchedRows,
       about = { entities: [links[i].from, links[i].to], links: [links[i].id] };
@@ -984,9 +861,8 @@ async function throughAnchor(
 }
 
 type Ref = { e: Edge; from: Draft; to: Draft };
-// A direct link A -> C that a two-hop path A -> B -> C already gives (invoice ->
-// subscription -> account) is left to traversal, once the data shows both routes
-// reach the same record. Checked in one executor call.
+// A direct link A -> C whose two-hop path agrees is a deprecation candidate.
+// Both routes remain present until a separately verified explicit decision.
 async function withoutImplied(query: Query, refs: Ref[]) {
   const paths = refs.flatMap((direct) =>
     refs.flatMap((first) =>
@@ -1056,7 +932,7 @@ WHERE ${d} IS NOT NULL`;
       const result = r.rows.find(row => Number(row.k) === i)!;
       removed.push({ ...p, total: Number(result.n), matched: Number(result.agree) });
     }
-  return { refs: refs.filter((ref) => !implied.has(ref)), removed };
+  return { refs, removed };
 }
 
 // Value index over key-like and review-only text columns, self-joined to count shared values for

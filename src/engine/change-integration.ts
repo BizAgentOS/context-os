@@ -1,3 +1,4 @@
+import { prepareIdentityDecisionMigration } from "../live/identity-migration.ts";
 import { prepareCorrectionMigration } from "../live/correction-migration.ts";
 import { z } from "zod";
 import { ownerVerificationInputs } from "./owner-verification.ts";
@@ -63,12 +64,13 @@ export function connectChanges(memory: MemoryStore, foundation: FoundationServic
         if (subject.target === "relation") for (const item of relations.filter(item => item.relationId === subject.id)) item[field] = subject[field];
         definition = await live.prepareDefinitionAgainst({ foundationRef: ref(virtual), baseModelRef: ref(model), purpose: model.content.purpose, types, relations, rationale: "统一变更中的文字修订" }, virtual);
       }
+      const migrateIdentities = definition ? await prepareIdentityDecisionMigration(memory, live, definition) : undefined;
       const migrateCorrections = definition ? await prepareCorrectionMigration(memory, live, definition) : undefined;
       return { verification, apply: () => {
         if (foundation.read().adopted?.version !== adopted.version) throw new Error("本体版本已变化");
         const saved = memory.putArtifact({ ...adopted, expectedVersion: adopted.version, content });
         const mapping = definition ? memory.putArtifact({ kind: "live_ontology", title: model!.title, status: "adopted", content: { ...definition, foundationRef: ref(saved) } }) : null;
-        if (mapping) migrateCorrections!(mapping);
+        if (mapping) { migrateCorrections!(mapping); migrateIdentities!(mapping); }
         return jsonData({ foundationRef: ref(saved), modelRef: mapping ? ref(mapping) : model ? ref(model) : null });
       } };
     },

@@ -101,20 +101,21 @@ function chain(f: ReturnType<typeof fixture>, diverged: boolean) {
   f.workspace.upload("invoices.csv", "invoice_id,subscription_id,account_id\n" + Array.from({ length: 40 }, (_, i) => `in${i},sb${i % 20},ac${diverged && i < 10 ? (i + 1) % 10 : i % 10}`).join("\n") + "\n");
 }
 
-test("actually pruned links retain the verified path and row counts in the review projection", async () => {
+test("deprecation proposals retain the direct link, verified path and row counts in the review projection", async () => {
   const f = fixture();
   try {
     chain(f, false);
     const job = await f.engine.build({ operationId: "build", autoAdopt: true });
     assert.equal(job.content.outcome, "adopted", JSON.stringify(job.content.issues));
-    const issue = (job.content.issues as any[]).find(i => i.code === "relationship_pruned");
+    const issue = (job.content.issues as any[]).find(i => i.code === "relationship_deprecation");
     assert(issue, JSON.stringify(job.content.issues));
     assert.deepEqual([issue.details.from.datasetName, issue.details.to.datasetName], ["invoices.csv", "accounts.csv"]);
     assert.deepEqual([issue.details.matchedRows, issue.details.totalRows], [40, 40]);
     assert.deepEqual(issue.details.path.map((c: any) => c.column), ["subscription_id", "subscription_id", "account_id", "account_id"]);
     const view = f.foundation.view().current!;
-    assert.equal((view.content.relations as any[]).length, 2, "the review does not silently recreate a removed relation");
-    assert((view.content.concepts as any[]).every(c => c.helix.issues.some((i: any) => i.code === "relationship_pruned")), "both endpoints and the intermediate entity show the actual review");
+    assert.equal((view.content.relations as any[]).length, 0, "all discovered relationships await explicit adoption");
+    assert.equal((f.memory.listArtifacts("engine_candidate")[0].content.discovery as any).links.length, 3, "the direct edge remains discoverable");
+    assert((view.content.concepts as any[]).every(c => c.helix.issues.some((i: any) => i.code === "relationship_deprecation")), "both endpoints and the intermediate entity show the actual review");
     assert.match(issue.message, /数据吻合不代表业务关系含义相同/);
   } finally { await f.close(); }
 });

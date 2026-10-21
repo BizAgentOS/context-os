@@ -46,8 +46,10 @@ Last Updated: 2026-10-21
 
 **2026-10-21 041 收口：**旧入口与统一变更共同复验和采用，逐项结构、拒绝记忆、部分采用续办、历史恢复、治理决定随兼容换绑保留及版本显示完成。361 项测试、类型检查、快照整链和桌面 / 390px 浏览器通过；采用丢响应重试只形成一个工作版，重启后决定可回看。041 完成，042 继续；见[验收记录](experiment/V030_041_2026_10_21.md)。仍为 v0.2.3，未发布。
 
+**2026-10-21 042 收口：**唯一外键、责任字段与自引用关系进入明确采用流程；same_as / belongs_to、记录级 match / no_match、冗余边弃用和活动分类完成，身份决定进入工作版、固定发布与历史恢复。星桥六类目标关系及独立负例通过；399 项测试、类型检查、快照整链、桌面 / 390px 浏览器与重启通过。041、042 均 Completed，见[042 验收](experiment/V030_042_2026_10_21.md)。版本仍为 v0.2.3，未发布。
+
 - **Current Release:** v0.2.3（2026-10-16，本地 Tag `v0.2.3`）。v0.2.2 于 2026-10-15 发布（本地 Tag `v0.2.2`）。v0.2.0 于 2026-10-14 发布（提交 `930b10e`，Tag `v0.2.0`）。
-- **Planned Version:** v0.3.0（2026-10-19 登记，FEATURE_036—068；8 项完成、042 进行中、24 项 Planned）。v0.1.0 保留历史功能与验收记录。
+- **Planned Version:** v0.3.0（2026-10-19 登记，FEATURE_036—068；9 项完成、24 项 Planned）。v0.1.0 保留历史功能与验收记录。
 - **版本状态:** 计划于 v0.2.0 的 11 项全部完成：025—030 随 v0.2.0 发布，031—035 随 v0.2.1 发布；v0.2.2 为这些能力的修复发布。v0.1.0 未单独发布，002、004、005、006、019 仍未完成，继续保留。
 - **状态规则:** `Planned → InProgress → Completed`；`Released` 仅填写实际发布版本。
 - **设计:** [v0.3.0 设计与任务](features/v0.3.0.md)及[目标产品蓝图](features/v0.3.0-blueprint.md)；[v0.2.0 设计与开发步骤](features/v0.2.0.md)；[v0.1.0 历史](features/v0.1.0.md)。
@@ -59,7 +61,7 @@ Last Updated: 2026-10-21
 |---|---|---:|---:|---:|---:|
 | v0.1.0 | InProgress | 2 | 3 | 19 | 19/24 |
 | v0.2.0 | Released | 0 | 0 | 11 | 11/11 |
-| v0.3.0 | InProgress | 24 | 1 | 8 | 8/33 |
+| v0.3.0 | InProgress | 24 | 0 | 9 | 9/33 |
 
 本表按计划批次统计。v0.2.2 为已发布能力的 PATCH 修复版本，不新增或重复计算 Feature。
 
@@ -112,7 +114,7 @@ Last Updated: 2026-10-21
 | 039 | 冻结旧消费接口 | Refactor | High | Completed | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-039) |
 | 040 | 分层语义模型 | Refactor | High | Completed | v0.3.0 | 036 | [设计](features/v0.3.0.md#feature-040) |
 | 041 | 统一变更流程与自动采用规则 | Enhancement | High | Completed | v0.3.0 | 040 | [设计](features/v0.3.0.md#feature-041) |
-| 042 | 关系发现修复与身份对应 | Enhancement | High | InProgress | v0.3.0 | 040、041 | [设计](features/v0.3.0.md#feature-042) |
+| 042 | 关系发现修复与身份对应 | Enhancement | High | Completed | v0.3.0 | 040、041 | [设计](features/v0.3.0.md#feature-042) |
 | 043 | 文档补充、证据库与待裁决 | Enhancement | High | Planned | v0.3.0 | 041、044 | [设计](features/v0.3.0.md#feature-043) |
 | 044 | 待处理中心 | New | High | Planned | v0.3.0 | 041；界面依赖 048 | [设计](features/v0.3.0.md#feature-044) |
 | 045 | 首次构建批量业务命名 | New | High | Planned | v0.3.0 | 041、044、047 | [设计](features/v0.3.0.md#feature-045) |
@@ -603,14 +605,14 @@ Last Updated: 2026-10-21
 
 ### 042: 关系发现修复与身份对应
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** Enhancement / High
 - **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / 2026-10-20 / —
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-20 / 2026-10-21
 - **Description:** 修复唯一外键、责任字段、自引用发现；身份规则 same_as/belongs_to 与记录级决定；去冗余与活动流改为提议。
 - **Blocked by:** 040、041。
 - **Design:** [FEATURE_042](features/v0.3.0.md#feature-042)。
-- **Verification:** `tests/agent/engine-discovery.test.ts`（空串不使唯一键失效、单表自引用链接）；T042-01 仅完成自引用与空串两项，唯一外键与责任字段待补。
+- **Verification:** [042 关系与身份验收](experiment/V030_042_2026_10_21.md)。星桥六类关系、归属和记录决定、同邮箱 / 机器人 / 95%路径 / 循环及并发负例、固定发布 / 恢复均通过；399 项全量、类型检查、快照整链、宽窄屏及重启验证通过。
 
 ### 043: 文档补充、证据库与待裁决
 

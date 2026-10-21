@@ -422,7 +422,7 @@ export function renderOntologySpace(value, {selections, read, select, management
     const sourceLine = root.querySelector(".os-helix-summary > span");
     if (sourceLine && helixSummary) {
       const stats = helixSummary.stats;
-      sourceLine.textContent = `${stats.tables} 张表 · ${state.sourceSummary?.total ?? stats.sources} 个已接入来源 → ${stats.entities} 个实体 · ${stats.links} 条关联`;
+      sourceLine.textContent = `${stats.tables} 张表 · ${state.sourceSummary?.total ?? stats.sources} 个已接入来源；程序发现 ${stats.entities} 个实体 · ${stats.links} 条关联`;
     }
     const nextKey = JSON.stringify([state.automaticBuild, state.automaticApiBuild]);
     if (nextKey !== progressKey) {progressKey = nextKey; updateProgress(state.automaticBuild, state.automaticApiBuild);}

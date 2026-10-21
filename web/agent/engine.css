@@ -65,6 +65,8 @@ body:has(.engine-workspace),body:has(.ontology-space){--engine-ink:#e2e5ec;--eng
 .engine-table th,.engine-table td{text-align:left;vertical-align:top;border-bottom:1px solid #798aae2e;padding:10px 12px;max-width:300px;overflow-wrap:anywhere;}
 .engine-table th{font-size:11px;font-weight:500;color:#b4becf;background:#172038;white-space:nowrap;}
 .engine-table td{color:#d1d9e4;}
+.change-detail .engine-table table{min-width:0;table-layout:fixed;}
+.change-detail .engine-table th{white-space:normal;overflow-wrap:anywhere;}
 .engine-dialog details{margin:16px 0;}
 .engine-dialog summary{cursor:pointer;color:#c5cdd9;font-size:12px;}
 .engine-source-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;}

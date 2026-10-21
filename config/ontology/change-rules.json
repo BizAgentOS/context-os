@@ -3,7 +3,8 @@
   "relation": {
     "passMatchRate": 0.95,
     "reviewMatchRate": 0.6,
-    "requireUniqueTarget": true
+    "requireUniqueTarget": true,
+    "maxDepth": 10
   },
   "rejection": {
     "reproposeMatchRateDelta": 0.2
