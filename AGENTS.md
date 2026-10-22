@@ -41,13 +41,13 @@ v0.2.3（2026-10-16）是本轮开发的历史基线；[0.2.x 设计](docs/featu
 - **当前开发版本与最近发布版本分别表述**：最近发布为 v0.3.1，后续开发目标由新的授权、功能台账和对应设计块确定。提及 v0.2.3 时注明历史发布或开发基线，不能用它代替当前版本；未登记的下一版本不能自行创造。
 - **版本号**：`MAJOR.MINOR.PATCH`。修复与补齐已承诺范围用 PATCH，新的功能批次用 MINOR。开发期间不加 `-dev` 后缀，`package.json` 保持最近一次发布的版本，未发布内容写在 CHANGELOG 的 `[Unreleased]`。
 - **功能与版本**：台账中 `Planned` 是计划版本，`Released` 只填实际包含它的发布版本（如 031—035 计划于 v0.2.0、发布于 v0.2.1）。每次完成功能就在 `[Unreleased]` 追加一条，写清做了什么、怎么验证、有什么限制。
-- **发布只在用户确认版本号后进行**，步骤：
+- **版本准备先明确确认版本号；正式 GitHub Release 由 NoraJing 确认发布**。使用[发布工作流](.github/workflows/release.yml)，输入版本标签与已核对的完整 SHA；普通 push / 合并 / 推送 Tag 不触发发布。版本准备步骤：
   1. 跑 `npm run check`；涉及快照、构建或发布链路时再跑 `npm run verify:snapshots`。
   2. 同步版本号：`package.json`、`package-lock.json`（两处）、`scripts/context-os-mcp.ts` 与 `src/live/sources.ts` 中对外报告的版本。
   3. CHANGELOG：`[Unreleased]` 改为 `[x.y.z] - YYYY-MM-DD` 并写一段发布摘要，上方留空的 `[Unreleased]`，更新 `last-sync` 标记。
   4. 台账填写 `Released` 与版本状态；README“当前版本”表与 AGENTS“当前范围”更新。
   5. 本地提交 `chore(release): vx.y.z`，再打附注 Tag：`git tag -a vx.y.z -m "Context OS vx.y.z"`。
 - **Tag 一经发布不移动、不复用**。发布后发现问题，修复后发下一个 PATCH。打 Tag 前先用 `git tag` 确认版本号未被占用，包括在仓库外发出过的版本。
-- 远程仓库为 `https://github.com/BizAgentOS/context-os.git`（私有），默认分支为 `main`；按用户授权推送功能分支和 Pull Request。GitHub Release、版本变更与线上部署仍需单独明确授权，不能把上传代码等同于发布新版本。协作步骤见 [CONTRIBUTING](CONTRIBUTING.md)。
+- 远程仓库为 `https://github.com/BizAgentOS/context-os.git`（私有），默认分支为 `main`；按用户授权推送功能分支和 Pull Request。GitHub Release 按 [RELEASING](docs/RELEASING.md) 由 NoraJing 通过指定流程确认；版本变更与线上部署仍需明确授权，不能把上传代码等同于发布新版本。用户已选择保留双方权限的流程门禁，Write/Admin 的网页/API 手动发布权限仍在，不得声称平台已隔离 Release 权限。协作步骤见 [CONTRIBUTING](CONTRIBUTING.md)。
 - 带日期的验收与设计记录保留当时原文；后续变化以追加段落或标注说明，不改写历史。
 

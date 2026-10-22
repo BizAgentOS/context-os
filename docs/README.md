@@ -43,6 +43,7 @@
 | 本轮做到哪里、按什么顺序开发 | [v0.3.0 设计与任务](features/v0.3.0.md)、[功能台账](FEATURE_LIST.md)、[MVP](MVP.md) | 当前交付范围、依赖与集成验收；[三页迁移计划](THREE_PAGE_PLAN.md)保留历史 |
 | 开发哪张票、什么算完成 | [功能台账](FEATURE_LIST.md)、[v0.3.0 设计块](features/v0.3.0.md)（目标设计见[蓝图](features/v0.3.0-blueprint.md)）、[v0.2.0 设计块](features/v0.2.0.md) | 功能状态、当前票的依赖与验收；状态各有唯一位置 |
 | 现在怎样运行、当时验证了什么 | [项目运行入口](../README.md)、[实验与运行索引](experiment/README.md) | 实际命令、现有能力与带日期的验证证据 |
+| 谁确认并发布 GitHub Release | [发布指南](RELEASING.md) | NoraJing 手动确认版本与 SHA、旧标签保护、失败重试及流程门禁的权限边界 |
 | 怎样维护文档与实现 | [开发流程](DEVELOPMENT.md)、[变更记录](CHANGELOG.md) | Feature 流程、文档变更归属、实际交付记录 |
 | 还有哪些已知问题待修 | [问题与处理状态](ISSUES.md)、[本轮验收](experiment/ISSUES_2026_10_17.md) | 原始问题、当前修复证据与尚待验证项；不代替台账状态 |
 

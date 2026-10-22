@@ -1,0 +1,67 @@
+name: Publish release (NoraJing)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag, matching package.json (for example v0.3.2)'
+        required: true
+        type: string
+      commit_sha:
+        description: 'The complete 40-character commit SHA you reviewed on main'
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: context-os-release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check publisher and workflow branch
+        env:
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: |
+          if [ "$GITHUB_ACTOR" != "NoraJing" ] || [ "$GITHUB_ACTOR_ID" != "46467776" ] || [ "$TRIGGERING_ACTOR" != "NoraJing" ] || [ "$GITHUB_REF" != "refs/heads/main" ] || [ "$GITHUB_REPOSITORY" != "BizAgentOS/context-os" ]; then
+            echo 'Only NoraJing may publish, from the main branch of BizAgentOS/context-os.' >&2
+            exit 1
+          fi
+      # Official actions/checkout v4; SHA resolved from the official repository API.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify the reviewed commit and release version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: node scripts/release-gate.mjs verify
+
+  publish:
+    needs: verify
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'BizAgentOS/context-os' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'NoraJing' &&
+      github.actor_id == '46467776' &&
+      github.triggering_actor == 'NoraJing'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Publish exactly the reviewed commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: node scripts/release-gate.mjs publish

@@ -44,6 +44,12 @@ git push -u origin codex/your-change
 
 在 Pull Request 中说明改了什么、怎么验证以及尚有限制。按团队约定检查后合并，其他同事再更新本地 `main`。上传代码不自动发布新版本；包版本、CHANGELOG 和 Tag 遵循 [AGENTS.md](AGENTS.md#版本与发布)。
 
+## 版本发布
+
+双方照常提交代码；GitHub Release 统一由 **NoraJing** 在[发布工作流](https://github.com/BizAgentOS/context-os/actions/workflows/release.yml)中确认版本标签与完整提交 SHA 后执行。普通 push、合并 PR 或推送 Tag 都不会自动发布。步骤与失败处理见[发布指南](docs/RELEASING.md)。
+
+这是双方选定的流程门禁。GitHub 的 Write/Admin 同时包含直接管理 Release 的权限，网页/API 的手动发布能力仍然保留；本流程没有改变成员的仓库权限。
+
 ## 文件与状态
 
 - 产品代码、配置、虚构测试样本与设计文档在本仓库中维护；功能状态只在[功能台账](docs/FEATURE_LIST.md)登记。

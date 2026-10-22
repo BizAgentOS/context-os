@@ -78,7 +78,7 @@ npm start
 
 - **包版本号只有一个来源**：`package.json` 的 `version`。开发期间不加 `-dev` 后缀，保持最近一次发布的版本号，未发布内容记在 CHANGELOG 的 `[Unreleased]`。当前开发版本由功能台账和对应设计块标明，不能仅凭包版本判断开发范围。
 - **发布步骤**（由用户确认版本号后执行）：同步 `package.json` / `package-lock.json` 和代码中对外报告的版本号 → CHANGELOG 把 `[Unreleased]` 整理成 `[x.y.z] - 日期` → 功能台账填写 `Released` → 本地提交 `chore(release): vx.y.z` → 打附注 Tag `vx.y.z`。
-- **Tag 一经发布不移动**；发现问题就发下一个补丁版本。日常开发通过分支和 Pull Request 协作；GitHub Release 与线上部署按单独授权执行。
+- **Tag 一经发布不移动**；发现问题就发下一个补丁版本。日常开发通过分支和 Pull Request 协作；GitHub Release 由 NoraJing 在[专用工作流](https://github.com/BizAgentOS/context-os/actions/workflows/release.yml)中确认版本标签和完整 SHA 后发布，见[发布指南](docs/RELEASING.md)。这是保留双方写权限的流程门禁，GitHub 网页/API 的直接发布权限仍然保留；线上部署按单独授权执行。
 - 完整规则见 [AGENTS.md](AGENTS.md#版本与发布) 与[开发流程](docs/DEVELOPMENT.md)。
 
 ## 文档入口

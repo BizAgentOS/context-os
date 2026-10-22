@@ -33,7 +33,7 @@
 
 - 管理文件沿用本项目 `docs/`。当前发布版本为 v0.3.1（2026-10-22），FEATURE_036—068 已完成 33/33；645 项全量、79 项规模及两样本整链证据见[最终验收](experiment/V030_ACCEPTANCE_2026_10_22.md)。v0.2.3（2026-10-16）保留为历史开发基线；旧版本未完成项继续在台账中保留，不自行登记下一版本。版本号、发布步骤与 Tag 规则统一见 [AGENTS.md · 版本与发布](../AGENTS.md#版本与发布)，本文不重复。
 - 文档整理、设计与拆票按用户已授权范围直接完成。新增实现或范围调整按当前任务处理，不为已明确的常规选择额外增加确认环节。
-- 代码托管在组织私有仓库 [BizAgentOS/context-os](https://github.com/BizAgentOS/context-os)，默认分支为 `main`。使用功能分支与 Pull Request 协作，拉取、验证和提交步骤见 [CONTRIBUTING](../CONTRIBUTING.md)。GitHub Release 和线上部署按单独明确授权执行；上传代码不改变包版本或已有 Tag。
+- 代码托管在组织私有仓库 [BizAgentOS/context-os](https://github.com/BizAgentOS/context-os)，默认分支为 `main`。使用功能分支与 Pull Request 协作，拉取、验证和提交步骤见 [CONTRIBUTING](../CONTRIBUTING.md)。GitHub Release 由 NoraJing 按[发布流程](RELEASING.md)确认后执行；双方写权限保持，流程外的直接 Release 权限仍在。线上部署按单独明确授权执行；上传代码不改变包版本或已有 Tag。
 - Feature 状态只在台账维护，任务勾选只在设计块维护；状态改变后同步摘要。完成文档初始化不等于任何实验功能已经实现。
 - 本轮仍是简单实验。对数据、计算、版本和消费路径做有意义的验证；只有对应工具链存在时才运行其 lint、类型或构建检查，不为文档新增空测试。
 - 后续技能升级先检查差异、按需引入并更新来源记录。优先读取项目内对应 `SKILL.md`，避免与全局定制副本混用。
