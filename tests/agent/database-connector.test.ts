@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemoryStore } from "../../src/agent/memory.ts";
@@ -33,13 +33,14 @@ test("database connections expose selected tables through the shared read contra
     assert.deepEqual(result.items, [rows[0]]);
     assert.equal(result.coverage.complete, true);
     assert.deepEqual((await new SourceConnections(dir, memory, scanner).readRecords(selected.id, "public.stores", { id: "002" })).items, [rows[1]], "private credentials survive a host restart");
-    assert.equal(statSync(join(dir, "database-credentials.json")).mode & 0o777, 0o600);
-    assert.equal(readFileSync(join(dir, "database-credentials.json"), "utf8").includes(config.password), true);
+    assert.equal(existsSync(join(dir,"database-credentials.json")),false);
+    assert.equal(statSync(join(dir,"credentials","vault.json")).mode & 0o777, 0o600);
+    assert.equal(readFileSync(join(dir,"credentials","vault.json"), "utf8").includes(config.password), false);
     await assert.rejects(sources.databases.select({ id: selected.id, version: selected.version, tables: [{ schema: "public", table: "missing" }] }), /不存在/);
     await assert.rejects(sources.databases.test({ ...config, sql: "DROP TABLE stores" }), /Unrecognized|sql/);
     sources.disable(selected.id, selected.version);
     await assert.rejects(sources.readRecords(selected.id, "public.stores"), /停用/);
-    assert.equal(readFileSync(join(dir, "database-credentials.json"), "utf8").includes(config.password), false);
+    assert.equal(readFileSync(join(dir,"credentials","vault.json"), "utf8").includes(config.password), false);
   } finally { memory.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 

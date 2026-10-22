@@ -3,16 +3,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Artifact, CanvasPage, Data, Json } from "../agent/contracts.ts";
 import { createHeatingDemo } from "./server.ts";
+import {OntologyWorkspace} from '../semantic/workspace.ts';
+import {sourceSummary} from '../agent/source-summary.ts';
+import {Releases} from '../engine/releases.ts';
+import {Workspace} from '../agent/workspace.ts';
+import {SourceLifecycle} from '../engine/source-lifecycle.ts';
 
 export interface HeatingShareSnapshot {
   formatVersion: 2;
   pages: Record<CanvasPage, Data>;
   routes: Record<string, Json>;
+  liveQueries: Record<string, Json>;
   answers: Record<CanvasPage, { question: string; answer: string }>;
 }
 
 const pages: CanvasPage[] = ["setup", "ontology", "consumption"];
 const json = (value: unknown): Data => JSON.parse(JSON.stringify(value));
+export const shareQueryKey=(input:Data)=>JSON.stringify([input.modelId,input.modelVersion,input.conceptId??input.type,input.id??null,input.relation??null]);
 
 /** Object collections are stored in full; the offline reader applies pagination. */
 export function shareRouteKey(path: string) {
@@ -59,6 +66,7 @@ export async function createHeatingShareSnapshot(): Promise<HeatingShareSnapshot
     const app = service.app;
     const snapshotPages = {} as Record<CanvasPage, Data>;
     const routes: Record<string, Json> = {};
+    const liveQueries:Record<string,Json>={};
     const save = (path: string, value: unknown) => {
       routes[shareRouteKey(path)] = json(value);
     };
@@ -75,6 +83,33 @@ export async function createHeatingShareSnapshot(): Promise<HeatingShareSnapshot
     }
     save("/api/canvas/bootstrap", snapshotPages.setup);
     save("/api/canvas", snapshotPages.setup);
+
+    // These are the exact read models used by the formal three-page UI.
+    save('/api/engine',app.programBuilds.overview());save('/api/data',app.snapshots.overview());save('/api/sources/summary',sourceSummary(app.memory));
+    save('/api/pending',app.pendingCenter.list({}));save('/api/changes',app.changes.list({}));save('/api/consumers/history',{items:[],total:0,nextOffset:null});
+    const releases=new Releases(app.memory,app.live);save('/api/releases',releases.overview());save('/api/releases/data-diff',await releases.dataDiff({}));
+    const ontology=new OntologyWorkspace(app.memory,app.foundation,app.live,app.pendingCenter,app.workspaceVersions),overview=ontology.overview();save('/api/ontology/workspace',overview);
+    for(const [kind,items]of [['entity',overview.entities],['relation',overview.relations]] as const)for(const item of items){
+      const detail=await ontology.detail({kind,id:item.id});save(`/api/ontology/detail?${new URLSearchParams({kind,id:item.id})}`,detail);
+      for(const developer of ['false','true'])save(`/api/ontology/detail?${new URLSearchParams({kind,id:item.id,developer})}`,developer==='true'?await ontology.detail({kind,id:item.id,developer:true}):detail);
+    }
+    for(const entity of overview.entities){
+      const query={modelId:overview.modelRef!.id,modelVersion:overview.modelRef!.version,conceptId:entity.id};
+      const result=await app.live.query({...query,limit:100});if(!result.coverage.complete)throw new Error('演示对象未完整读取，不能导出离线页面');
+      liveQueries[shareQueryKey(query)]=json(result);
+      for(const item of result.items)for(const relation of overview.relations.filter(relation=>relation.from===entity.id)){
+        const input={...query,id:String(item.$id),relation:relation.name};liveQueries[shareQueryKey(input)]=json(await app.live.query({...input,limit:100}));
+      }
+    }
+    for(const dataset of app.snapshots.datasets()){
+      const result=await app.snapshots.preview({datasetId:dataset.id,limit:100});
+      save(`/api/data/preview?${new URLSearchParams({datasetId:dataset.id})}`,result);
+    }
+    for(const source of app.memory.listArtifacts('source')){
+      const params=new URLSearchParams({id:source.id,version:String(source.version)});
+      save(`/api/sources/impact?${params}`,new SourceLifecycle(app.memory,app.live).impact({id:source.id,version:source.version}));
+      if(source.content.format==='csv')save(`/api/sources/rows?${params}`,new Workspace(app.memory).execute('memory_read',{id:source.id,version:source.version,offset:0,limit:100}));
+    }
 
     const artifacts: Artifact[] = [];
     for (const latest of app.memory.listArtifacts()) {
@@ -148,6 +183,7 @@ export async function createHeatingShareSnapshot(): Promise<HeatingShareSnapshot
       formatVersion: 2,
       pages: snapshotPages,
       routes,
+      liveQueries,
       answers: {
         setup: {
           question: "这家企业是什么样的？",

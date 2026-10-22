@@ -18,6 +18,18 @@ const foundation = {
   },
 };
 
+test('the shared graph preserves pending states and answer scope including an explicit missing connection',()=>{
+ const input={content:{concepts:[{id:'person',name:'人员',state:'adopted',pending:0},{id:'task',name:'任务',state:'pending',pending:2},{id:'empty',name:'未绑定对象',state:'empty',pending:0}],relations:[{id:'owner',name:'负责',from:'person',to:'task',state:'pending',pending:1}]}};
+ const before=JSON.stringify(input),graph=buildOntologyGraph(input,{highlight:{entityTypeIds:['person','task'],relationTypeIds:['owner'],missing:{from:'task'}}});
+ const person=graph.nodes.find((item:any)=>item.id==='person'),task=graph.nodes.find((item:any)=>item.id==='task'),empty=graph.nodes.find((item:any)=>item.id==='empty');
+ assert.equal(person.highlighted,true);assert.equal(task.state,'pending');assert.equal(task.pending,2);assert.equal(task.dashed,true);
+ assert.equal(empty.hollow,true);assert.equal(empty.dimmed,true);
+ assert.equal(graph.edges.find((item:any)=>item.item.id==='owner').highlighted,true);assert.equal(graph.edges.find((item:any)=>item.item.id==='owner').dashed,true);
+ assert.equal(graph.edges.filter((item:any)=>item.state==='missing').length,1);assert.equal(graph.nodes.filter((item:any)=>item.virtual).length,1);
+ assert.equal(JSON.stringify(input),before,'missing answer connections are a view overlay, never adopted semantics');
+ const reset=buildOntologyGraph(input);assert.equal(reset.nodes.some((item:any)=>item.dimmed||item.highlighted||item.virtual),false);
+});
+
 test("ontology exploration enters focus and detail by clicks and returns one level without changing facts", () => {
   const before = JSON.stringify(foundation);
   const graph = buildOntologyGraph(foundation);

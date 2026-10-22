@@ -1,3 +1,4 @@
+import {publishedDefinition,publishWorking,connectPublished} from "./published-consumers-fixture.ts";
 import { restoreHistoricalAccess } from "./historical-consumers-fixture.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -146,26 +147,14 @@ test("HTTP and third-party MCP traverse two sources; changes remain visible afte
       service.app.live.sources,
       upstream,
     );
-    const candidate = (await post("propose", heatingDefinition(api.id, mcp.id)))
+    const candidate = (await post("propose", publishedDefinition(service.app,heatingDefinition(api.id, mcp.id))))
       .saved;
     const model = (
       await post("adopt", { id: candidate.id, version: candidate.version })
     ).saved;
-    const draft = (
-      await restoreHistoricalAccess(service.app, "/api/live/prepare", {
-        name: "外部客服",
-        purpose: "核对回访",
-        modelId: model.id,
-        grants: [
-          { type: "投诉", fields: ["$id", "状态"], relations: ["回访记录"] },
-          { type: "回访", fields: ["$id", "投诉编号", "结果"], relations: [] },
-        ],
-      })
-    ).saved;
-    const activated = (
-      await restoreHistoricalAccess(service.app, "/api/live/activate", { id: draft.id, version: draft.version })
-    ).saved;
-    const key = activated.key;
+    const publication=await publishWorking(service.app);
+    const activated=connectPublished(service.app,publication,{name:"外部客服",purpose:"核对回访",grants:[{type:"投诉",fields:["$id","状态"],relations:["回访记录"]},{type:"回访",fields:["$id","投诉编号","结果"],relations:[]}]});
+    const key = activated.key!;
     client = new Client({ name: "external-test", version: "1.0.0" });
     await client.connect(
       new StdioClientTransport({
@@ -202,7 +191,7 @@ test("HTTP and third-party MCP traverse two sources; changes remain visible afte
     service = await appServer({ directory: dir, automaticApi: false });
     origin = await listen();
     const response = await fetch(
-      origin + "/v2/objects?type=" + encodeURIComponent("回访"),
+      origin + "/v4/objects?type=" + encodeURIComponent("回访"),
       { headers: { Authorization: `Bearer ${key}` } },
     );
     assert.equal(response.status, 200);
@@ -210,7 +199,7 @@ test("HTTP and third-party MCP traverse two sources; changes remain visible afte
     await post("disable", { id: mcp.id, version: mcp.version });
     assert.equal(
       (
-        await fetch(origin + "/v2/schema", {
+        await fetch(origin + "/v4/types?type=" + encodeURIComponent("回访"), {
           headers: { Authorization: `Bearer ${key}` },
         })
       ).status,

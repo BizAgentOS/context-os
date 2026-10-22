@@ -8,18 +8,15 @@ import {
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
 import { z } from "zod";
-import {
-  readFileSync,
-  writeFileSync,
-  mkdirSync,
-  renameSync,
-  chmodSync,
-} from "node:fs";
-import { join } from "node:path";
-import { createHash, randomUUID } from "node:crypto";
+import { mkdirSync,readFileSync,existsSync } from "node:fs";
+import {join} from 'node:path';
+import { createHash } from "node:crypto";
 import type { Artifact, Data, Repository } from "../agent/contracts.ts";
 import { DatabaseConnections } from "../connectors/database.ts";
 import type { DatabaseScanner } from "../connectors/database-scanner.ts";
+import {FeishuTableConnections} from "../connectors/feishu-tables.ts";
+import {CredentialVault} from "../security/credential-vault.ts";
+import type {FeishuConnector} from "../connectors/feishu.ts";
 
 const name = z.string().trim().min(1).max(200);
 const capabilitySchema = z
@@ -28,6 +25,7 @@ const capabilitySchema = z
     contentKind: z.enum(["records", "knowledge", "metrics"]).default("records"),
     path: z.string().max(500).optional(),
     metricId: name.optional(),
+    metricAccess: z.enum(["query", "historical_observations", "definition_only"]).optional(),
     fields: z.array(name).max(100).default([]),
     idField: name.default("id"),
     idType: z.enum(["string", "number"]).default("string"),
@@ -80,9 +78,10 @@ const connectionSchema = z
   .strict();
 export type Capability = z.infer<typeof capabilitySchema>;
 export type Connection = Omit<z.infer<typeof connectionSchema>, "protocol"> & {
-  protocol: "http" | "mcp" | "postgres" | "mysql";
-  adapter?: "uploaded_csv" | "database";
+  protocol: "http" | "mcp" | "postgres" | "mysql" | "feishu";
+  adapter?: "uploaded_csv" | "database" | "feishu";
   toolSchemas?: Record<string, string>;
+  credentialRequired?:boolean;
   /** Host-created adapter; never accepted from connection JSON or a tool input. */
   localSource?: { id: string; version: number };
 };
@@ -104,33 +103,35 @@ const at = (value: unknown, path: string): unknown =>
     : value;
 
 export class SourceConnections {
+  private feishu?:FeishuTableConnections;
+  attachFeishu(connector:FeishuConnector){
+    const tables=new FeishuTableConnections(this.repo,connector,source=>this.onSaved?.(source));this.feishu=tables;
+    const prior=connector.onDisconnected;connector.onDisconnected=()=>{prior?.();tables.disconnect();};return tables;
+  }
   readonly databases: DatabaseConnections;
   onSaved?: (source: Artifact) => void;
   private repo: Repository;
-  private file: string;
-  private secrets: Record<string, string>;
+  private vault: CredentialVault;
+  private restoredSources=new Set<string>();
+  private get secrets(): Record<string,string> { return z.record(z.string(),z.string()).parse(this.vault.get('sources')); }
   private authorization: SourceAuthorization;
   constructor(directory: string, repo: Repository, databaseScanner?: DatabaseScanner) {
     this.repo = repo;
     mkdirSync(directory, { recursive: true, mode: 0o700 });
-    this.file = join(directory, "source-credentials.json");
-    try {
-      this.secrets = JSON.parse(readFileSync(this.file, "utf8"));
-      chmodSync(this.file, 0o600);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      this.secrets = {};
+    this.vault = new CredentialVault(directory);
+    try{const marker=JSON.parse(readFileSync(join(directory,'restored-workspace.json'),'utf8'));this.restoredSources=new Set(z.array(z.string()).parse(marker.sourceIds??[]));}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
+    const legacy=join(directory,'source-credentials.json');
+    if(existsSync(legacy)){
+      // Store the non-secret requirement before deleting legacy plaintext. Losing the vault must never turn an old authenticated source anonymous.
+      const ids=Object.keys(z.record(z.string(),z.string()).parse(JSON.parse(readFileSync(legacy,'utf8')))),old=this.repo.listArtifacts('credential_requirements')[0],sources=[...new Set([...((old?.content.sources??[]) as string[]),...ids])].sort();
+      if(ids.length)this.repo.putArtifact({...(old?{id:old.id,expectedVersion:old.version}:{}),kind:'credential_requirements',title:'来源凭据要求',status:'active',content:{sources}});
     }
+    this.vault.migrateJson('sources','source-credentials.json');
     this.authorization = new SourceAuthorization(directory);
     this.databases = new DatabaseConnections(directory, repo, source => this.onSaved?.(source), databaseScanner);
   }
   list() {
     return this.repo.listArtifacts("source_connection");
-  }
-  private persist() {
-    const tmp = this.file + "." + randomUUID();
-    writeFileSync(tmp, JSON.stringify(this.secrets), { mode: 0o600 });
-    renameSync(tmp, this.file);
   }
   private async mcp<T>(
     config: Connection,
@@ -139,7 +140,7 @@ export class SourceConnections {
   ): Promise<T> {
     const client = new Client({
       name: "dataengine-source",
-      version: "0.2.3",
+      version: "0.3.0",
     });
     const transport = new StreamableHTTPClientTransport(new URL(config.url), {
       requestInit: {
@@ -208,8 +209,8 @@ export class SourceConnections {
         throw new Error(
           "指标能力需要明确 metricId，使用固定指标合同，不配置记录字段/过滤/总数路径",
         );
-      if (c.contentKind !== "metrics" && c.metricId)
-        throw new Error("metricId 仅用于指标能力");
+      if (c.contentKind !== "metrics" && (c.metricId || c.metricAccess))
+        throw new Error("metricId 和 metricAccess 仅用于指标能力");
       if (
         c.contentKind === "knowledge" &&
         (c.idType !== "string" ||
@@ -340,13 +341,12 @@ export class SourceConnections {
       kind: "source_connection",
       title: config.name,
       status: "ready",
-      content: jsonData({ ...safe, ...(toolSchemas ? { toolSchemas } : {}) }),
+      content: jsonData({ ...safe, ...(token?{credentialRequired:true}:{}), ...(toolSchemas ? { toolSchemas } : {}) }),
     });
-    if (token) {
-      this.secrets[artifact.id] = token;
-      this.persist();
-    }
-    if (config.auth?.oauth2) this.authorization.register(artifact.id, config.auth.oauth2);
+    try {
+      if(token)this.vault.set('sources',{...this.secrets,[artifact.id]:token});
+      if(config.auth?.oauth2)this.authorization.register(artifact.id,config.auth.oauth2);
+    } catch(error) { this.repo.putArtifact({...artifact,expectedVersion:artifact.version,status:'disabled'});throw error; }
     this.onSaved?.(artifact);
     return artifact;
   }
@@ -358,8 +358,7 @@ export class SourceConnections {
       expectedVersion: version,
       status: "disabled",
     });
-    delete this.secrets[id];
-    this.persist();
+    const secrets=this.secrets;if(Object.hasOwn(secrets,id)){delete secrets[id];this.vault.set('sources',secrets);}
     this.databases.forget(id);
     this.authorization.forget(id);
     return result;
@@ -392,6 +391,7 @@ export class SourceConnections {
     if (version !== undefined && a.version !== version)
       throw new Error("来源契约版本已变化，需要重新检查本体");
     const config = a.content as unknown as Connection;
+    if(config.adapter==="feishu"&&!this.restoredSources.has(id)){if(!this.feishu)throw new Error("飞书连接服务尚未启用");this.feishu.assertConnection(a);}
     if (config.localSource) {
       const source = this.repo.getArtifact(config.localSource.id);
       if (source.kind !== "source" || source.status !== "ready" || source.version !== config.localSource.version)
@@ -411,6 +411,8 @@ export class SourceConnections {
     pageUrl?: string,
   ) {
     const { artifact, config, cap } = this.capability(id, capability, version);
+    const required=config.credentialRequired||(this.repo.listArtifacts('credential_requirements')[0]?.content.sources as string[]|undefined)?.includes(id);
+    if(this.restoredSources.has(id)||required&&!this.secrets[id])throw new Error('来源凭据不可用，请重新授权连接；已保存快照仍可读取');
     let raw: unknown, link: string | null = null;
     try {
       if (config.localSource) {
@@ -484,6 +486,7 @@ export class SourceConnections {
     const a = this.repo.getArtifact(id, version);
     if (a.kind !== "source_connection") throw new Error("来源已停用或不存在");
     const config = a.content as unknown as Connection;
+    if(config.adapter==="feishu"&&!this.restoredSources.has(id)){if(!this.feishu)throw new Error("飞书连接服务尚未启用");this.feishu.assertConnection(this.repo.getArtifact(id));}
     const savedCap = config.capabilities.find((c) => c.name === capability);
     if (!savedCap) throw new Error("来源能力不存在");
     return { artifact: a, config, cap: capabilitySchema.parse(savedCap) };
@@ -508,9 +511,11 @@ export class SourceConnections {
   }
   /** Sequential page boundary shared by full snapshots and resumable synchronization. */
   async readRecordPage(id: string, capability: string, where: Data = {}, offset = 0, limit = 20, version?: number, cursor?: string, incremental?: { field: string; since: string }, snapshot?: { knownFields?: string[]; excludedFields?: string[] }) {
+    if(this.restoredSources.has(id))throw new Error('恢复的来源需要重新授权连接，当前仅可读取已保存快照');
     const { artifact, cap, config } = this.capability(id, capability, version), strategy = cap.pagination;
     if (incremental && (!cap.incrementalParam || !cap.fields.includes(incremental.field))) throw new Error("来源未声明该字段的增量读取合同");
     if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("分页范围无效");
+    if(config.adapter==="feishu")return this.feishu!.readPage(artifact,where,offset,limit,cursor);
     if (!strategy || strategy.type === "offset") {
       const scope = pagingScope([id, artifact.version, capability, where, incremental]);
       if (cursor) resume(cursor, scope, offset);
@@ -552,8 +557,8 @@ export class SourceConnections {
       provenance: result.provenance, continuation: nextValue === null ? null : continuation({ scope, offset: nextOffset, next: nextValue }) };
   }
   async read(id: string, capability: string, where: Data = {}, offset = 0, limit = 20, version?: number) {
-    const { cap } = this.capability(id, capability, version);
-    if (!cap.pagination || cap.pagination.type === "offset") return this.readOffset(id, capability, where, offset, limit, version);
+    const { cap,config } = this.capability(id, capability, version);
+    if (config.adapter!=="feishu"&&(!cap.pagination || cap.pagination.type === "offset")) return this.readOffset(id, capability, where, offset, limit, version);
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > 10000 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("分页范围无效");
     let position = 0, cursor: string | undefined;
     const items: Data[] = []; let last: Awaited<ReturnType<SourceConnections["readRecordPage"]>> | undefined;

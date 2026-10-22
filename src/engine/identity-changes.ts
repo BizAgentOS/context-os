@@ -1,3 +1,4 @@
+import {currentActor,assertRole} from '../security/actors.ts';
 import { prepareIdentityDecisionMigration } from "../live/identity-migration.ts";
 import type { Artifact, Data } from "../agent/contracts.ts";
 import type { MemoryStore } from "../agent/memory.ts";
@@ -135,7 +136,7 @@ export function connectIdentityChanges(memory:MemoryStore,foundation:FoundationS
     const samePair=identityDecisionKey(old.content)===identityDecisionKey(jsonData(subject));
     if(samePair||!subject.right||subject.decision==='match'&&(old.content.decision==='match'||!old.content.right))memory.putArtifact({...old,expectedVersion:old.version,status:'superseded'});
    }
-   const saved=memory.putArtifact({kind:'identity_decision',title:subject.decision==='match'?'明确身份对应':'明确排除身份对应',status:'adopted',content:jsonData({...subject,modelRef:ref(model),...captured,decidedBy:'local-admin',decidedAt:new Date().toISOString()})});
+   const saved=memory.putArtifact({kind:'identity_decision',title:subject.decision==='match'?'明确身份对应':'明确排除身份对应',status:'adopted',content:jsonData({...subject,modelRef:ref(model),...captured,decidedBy:currentActor().id,decidedAt:new Date().toISOString()})});
    return {decisionRef:ref(saved),ruleId:subject.ruleId,modelRef:ref(model)};
   }};
  }});

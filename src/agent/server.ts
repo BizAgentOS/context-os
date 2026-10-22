@@ -1,4 +1,12 @@
 import { OntologyWorkspace } from "../semantic/workspace.ts";
+import {BackupService} from '../security/workspace-backup.ts';
+import {CredentialVault} from '../security/credential-vault.ts';
+import {SourceLifecycle} from '../engine/source-lifecycle.ts';
+import {ExternalGapFeedback} from '../engine/external-gap-feedback.ts';
+import {withActor,assertRole,RoleDenied,type Actor} from '../security/actors.ts';
+import {requestRoleAction} from '../security/http-role-policy.ts';
+import {exportLegacyConsumptionAudit} from '../live/legacy-audit.ts';
+import {demoSimulation,simulateDemoRequest} from '../demo/request-policy.ts';
 import { Workspace } from "./workspace.ts";
 import { historicalConsumption, LegacyConsumptionFrozen } from "../live/legacy-consumption.ts";
 import { sourceSummary } from "./source-summary.ts";
@@ -30,8 +38,9 @@ import { ontologySceneAsset } from "./browser-assets.ts";
 import { WorkspaceEvents, snapshotScopes } from "./workspace-events.ts";
 
 const webRoot = fileURLToPath(new URL("../../web/agent/", import.meta.url));
+const managementArtifactKinds=new Set(['local_user','audit_record','workspace_backup','retention_settings','retention_run','usage_policy_receipt']);
 const staticFiles: Record<string, { file: string; type: string }> = {
-  ...Object.fromEntries(["ontology-workbench", "database-connection", "answer-card", "answer-visualization", "sync-settings", "sync-issue", "agent-mode-controls", "gap-detail", "run-card", "decision-card", "message-markdown", "workspace-store", "agent-panel", "task-center", "pending-center", "data-profile", "share-workspace", "page-region", "sessions"].map(name => [`/${name}.js`, { file: `${name}.js`, type: "text/javascript; charset=utf-8" }])),
+  ...Object.fromEntries(["local-auth", "workspace-settings", "ontology-workbench", "database-connection", "answer-card", "answer-visualization", "naming-review", "document-preview", "feishu-tables", "sync-settings", "sync-issue", "agent-mode-controls", "gap-detail", "run-card", "decision-card", "message-markdown", "workspace-store", "agent-panel", "task-center", "pending-center", "data-profile", "share-workspace", "page-region", "sessions"].map(name => [`/${name}.js`, { file: `${name}.js`, type: "text/javascript; charset=utf-8" }])),
   "/glass-theme.css": {file:"glass-theme.css",type:"text/css; charset=utf-8"},
   "/glass-ontology.css": {file:"glass-ontology.css",type:"text/css; charset=utf-8"},
   "/ontology-workspace.css": {file:"ontology-workspace.css",type:"text/css; charset=utf-8"},
@@ -214,6 +223,12 @@ export async function createServer(
         return;
       }
       const url = new URL(request.url ?? "/", `http://${host}`);
+      if(/^\/v[123](?:\/|$)/.test(url.pathname)){send(410,{code:'legacy_consumption_retired',error:'旧消费接口已下线，请使用发布版本和 v4 接入；历史授权与审计由管理员导出。'});return;}
+      if(url.pathname==='/api/auth/login'&&request.method==='POST'){
+        if(options.demo){send(409,demoSimulation);return;}
+        if(request.headers.origin&&request.headers.origin!==`http://${host}`){send(403,{error:'登录请求来源不匹配'});return;}
+        const result=app.users.login(await readBody(request));response.setHeader('Set-Cookie',`${cookieName}=${result.token}; HttpOnly; SameSite=Strict; Path=/api; Max-Age=86400`);send(200,result);return;
+      }
       if (url.pathname === "/v4/agent/tasks" || url.pathname.startsWith("/v4/agent/tasks/")) {
         const key = request.headers.authorization?.startsWith("Bearer ") ? request.headers.authorization.slice(7) : "";
         if (url.pathname === "/v4/agent/tasks" && request.method === "POST") {
@@ -229,33 +244,7 @@ export async function createServer(
         const result = await new OntologyDatasets(app.memory, app.live).handle(url.pathname, url.searchParams, request.headers.authorization);
         send(result.status, result.body); return;
       }
-      if (url.pathname.startsWith("/v3/")) {
-        if(request.method!=="GET"){send(405,{error:"仅支持只读请求"});return;}
-        const r=await new ConsumerViews(app.memory,app.live).handle(url.pathname,url.searchParams,request.headers.authorization,url.origin);send(r.status,r.body);return;
-      }
-      if (url.pathname.startsWith("/v2/")) {
-        if (request.method !== "GET") {
-          send(405, { error: "仅支持只读请求" });
-          return;
-        }
-        const result = await app.live.handle(
-          url.pathname,
-          url.searchParams,
-          request.headers.authorization,
-        );
-        send(result.status, result.body);
-        return;
-      }
-      if (url.pathname === "/v1" || url.pathname.startsWith("/v1/")) {
-        const result = app.consumption.handle({
-          method: request.method ?? "",
-          path: url.pathname,
-          query: url.searchParams,
-          authorization: request.headers.authorization,
-        });
-        send(result.status, result.body);
-        return;
-      }
+      let requestActor:Actor|undefined,sessionToken='';
       if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
         const supplied = request.headers["x-dataengine-token"];
         const cookie = request.headers.cookie
@@ -264,18 +253,20 @@ export async function createServer(
           .find((part) => part.startsWith(`${cookieName}=`))
           ?.slice(cookieName.length + 1);
         const origin = request.headers.origin;
-        const authorized =
-          supplied !== undefined
-            ? matchesToken(supplied)
-            : request.method === "GET" && matchesToken(cookie);
+        const credential=supplied!==undefined?supplied:request.method==='GET'?cookie:undefined;
+        if(typeof credential==='string'){
+          sessionToken=credential;
+          if(matchesToken(credential))requestActor={kind:'human',id:'local-admin',name:'本地管理员',role:'admin'};
+          else try{requestActor=app.users.authenticate(credential);}catch{}
+        }
         // Consumer credentials never establish a management session, even if a browser also has an admin cookie.
         if (
-          !authorized ||
+          !requestActor ||
           request.headers.authorization !== undefined ||
           (origin && origin !== `http://${host}`)
         ) {
           send(403, {
-            error: "需要管理员入口，请使用本机启动时提供的管理链接",
+            error: "请使用本机管理入口或登录本地账号",
           });
           return;
         }
@@ -286,15 +277,24 @@ export async function createServer(
         )
           response.setHeader(
             "Set-Cookie",
-            `${cookieName}=${token}; HttpOnly; SameSite=Strict; Path=/api`,
+            `${cookieName}=${sessionToken}; HttpOnly; SameSite=Strict; Path=/api`,
           );
       }
+      const dispatch=async()=>{
+      if(requestActor&&request.method!=='POST')assertRole(requestRoleAction(request.method??'GET',url.pathname));
+      if(requestActor&&request.method==='POST'&&['/api/canvas/upload/table','/api/canvas/upload/document'].includes(url.pathname))assertRole(requestRoleAction('POST',url.pathname));
+      if(options.demo&&simulateDemoRequest(request.method??'GET',url.pathname)){send(409,demoSimulation);return;}
       if (request.method === "POST" && url.pathname === "/api/canvas/upload/table") {
         if (request.headers["content-type"]?.split(";")[0].trim() !== "application/octet-stream") throw new Error("表格上传需要原始文件内容");
         const options = url.searchParams.has("options") ? JSON.parse(url.searchParams.get("options")!) : undefined;
         const result = await app.canvasTableUpload({ page: url.searchParams.get("page") ?? "setup", name: url.searchParams.get("name"),
-          sessionId: url.searchParams.get("sessionId") ?? undefined, options }, request);
+          sessionId: url.searchParams.get("sessionId") ?? undefined, options,
+          batchId:url.searchParams.get('batchId')??undefined,operationId:url.searchParams.get('operationId')??undefined }, request);
         send(200, result); return;
+      }
+      if(request.method==="POST"&&url.pathname==="/api/canvas/upload/document"){
+        if(request.headers["content-type"]?.split(";")[0].trim()!=="application/octet-stream")throw new Error("文档上传需要原始文件内容");
+        send(200,{batch:await app.documentUploads.addFile({batchId:url.searchParams.get("batchId"),operationId:url.searchParams.get("operationId"),name:url.searchParams.get("name")},request)});return;
       }
       const sessionRoute=/^\/api\/sessions\/([^/]+)(\/messages)?$/.exec(url.pathname);
       if(url.pathname==="/api/sessions"&&request.method==="GET") {
@@ -315,9 +315,26 @@ export async function createServer(
         send(200,sessionRoute[2]?app.memory.sessionMessages(id,{before:url.searchParams.get("before")??undefined,limit:Number(url.searchParams.get("limit")??40)}):{session:app.memory.getSession(id)});return;
       }
       if (request.method === "GET") {
+        if(url.pathname==='/api/consumers/audit-export'){assertRole('users');send(200,exportLegacyConsumptionAudit(app.memory,app.consumption));return;}
+        if(url.pathname==='/api/datasets'||url.pathname.startsWith('/api/datasets/')){send(410,{code:'legacy_consumption_retired',error:'旧独立数据集入口已下线，请使用发布与接入；历史内容保留在审计导出。'});return;}
+        if(url.pathname==='/api/auth/me'){send(200,{actor:requestActor});return;}
+        if(url.pathname==='/api/users'){send(200,{users:app.users.list()});return;}
+        if(url.pathname==='/api/usage'){send(200,app.usage.overview());return;}
+        if(url.pathname==='/api/audit'){send(200,app.audit.list({offset:Number(url.searchParams.get('offset')??0),limit:Number(url.searchParams.get('limit')??50)}));return;}
+        if(url.pathname==='/api/releases/gap-feedback'){send(200,new ExternalGapFeedback(app.memory).read({id:url.searchParams.get('id')??'',version:Number(url.searchParams.get('version'))}));return;}
+        if(url.pathname==='/api/changes/impact'){send(200,await app.changes.preparePreview({id:url.searchParams.get('id')??'',version:Number(url.searchParams.get('version'))}));return;}
+        if(url.pathname==='/api/sources/impact'){send(200,new SourceLifecycle(app.memory,app.live).impact({id:url.searchParams.get('id'),version:Number(url.searchParams.get('version'))}));return;}
+        if(url.pathname==='/api/settings/retention'){
+          send(200,{settings:app.retention.settings(),credentials:new CredentialVault(app.memory.directory).status()});return;
+        }
+        if(url.pathname==='/api/settings/retention/preview'){send(200,app.retention.preview());return;}
+        if(url.pathname==="/api/canvas/upload/batch/read"){
+          send(200,{batch:app.documentUploads.read(url.searchParams.get("id")??"")});return;
+        }
+        if(url.pathname==='/api/canvas/upload/table-batch/read'){send(200,{batch:app.tableUploads.read(url.searchParams.get('id')??'')});return;}
         if (url.pathname === "/api/ontology/workspace" || url.pathname === "/api/ontology/detail") {
           const workspace = new OntologyWorkspace(app.memory, app.foundation, app.live, app.pendingCenter, app.workspaceVersions);
-          send(200, url.pathname.endsWith("/workspace") ? workspace.overview() : workspace.detail({kind:url.searchParams.get("kind"), id:url.searchParams.get("id"), developer:url.searchParams.get("developer")==="true", evidenceOffset:Number(url.searchParams.get("evidenceOffset")??0)})); return;
+          send(200, url.pathname.endsWith("/workspace") ? workspace.overview() : await workspace.detail({kind:url.searchParams.get("kind"), id:url.searchParams.get("id"), developer:url.searchParams.get("developer")==="true", evidenceOffset:Number(url.searchParams.get("evidenceOffset")??0)})); return;
         }
         if (url.pathname === "/api/foundation/evidence-list") {
           send(200, app.foundation.listEvidence({ id: url.searchParams.get("id"), version: Number(url.searchParams.get("version")),
@@ -335,7 +352,7 @@ export async function createServer(
         }
         if (url.pathname === "/api/events") {
           const after = request.headers["last-event-id"] ?? url.searchParams.get("after");
-          events.connect(response, typeof after === "string" ? after : undefined); return;
+          events.connect(response, typeof after === "string" ? after : undefined,{validate:()=>{if(!matchesToken(sessionToken))app.users.authenticate(sessionToken);},project:event=>requestActor?.role!=='admin'&&event.ref?.kind&&managementArtifactKinds.has(event.ref.kind)?null:event}); return;
         }
         if (url.pathname === "/api/snapshot") {
           const snapshot = app.canvasState(url.searchParams.get("page") ?? undefined, url.searchParams.get("sessionId") ?? undefined);
@@ -369,6 +386,9 @@ export async function createServer(
         if (url.pathname === "/api/changes/read") {
           send(200, { change: app.changes.read(url.searchParams.get("id") ?? "", url.searchParams.has("version") ? Number(url.searchParams.get("version")) : undefined) }); return;
         }
+        if(url.pathname==="/api/naming/batches/read"){
+          send(200,app.namingBatches.read(url.searchParams.get("id")??"",url.searchParams.has("version")?Number(url.searchParams.get("version")):undefined));return;
+        }
         if (url.pathname === "/api/workspace-versions") { send(200, { versions: app.workspaceVersions.list(), composition: app.workspaceVersions.composition() }); return; }
         if (url.pathname === "/api/workspace-versions/read") { send(200, { version: app.workspaceVersions.read(Number(url.searchParams.get("number"))) }); return; }
         if (url.pathname === "/api/engine") { send(200, app.programBuilds.overview()); return; }
@@ -382,7 +402,7 @@ export async function createServer(
         if (url.pathname === "/api/qa/views") {
           const reference=(item:Artifact)=>({id:item.id,version:item.version});
           const releases=app.memory.listArtifacts("data_release").filter(item=>item.status==="published");
-          send(200,{releases:releases.map(item=>({ref:reference(item),title:item.title,createdAt:item.createdAt})),connections:app.memory.listArtifacts("release_connection").filter(item=>item.status==="active"&&releases.some(release=>JSON.stringify(reference(release))===JSON.stringify(item.content.releaseRef))).map(item=>({ref:reference(item),title:item.title,releaseRef:item.content.releaseRef}))}); return;
+          send(200,{currentReleaseRef:releases[0]?reference(releases[0]):null,releases:releases.map(item=>({ref:reference(item),title:item.title,createdAt:item.createdAt})),connections:app.memory.listArtifacts("release_connection").filter(item=>item.status==="active"&&releases.some(release=>JSON.stringify(reference(release))===JSON.stringify(item.content.releaseRef))).map(item=>({ref:reference(item),title:item.title,releaseRef:item.content.releaseRef}))}); return;
         }
         if (url.pathname === "/api/gaps") { send(200,{items:app.questionAnswering.gaps.list()}); return; }
         if (url.pathname === "/api/gaps/read") { send(200,{gap:app.questionAnswering.gaps.get(url.searchParams.get("id")??"")}); return; }
@@ -397,11 +417,18 @@ export async function createServer(
           const param = (prefix: string) => url.searchParams.get(prefix + "Id") ? { [prefix]: { id: url.searchParams.get(prefix + "Id"), version: Number(url.searchParams.get(prefix + "Version")) } } : {};
           send(200, await new Releases(app.memory, app.live).dataDiff({ ...param("from"), ...param("to") })); return;
         }
+        if (url.pathname === "/api/releases/connection-detail") {
+          send(200,new Releases(app.memory,app.live).connectionDetail({id:url.searchParams.get("id"),version:Number(url.searchParams.get("version"))}));return;
+        }
+        if (url.pathname === "/api/releases/upgrade-preview") {
+          send(200,new Releases(app.memory,app.live).upgradePreview({connectionRef:{id:url.searchParams.get("connectionId"),version:Number(url.searchParams.get("connectionVersion"))},releaseRef:{id:url.searchParams.get("releaseId"),version:Number(url.searchParams.get("releaseVersion"))}}));return;
+        }
         if (url.pathname === "/api/releases/read" || url.pathname === "/api/releases/connection") {
           const releases = new Releases(app.memory, app.live), ref = {id:url.searchParams.get("id"), version:Number(url.searchParams.get("version"))};
           send(200, url.pathname.endsWith("/read") ? releases.read(ref) : releases.connection(ref,url.origin)); return;
         }
-        if (url.pathname === "/api/onboarding") { send(200, app.onboarding.view()); return; }
+        if (url.pathname === "/api/onboarding") { send(200, app.onboarding.view(app.model().configured)); return; }
+        if (url.pathname === '/api/onboarding/examples') {send(200,app.onboarding.examples());return;}
         if (url.pathname === "/api/datasets") {
           send(200, new OntologyDatasets(app.memory, app.live).list()); return;
         }
@@ -409,7 +436,7 @@ export async function createServer(
           send(200, new OntologyDatasets(app.memory, app.live).connection({ id: url.searchParams.get("id"), version: Number(url.searchParams.get("version")) }, url.origin)); return;
         }
         if (url.pathname === "/api/canvas/bootstrap") {
-          send(200, { token, ...app.canvasState() });
+          send(200, { token:sessionToken,actor:requestActor, ...app.canvasState() });
           return;
         }
         if (url.pathname === "/api/foundation/evidence") {
@@ -436,11 +463,11 @@ export async function createServer(
           return;
         }
         if (url.pathname === "/api/bootstrap") {
-          send(200, { token, ...app.state() });
+          const snapshot=app.state();send(200, { token:sessionToken,actor:requestActor, ...snapshot,artifacts:requestActor?.role==='admin'?snapshot.artifacts:snapshot.artifacts.filter(item=>!managementArtifactKinds.has(item.kind)) });
           return;
         }
         if (url.pathname === "/api/state") {
-          send(200, app.state(url.searchParams.get("taskId") ?? undefined));
+          const snapshot=app.state(url.searchParams.get('taskId')??undefined);send(200,{...snapshot,artifacts:requestActor?.role==='admin'?snapshot.artifacts:snapshot.artifacts.filter(item=>!managementArtifactKinds.has(item.kind))});
           return;
         }
         if (url.pathname === "/api/capabilities") {
@@ -523,6 +550,7 @@ export async function createServer(
           )
             throw new Error("无效版本");
           const artifact = app.memory.getArtifact(decodeURIComponent(url.pathname.slice("/api/artifacts/".length)), version, {evidence:"compact"});
+          if(managementArtifactKinds.has(artifact.kind))assertRole('users');
           send(200, artifact.kind === "change_evidence_receipt" ? artifact : app.memory.getArtifact(artifact.id, artifact.version));
           return;
         }
@@ -550,6 +578,7 @@ export async function createServer(
         return;
       }
       const body = await readBody(request);
+      assertRole(requestRoleAction('POST',url.pathname,body));
       if (new Set([
         "/api/consumers/prepare", "/api/consumers/activate", "/api/consumers/data-publish",
         "/api/live/prepare", "/api/live/activate", "/api/live/views/propose", "/api/live/views/activate",
@@ -560,6 +589,17 @@ export async function createServer(
       }
       let result: unknown;
       switch (url.pathname) {
+        case '/api/auth/logout':result=app.users.logout(sessionToken);response.setHeader('Set-Cookie',`${cookieName}=; HttpOnly; SameSite=Strict; Path=/api; Max-Age=0`);break;
+        case '/api/users/create':result={user:app.users.create(body)};break;
+        case '/api/users/update':result={user:app.users.update(body)};break;
+        case '/api/usage/policy':result=app.usage.configure(body);break;
+        case '/api/releases/gap-feedback':result=new ExternalGapFeedback(app.memory).configure(body);break;
+        case '/api/sources/manage':result=await queue(()=>app.manageSource(body));break;
+        case '/api/settings/retention':result={settings:app.retention.configure(body)};break;
+        case '/api/settings/retention/run':result=await app.retention.run(body as {operationId:string});break;
+        case '/api/backup':result=await app.backups.create(body as {destination:string;operationId:string});break;
+        case '/api/backup/config':result=await app.backups.exportConfig(body as {destination:string});break;
+        case '/api/restore':result=await BackupService.restore(body as {backup:string;destination:string});break;
         case "/api/data/sync-policy": result=app.syncGovernance.configure(body); break;
         case "/api/data/issues/resolve": result=app.syncGovernance.resolve(body); break;
         case "/api/gaps/handoff": result=app.questionAnswering.gaps.handoff(body); break;
@@ -586,6 +626,8 @@ export async function createServer(
           result = { batch: app.documentUploads.add(body) }; break;
         case "/api/canvas/upload/batch/finalize":
           result = app.canvasDocumentBatchFinalize(body); break;
+        case '/api/canvas/upload/table-batch/start':result=app.canvasTableBatchStart(body);break;
+        case '/api/canvas/upload/table-batch/finalize':result=app.canvasTableBatchFinalize(body);break;
         case "/api/canvas/upload/reparse":
           result = await app.canvasTableReparse(body); break;
         case "/api/foundation/adjudication/propose":
@@ -606,6 +648,8 @@ export async function createServer(
           result = { change: app.changes.reject(body) }; break;
         case "/api/changes/withdraw":
           result = { change: app.changes.withdraw(body) }; break;
+        case "/api/naming/batches/edit":
+          result=app.namingBatches.edit(body);break;
         case "/api/engine/build":
           send(202, {job:app.programBuilds.start(body)}); return;
         case "/api/data/sync":
@@ -644,6 +688,14 @@ export async function createServer(
         case "/api/connectors/feishu/start":
           result = app.capabilities.feishu.start();
           break;
+        case "/api/connectors/feishu/authorize-tables":
+          result=app.capabilities.feishu.authorizeTables();break;
+        case "/api/connectors/feishu/tables/browse":
+          result=await app.feishuTables.browse(body);break;
+        case "/api/connectors/feishu/tables/describe":
+          result=await app.feishuTables.describe(body);break;
+        case "/api/connectors/feishu/tables/select":
+          result=await app.feishuTables.select(body);break;
         case "/api/connectors/feishu/cancel":
           result = await app.capabilities.feishu.cancel(String(body.id));
           break;
@@ -905,6 +957,8 @@ export async function createServer(
         case "/api/canvas/foundation/automatic":
           result = await queue(async () => app.retryAutomaticBuild());
           break;
+        case '/api/naming/retry':
+          app.automaticNaming.retry();result=app.canvasState(body.page);break;
         case "/api/canvas/upload/remove":
           result = await queue(() => app.removeUpload(body));
           break;
@@ -969,10 +1023,14 @@ export async function createServer(
           return;
       }
       send(200, result);
+      };
+      if(requestActor)await withActor(requestActor,dispatch,()=>{if(!matchesToken(sessionToken))app.users.authenticate(sessionToken);});
+      else await dispatch();
     } catch (error) {
       const message = app.safeError(error);
       // A stale or already-decided change is a conflict the caller resolves by re-reading, not a malformed request.
       if (error instanceof ChangeConflict) { send(409, { error: message.slice(0, 600), code: error.code }); return; }
+      if(error instanceof RoleDenied){send(403,{error:message.slice(0,600),code:error.code});return;}
       // Never include request bodies, provider credentials or raw SDK objects in HTTP errors.
       send(error instanceof DelegationDenied ? 403 : /不存在/.test(message) ? 404 : 400, {
         error: message.slice(0, 600),

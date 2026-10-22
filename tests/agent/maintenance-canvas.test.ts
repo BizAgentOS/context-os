@@ -21,8 +21,10 @@ test("three pages and legacy aliases can be visited without inventing memory or 
     async stop() {},
     async close() {},
   };
-  let app = new AgentApplication(directory, driver);
+  let app = new AgentApplication(directory, driver, new Set(), false);
   try {
+    const initialized=app.memory.listArtifacts();
+    assert(initialized.every(item=>item.kind==='naming_initialization'),JSON.stringify(initialized.map(item=>item.kind)));
     for (const page of [
       "ontology",
       "consumption",
@@ -43,9 +45,9 @@ test("three pages and legacy aliases can be visited without inventing memory or 
     }
     assert.equal(calls, 0);
     assert.equal(app.memory.listTasks().length, 1, "navigation creates only an idle default conversation");
-    assert.equal(app.memory.listArtifacts().length, 0);
+    assert.deepEqual(app.memory.listArtifacts(),initialized,'navigation creates no business or administration artifacts beyond explicit startup initialization');
     await app.close();
-    app = new AgentApplication(directory, driver);
+    app = new AgentApplication(directory, driver, new Set(), false);
     assert(
       app.canvasState().pages.every((page) => page.available && !page.ready),
     );

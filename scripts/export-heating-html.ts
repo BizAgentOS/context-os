@@ -11,10 +11,11 @@ export async function exportHeatingHtml(
   output = resolve(root, "output/share/DataEngine-热力公司-演示.html"),
 ) {
   const snapshot = await createHeatingShareSnapshot();
-  const [template, styles, compiled] = await Promise.all([
-    readFile(resolve(root, "web/agent/index.html"), "utf8"),
+  const template=await readFile(resolve(root,'web/agent/index.html'),'utf8');
+  const stylesheets=[...new Set([...template.matchAll(/<link\b[^>]*href="\.\/([^"/]+\.css)"[^>]*>/g)].map(match=>match[1]).concat('share.css'))];
+  const [styles, compiled] = await Promise.all([
     Promise.all(
-      ["app.css", "memory-graph.css", "ontology-space.css", "engine.css", "glass-theme.css", "glass-ontology.css", "share.css"].map((name) =>
+      stylesheets.map((name) =>
         readFile(resolve(root, "web/agent", name), "utf8"),
       ),
     ),

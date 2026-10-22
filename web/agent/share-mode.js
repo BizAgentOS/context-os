@@ -37,6 +37,21 @@ export function createShareMode(document) {
   const conversations = new Map();
   const clone = (value) => JSON.parse(JSON.stringify(value));
   const normalize = (value) => String(value).replace(/[\s？?。！!，,]/g, "");
+  function range(offset=0,limit=20){if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>100)throw Error('请选择有效的对象分页范围。');return{offset,limit};}
+  function liveQuery(body){
+    if(Object.keys(body).some(key=>!['modelId','modelVersion','conceptId','type','id','relation','fields','offset','limit'].includes(key)))throw Error('离线示例不支持这个查询条件；请在正式工作区执行。');
+    const overview=data.routes['/api/ontology/workspace'],entity=overview?.entities.find(item=>item.id===body.conceptId||item.name===body.type);
+    const conceptId=body.conceptId??entity?.id??body.type,version=body.modelVersion??overview?.modelRef?.version;
+    const key=JSON.stringify([body.modelId,version,conceptId,body.relation?body.id??null:null,body.relation??null]);
+    if(!data.liveQueries?.[key])throw Error('这份演示未包含该对象、版本或关系读取。');
+    const result=clone(data.liveQueries[key]),all=body.id&&!body.relation?result.items.filter(item=>String(item.$id)===String(body.id)):result.items;
+    const {offset,limit}=range(body.offset??0,body.limit??20),selected=all.slice(offset,offset+limit),ids=new Set(selected.map(item=>String(item.$id)));
+    if(body.fields&&(!Array.isArray(body.fields)||body.fields.some(field=>!all.some(item=>Object.hasOwn(item,field)))))throw Error('这份演示未包含所选字段。');
+    result.items=body.fields?selected.map(item=>Object.fromEntries(body.fields.map(field=>[field,item[field]]))):selected;
+    result.coverage={...result.coverage,offset,shown:selected.length,total:all.length,complete:result.coverage.complete&&offset===0&&selected.length===all.length};
+    if(result.evidence)result.evidence=result.evidence.filter(item=>ids.has(String(item.objectId))).map(item=>body.fields&&item.properties?{...item,properties:Object.fromEntries(Object.entries(item.properties).filter(([field])=>body.fields.includes(field)))}:item);
+    return result;
+  }
 
   function snapshot(page = currentPage) {
     page = pageKey(page);
@@ -67,6 +82,7 @@ export function createShareMode(document) {
     const [pathname, query = ""] = path.split("?");
     const params = new URLSearchParams(query);
     if (body !== undefined) {
+      if(pathname==='/api/live/query')return liveQuery(body);
       if (pathname === "/api/canvas/navigate") return snapshot(body.page);
       if (pathname === "/api/canvas/message") {
         const page = pageKey(body.page || currentPage);
@@ -86,9 +102,7 @@ export function createShareMode(document) {
         conversations.set(page, messages.slice(-6));
         return snapshot(page);
       }
-      throw new Error(
-        "离线演示仅供浏览；编辑、接入和发布需要在完整产品中操作。",
-      );
+      const simulation=new Error('演示模拟：已收到这项操作；未保存变更、未发布版本，也未签发接入密钥。请在正式工作区完成实际操作。');simulation.simulated=true;throw simulation;
     }
     if (pathname === "/api/canvas/bootstrap") return snapshot();
     if (pathname === "/api/canvas")
@@ -96,7 +110,7 @@ export function createShareMode(document) {
 
     let offset = 0;
     let limit = 18;
-    if (pathname === "/api/objects") {
+    if (["/api/objects","/api/data/preview","/api/sources/rows"].includes(pathname)) {
       offset = Number(params.get("offset") || 0);
       limit = Number(params.get("limit") || 18);
       if (
@@ -115,6 +129,10 @@ export function createShareMode(document) {
     if (!Object.hasOwn(data.routes, key))
       throw new Error("这份演示未包含该记录，可以返回查看其他企业记忆。");
     const result = clone(data.routes[key]);
+    if(pathname==='/api/data/preview'){result.rows=result.rows.slice(offset,offset+limit);return result;}
+    if(pathname==='/api/sources/rows'){
+      const content=result.content??result;if(Array.isArray(content.rows))content.rows=content.rows.slice(offset,offset+limit);return result;
+    }
     if (pathname === "/api/objects" && Array.isArray(result.result?.items)) {
       const collection = result.result;
       const all = collection.items;

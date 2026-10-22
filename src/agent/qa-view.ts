@@ -9,6 +9,7 @@ import {parseLayeredModel,layeredModelSchema,type LayeredModel} from '../semanti
 import type {SemanticQueryOptions} from '../semantic/query.ts';
 import {snapshotPinsForRelease,correctionPinsForRelease,identityDecisionPinsForRelease,propertyCorrectionPinsForRelease} from '../live/release-pins.ts';
 import {consumerSemanticScope} from '../live/consumer-semantic.ts';
+import {metricReferenceSchema} from '../semantic/metric-contract.ts';
 import {jsonData} from '../live/sources.ts';
 
 export const qaReference=z.object({id:z.string().min(1).max(200),version:z.number().int().positive()}).strict();
@@ -48,8 +49,10 @@ export function freezeQaView(memory:MemoryStore,foundation:FoundationService,liv
     const modelDefinition=definition.model?jsonData({...definition.model as Data,foundationRef}):undefined;
     const propertyKeys=Object.keys(layeredModelSchema.shape.semantic.shape.properties.element.shape);
     layered=modelDefinition?parseLayeredModel(modelDefinition.layered):parseLayeredModel({schemaVersion:1,semantic:{entityTypes:(semantic.content.concepts as Data[]).map(item=>({id:item.id,name:item.name,aliases:item.aliases??[],description:item.description,identityKeys:item.identityKeys??[],kind:item.kind??'record'})),
+      metricReferences:definition.metricReferences??[],
       properties:((semantic.content.properties??[]) as Data[]).map(item=>Object.fromEntries(propertyKeys.filter(key=>item[key]!==undefined).map(key=>[key,item[key]]))),
       relationTypes:((semantic.content.relations??[]) as Data[]).map(item=>({id:item.id,name:item.name,aliases:item.aliases??[],description:item.description,from:item.from,to:item.to,cardinality:item.cardinality??'N:N',allowSelf:item.from===item.to}))},bindings:{entities:[],properties:[],relations:[],identityRules:[]}});
+    layered.semantic.metricReferences=metricReferenceSchema.array().parse(definition.metricReferences??[]);
     options={modelRef:modelRef??undefined,modelDefinition,fixedSemantic:true,readMode:'release_pinned',pins:snapshotPinsForRelease(definition),
       correctionPins:new Set(correctionPinsForRelease(definition)),identityDecisionPins:new Set(identityDecisionPinsForRelease(definition)),propertyCorrectionPins:new Set(propertyCorrectionPinsForRelease(definition))};
     receipt=jsonData({dataView:selection,releaseRef:ref(release),foundationRef,modelRef});
@@ -67,6 +70,6 @@ export function freezeQaView(memory:MemoryStore,foundation:FoundationService,liv
       authorize();layered=scoped.layered;options=scoped.options;evidencePropertyIds=scoped.evidencePropertyIds;businessEntityIds=scoped.businessEntityIds;
     }
   }
-  const assertValid=()=>{assertActive();authorize();if(model)live.assertModel(model.id,model.version,true,options.pins,options.modelDefinition);};
+  const assertValid=()=>{assertActive();authorize();for(const metric of layered.semantic.metricReferences)live.sources.capability(metric.sourceId,metric.capability,metric.connectionVersion);if(model)live.assertModel(model.id,model.version,true,options.pins,options.modelDefinition);};
   assertValid();return {selection,receipt,layered,foundation:semantic,model,options,assertValid,evidencePropertyIds,businessEntityIds};
 }

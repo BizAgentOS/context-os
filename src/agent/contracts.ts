@@ -1,3 +1,4 @@
+import type {Actor} from '../security/actors.ts';
 export type Json =
   null | boolean | number | string | Json[] | { [key: string]: Json };
 export type Data = { [key: string]: Json };
@@ -14,6 +15,7 @@ export interface CanvasProgress {
   taskIds: Partial<Record<CanvasPageInput, string>>;
 }
 export interface Artifact {
+  actor?:Actor;
   id: string;
   kind: string;
   title: string;
@@ -51,8 +53,8 @@ export interface Repository {
     content: string;
     createdAt: string;
   } | null;
-  listArtifacts(kind?: string): Artifact[];
-  getArtifact(id: string, version?: number, options?: {evidence?: "hydrate" | "compact"}): Artifact;
+  listArtifacts(kind?: string,options?:{evidence?:'hydrate'|'compact';content?:'hydrate'|'compact';limit?:number;offset?:number}): Artifact[];
+  getArtifact(id: string, version?: number, options?: {evidence?: "hydrate" | "compact";content?:"hydrate"|"compact"}): Artifact;
   putArtifact(
     input: ArtifactInput,
     context?: WriteContext,

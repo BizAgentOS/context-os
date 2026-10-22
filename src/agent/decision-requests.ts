@@ -11,6 +11,14 @@ const input = z.object({ question: text, reason: text, refs: z.array(reference).
 
 export const decisionRequestTool: DomainTool = { name: "decision_request", description: "请求用户核对具体问题、依据与选项。结构决定必须引用已保存变更的准确版本；只产生决定卡，不采用、拒绝或修改变更。成功后只收尾，不再调用其他工具。", inputSchema: z.toJSONSchema(input), mutates: true };
 
+const modeSuggestionInput=z.object({mode:z.enum(["build","qa"]),reason:text}).strict();
+export const modeSuggestionTool:DomainTool={name:"mode_suggest",description:"建议用户切换到另一助手模式并说明原因。只保存建议卡，不切换模式、不获得新工具、不修改本体。用户点击后只改变下一条消息；成功后简短收尾。",inputSchema:z.toJSONSchema(modeSuggestionInput),mutates:true};
+export function requestModeSuggestion(memory:MemoryStore,context:WriteContext,currentMode:"build"|"qa",value:unknown){
+ const args=modeSuggestionInput.parse(value);
+ if(args.mode===currentMode)throw new Error("当前已经使用此模式，无需建议切换");
+ return memory.ask(context,{kind:"mode_suggestion",mode:args.mode,question:`切换到${args.mode==="build"?"构建":"问答"}助手？`,reason:args.reason});
+}
+
 export function requestDecision(memory: MemoryStore, context: WriteContext, value: unknown, pending?: PendingCenter) {
   const args = input.parse(value);
   const items: Data[] = [];
@@ -29,6 +37,7 @@ export function requestDecision(memory: MemoryStore, context: WriteContext, valu
 
 /** Legacy questions share the same card, while adoption still belongs to the unified change service. */
 export function decisionCard(memory: MemoryStore, pending: Data): Data {
+  if(pending.kind==="mode_suggestion"&&(pending.mode==="build"||pending.mode==="qa"))return{kind:"mode_suggestion",mode:pending.mode,question:String(pending.question),reason:String(pending.reason??""),impact:"切换只影响下一条消息；已保存消息的模式和数据范围保持不变。",status:"pending"};
   const refs: Data[] = [];
   if (Array.isArray(pending.refs)) for (const value of pending.refs) {
     const parsed = reference.safeParse(value);

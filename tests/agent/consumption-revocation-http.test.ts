@@ -129,7 +129,7 @@ test(
           headers: { authorization: `Bearer ${active.apiKey}` },
         },
       );
-      assert.equal(read.status, 401);
+      assert.equal(read.status, 410, "the retired route cannot regain access after historical revocation");
     } finally {
       finishRun();
       finishStop();

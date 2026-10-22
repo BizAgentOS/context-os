@@ -38,11 +38,13 @@ export function readStructure(memory: MemoryStore, foundation: FoundationService
     for (const item of rows(adopted?.content.concepts)) if (!layered.semantic.entityTypes.some(entity => entity.id === item.id))
       layered.semantic.entityTypes.push({ id: String(item.id), name: String(item.name), aliases: (item.aliases ?? []) as string[], description: String(item.description), identityKeys: (item.identityKeys ?? []) as string[], kind: item.kind === "activity" ? "activity" : "record" });
     for (const item of rows(adopted?.content.properties)) if (!layered.semantic.properties.some(property => property.id === item.id)) layered.semantic.properties.push(semanticProperty(item));
+    layered.semantic.metricReferences = layeredModelSchema.shape.semantic.shape.metricReferences.parse(adopted?.content.metricReferences ?? []);
     return parseLayeredModel(layered);
   }
   return parseLayeredModel({ schemaVersion: 1, semantic: {
     entityTypes: rows(adopted?.content.concepts).map(item => ({ id: item.id, name: item.name, aliases: item.aliases ?? [], description: item.description, identityKeys: item.identityKeys ?? [], kind: item.kind ?? "record" })),
     properties: rows(adopted?.content.properties).map(semanticProperty),
+    metricReferences: adopted?.content.metricReferences ?? [],
     relationTypes: rows(adopted?.content.relations).map(item => ({ id: item.id, name: item.name, aliases: item.aliases ?? [], description: item.description, from: item.from, to: item.to, allowSelf: item.from === item.to })),
   }, bindings: { entities: [], properties: [], relations: [], identityRules: [] } });
 }

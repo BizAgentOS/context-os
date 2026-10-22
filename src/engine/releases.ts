@@ -1,9 +1,12 @@
+import {currentActor,assertRole} from '../security/actors.ts';
 import { z } from "zod";
+import { MetricReader } from "../agent/metrics.ts";
+import { metricReferenceSchema } from "../semantic/metric-contract.ts";
 import type { Artifact, Data } from "../agent/contracts.ts";
 import type { MemoryStore } from "../agent/memory.ts";
 import { FoundationService } from "../agent/foundation.ts";
 import type { LiveMemory } from "../live/memory.ts";
-import { snapshotPinsForRelease, identityDecisionPinsForRelease, propertyCorrectionPinsForRelease } from "../live/release-pins.ts";
+import { snapshotPinsForRelease, correctionPinsForRelease, identityDecisionPinsForRelease, propertyCorrectionPinsForRelease } from "../live/release-pins.ts";
 import { propertyCorrectionsForModel, validatePropertyCorrections } from "../live/property-corrections.ts";
 import { captureIdentityDecision, identityDecisionsForModel } from "../live/identity.ts";
 import type { DatasetContent, Snapshots } from "../data/snapshots.ts";
@@ -11,6 +14,8 @@ import { OntologyDatasets } from "../live/ontology-datasets.ts";
 import { consumerGrant } from "../live/consumer-views.ts";
 import { jsonData } from "../live/sources.ts";
 import { fingerprint, releaseDiff, releaseObjectDiff } from "./release-diff.ts";
+import {captureRelation} from "../live/relation-corrections.ts";
+import {releaseScope,upgradedSelection,scopeAffectedObjects} from "./release-scope.ts";
 import { quote as quoteId } from "../data/executor/engine.ts";
 
 const name = z.string().trim().min(1).max(200);
@@ -18,7 +23,7 @@ const ref = z.object({ id: name, version: z.number().int().positive() }).strict(
 const reference = (a: Artifact) => ({ id: a.id, version: a.version });
 const ids = z.array(name).max(120).refine(a => new Set(a).size === a.length, "选择不能重复");
 const publishSchema = z.object({ operationId: name, checkRef: ref, name, notes: z.string().trim().max(4000).default("") }).strict();
-const connectSchema = z.object({ operationId: name, name, releaseRef: ref, conceptIds: ids.min(1), relationIds: ids, business: z.object({ grants: z.array(consumerGrant).min(1).max(20) }).strict().optional(), agentEnabled: z.boolean().default(false) }).strict();
+const connectSchema = z.object({ operationId: name, name, purpose:z.string().trim().max(1000).optional(), releaseRef: ref, conceptIds: ids.min(1), relationIds: ids, metricIds: ids.default([]), business: z.object({ grants: z.array(consumerGrant).min(1).max(20) }).strict().optional(), agentEnabled: z.boolean().default(false) }).strict();
 const upgradeSchema = z.object({ operationId: name, connectionRef: ref, releaseRef: ref }).strict();
 const revokeSchema = z.object({ operationId: name, connectionRef: ref }).strict();
 interface Issue { code: string; severity: "error" | "warning"; message: string }
@@ -70,7 +75,12 @@ export class Releases {
       const f = model.content.foundationRef as Data | undefined;
       if (!adopted || f?.id !== adopted.id || (!model.content.layered && f.version !== adopted.version)) issues.push({ code: "mapping_foundation_mismatch", severity: "error", message: "当前映射尚未绑定当前已采用本体，请先更新映射。" });
     }
-    const sourceIds = Object.keys((model?.content.connections ?? {}) as Data).sort();
+    const metricReferences = metricReferenceSchema.array().parse(adopted?.content.metricReferences ?? []);
+    for (const metric of metricReferences) {
+      try { this.live.sources.capability(metric.sourceId, metric.capability, metric.connectionVersion); }
+      catch { issues.push({ code: "metric_source_unavailable", severity: "error", message: `「${metric.name}」指标来源或授权已变化，请重新核对引用。` }); }
+    }
+    const sourceIds = [...new Set([...Object.keys((model?.content.connections ?? {}) as Data), ...metricReferences.map(item => item.sourceId)])].sort();
     const sourceState = sourceIds.map(id => {
       try { const a = this.memory.getArtifact(id); return { id, version: a.version, status: a.status }; }
       catch { return { id, version: null, status: "missing" }; }
@@ -102,7 +112,7 @@ export class Releases {
       if (coverage?.complete !== true) issues.push({ code: "snapshot_incomplete", severity: "warning", message: `「${c.name}」来源覆盖不完整：快照只保存 ${coverage?.rows ?? c.profile?.rows ?? 0} / ${coverage?.total ?? "未知"} 行；发布仅提供这部分数据，不能视为全量。` });
       snapshots.push({ sourceId, capability, datasetId: dataset.id, snapshotId: c.activeVersion, fingerprint: String(c.profile?.fingerprint ?? ""), rows: c.profile?.rows ?? 0, syncedAt: String(snapshot.content.syncedAt), coverage: coverage ?? null });
     }
-    const allPinned = bindings.length > 0 && bindings.every(b => snapshots.some(s => s.sourceId === b.sourceId && s.capability === b.capability));
+    const allPinned = metricReferences.length === 0 && bindings.length > 0 && bindings.every(b => snapshots.some(s => s.sourceId === b.sourceId && s.capability === b.capability));
     for (const access of sourceAccess) if (snapshots.some(s => s.sourceId === access.sourceId)) access.strategy = bindings.filter(b => b.sourceId === access.sourceId).every(b => snapshots.some(s => s.sourceId === b.sourceId && s.capability === b.capability)) ? "snapshot" : "snapshot_and_on_demand";
     const policySources = new Set([...sourceIds, ...sourceAccess.flatMap(s => s.uploadRef ? [String(s.uploadRef.id)] : [])]);
     const dataIssues=this.memory.listArtifacts('sync_issue').filter(issue=>issue.status==='open'&&policySources.has(String(issue.content.sourceId))).map(issue=>({...reference(issue),title:issue.title,sourceId:issue.content.sourceId}));
@@ -124,7 +134,7 @@ export class Releases {
       .map(correction => ({ ...correction.content, ...reference(correction) })) : [];
     const definition = jsonData({
       enterprise: adopted?.content.enterprise ?? null,
-      concepts, relations, properties:adopted?.content.properties??[],
+      concepts, relations, properties:adopted?.content.properties??[], metricReferences,
       model: model ? { foundationRef: adopted ? reference(adopted) : model.content.foundationRef, purpose: model.content.purpose, types: model.content.types, relations: model.content.relations, ...(model.content.layered ? { layered: model.content.layered } : {}), connections: model.content.connections } : null,
       sourcePolicies: policies.sort((a, b) => String(a.content.sourceId).localeCompare(String(b.content.sourceId))).map(a => ({ ...a.content, policyRef: reference(a) })),
       sourceAccess,
@@ -183,35 +193,57 @@ export class Releases {
     const connections = (((target.definition as Data).model as Data | null)?.connections ?? {}) as Record<string, number>;
     const name = (datasetId: string) => { try { return String(this.memory.getArtifact(datasetId).content.name); } catch { return datasetId; } };
     const datasets: Data[] = [];
+    const single=async(snapshot:ReleaseSnapshot,kind:"added"|"removed",versions:Record<string,number>)=>{
+      if(!store)throw new Error("快照读取服务不可用");
+      const {cap}=this.live.sources.pinnedCapability(snapshot.sourceId,snapshot.capability,versions[snapshot.sourceId]);
+      return (await store.run([{table:"row",version:snapshot.snapshotId}],`SELECT CAST(row.${quoteId(cap.idField)} AS VARCHAR) AS k, '${kind}' AS kind, ${kind==="added"?"NULL":"row"} AS before, ${kind==="added"?"row":"NULL"} AS after FROM row ORDER BY k LIMIT 5`,{limit:5})).rows;
+    };
     for (const s of after) {
       const prior = before.find(b => b.datasetId === s.datasetId);
       const base = { datasetId: s.datasetId, name: name(s.datasetId), sourceId: s.sourceId, capability: s.capability, fromSnapshot: prior?.snapshotId ?? null, toSnapshot: s.snapshotId, rowsBefore: prior?.rows ?? null, rowsAfter: s.rows };
-      if (!prior) { datasets.push({ ...base, status: "added" }); continue; }
+      if (!prior) {
+        try{datasets.push({...base,status:"added",added:s.rows,removed:0,changed:0,samples:jsonData(await single(s,"added",connections))});}
+        catch(error){datasets.push({...base,status:"unavailable",message:error instanceof Error?error.message:"无法读取新增来源"});}
+        continue;
+      }
       if (prior.snapshotId === s.snapshotId) { datasets.push({ ...base, status: "unchanged", added: 0, removed: 0, changed: 0, samples: [] }); continue; }
-      if (!store) continue;
+      if (!store) {datasets.push({...base,status:"unavailable",message:"快照读取服务不可用"});continue;}
       const { cap } = this.live.sources.pinnedCapability(s.sourceId, s.capability, connections[s.sourceId]);
-      const key = (alias: string) => `SELECT CAST(${alias}.${quoteId(cap.idField)} AS VARCHAR) AS k, hash(${alias}) AS h FROM ${alias}`;
+      const key = (alias: string) => `SELECT CAST(${alias}.${quoteId(cap.idField)} AS VARCHAR) AS k, hash(${alias}) AS h, ${alias} AS row_data FROM ${alias}`;
       const joined = `(${key("a")}) x FULL OUTER JOIN (${key("b")}) y ON x.k = y.k`;
       const inputs = [{ table: "a", version: prior.snapshotId }, { table: "b", version: s.snapshotId }];
       try {
         const counts = (await store.run(inputs, `SELECT count(*) FILTER (WHERE x.k IS NULL) AS added, count(*) FILTER (WHERE y.k IS NULL) AS removed, count(*) FILTER (WHERE x.k IS NOT NULL AND y.k IS NOT NULL AND x.h <> y.h) AS changed FROM ${joined}`, { limit: 1 })).rows[0];
-        const samples = (await store.run(inputs, `SELECT kind, k FROM (SELECT coalesce(y.k, x.k) AS k, CASE WHEN x.k IS NULL THEN 'added' WHEN y.k IS NULL THEN 'removed' ELSE 'changed' END AS kind,
+        const samples = (await store.run(inputs, `SELECT kind, k, before, after FROM (SELECT coalesce(y.k, x.k) AS k, CASE WHEN x.k IS NULL THEN NULL ELSE x.row_data END AS before, CASE WHEN y.k IS NULL THEN NULL ELSE y.row_data END AS after, CASE WHEN x.k IS NULL THEN 'added' WHEN y.k IS NULL THEN 'removed' ELSE 'changed' END AS kind,
           row_number() OVER (PARTITION BY CASE WHEN x.k IS NULL THEN 'added' WHEN y.k IS NULL THEN 'removed' ELSE 'changed' END ORDER BY coalesce(y.k, x.k)) AS n
           FROM ${joined} WHERE x.k IS NULL OR y.k IS NULL OR x.h <> y.h) WHERE n <= 5 ORDER BY kind, k`, { limit: 15 })).rows;
         datasets.push({ ...base, status: "changed", added: Number(counts.added), removed: Number(counts.removed), changed: Number(counts.changed), samples: jsonData(samples) });
       } catch (error) { datasets.push({ ...base, status: "unavailable", message: error instanceof Error ? error.message : "无法比较快照" }); }
     }
-    for (const b of before) if (!after.some(s => s.datasetId === b.datasetId))
-      datasets.push({ datasetId: b.datasetId, name: name(b.datasetId), sourceId: b.sourceId, capability: b.capability, fromSnapshot: b.snapshotId, toSnapshot: null, rowsBefore: b.rows, rowsAfter: null, status: "removed" });
-    return { from: fromRelease ? { ...reference(fromRelease), name: fromRelease.title } : null, to: args.to ? args.to : "working", datasets: jsonData(datasets) };
+    for (const b of before) if (!after.some(s => s.datasetId === b.datasetId)){
+      const base={datasetId:b.datasetId,name:name(b.datasetId),sourceId:b.sourceId,capability:b.capability,fromSnapshot:b.snapshotId,toSnapshot:null,rowsBefore:b.rows,rowsAfter:null};
+      try{const versions=(((fromRelease?.content.definition as Data)?.model as Data)?.connections??{}) as Record<string,number>;datasets.push({...base,status:"removed",added:0,removed:b.rows,changed:0,samples:jsonData(await single(b,"removed",versions))});}
+      catch(error){datasets.push({...base,status:"unavailable",message:error instanceof Error?error.message:"无法读取移除来源"});}
+    }
+    return { from: fromRelease ? { ...reference(fromRelease), name: fromRelease.title } : null, to: args.to ? args.to : "working", toInputHash:args.to?null:target.inputHash, datasets: jsonData(datasets) };
   }
 
   async check(input: unknown) {
+    assertRole("publish");
     const args = z.object({ inputHash: z.string().length(64) }).strict().parse(input);
     const working = this.working();
     if (args.inputHash !== working.inputHash) throw new Error("工作版本已变化，请刷新后重新检查");
     const issues = [...working.issues];
     const samples: Data[] = [];
+    const active = () => { if (this.working().inputHash !== working.inputHash) throw new Error("检查过程中工作版本已变化"); };
+    for (const metric of metricReferenceSchema.array().parse(working.definition.metricReferences)) {
+      try {
+        const actual = await new MetricReader(this.live.sources, active).describe({ sourceId: metric.sourceId, capability: metric.capability, connectionVersion: metric.connectionVersion });
+        active();
+        if (actual.definitionHash !== metric.definitionHash) throw new Error(`「${metric.name}」指标定义已变化，请核对并采用新的引用后再发布。`);
+        samples.push(jsonData({ metricReferenceId: metric.id, definitionRevision: metric.definition.revision, definitionHash: actual.definitionHash, definitionRead: true, observationsRead: false }));
+      } catch (error) { issues.push({ code: "metric_definition_unavailable", severity: "error", message: error instanceof Error ? error.message : "指标定义不可读取" }); }
+    }
     if (!issues.some(i => i.severity === "error") && working.modelRef) {
       const model = this.memory.getArtifact(working.modelRef.id, working.modelRef.version);
       try {
@@ -220,6 +252,15 @@ export class Releases {
           identityDecisionPins: new Set(identityDecisionPinsForRelease(working.definition)),
         });
       } catch (error) { issues.push({ code: "property_correction_unavailable", severity: "error", message: error instanceof Error ? error.message : "属性纠正无法复验" }); }
+      for(const pinned of working.definition.corrections as Data[]){
+        try{
+          const correction=this.memory.getArtifact(String(pinned.id),Number(pinned.version));
+          const captured=await captureRelation(this.live,correction.content.target as unknown as Parameters<typeof captureRelation>[1],correction.content.targetIds as string[],()=>{
+            if(this.working().inputHash!==working.inputHash)throw new Error("检查过程中工作版本已变化");
+          },{readMode:"release_pinned",pins:releasePins(working.definition),fixedSemantic:true,modelDefinition:(correction.content.modelDefinition??working.definition.model) as Data,identityDecisionPins:new Set(identityDecisionPinsForRelease(working.definition))});
+          if(captured.fingerprint!==correction.content.fingerprint)throw new Error("关系纠正依赖的源事实已变化，请先重新检查纠正");
+        }catch(error){issues.push({code:"relation_correction_unavailable",severity:"error",message:error instanceof Error?error.message:"关系纠正无法复验"});}
+      }
       for (const decision of identityDecisionsForModel(this.memory, model, new Set(identityDecisionPinsForRelease(working.definition)))) {
         try {
           const captured = await captureIdentityDecision(this.live, model, decision.content, {
@@ -238,9 +279,17 @@ export class Releases {
           const fields = [...new Set(["$id", ...Object.keys(t.fields as Data), ...((t.supplements ?? []) as Data[]).flatMap(s => Object.keys(s.fields as Data))])];
           const sample = await this.live.query({ modelId: working.modelRef.id, modelVersion: working.modelRef.version, type: t.name, fields, limit: 1 }, () => {
             if (this.working().inputHash !== working.inputHash) throw new Error("检查过程中工作版本已变化");
-          }, false, working.definition.model as Data, false, releasePins(working.definition), undefined, new Set(identityDecisionPinsForRelease(working.definition)));
+          }, new Set(correctionPinsForRelease(working.definition)), working.definition.model as Data, true, releasePins(working.definition), undefined, new Set(identityDecisionPinsForRelease(working.definition)),undefined,new Set(propertyCorrectionPinsForRelease(working.definition)));
           if (sample.evidence?.some(o => o.matches.some(m => m.status === "unavailable"))) throw new Error("附来源读取失败，请恢复连接后重新检查");
           samples.push(jsonData({ type: t.name, coverage: sample.coverage, reads: sample.reads }));
+          for(const relation of ((working.definition.model as Data).relations as Data[]).filter(item=>item.from===t.name)){
+            if(!sample.items.length){samples.push({relation:relation.name,executed:false,reason:"起点集合为空，未执行对象关系读取"});continue;}
+            const related=await this.live.query({modelId:working.modelRef.id,modelVersion:working.modelRef.version,type:t.name,id:String(sample.items[0].$id),relation:relation.name,limit:1},()=>{
+              if(this.working().inputHash!==working.inputHash)throw new Error("检查过程中工作版本已变化");
+            },new Set(correctionPinsForRelease(working.definition)),working.definition.model as Data,true,releasePins(working.definition),undefined,new Set(identityDecisionPinsForRelease(working.definition)),undefined,new Set(propertyCorrectionPinsForRelease(working.definition)));
+            if(related.evidence?.some(o=>o.matches.some(m=>m.status==="unavailable")))throw new Error("关系目标的附来源读取失败");
+            samples.push(jsonData({relation:relation.name,executed:true,coverage:related.coverage,reads:related.reads}));
+          }
         } catch (error) { issues.push({ code: "source_check_failed", severity: "error", message: `${String(t.name)}：${error instanceof Error ? error.message : "来源读取失败"}` }); }
       }
     }
@@ -252,14 +301,15 @@ export class Releases {
 
   private previous(method: string, operationId: string, input: unknown) {
     const signature = fingerprint(input);
-    const receipt = this.memory.listArtifacts("release_receipt").find(a => a.content.actor === "local-admin" && a.content.method === method && a.content.operationId === operationId);
+    const receipt = this.memory.listArtifacts("release_receipt").find(a => a.content.actor === currentActor().id && a.content.method === method && a.content.operationId === operationId);
     if (receipt && receipt.content.signature !== signature) throw new Error("幂等操作标识已绑定不同请求");
     return receipt ? receipt.content.result as Data : null;
   }
   private receipt(method: string, operationId: string, input: unknown, result: unknown) {
-    this.memory.putArtifact({ kind: "release_receipt", title: "发布管理操作回执", status: "saved", content: jsonData({ actor: "local-admin", method, operationId, signature: fingerprint(input), result }) });
+    this.memory.putArtifact({ kind: "release_receipt", title: "发布管理操作回执", status: "saved", content: jsonData({ actor: currentActor().id, method, operationId, signature: fingerprint(input), result }) });
   }
   publish(input: unknown) {
+    assertRole("publish");
     const args = publishSchema.parse(input);
     return this.memory.atomic(() => {
       const previous = this.previous("publish", args.operationId, args);
@@ -292,7 +342,7 @@ export class Releases {
   private createDataset(args: z.infer<typeof connectSchema>, release: Artifact, operationId: string) {
     const foundationRef = ref.parse(release.content.foundationRef);
     const modelRef = args.business ? ref.parse(release.content.modelRef) : null;
-    return this.datasets.publishForRelease({ operationId, name: args.name, foundationRef, conceptIds: args.conceptIds, relationIds: args.relationIds, ...(args.business ? { business: { ...args.business, modelRef } } : {}) },
+    return this.datasets.publishForRelease({ operationId, name: args.name, foundationRef, conceptIds: args.conceptIds, relationIds: args.relationIds, metricIds: args.metricIds, ...(args.business ? { business: { ...args.business, modelRef } } : {}) },
       reference(release), { fixedSemantic: true, snapshotPins: releasePins(release.content.definition as Data) });
   }
   private replayConnection(result: Data) {
@@ -302,18 +352,20 @@ export class Releases {
     return { connection, dataset: { ...dataset, content }, key: null, keyAvailable: false };
   }
   connect(input: unknown) {
+    assertRole("connection");
     const args = connectSchema.parse(input);
     return this.memory.atomic(() => {
       const previous = this.previous("connect", args.operationId, args);
       if (previous) return this.replayConnection(previous);
       const release = this.read(args.releaseRef);
       const result = this.createDataset(args, release, `release-connect:${fingerprint(args.operationId)}`);
-      const connection = this.memory.putArtifact({ kind: "release_connection", title: args.name, status: "active", content: jsonData({ releaseRef: args.releaseRef, datasetRef: reference(result.dataset), conceptIds: args.conceptIds, relationIds: args.relationIds, business: args.business ?? null, agentEnabled: args.agentEnabled, connectedAt: new Date().toISOString() }) });
+      const connection = this.memory.putArtifact({ kind: "release_connection", title: args.name, status: "active", content: jsonData({ releaseRef: args.releaseRef, datasetRef: reference(result.dataset), conceptIds: args.conceptIds, relationIds: args.relationIds, metricIds: args.metricIds, business: args.business ?? null, purpose:args.purpose??"", agentEnabled: args.agentEnabled, connectedAt: new Date().toISOString() }) });
       this.receipt("connect", args.operationId, args, { connectionRef: reference(connection) });
       return { ...result, connection };
     });
   }
   upgrade(input: unknown) {
+    assertRole("connection");
     const args = upgradeSchema.parse(input);
     return this.memory.atomic(() => {
       const previous = this.previous("upgrade", args.operationId, args);
@@ -321,15 +373,16 @@ export class Releases {
       const current = this.connectionRecord(args.connectionRef), release = this.read(args.releaseRef);
       if (fingerprint(current.content.releaseRef) === fingerprint(args.releaseRef)) throw new Error("接入方已使用此发布版本");
       if (this.connectionState(current).effectiveStatus !== "active") throw new Error("接入数据集已撤销，不能通过升级恢复权限");
-      const selection = connectSchema.parse({ operationId: args.operationId, name: current.title, releaseRef: args.releaseRef, conceptIds: current.content.conceptIds, relationIds: current.content.relationIds, ...(current.content.business ? { business: current.content.business } : {}), agentEnabled: current.content.agentEnabled ?? false });
+      const selection = connectSchema.parse({ operationId: args.operationId, name: current.title, releaseRef: args.releaseRef, ...upgradedSelection(current,this.read(current.content.releaseRef),release), purpose:current.content.purpose??"", agentEnabled: current.content.agentEnabled ?? false });
       const result = this.createDataset(selection, release, `release-upgrade:${fingerprint(args.operationId)}`);
       this.datasets.revoke(current.content.datasetRef);
-      const connection = this.memory.putArtifact({ ...current, expectedVersion: current.version, content: jsonData({ ...current.content, releaseRef: args.releaseRef, datasetRef: reference(result.dataset), previousReleaseRef: current.content.releaseRef, upgradedAt: new Date().toISOString() }) });
+      const connection = this.memory.putArtifact({ ...current, expectedVersion: current.version, content: jsonData({ ...current.content, business:selection.business??null, releaseRef: args.releaseRef, datasetRef: reference(result.dataset), previousReleaseRef: current.content.releaseRef, upgradedAt: new Date().toISOString() }) });
       this.receipt("upgrade", args.operationId, args, { connectionRef: reference(connection) });
       return { ...result, connection };
     });
   }
   revoke(input: unknown) {
+    assertRole("connection");
     const args = revokeSchema.parse(input);
     return this.memory.atomic(() => {
       const previous = this.previous("revoke", args.operationId, args);
@@ -341,6 +394,31 @@ export class Releases {
       this.receipt("revoke", args.operationId, args, { connectionRef: reference(connection) });
       return { connection, replayed: false };
     });
+  }
+  connectionDetail(input: unknown) {
+    const r=ref.parse(input),connection=this.memory.getArtifact(r.id);
+    if(connection.kind!=="release_connection"||connection.version!==r.version)throw new Error("接入方状态或版本已变化，请刷新");
+    const release=this.read(connection.content.releaseRef);
+    return {connection:this.connectionState(connection),release,scope:releaseScope(connection,release),
+      usage:this.datasets.usage(String((connection.content.datasetRef as Data).id)),
+      dataView:{kind:"consumer",releaseRef:reference(release),connectionRef:reference(connection)}};
+  }
+  upgradePreview(input:unknown){
+    const args=z.object({connectionRef:ref,releaseRef:ref}).strict().parse(input),connection=this.connectionRecord(args.connectionRef),from=this.read(connection.content.releaseRef),to=this.read(args.releaseRef);
+    const scope=releaseScope(connection,from),blockers:string[]=[];
+    if(this.connectionState(connection).effectiveStatus!=="active")blockers.push("接入数据集已撤销，不能通过升级恢复权限");
+    if(fingerprint(reference(from))===fingerprint(reference(to)))blockers.push("接入方已使用此发布版本");
+    try{
+      const selection=upgradedSelection(connection,from,to);
+      if(selection.business){
+        const modelRef=ref.parse(to.content.modelRef),definition=to.content.definition as Data,modelDefinition={...(definition.model as Data),foundationRef:to.content.foundationRef};
+        this.live.assertModel(modelRef.id,modelRef.version,true,releasePins(definition),modelDefinition);
+        this.live.validateConsumerScope({name:connection.title,purpose:String(connection.content.purpose||"发布版本升级"),modelId:modelRef.id,grants:selection.business.grants.map(({evidence,...grant})=>grant)},true,releasePins(definition),modelDefinition);
+      }
+    }catch(error){blockers.push(error instanceof Error?error.message:"无法保留原授权范围");}
+    const objectDiff=releaseObjectDiff(from.content.definition,to.content.definition);
+    const affected=scopeAffectedObjects(scope,objectDiff,[from.content.definition as Data,to.content.definition as Data]);
+    return {connectionRef:reference(connection),from:{...reference(from),name:from.title},to:{...reference(to),name:to.title},objectDiff,affected,blockers,compatible:!blockers.length};
   }
   connection(input: unknown, origin: string) {
     const connection = this.connectionRecord(input);

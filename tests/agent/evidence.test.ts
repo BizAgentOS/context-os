@@ -1,4 +1,5 @@
 import { restoreHistoricalAccess } from "./historical-consumers-fixture.ts";
+import {ConsumerViews} from "../../src/live/consumer-views.ts";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { fileURLToPath } from "node:url";
@@ -21,7 +22,7 @@ import {
 } from "./knowledge-fixture.ts";
 import { createMetricSource, metricCapability } from "./metrics-fixture.ts";
 
-test("one business investigation keeps document excerpts, metric scope and conflicting object evidence together without turning a rate into an object fact", async () => {
+test("historical context grants and one business investigation keeps document excerpts, metric scope and conflicting object evidence together without turning a rate into an object fact", async () => {
   const records = await createFusionSources(),
     knowledge = await createKnowledgeSource(),
     metrics = await createMetricSource();
@@ -192,12 +193,11 @@ test("one business investigation keeps document excerpts, metric scope and confl
         version: view.version,
       })
     ).saved;
-    const consume = async (path: string, key = active.key) => {
-      const r = await fetch(origin + path, {
-        headers: { authorization: "Bearer " + key },
-      });
-      return { status: r.status, body: (await r.json()) as any };
-    };
+    // Context bundle grants remain readable for local historical audit. Retired HTTP/MCP must not reopen them.
+    const historicalViews=new ConsumerViews(service.app.memory,service.app.live);
+    const consume=async(path:string,key=active.key)=>{const url=new URL(path,origin);return await historicalViews.handle(url.pathname,url.searchParams,"Bearer "+key) as {status:number;body:any};};
+    const retired=await fetch(origin+"/v3/catalog",{headers:{authorization:"Bearer "+active.key}});
+    assert.equal(retired.status,410);
     const catalog = await consume("/v3/catalog");
     assert.equal(catalog.body.contextEvidence.length, 2);
     const doc = await consume(
@@ -227,30 +227,7 @@ test("one business investigation keeps document excerpts, metric scope and confl
       version: "1.0",
     });
     try {
-      await client.connect(
-        new StdioClientTransport({
-          command: process.execPath,
-          args: [
-            fileURLToPath(
-              new URL("../../scripts/dataengine-mcp.ts", import.meta.url),
-            ),
-          ],
-          env: {
-            PATH: process.env.PATH!,
-            DATAENGINE_URL: origin,
-            DATAENGINE_CONSUMER_KEY: active.key,
-          },
-        }),
-      );
-      const detail = await client.callTool({
-        name: "read_evidence",
-        arguments: { ref: catalog.body.contextEvidence[1].ref },
-      });
-      assert.equal(detail.isError, undefined);
-      assert.equal(
-        (detail.structuredContent as any).evidence.definition.unit,
-        "%",
-      );
+      await assert.rejects(client.connect(new StdioClientTransport({command:process.execPath,args:[fileURLToPath(new URL("../../scripts/dataengine-mcp.ts",import.meta.url))],env:{PATH:process.env.PATH!,DATAENGINE_URL:origin,DATAENGINE_CONSUMER_KEY:active.key},stderr:"pipe"})),/closed|密钥|connection/i);
     } finally {
       await client.close();
     }

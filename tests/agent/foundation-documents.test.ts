@@ -69,9 +69,8 @@ test("uploaded enterprise text is read before citation and its versioned excerpt
         "foundation_propose",
         draft,
       )) as any;
-      assert.deepEqual(candidate.content.concepts.map((item: any) => [item.id, item.origin]), [["resident", "program"]]);
-      assert.equal(candidate.content.evidence.find((item: any) => item.id === "doc-1").sourceVersion, 1);
-      assert.equal(candidate.content.evidence.find((item: any) => item.id === "doc-1").kind, "document");
+      assert.equal(candidate.staged, true);
+      assert.deepEqual(candidate.updated.concepts, ["resident"]);
       saved = true;
       return { text: "资料候选已保存。", sessionId: "docs", runId: "docs" };
     },
@@ -114,6 +113,9 @@ test("uploaded enterprise text is read before citation and its versioned excerpt
     assert(saved, JSON.stringify((await api("/api/canvas")).messages));
     const current = (await api("/api/canvas")).foundation.current;
     assert.equal(current.status, "adopted");
+    assert.deepEqual(current.content.concepts.map((item: any) => [item.id, item.origin]), [["resident", "program"]]);
+    assert.equal(current.content.evidence.find((item: any) => item.id === "doc-1").sourceVersion, 1);
+    assert.equal(current.content.evidence.find((item: any) => item.id === "doc-1").kind, "document");
     assert.equal((await api("/api/canvas")).pending, null);
     await service.close();
     const idle: AgentDriver = {
@@ -158,15 +160,18 @@ test("document changes retain prior meaning as a conflict; a fresh human adjudic
       assert.equal(input.mode, "automatic-document-ontology", "only the host document job retains its internal proposal method");
       sourceId = input.sources[0].id;
       const before = await request.onTool("foundation_read", {}) as any;
+      const unknowns = await request.onTool("foundation_read", { section: "unknowns" }) as any;
+      const area = unknowns.current.content.unknowns.find((item: any) => item.description === "服务区域未知");
+      assert(area, "the document job reads the real unresolved item before citing its identifier");
       const part = await request.onTool("foundation_document_read", { sourceId }) as any;
       const candidate = await request.onTool("foundation_propose", { baseVersion: before.current.version,
         enterprise: { name: "澄川热力", evidenceRefs: ["e1"] },
         concepts: [{ id: "customer", name: "客户", description: "接受供热服务的工业企业", evidenceRefs: ["d1"] }], relations: [],
         evidence: [{ id: "d1", kind: "document", readId: part.readId, quote: part.text }],
-        unknowns: [{ id: "area", description: "服务区域未知", resolvedBy: ["d1"] }], conflicts: [],
+        unknowns: [{ id: area.id, description: "服务区域未知", resolvedBy: ["d1"] }], conflicts: [],
       }) as any;
-      assert.equal(candidate.content.conflicts[0].retained.description, "接受供热服务的居民");
-      assert.deepEqual(candidate.content.unknowns[0].resolvedBy, ["d1"]);
+      assert.equal(candidate.staged, true);
+      assert.deepEqual(candidate.updated.unknowns, [area.id]);
       checked = true;
       return { text: "资料分歧已保留。", sessionId: "doc", runId: "doc" };
     }, async stop() {}, async close() {},
@@ -187,6 +192,8 @@ test("document changes retain prior meaning as a conflict; a fresh human adjudic
     assert(checked, JSON.stringify(service.app.canvasState().automaticBuild));
     const after = service.app.foundation.read().adopted!;
     assert.equal((after.content.concepts as any[])[0].description, "接受供热服务的居民");
+    assert.equal((after.content.conflicts as any[])[0].retained.description, "接受供热服务的居民");
+    assert.deepEqual((after.content.unknowns as any[])[0].resolvedBy, ["d1"]);
     const selected = service.app.canvasContext({ page: "ontology", context: { view: "ontology.definitions", revision: 0,
       selection: [{ spaceId: service.app.canvasState().workspaceId, kind: "foundation_concept", id: after.id, version: after.version, member: "customer" }],
       scope: { where: {}, offset: 0, limit: 20 }, draftRef: { id: "conflict-view", revision: 0 },

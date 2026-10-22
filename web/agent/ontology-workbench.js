@@ -43,9 +43,10 @@ export function renderOntologyWorkspace(state,actions){
   drawDirectory();
   if(mode==='3d'){
    const artifact={id:data.foundationRef?.id,version:data.foundationRef?.version,content:{concepts:data.entities,relations:data.relations,evidence:[]}};
-   const graph=buildOntologyGraph(artifact);
+      const graph=buildOntologyGraph(artifact,{highlight});
    scene=createOntologyScene(graphHost,graph,{onActivate:key=>{const [kind,...id]=key.split(':');void select(kind==='concept'?'entity':'relation',id.join(':'));},onBackground:()=>{},onUnavailable:()=>{mode='plane';draw();status.textContent='当前设备无法绘制三维，已切换平面。';}});
    if(selected?.kind==='entity')scene?.setView({stage:'local',focus:selected.id,target:{kind:'foundation_concept',member:selected.id},evidenceId:null});
+   if(selected?.kind==='relation'){const relation=data.relations.find(item=>item.id===selected.id);if(relation)scene?.setView({stage:'local',focus:relation.from,target:{kind:'foundation_relation',member:selected.id},evidenceId:null});}
    return;
   }
   if(mode!=='plane')return;
@@ -54,10 +55,10 @@ export function renderOntologyWorkspace(state,actions){
   const pairs=new Map();for(const relation of data.relations){const key=[relation.from,relation.to].sort().join('|');if(!pairs.has(key))pairs.set(key,[]);pairs.get(key).push(relation);}
   for(const relation of data.relations){const a=points.get(relation.from),b=points.get(relation.to);if(!a||!b)continue;const group=pairs.get([relation.from,relation.to].sort().join('|')),index=group.indexOf(relation),bend=(index-(group.length-1)/2)*80;
    const dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy)||1,m={x:(a.x+b.x)/2-dy/len*bend,y:(a.y+b.y)/2+dx/len*bend};
-   const d=relation.from===relation.to?`M ${a.x} ${a.y-24} C ${a.x-120} ${a.y-160} ${a.x+120} ${a.y-160} ${a.x} ${a.y-24}`:`M ${a.x} ${a.y} Q ${m.x} ${m.y} ${b.x} ${b.y}`;
+   const loop=120+index*45,d=relation.from===relation.to?`M ${a.x} ${a.y-24} C ${a.x-loop} ${a.y-loop-40} ${a.x+loop} ${a.y-loop-40} ${a.x} ${a.y-24}`:`M ${a.x} ${a.y} Q ${m.x} ${m.y} ${b.x} ${b.y}`;
    const path=svgEl('path',{d,class:`ow-edge ow-${relation.state}${selectedKey('relation',relation.id)||highlight?.relationTypeIds.includes(relation.id)?' selected':''}${highlight&&!highlight.relationTypeIds.includes(relation.id)?' ow-dimmed':''}`,tabindex:0,role:'button','aria-label':`${relation.fromName} → ${relation.name} → ${relation.toName}`});
    path.onclick=()=>void select('relation',relation.id);path.onkeydown=e=>{if(['Enter',' '].includes(e.key)){e.preventDefault();void select('relation',relation.id);}};
-   const text=svgEl('text',{x:m.x,y:relation.from===relation.to?a.y-105:(a.y+b.y)/2+bend/2-8,'text-anchor':'middle',class:'ow-edge-label'});text.textContent=safeText(relation.name);svg.append(path,text);
+   const text=svgEl('text',{x:m.x,y:relation.from===relation.to?a.y-105-index*34:(a.y+b.y)/2+bend/2-8,'text-anchor':'middle',class:'ow-edge-label'});text.textContent=safeText(`${relation.name}${relation.pending?` · 待处理 ${relation.pending}`:''}`);svg.append(path,text);
   }
   if(highlight?.missing){const from=points.get(highlight.missing.from);if(from){const x=from.x,y=from.y;svg.append(svgEl('path',{d:`M ${x} ${y} l 100 -70`,class:'ow-edge ow-missing'}));const label=svgEl('text',{x:x+100,y:y-78,class:'ow-edge-label'});label.textContent='缺少可验证的连接';svg.append(label);}}
   for(const entity of data.entities){const point=points.get(entity.id),group=svgEl('g',{transform:`translate(${point.x},${point.y})`,class:`ow-node ow-${entity.state}${selectedKey('entity',entity.id)||highlight?.entityTypeIds.includes(entity.id)?' selected':''}${highlight&&!highlight.entityTypeIds.includes(entity.id)?' ow-dimmed':''}`,tabindex:0,role:'button','aria-label':`${entity.name} · ${states[entity.state]}`});
@@ -102,6 +103,16 @@ export function renderOntologyWorkspace(state,actions){
    const relation=section(sidebar,'关系与绑定');relation.append(el('p',`${detail.fromName} → ${detail.name} → ${detail.toName}`),el('p',`基数：${detail.cardinality}`));
    for(const binding of detail.bindings)relation.append(el('p',`${binding.kind==='link_table'?'中间表关联':'字段关联'}：${binding.fromColumns.join('、')} → ${binding.toColumns.join('、')}`));
    if(!detail.bindings.length)relation.append(el('p','尚未绑定数据，不能报告匹配率。'));
+   const match=detail.match;
+   if(match?.status==='measured'){
+    relation.append(el('h4','实际关联覆盖'),el('p',match.coverage.complete?(match.total?`${match.matched} / ${match.total} 个起点对象有可验证关联 · 匹配率 ${Math.round(match.matchRate*10000)/100}%`:'当前起点没有对象，匹配率不适用。'):`当前读取范围内 ${match.observed.matched} / ${match.observed.total} 个对象有连接；来源覆盖不完整，不报告全量匹配率。`));
+    relation.append(el('p',`按当前工作版、身份决定和局部纠正计算；检查时间 ${when(match.checkedAt)}。`,'engine-muted'));
+    for(const source of match.sources||[])relation.append(el('p',`${source.name} · 快照时间 ${when(source.dataAsOf)}`,'engine-muted'));
+    relation.append(el('h4',`未匹配示例${match.unmatched.total===null?'':`（共 ${match.unmatched.total} 个）`}`));
+    if(match.unmatched.items.length)relation.append(table(match.unmatched.items,[['起点对象编号',item=>item.objectId]]));
+    else relation.append(el('p',match.coverage.complete?'当前没有未匹配对象。':'当前已读取范围中没有未匹配示例。'));
+    if(!match.unmatched.complete)relation.append(el('p',`示例最多显示 ${match.unmatched.limit} 个；不是全部对象清单。`,'engine-muted'));
+   }else if(match)relation.append(el('p',`尚不能测量：${match.reason}`,'engine-message'));
    relation.append(action('让助手核对匹配与未匹配记录',()=>actions.ask(`请核对「${detail.title}」在当前快照中的匹配率与未匹配记录，引用实际查询结果。`)));
   }
   sidebar.append(action('围绕此内容提问',async()=>{ if(detail.foundationRef)await actions.select?.(detail.foundationRef,{kind:detail.kind==='entity'?'foundation_concept':'foundation_relation',member:detail.id},()=>root.isConnected);actions.ask(`请围绕「${detail.title}」分析，先读取最新定义与依据。`); }));
@@ -190,7 +201,11 @@ export function renderOntologyWorkspace(state,actions){
  function renderRelations(detail){for(const relation of detail.relations)sidebar.append(directoryEntry('relation',relation,`${relation.fromName} → ${relation.name} → ${relation.toName}`));if(!detail.relations.length)sidebar.append(el('p','尚无关系。'));sidebar.append(action('提出关系调整',()=>actions.askBuild?.(`请核对「${detail.name}」缺少或错误的关系，给出有数据依据的变更提议。`)));}
  function renderEvidence(detail){
   const box=section(sidebar,`定义依据（${detail.evidence.total}）`);
-  const append=page=>{for(const evidence of page.items){const item=el('article');item.append(el('h4',evidence.title||'原始依据'),el('blockquote',evidence.quote||'无引文'),el('p',evidence.kind==='web'?'公开网页':evidence.kind==='document'?'企业资料':'用户陈述'));if(evidence.url&&/^https?:\/\//.test(evidence.url)){const link=el('a','打开原文');link.href=evidence.url;link.target='_blank';link.rel='noopener noreferrer';item.append(link);}box.append(item);}};
+  const append=page=>{for(const evidence of page.items){const item=el('article');item.append(el('h4',evidence.title||'原始依据'),el('blockquote',evidence.quote||'无引文'),el('p',evidence.kind==='web'?'公开网页':evidence.kind==='document'?'企业资料':'用户陈述'));
+   const location=evidence.documentLocation;
+   if(location){const parts=[location.format==='pdf'&&location.pages?.length?`PDF 第 ${location.pages.join('、')} 页`:location.format==='docx'?'Word 文档':'',location.sections?.length?`章节：${location.sections.join(' / ')}`:''].filter(Boolean);if(parts.length)item.append(el('p',parts.join(' · '),'engine-muted'));}
+   for(const warning of evidence.documentWarnings||[])item.append(el('p',`读取限制：${warning}`,'engine-message'));
+   if(evidence.url&&/^https?:\/\//.test(evidence.url)){const link=el('a','打开原文');link.href=evidence.url;link.target='_blank';link.rel='noopener noreferrer';item.append(link);}box.append(item);}};
   append(detail.evidence);if(detail.evidence.nextOffset!=null)box.append(action('更多依据',async()=>{const tick=detailGeneration;const next=await actions.api(`/api/ontology/detail?${new URLSearchParams({kind:detail.kind,id:detail.id,evidenceOffset:detail.evidence.nextOffset})}`);if(disposed||tick!==detailGeneration)return;detail.evidence=next.evidence;renderEvidence(next);}));
   if(!detail.evidence.total)box.append(el('p','尚无可定位的定义依据。'));
  }

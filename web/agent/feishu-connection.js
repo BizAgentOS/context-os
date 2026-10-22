@@ -1,9 +1,10 @@
 import { technicalDetails } from "./ui-display.js";
 import { element as el, action, field, connectionDialog } from "./connection-ui.js";
 import { renderFeishuDirectory } from "./feishu-directory.js";
+import { openFeishuTables } from "./feishu-tables.js";
 
 export function openFeishuConnection(api, options = {}) {
-  const shell = connectionDialog("飞书资料", "按链接读取正文，保存资料后自动构建有原文依据的本体。");
+  const shell = connectionDialog("飞书资料", "复用飞书账号读取文档，或选择多维表格作为数据来源。");
   shell.dialog.classList.add("service-connections");
   let state, timer, pending, reading = false, exiting = false, generation = 0;
   let documentUrl = "", documentResult, selectedId = options.sourceId, detailRequest = 0, adding = false;
@@ -177,9 +178,19 @@ export function openFeishuConnection(api, options = {}) {
       back: () => { directoryListing = undefined; render(); }, browse: browseDirectory, read: readDirectorySelection, open: selectDocument,
     }));
     else if (state.documents?.length) shell.body.append(documentLibrary());
-    if (state.account) {
+    if (state.account && !active()) {
       const account = el("section", null, "connection-summary");
       account.append(el("strong", state.account.label), el("p", "已保存飞书账号 · 文档只读", "connection-note"));
+      const tables = el("section", null, "connection-summary");
+      tables.append(el("h3", "多维表格"), el("p", state.account.tablesAuthorized ? "已保存表格只读权限。选择数据表后，每张表独立同步，可在数据页查看结果。" : "使用当前账号追加表格、字段与记录的只读权限，再选择要接入的数据表。", "connection-note"));
+      if (state.job?.error) tables.append(el("p", state.job.error, "connection-note"));
+      tables.append(action(state.account.tablesAuthorized ? "选择飞书数据表" : "授权多维表格只读权限", async () => {
+        if (pending || reading || !alive()) return;
+        if (!state.account.tablesAuthorized) { await perform("/api/connectors/feishu/authorize-tables", {}); return; }
+        await shell.close();
+        if (!shell.dialog.open) openFeishuTables(api, { ...options, onBack: () => openFeishuConnection(api, options) });
+      }, "primary-button"));
+      shell.body.append(tables);
       const form = el("form"), url = field("飞书文档或目录链接", "url");
       url.input.required = true; url.input.placeholder = "https://企业.feishu.cn/wiki/… 或 /docx/…"; url.input.value = documentUrl;
       url.input.addEventListener("input", () => { documentUrl = url.input.value; });
@@ -214,17 +225,17 @@ export function openFeishuConnection(api, options = {}) {
         el("p", "单个文档只读取自身正文；wiki 目录请先查看文件列表，再勾选读取。支持 docx、Markdown、TXT、CSV；附件限 250 KB、60000 字符（UTF-8）。", "connection-note"), manage);
       shell.body.append(readPanel);
     } else if (active()) {
-      const steps = [["preparing", "准备组件"], ["waiting_app", "创建应用"], ["waiting_authorization", "授权文档"], ["verifying", "验证账号"]];
+      const steps = state.account ? [["preparing", "准备授权"], ["waiting_authorization", "授权读取"], ["verifying", "验证账号"]] : [["preparing", "准备组件"], ["waiting_app", "创建应用"], ["waiting_authorization", "授权读取"], ["verifying", "验证账号"]];
       const progress = el("ol", null, "connection-progress");
       const current = steps.findIndex(([phase]) => phase === state.job.phase);
       steps.forEach(([, title], index) => {
         const item = el("li", `${index + 1}. ${title}`, index === current ? "active" : "");
         if (index === current) item.setAttribute("aria-current", "step"); progress.append(item);
       });
-      const labels = { preparing: "正在准备官方连接组件…", waiting_app: "请在飞书页面完成应用创建", waiting_authorization: "应用已创建，请继续授权文档读取", verifying: "正在验证应用与账号…" };
+      const labels = { preparing: "正在准备官方连接组件…", waiting_app: "请在飞书页面完成应用创建", waiting_authorization: state.account ? "请为当前账号授权表格只读权限" : "应用已创建，请继续授权文档读取", verifying: "正在验证应用与账号…" };
       shell.body.append(progress, el("h3", labels[state.job.phase]), el("p", state.job.phase === "waiting_app" ? "网页显示“创建成功”后回到这里，继续下一步文档授权。" : "完成官方网页操作后，连接状态会自动更新。", "connection-note"));
       if (state.job.authorizationUrl) {
-        const link = el("a", state.job.phase === "waiting_app" ? "前往飞书创建应用 ↗" : "前往飞书授权文档 ↗", "primary-button");
+        const link = el("a", state.job.phase === "waiting_app" ? "前往飞书创建应用 ↗" : "前往飞书授权读取 ↗", "primary-button");
         link.href = state.job.authorizationUrl; link.target = "_blank"; link.rel = "noopener noreferrer";
         shell.body.append(link, el("p", new URL(link.href).hostname, "connection-note"));
       }

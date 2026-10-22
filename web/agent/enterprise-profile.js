@@ -1,6 +1,7 @@
 import { openApiImport } from "./openapi-import.js";
 import { openConnections } from "./connections.js";
 import { technicalDetails } from "./ui-display.js";
+import {showSourceManagement} from './engine-workspace.js';
 // Presentation only: company facts, source accounts and imported files remain distinct.
 export function renderEnterpriseProfile(state, actions) {
   const el = (tag, cls, text) => {
@@ -179,14 +180,8 @@ export function renderEnterpriseProfile(state, actions) {
     file.replaceChildren(mark, copy, icon("caret-right"));
     if (actions.api) {
       const row = el("div", "ed-upload-row");
-      const remove = button("ed-upload-delete", "删除", async () => {
-        remove.disabled = true;
-        try {
-          const snapshot = await actions.api("/api/canvas/upload/remove", { id: source.id, version: source.version });
-          actions.onImportSaved(snapshot);
-        } catch (error) { remove.disabled = false; remove.title = error.message; remove.textContent = "删除失败，重试"; }
-      });
-      remove.setAttribute("aria-label", `删除 ${source.title}`);
+      const remove = button("ed-upload-delete", "管理", () => void showSourceManagement(source,{api:actions.api,refresh:async()=>actions.onImportSaved(await actions.api('/api/canvas/bootstrap'))}));
+      remove.setAttribute("aria-label", `管理 ${source.title}`);
       row.append(file, remove); fileList.append(row);
     } else fileList.append(file);
   }

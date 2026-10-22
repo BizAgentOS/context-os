@@ -154,6 +154,12 @@ export class QuerySql {
     this.ctes.push(`${name} AS (SELECT * FROM (${original}) original${excludes.length?' WHERE left_id NOT IN ('+excludes.join(',')+')':''}${targets.length?' UNION '+targets.join(' UNION '):''})`);
     return {name,relation};
   }
+  relationReportSql(id:string){
+    const {name,relation}=this.relation(id),origins=this.entity(relation.from);
+    const matched=`EXISTS(SELECT 1 FROM ${name} edge WHERE edge.left_id=origin.__id)`;
+    const sample=`CAST(to_json((SELECT list(struct_pack(objectId:=__id)) FROM (SELECT origin.__id FROM ${origins} origin WHERE NOT ${matched} ORDER BY origin.__id LIMIT 10))) AS VARCHAR)`;
+    return `WITH RECURSIVE ${this.ctes.join(',')} SELECT count(*) AS sourceTotal,count(*) FILTER(WHERE ${matched}) AS sourceMatched,${sample} AS unmatchedSamples FROM ${origins} origin`;
+  }
   select(query:SemanticQueryRequest,fields:string[],includeGroupMembers=false){
     let currentType=query.target.entityTypeId;
     let table=this.entity(currentType);

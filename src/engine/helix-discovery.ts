@@ -13,7 +13,9 @@ export interface Resource {
 }
 /** The source a dataset was synced from; `discovery` may declare keys and foreign keys. */
 export interface SourceInfo { id: string; name: string; data: { kind: string; connectionId?: string; discovery?: { foreignKeys?: any[]; keys?: any[] } } }
-export type Query = (datasetIds: string[], sql: string, options: { limit?: number; offset?: number }) => Promise<{ rows: Record<string, unknown>[]; profile?: { rows: number } }>;
+export type Query = ((datasetIds: string[], sql: string, options: { limit?: number; offset?: number }) => Promise<{ rows: Record<string, unknown>[]; profile?: { rows: number } }>) & {
+  scan?: (datasetIds:string[],sql:string)=>AsyncIterable<Record<string,unknown>[]>;
+};
 
 export interface OntologyMember { datasetId: string; datasetName: string; source: string; key: string; rows: number; matched: number; via: { column: string; targetDatasetId: string; targetColumn: string } | null }
 export interface SuggestedEntity { id: string; name: string; description: string; kind: "record" | "activity"; anchorDatasetId: string; key: string; rows: number; members: OntologyMember[]; properties: string[] }
@@ -953,11 +955,25 @@ async function overlap(
     })
     .join(" UNION ALL ");
   const pairs = [...declared].map((p) => p.split(":").map(Number));
+  // Exact normalized ranges are conservative signatures: only provably disjoint high-cardinality
+  // columns are pruned. Every surviving pair still runs the full value/count verification below.
+  const high=cols.filter(c=>!c.field&&(c.ds.columns.find(profile=>profile.name===c.column)?.distinct??0)>=1000);
+  const bounds=new Map<number,{low:string;high:string}>();
+  if(high.length>1){
+    const signatureSql=high.map(c=>{const v=`hex(encode(lower(trim(CAST(${q(c.column)} AS VARCHAR)))))`;return `SELECT ${c.i} AS c,min(${v}) AS lower_bound,max(${v}) AS upper_bound FROM ${q(datasetTable(c.ds.d.id))} WHERE ${q(c.column)} IS NOT NULL`;}).join(' UNION ALL ');
+    const ids=[...new Set(high.map(c=>c.ds.d.id))];
+    const add=(rows:Record<string,unknown>[])=>{for(const row of rows)if(typeof row.lower_bound==='string'&&typeof row.upper_bound==='string')bounds.set(Number(row.c),{low:row.lower_bound,high:row.upper_bound});};
+    if(query.scan)for await(const page of query.scan(ids,signatureSql))add(page);
+    else for(let offset=0;;offset+=1000){const page=await query(ids,signatureSql,{limit:1000,offset});add(page.rows);if(page.rows.length<1000||offset+page.rows.length>=Number(page.profile?.rows??page.rows.length))break;}
+  }
+  const excluded:string[]=[];
+  for(const [a,left] of bounds){const disjoint=[...bounds].filter(([b,right])=>a!==b&&!declared.has(`${a}:${b}`)&&(left.high<right.low||right.high<left.low)).map(([b])=>b);if(disjoint.length)excluded.push(`(a.c=${a} AND b.c IN (${disjoint.join(',')}))`);}
+  const signatureGuard=excluded.length?` AND NOT (${excluded.join(' OR ')})`:'';
   // Declared keys pair whatever their names.
   const matching = (t: string, agg: string) =>
     [
-      `SELECT a.c AS a, b.c AS b, ${agg} FROM ${t} a JOIN ${t} b ON a.v = b.v AND (a.d <> b.d OR a.c <> b.c) AND a.i = 0 AND b.i = 0 GROUP BY a.c, b.c`,
-      `SELECT a.c AS a, b.c AS b, ${agg} FROM ${t} a JOIN ${t} b ON a.v = b.v AND a.s = b.s AND (a.d <> b.d OR a.c <> b.c) AND (a.i = 1 OR b.i = 1) GROUP BY a.c, b.c`,
+      `SELECT a.c AS a, b.c AS b, ${agg} FROM ${t} a JOIN ${t} b ON a.v = b.v${signatureGuard} AND (a.d <> b.d OR a.c <> b.c) AND a.i = 0 AND b.i = 0 GROUP BY a.c, b.c`,
+      `SELECT a.c AS a, b.c AS b, ${agg} FROM ${t} a JOIN ${t} b ON a.v = b.v${signatureGuard} AND a.s = b.s AND (a.d <> b.d OR a.c <> b.c) AND (a.i = 1 OR b.i = 1) GROUP BY a.c, b.c`,
       ...(pairs.length
         ? [
             `SELECT a.c AS a, b.c AS b, ${agg} FROM (SELECT * FROM ${t} WHERE c IN (${pairs.map((p) => p[0]).join(", ")})) a JOIN (SELECT * FROM ${t} WHERE c IN (${pairs.map((p) => p[1]).join(", ")})) b ON a.v = b.v AND a.d <> b.d AND a.s <> b.s AND (a.i = 1 OR b.i = 1) WHERE ${pairs.map(([x, y]) => `(a.c = ${x} AND b.c = ${y})`).join(" OR ")} GROUP BY a.c, b.c`,
@@ -980,7 +996,8 @@ ORDER BY pc.m_ci DESC, pc.a, pc.b`;
   const ids = [...new Set(cols.map((c) => c.ds.d.id))];
   // The executor returns at most 1000 rows a call.
   const rows: Record<string, unknown>[] = [];
-  for (let total = Infinity; rows.length < total; ) {
+  if(query.scan)for await(const page of query.scan(ids,sql))rows.push(...page);
+  else for (let total = Infinity; rows.length < total; ) {
     const r = await query(ids, sql, {
       limit: 1000,
       offset: rows.length,

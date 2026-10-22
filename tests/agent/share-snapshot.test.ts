@@ -14,6 +14,9 @@ test("offline heating snapshot preserves relations, evidence and permitted scope
     "consumption",
   ]);
   assert(snapshot.pages.setup.profile);
+  const semantic=snapshot.routes['/api/ontology/workspace'] as Data;
+  assert.equal((semantic?.entities as Data[]|undefined)?.length,6,'offline share carries the formal ontology read model');
+  assert(snapshot.routes['/api/engine']);assert(snapshot.routes['/api/data']);assert(snapshot.routes['/api/sources/summary']);assert(snapshot.routes['/api/releases']);
   assert.equal(
     (snapshot.pages.setup.sources as unknown as Artifact[]).length,
     8,

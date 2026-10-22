@@ -1,3 +1,4 @@
+import {sourceRowsLength} from "../agent/source-content.ts";
 import {createReadStream,openSync,readSync,closeSync,realpathSync} from "node:fs";
 import {join,resolve} from "node:path";
 import {createInterface} from "node:readline";
@@ -12,7 +13,7 @@ export function storedTableFile(repo:Pick<Repository,"directory">,file:unknown){
   if(realpathSync(path)!==path)throw new Error("表格文件不属于当前工作区");
   return path;
 }
-export function tableRowCount(source:Artifact){return source.content.rowStorage?Number(source.content.rowCount):((source.content.rows??[]) as Data[]).length;}
+export function tableRowCount(source:Artifact){return source.content.rowStorage?Number(source.content.rowCount):sourceRowsLength(source);}
 export async function* tableRows(source:Artifact,repo:Pick<Repository,"directory">):AsyncGenerator<Data>{
   if(!source.content.rowStorage){yield*((source.content.rows??[]) as Data[]);return;}
   const file=storedTableFile(repo,(source.content.rowStorage as Data).file),input=createReadStream(file),lines=createInterface({input,crlfDelay:Infinity});

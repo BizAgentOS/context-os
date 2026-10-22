@@ -7,6 +7,7 @@ import type { AgentDriver } from "./runtime.ts";
 import type { AgentCapabilities } from "../capabilities/service.ts";
 import { FoundationDocuments } from "./foundation-evidence.ts";
 import { FoundationService, foundationTools } from "./foundation.ts";
+import {automaticFoundationRead,automaticDocumentContext,automaticDocumentReceipt} from "./automatic-document-context.ts";
 
 /** Durable document work; execution is queued in the application's background pool. */
 export class AutomaticFoundation {
@@ -92,7 +93,7 @@ export class AutomaticFoundation {
     const baseline = this.foundation.read().current;
     const adoptedBaseline = this.foundation.read().adopted;
     const batchId = String(jobs[0]?.content.batchId ?? randomUUID());
-    const tools = foundationTools.filter(tool => ["foundation_read", "foundation_document_read", "foundation_propose"].includes(tool.name));
+    const tools = foundationTools.filter(tool => ["foundation_read", "foundation_document_read", "foundation_propose"].includes(tool.name)).map(tool=>tool.name==="foundation_read"?automaticFoundationRead:tool);
     let failure: string | undefined, staged = baseline;
     const accepted: Array<{ job: Artifact; source: Artifact; documents: FoundationDocuments; proposals: Data[] }> = [];
     const fail = (job: Artifact, error: unknown) => this.update(job, "failed", { error: safeError(error), candidateRef: null, batchId });
@@ -124,14 +125,14 @@ export class AutomaticFoundation {
             onTool: async (name, args) => {
               this.memory.assertWritable(context); unchanged(source);
               if (!tools.some(tool => tool.name === name)) throw new Error("自动构建仅允许读取资料和保存本体");
-              if (name === "foundation_read") return { current: this.foundation.project(documentDraft), adopted: adoptedBaseline ? this.foundation.project(adoptedBaseline) : null } as unknown as Data;
+              if (name === "foundation_read") return automaticDocumentContext(documentDraft,adoptedBaseline,args);
               if (name === "foundation_document_read") {
                 if (args.sourceId !== source.id || (args.version !== undefined && args.version !== source.version)) throw new Error("请读取当前文档的资料版本");
                 return documents.read({ ...args, version: source.version }) as unknown as Data;
               }
               documentDraft = this.foundation.stage(args, context, `document-${job.id}-${proposals.length}`, digest, documents, documentDraft, adoptedBaseline);
               proposals.push(JSON.parse(JSON.stringify(args)) as Data);
-              return this.foundation.project(documentDraft) as unknown as Data;
+              return automaticDocumentReceipt(documentDraft,args);
             },
           });
           this.memory.assertWritable(context); unchanged(source);

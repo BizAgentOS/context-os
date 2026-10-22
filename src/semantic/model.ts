@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { metricReferenceSchema } from "./metric-contract.ts";
 
 const name = z.string().trim().min(1).max(200);
 const description = z.string().trim().max(4000).default("");
@@ -70,6 +71,7 @@ export function createLayeredModelSchema(config: Partial<ModelLimits> = {}) {
     semantic: z.object({
       entityTypes: z.array(entityType).max(limits.maxEntityTypes),
       properties: z.array(property), relationTypes: z.array(relationType).max(limits.maxRelationTypes),
+      metricReferences: z.array(metricReferenceSchema).max(100).default([]),
     }).strict(),
     bindings: z.object({ entities: z.array(entityBinding), properties: z.array(propertyBinding), relations: z.array(relationBinding), identityRules: z.array(identityRuleSchema).max(100).default([]) }).strict(),
   }).strict().superRefine((model, ctx) => {
@@ -100,6 +102,10 @@ export function createLayeredModelSchema(config: Partial<ModelLimits> = {}) {
       if (item.isIdentity && !entities.get(item.entityTypeId)?.identityKeys.includes(item.id)) fail("身份属性必须列入实体身份键");
       if (item.valueType === "enum" && !item.enumValues?.length) fail("枚举属性需要枚举取值");
       if (item.enumValues && new Set(item.enumValues.map((entry) => JSON.stringify(entry.value))).size !== item.enumValues.length) fail("枚举取值不能重复");
+    }
+    for (const metric of model.semantic.metricReferences) {
+      if (!entities.has(metric.entityTypeId)) fail("指标所属实体不存在");
+      for (const dimension of metric.dimensions) if (properties.get(dimension.propertyId)?.entityTypeId !== metric.entityTypeId) fail("指标维度必须对应本实体的稳定属性");
     }
     for (const item of relations.values()) {
       if (!entities.has(item.from) || !entities.has(item.to)) fail("关系端点实体不存在");
@@ -187,7 +193,7 @@ const stable = (prefix: string, ...parts: string[]) => `${prefix}_${createHash("
 
 /** No source row identifier is inferred from a column name; the caller supplies its source contract. */
 export function migrateLegacyModel(legacy: LegacyModel, options: MigrationOptions = {}): LayeredModel {
-  const model: LayeredModel = { schemaVersion: 1, semantic: { entityTypes: [], properties: [], relationTypes: [] }, bindings: { entities: [], properties: [], relations: [], identityRules: [] } };
+  const model: LayeredModel = { schemaVersion: 1, semantic: { entityTypes: [], properties: [], relationTypes: [], metricReferences: [] }, bindings: { entities: [], properties: [], relations: [], identityRules: [] } };
   const byName = new Map<string, { type: LegacyType; id: string; bindingId: string; idField?: string }>();
   const entityOccurrences = new Map<string, number>();
   for (const type of legacy.types) {
@@ -311,19 +317,52 @@ export function projectLegacyModel(input: LayeredModel, options: { allowTransfor
 }
 
 /** Rebind existing semantic objects without replacing their human-maintained identity or meaning. */
-export function reconcileLayeredModel(previousInput: LayeredModel, nextInput: LayeredModel): LayeredModel {
+export function reconcileLayeredModel(previousInput: LayeredModel, nextInput: LayeredModel, options: { requireMatchingBindings?: boolean } = {}): LayeredModel {
   const previous = parseLayeredModel(previousInput), next = parseLayeredModel(nextInput);
+  const propertyScopes = (model: LayeredModel) => {
+    const entities = new Map(model.bindings.entities.map(item => [item.id, item])), scopes = new Map<string, string[]>();
+    for (const binding of model.bindings.properties) {
+      const entity = entities.get(binding.entityBindingId)!;
+      const scope = JSON.stringify([entity.entityTypeId, entity.role, entity.dataset, entity.keyColumns, entity.rowFilter ?? null, binding.column, binding.transform]);
+      scopes.set(binding.propertyId, [...(scopes.get(binding.propertyId) ?? []), scope]);
+    }
+    return new Map([...scopes].map(([id, values]) => [id, JSON.stringify(values.sort())]));
+  };
+  const previousScopes = propertyScopes(previous), nextScopes = propertyScopes(next);
+  const explicitProperties = new Map(next.semantic.properties.map(property => {
+    const candidates = previous.semantic.properties.filter(item => item.entityTypeId === property.entityTypeId
+      && (!options.requireMatchingBindings || (nextScopes.has(property.id) && previousScopes.get(item.id) === nextScopes.get(property.id))));
+    return [property.id, candidates.find(item => item.id === property.id) ?? candidates.find(item => item.name === property.name)];
+  }));
+  const reservedProperties = new Set([...explicitProperties.values()].filter(item => item !== undefined).map(item => item.id));
   const propertyIds = new Map<string, string>();
   next.semantic.properties = next.semantic.properties.map(property => {
-    const prior = previous.semantic.properties.find(item => item.entityTypeId === property.entityTypeId && item.id === property.id)
-      ?? previous.semantic.properties.find(item => item.entityTypeId === property.entityTypeId && item.name === property.name);
+    // A legacy projection derives property IDs from display names. A confirmed
+    // rename must retain the semantic ID when its complete binding is unchanged.
+    const sameBinding = previous.semantic.properties.filter(item => item.entityTypeId === property.entityTypeId
+      && nextScopes.has(property.id) && previousScopes.get(item.id) === nextScopes.get(property.id));
+    const unmatched = sameBinding.filter(item => !reservedProperties.has(item.id));
+    const competing = next.semantic.properties.filter(item => !explicitProperties.get(item.id)
+      && item.entityTypeId === property.entityTypeId && nextScopes.get(item.id) === nextScopes.get(property.id));
+    // A second business property can intentionally use the same physical column.
+    // Only recover a one-to-one rename; never consume an explicitly retained ID.
+    const prior = explicitProperties.get(property.id) ?? (unmatched.length === 1 && competing.length === 1 ? unmatched[0] : undefined);
     propertyIds.set(property.id, prior?.id ?? property.id);
-    return prior ? { ...prior, name: property.name, entityTypeId: property.entityTypeId, isIdentity: property.isIdentity } : property;
+    return prior ? (options.requireMatchingBindings ? { ...property, id: prior.id }
+      : { ...prior, name: property.name, entityTypeId: property.entityTypeId, isIdentity: property.isIdentity }) : property;
   });
   next.semantic.entityTypes = next.semantic.entityTypes.map(entity => {
     const prior = previous.semantic.entityTypes.find(item => item.id === entity.id);
-    return { ...entity, ...(prior ? { aliases: prior.aliases, kind: prior.kind } : {}), identityKeys: entity.identityKeys.map(id => propertyIds.get(id) ?? id) };
+    return { ...entity, ...(prior && !options.requireMatchingBindings ? { aliases: prior.aliases, kind: prior.kind } : {}), identityKeys: entity.identityKeys.map(id => propertyIds.get(id) ?? id) };
   });
+  if (options.requireMatchingBindings) {
+    // Historical read repair changes only property references. It must not replay
+    // old relation/rule metadata over decisions made by a later model.
+    next.bindings.properties = next.bindings.properties.map(binding => ({ ...binding, propertyId: propertyIds.get(binding.propertyId) ?? binding.propertyId }));
+    next.bindings.entities = next.bindings.entities.map(binding => ({ ...binding,
+      ...(binding.match ? { match: { ...binding.match, primaryPropertyId: propertyIds.get(binding.match.primaryPropertyId) ?? binding.match.primaryPropertyId } } : {}) }));
+    return parseLayeredModel(next);
+  }
   next.semantic.relationTypes = next.semantic.relationTypes.map(relation => {
     const prior = previous.semantic.relationTypes.find(item => item.id === relation.id);
     return prior ? { ...prior, name: relation.name, from: relation.from, to: relation.to, description: relation.description || prior.description } : relation;

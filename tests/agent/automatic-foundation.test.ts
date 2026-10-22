@@ -152,7 +152,7 @@ test("deleting an upload during construction rejects the late adoption", async (
     await app.canvasUpload({page: "setup", name: "仓配.md", content: "澄川仓配的门店负责收货。"});
     await started;
     const source = app.canvasState().sources[0];
-    await app.removeUpload({id: source.id, version: source.version});
+    await app.removeUpload({id: source.id, version: source.version,operationId:"remove-upload",acknowledgeImpact:true});
     await app.idle();
     assert.equal(app.canvasState().sources.length, 0);
     assert.deepEqual(meaning(app.canvasState().foundation.adopted), meaning(seeded), "the late result is not adopted");
@@ -173,7 +173,7 @@ test("deleting a previously built upload does not block later documents or erase
     await app.canvasUpload({page: "setup", name: "第一份.md", content: "澄川仓配的门店负责收货。"});
     await app.idle();
     const source = app.canvasState().sources[0];
-    await app.removeUpload({id: source.id, version: source.version});
+    await app.removeUpload({id: source.id, version: source.version,operationId:"remove-upload",acknowledgeImpact:true});
     await app.canvasUpload({page: "setup", name: "第二份.md", content: "澄川仓配的仓库负责补货。"});
     await app.idle();
     const state = app.canvasState();
@@ -206,4 +206,52 @@ test("saving and testing a model connection happens before queued automatic cons
     await app.idle();
     assert.equal(app.canvasState().automaticBuild.status, "completed");
   } finally { await app.close(); if (key === undefined) delete process.env.DEEPSEEK_API_KEY; else process.env.DEEPSEEK_API_KEY = key; rmSync(directory, {recursive: true, force: true}); }
+});
+
+test("automatic documents page the real semantic catalog without whole-foundation tool output", {timeout: 15000}, async () => {
+  const directory = mkdtempSync(join(tmpdir(), "de-auto-catalog-"));
+  let toolError: unknown, pages = 0;
+  const driver: AgentDriver = {
+    async run(request) {
+      try {
+        assert.deepEqual(request.tools.map(tool => tool.name).sort(), ["foundation_document_read", "foundation_propose", "foundation_read"]);
+        await assert.rejects(request.onTool("memory_read", {id:"foundation"}), /仅允许/);
+        const input = JSON.parse(request.input), source = input.sources[0], ids: string[] = [];
+        let offset: number | null = 0, latest: any;
+        do {
+          const page = await request.onTool("foundation_read", {section:"concepts",offset,limit:10}) as any;
+          assert(JSON.stringify(page).length < 12000, "a model tool reply must fit before runtime truncation");
+          assert.equal(page.adopted, undefined, "do not duplicate the full adopted foundation");
+          assert.equal(page.page.total, 25);
+          ids.push(...page.current.content.concepts.map((item:any)=>item.id));
+          latest=page; offset=page.page.nextOffset; pages++;
+        } while(offset !== null);
+        assert.deepEqual(ids,Array.from({length:25},(_,i)=>`store${i}`));
+        const props = await request.onTool("foundation_read", {section:"properties",offset:0,limit:10}) as any;
+        assert.deepEqual(props.current.content.properties.map((item:any)=>[item.id,item.entityTypeId]),[["store24_address","store24"]]);
+        const rels = await request.onTool("foundation_read", {section:"relations",offset:0,limit:10}) as any;
+        assert.deepEqual(rels.current.content.relations.map((item:any)=>[item.id,item.from,item.to]),[["delivery","store0","store24"]]);
+        const part = await request.onTool("foundation_document_read",{sourceId:source.id,version:source.version}) as any;
+        const saved = await request.onTool("foundation_propose",{baseVersion:latest.current.version,enterprise:latest.current.content.enterprise,
+          concepts:[{id:"store24",name:"门店24",description:"末页门店负责收货",evidenceRefs:["last-page-doc"]}],relations:[],
+          evidence:[{id:"last-page-doc",kind:"document",readId:part.readId,quote:part.text}],unknowns:[],conflicts:[]}) as any;
+        assert(JSON.stringify(saved).length<3000,"proposal returns a receipt, not the whole foundation");
+        return {text:"完成",sessionId:"catalog",runId:"catalog"};
+      } catch(error) {toolError=error;throw error;}
+    }, async stop(){},async close(){},
+  };
+  const app=new AgentApplication(directory,driver);
+  try {
+    const seeded=seedFoundation(app.memory,app.foundation,{enterprise:"分页仓配",concepts:Array.from({length:25},(_,i)=>({id:`store${i}`,name:`门店${i}`,description:"完整业务说明".repeat(200)})),relations:[{id:"delivery",name:"调拨至",description:"已确认调拨关系",from:"store0",to:"store24"}]});
+    app.memory.putArtifact({...seeded,expectedVersion:seeded.version,content:{...seeded.content,properties:[{id:"store24_address",entityTypeId:"store24",name:"地址",valueType:"string",description:"实际门店地址"}]}});
+    await app.canvasUpload({page:"ontology",name:"末页门店.md",content:"分页仓配的末页门店负责收货。"});await app.idle();
+    if(toolError) throw toolError;
+    assert(pages>1);
+    assert.equal(app.canvasState().automaticBuild.status,"completed");
+    const current=app.foundation.read().current!;
+    assert.equal((current.content.concepts as any[]).length,25);
+    assert.equal((current.content.concepts as any[]).find(item=>item.id==="store24").description,"末页门店负责收货");
+    assert.equal((current.content.relations as any[]).length,1);
+    assert.equal((current.content.properties as any[])[0].id,"store24_address");
+  } finally {await app.close();rmSync(directory,{recursive:true,force:true});}
 });

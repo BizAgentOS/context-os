@@ -15,6 +15,7 @@ import {
 import { join } from "node:path";
 import { z } from "zod";
 import { createHash, randomInt } from "node:crypto";
+import {CredentialVault,VaultLocked} from "../security/credential-vault.ts";
 
 const connectionSchema = z
   .object({
@@ -32,6 +33,7 @@ interface Connection {
   capabilities: McpCapabilityDescriptor[];
   allowed: string[];
   revision: number;
+  credential?: boolean;
 }
 export class AgentMcp {
   private connections: Connection[] = [];
@@ -40,7 +42,9 @@ export class AgentMcp {
   private closed = false;
   private managers = new Map<string, McpManager>();
   private directory: string;
+  private vault: CredentialVault;
   constructor(directory: string) {
+    this.vault=new CredentialVault(directory);
     this.directory = join(directory, "capabilities");
     mkdirSync(this.directory, { recursive: true, mode: 0o700 });
     try {
@@ -49,6 +53,15 @@ export class AgentMcp {
       );
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+    }
+    // Migrate only this workspace's ADE connection file, never global MCP profiles.
+    if(this.connections.some(c=>Object.keys(c.config.headers??{}).length)){
+      const credentials=this.vault.get('agent_mcp');
+      for(const c of this.connections)if(Object.keys(c.config.headers??{}).length)credentials[c.name]=c.config.headers;
+      this.vault.set('agent_mcp',credentials);
+      if(JSON.stringify(this.vault.get('agent_mcp'))!==JSON.stringify(credentials))throw new VaultLocked();
+      for(const c of this.connections)if(Object.keys(c.config.headers??{}).length){c.credential=true;delete c.config.headers;}
+      this.save();
     }
   }
   private save() {
@@ -60,10 +73,13 @@ export class AgentMcp {
     renameSync(`${target}.tmp`, target);
   }
   private manager(c: Connection) {
+    const saved=c.credential?this.vault.get('agent_mcp')[c.name]:undefined;
+    if(c.credential&&!saved)throw new VaultLocked();
+    const headers=c.credential?z.record(z.string(),z.string()).parse(saved):c.config.headers;
     let manager = this.managers.get(c.name);
     if (!manager) {
       manager = createMcpManager(
-        { [c.name]: c.config },
+        { [c.name]: {...c.config,...(headers?{headers}:{})} },
         { cacheDir: join(this.directory, "mcp-cache", c.name) },
       );
       this.managers.set(c.name, manager);
@@ -131,6 +147,7 @@ export class AgentMcp {
           .descriptors,
       ];
       if (this.closed) throw new Error("连接服务已停止");
+      if(Object.keys(value.headers).length){this.vault.set('agent_mcp',{...this.vault.get('agent_mcp'),[name]:value.headers});c.credential=true;delete c.config.headers;}
       this.connections.push(c);
       this.save();
       return this.list();
@@ -219,6 +236,7 @@ export class AgentMcp {
     this.grant(name, []);
     this.connections = this.connections.filter((c) => c.name !== name);
     this.save();
+    if(c.credential){const credentials=this.vault.get('agent_mcp');delete credentials[name];this.vault.set('agent_mcp',credentials);}
     const manager = this.managers.get(name);
     this.managers.delete(name);
     await manager?.dispose();
@@ -242,6 +260,7 @@ export class AgentMcp {
     } catch {
       throw new Error("MCP 调用失败，请检查参数和服务状态");
     }
+    this.manager(c); // Also reject a result if its credentials became unavailable while awaiting the server.
     if (c.revision !== revision || !c.allowed.includes(id))
       throw new Error("调用期间授权已改变，结果不再交付");
     if (JSON.stringify(result).length > 80_000)

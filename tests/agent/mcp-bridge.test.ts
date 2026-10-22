@@ -1,4 +1,5 @@
-import { historicalConsumers } from "./historical-consumers-fixture.ts";
+import {Releases} from "../../src/engine/releases.ts";
+import type {Data} from "../../src/agent/contracts.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -13,7 +14,7 @@ import { createHeatingDemo } from "../../src/demo/server.ts";
 import { Workspace } from "../../src/agent/workspace.ts";
 
 const script = fileURLToPath(new URL("../../scripts/dataengine-mcp.ts", import.meta.url));
-const key = "de_consumer_mcp_test_only";
+const key = "de_dataset_mcp_test_only";
 
 test("MCP configuration requires a consumer key and a service origin", () => {
   assert.deepEqual(readBridgeConfig({ DATAENGINE_URL: "http://localhost:8788", DATAENGINE_CONSUMER_KEY: key }), {
@@ -21,6 +22,7 @@ test("MCP configuration requires a consumer key and a service origin", () => {
   });
   assert.throws(() => readBridgeConfig({ DATAENGINE_URL: "file:///tmp/memory.db", DATAENGINE_CONSUMER_KEY: key }));
   assert.throws(() => readBridgeConfig({ DATAENGINE_URL: "http://localhost:8788/api", DATAENGINE_CONSUMER_KEY: key }));
+  for(const prefix of ['consumer','live','view'])assert.throws(()=>readBridgeConfig({DATAENGINE_URL:'http://localhost:8788',DATAENGINE_CONSUMER_KEY:`de_${prefix}_retired`}),/发布|retired|release/i);
 });
 
 async function httpFixture(handler: RequestListener) {
@@ -112,7 +114,7 @@ test("MCP stdio discovers tools and reads only the consumer HTTP surface", async
   const fixture = await httpFixture((request, response) => {
     requests.push({ path: request.url!, authorization: request.headers.authorization });
     response.setHeader("Content-Type", "application/json");
-    response.end(JSON.stringify(request.url === "/v1/schema" ? schema : {
+    response.end(JSON.stringify(request.url === "/v4/dataset" ? schema : {
       dataVersion: 2, items: [{ type: "回访", id: "HF002", fields: { 状态: "未改善" } }],
     }));
   });
@@ -120,21 +122,21 @@ test("MCP stdio discovers tools and reads only the consumer HTTP surface", async
   try {
     await initialize(bridge);
     const listed = await bridge.request("tools/list");
-    assert.deepEqual(listed.result.tools.map((tool: any) => tool.name), ["describe_memory", "query_objects"]);
-    assert.ok(listed.result.tools.every((tool: any) => tool.annotations.readOnlyHint));
-    const described = await bridge.request("tools/call", { name: "describe_memory", arguments: {} });
+    assert(listed.result.tools.some((tool:any)=>tool.name==="describe_dataset"));assert(listed.result.tools.some((tool:any)=>tool.name==="query_objects"));assert(!listed.result.tools.some((tool:any)=>tool.name==="describe_memory"||tool.name==="describe_catalog"));
+    assert.ok(listed.result.tools.filter((tool:any)=>!["submit_ade_task","cancel_ade_task"].includes(tool.name)).every((tool: any) => tool.annotations.readOnlyHint));
+    const described = await bridge.request("tools/call", { name: "describe_dataset", arguments: {} });
     assert.deepEqual(JSON.parse(described.result.content[0].text), schema);
     const queried = await bridge.request("tools/call", {
       name: "query_objects",
-      arguments: { type: "投诉", fields: ["$id", "状态"], id: "TS002", relation: "回访", offset: 0, limit: 12, dataVersion: 2 },
+      arguments: { type: "投诉", fields: ["$id", "状态"], id: "TS002", relation: "回访", offset: 0, limit: 12 },
     });
     assert.equal(JSON.parse(queried.result.content[0].text).items[0].id, "HF002");
     assert.equal(requests.length, 2);
-    assert.equal(requests[0].path, "/v1/schema");
+    assert.equal(requests[0].path, "/v4/dataset");
     const query = new URL(requests[1].path, fixture.url);
-    assert.equal(query.pathname, "/v1/objects");
+    assert.equal(query.pathname, "/v4/objects");
     assert.deepEqual(Object.fromEntries(query.searchParams), {
-      type: "投诉", fields: "$id,状态", id: "TS002", relation: "回访", offset: "0", limit: "12", dataVersion: "2",
+      type: "投诉", fields: "$id,状态", id: "TS002", relation: "回访", offset: "0", limit: "12",
     });
     assert.ok(requests.every((request) => request.authorization === `Bearer ${key}`));
     assert.equal(bridge.output().stdout.includes(key), false);
@@ -150,7 +152,7 @@ test("MCP preserves authorization and publication failures without revealing its
   let code = "forbidden";
   const fixture = await httpFixture((_request, response) => {
     response.writeHead(status, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ error: `访问范围不允许 (${key})`, code }).replaceAll("de_consumer", "\\u0064e_consumer"));
+    response.end(JSON.stringify({ error: `访问范围不允许 (${key})`, code }).replaceAll("de_dataset", "\\u0064e_dataset"));
   });
   const bridge = stdioBridge(fixture.url);
   try {
@@ -158,14 +160,13 @@ test("MCP preserves authorization and publication failures without revealing its
     for (const [value, reason] of [[403, "forbidden"], [401, "invalid_key"], [409, "data_version_changed"], [409, "memory_unavailable"]] as const) {
       status = value;
       code = reason;
-      const response = await bridge.request("tools/call", { name: "query_objects", arguments: { type: "投诉", dataVersion: 1 } });
+      const response = await bridge.request("tools/call", { name: "query_objects", arguments: { type: "投诉" } });
       assert.equal(response.result.isError, true);
       const failure = JSON.parse(response.result.content[0].text);
       assert.equal(failure.status, value);
       assert.equal(failure.code, reason);
       assert.match(failure.error, /访问范围不允许/);
-      if (reason === "data_version_changed") assert.match(failure.hint, /describe_memory/);
-      else assert.equal(failure.hint, undefined);
+      assert.equal(failure.hint, undefined);
     }
     assert.equal(JSON.stringify(bridge.output()).includes(key), false);
   } finally {
@@ -189,8 +190,8 @@ test("MCP also serves current protocol discovery and tool calls over stdio", asy
     const discovered = await bridge.request("server/discover", { _meta });
     assert.deepEqual(discovered.result.supportedVersions, ["2026-07-28"]);
     const listed = await bridge.request("tools/list", { _meta });
-    assert.equal(listed.result.tools.length, 2);
-    const response = await bridge.request("tools/call", { name: "describe_memory", arguments: {}, _meta });
+    assert(listed.result.tools.some((tool:any)=>tool.name==="describe_dataset"));
+    const response = await bridge.request("tools/call", { name: "describe_dataset", arguments: {}, _meta });
     assert.equal(JSON.parse(response.result.content[0].text).dataVersion, 2);
     assert.equal(bridge.output().stderr, "");
   } finally {
@@ -199,74 +200,31 @@ test("MCP also serves current protocol discovery and tool calls over stdio", asy
   }
 });
 
-test("MCP reads a heating complaint, follows its callback, and observes only published data with the same key", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-mcp-heating-"));
-  const service = await createHeatingDemo(directory);
-  let bridge: ReturnType<typeof stdioBridge> | undefined;
-  try {
-    await new Promise<void>((resolve) => service.server.listen(0, "127.0.0.1", resolve));
-    const address = service.server.address();
-    assert.ok(address && typeof address !== "string");
-    const model = service.app.memory.listArtifacts("ontology").find((artifact) => artifact.status === "adopted");
-    assert.ok(model);
-    const draft = historicalConsumers(service.app.consumption, service.app.memory, directory).propose({
-      name: "独立 MCP 客服助手", purpose: "按授权读取投诉与回访",
-      modelId: model.id, modelVersion: model.version,
-      grants: [
-        { type: "投诉", fields: ["$id", "处理状态"], relations: ["居民回访"] },
-        { type: "回访", fields: ["$id", "投诉编号", "反馈结果"], relations: [] },
-      ],
-    });
-    const { consumer, apiKey } = historicalConsumers(service.app.consumption, service.app.memory, directory).activate(draft.id, draft.version);
-    bridge = stdioBridge(`http://127.0.0.1:${address.port}`, apiKey);
-    await initialize(bridge);
-    const call = async (name: string, args: Record<string, unknown> = {}) => {
-      const response = await bridge!.request("tools/call", { name, arguments: args });
-      assert.equal(response.error, undefined);
-      return { ...response.result, body: JSON.parse(response.result.content[0].text) };
-    };
-    const schema = await call("describe_memory");
-    assert.equal(schema.body.dataVersion, consumer.version);
-    assert.deepEqual(schema.body.types.map((type: any) => type.name), ["投诉", "回访"]);
-    assert.equal(JSON.stringify(schema.body).includes("联系手机"), false);
-    const complaint = await call("query_objects", { type: "投诉", id: "TS002", dataVersion: consumer.version });
-    assert.equal(complaint.body.items[0].id, "TS002");
-    assert.equal(complaint.body.items[0].fields.处理状态, "已办结");
-    const query = { type: "投诉", id: "TS002", relation: "居民回访", dataVersion: consumer.version };
-    const before = await call("query_objects", query);
-    assert.equal(before.body.items[0].id, "HF002");
-    assert.equal(before.body.items[0].fields.反馈结果, "未改善");
-
-    const source = service.app.memory.listArtifacts("source").find((artifact) => artifact.title === "客服回访.csv");
-    assert.ok(source);
-    const replacement = String(source.content.raw).split("\n").map((line) => line.startsWith('"HF002"')
-      ? '"HF002","TS002","2026-01-09 18:45","已改善","再次回访居民确认暖气改善"' : line).join("\n");
-    new Workspace(service.app.memory).upload(source.title, replacement);
-    const unpublished = await call("query_objects", query);
-    assert.equal(unpublished.body.items[0].fields.反馈结果, "未改善");
-    const preview = service.app.consumption.previewDataUpdate(consumer.id, consumer.version);
-    assert.equal(preview.valid, true);
-    const published = historicalConsumers(service.app.consumption, service.app.memory, directory).publishDataUpdate(consumer.id, consumer.version, preview.nextSourceVersions);
-    const outdated = await call("query_objects", query);
-    assert.equal(outdated.isError, true);
-    assert.equal(outdated.body.status, 409);
-    assert.equal(outdated.body.code, "data_version_changed");
-    const refreshed = await call("describe_memory");
-    assert.equal(refreshed.body.dataVersion, published.version);
-    assert.deepEqual(refreshed.body.model, schema.body.model);
-    const after = await call("query_objects", { ...query, dataVersion: refreshed.body.dataVersion });
-    assert.equal(after.body.items[0].fields.反馈结果, "已改善");
-    service.app.consumption.revoke(published.id, published.version);
-    const revoked = await call("query_objects", { ...query, dataVersion: published.version });
-    assert.equal(revoked.isError, true);
-    assert.equal(revoked.body.status, 401);
-    assert.ok(service.app.consumption.logs().filter((entry) => entry.consumerId === consumer.id).length >= 8);
-    assert.equal(JSON.stringify(bridge.output()).includes(apiKey), false);
-  } finally {
-    await bridge?.close();
-    await service.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
+test("MCP reads fixed heating evidence, observes an explicit release upgrade and enforces key rotation and revocation", async () => {
+  const directory=mkdtempSync(join(tmpdir(),"dataengine-mcp-heating-")),service=await createHeatingDemo(directory);let bridge:ReturnType<typeof stdioBridge>|undefined;
+  try{
+    await new Promise<void>(resolve=>service.server.listen(0,"127.0.0.1",resolve));const origin=`http://127.0.0.1:${(service.server.address() as {port:number}).port}`;
+    const app=service.app,releases=new Releases(app.memory,app.live),release=app.memory.listArtifacts('data_release')[0],definition=release.content.definition as Data;
+    const concepts=(definition.concepts as Data[]).filter(item=>['投诉','回访'].includes(String(item.name))),relation=(definition.relations as Data[]).find(item=>item.name==='居民回访')!;
+    const connected=releases.connect({operationId:'mcp-heating-reader',name:'独立 MCP 客服助手',purpose:'按授权读取投诉与回访',releaseRef:{id:release.id,version:release.version},conceptIds:concepts.map(item=>item.id),relationIds:[relation.id],business:{grants:[{type:'投诉',fields:['$id','处理状态'],relations:['居民回访']},{type:'回访',fields:['$id','投诉编号','反馈结果'],relations:[]}]}});
+    const firstKey=connected.key!;bridge=stdioBridge(origin,firstKey);await initialize(bridge);
+    const call=async(name:string,args:Record<string,unknown>={})=>{const response=await bridge!.request('tools/call',{name,arguments:args});assert.equal(response.error,undefined);return{...response.result,body:JSON.parse(response.result.content[0].text)};};
+    const schema=await call('describe_dataset');assert.equal(schema.body.releaseRef.id,release.id);assert.doesNotMatch(JSON.stringify(schema.body),/联系手机/);
+    const complaint=await call('query_objects',{type:'投诉',id:'TS002'});assert.equal(complaint.body.items[0].objectRef.id,'TS002');assert.equal(complaint.body.items[0].properties.处理状态.value,'已办结');
+    const query={type:'投诉',id:'TS002',relation:'居民回访'},before=await call('query_objects',query);assert.equal(before.body.items[0].objectRef.id,'HF002');assert.equal(before.body.items[0].properties.反馈结果.value,'未改善');
+    const source=app.memory.listArtifacts('source').find(item=>item.title==='客服回访.csv')!;
+    const replacement=String(source.content.raw).split('\n').map(line=>line.startsWith('"HF002"')?'"HF002","TS002","2026-01-09 18:45","已改善","再次回访居民确认暖气改善"':line).join('\n');
+    const changed=new Workspace(app.memory).upload(source.title,replacement);app.live.sources.connectUpload(changed.id,changed.version,'回访编号');await app.snapshots.sync({operationId:'mcp-new-snapshot',sourceIds:[changed.id]});
+    assert.equal((await call('query_objects',query)).body.items[0].properties.反馈结果.value,'未改善','new source data cannot change a pinned release');
+    const current=app.memory.listArtifacts('live_ontology').find(item=>item.status==='adopted')!,candidate=await app.live.propose({foundationRef:current.content.foundationRef,baseModelRef:{id:current.id,version:current.version},purpose:current.content.purpose,rationale:'明确发布再次回访的快照',types:current.content.types,relations:current.content.relations});await app.live.adopt(candidate.id,candidate.version);
+    const check=await releases.check({inputHash:releases.overview().working.inputHash});assert.equal(check.status,'ready');const published=releases.publish({operationId:'mcp-heating-next',checkRef:{id:check.id,version:check.version},name:'再次回访快照'}).release;
+    assert.equal((await call('query_objects',query)).body.items[0].properties.反馈结果.value,'未改善','publication alone does not upgrade this consumer');
+    const upgraded=releases.upgrade({operationId:'mcp-heating-upgrade',connectionRef:{id:connected.connection.id,version:connected.connection.version},releaseRef:{id:published.id,version:published.version}});
+    assert.equal((await call('query_objects',query)).body.status,403);await bridge.close();bridge=stdioBridge(origin,upgraded.key!);await initialize(bridge);
+    assert.equal((await call('query_objects',query)).body.items[0].properties.反馈结果.value,'已改善');
+    releases.revoke({operationId:'mcp-heating-revoke',connectionRef:{id:upgraded.connection.id,version:upgraded.connection.version}});assert.equal((await call('query_objects',query)).body.status,403);
+    assert.equal(JSON.stringify(bridge.output()).includes(upgraded.key!),false);
+  }finally{await bridge?.close();await service.close();rmSync(directory,{recursive:true,force:true});}
 });
 
 test("MCP rejects unsupported and unbounded queries before making HTTP requests", async () => {
@@ -304,7 +262,7 @@ test("MCP does not follow HTTP redirects or expose non-JSON response bodies", as
     await initialize(bridge);
     for (const value of [true, false]) {
       redirect = value;
-      const response = await bridge.request("tools/call", { name: "describe_memory", arguments: {} });
+      const response = await bridge.request("tools/call", { name: "describe_dataset", arguments: {} });
       assert.equal(response.result.isError, true);
     }
     assert.equal(JSON.stringify(bridge.output()).includes(key), false);

@@ -1,4 +1,4 @@
-import { restoreHistoricalAccess } from "./historical-consumers-fixture.ts";
+import {publishedDefinition,publishWorking,connectPublished,ref} from "./published-consumers-fixture.ts";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { fileURLToPath } from "node:url";
@@ -69,7 +69,7 @@ test("permissioned evidence is bound to a view and reading, with explicit scope 
       })
     ).saved;
     const model = (
-      await admin("/api/live/propose", fusionDefinition(primary.id, extra.id))
+      await admin("/api/live/propose", publishedDefinition(service.app,fusionDefinition(primary.id, extra.id)))
     ).saved;
     const adopted = (
       await admin("/api/live/adopt", { id: model.id, version: model.version })
@@ -90,17 +90,12 @@ test("permissioned evidence is bound to a view and reading, with explicit scope 
     };
 
 
-    const draft = (await restoreHistoricalAccess(service.app, "/api/live/views/propose", input)).saved;
-    const active = (
-      await restoreHistoricalAccess(service.app, "/api/live/views/activate", {
-        id: draft.id,
-        version: draft.version,
-      })
-    ).saved;
+    const publication=await publishWorking(service.app);
+    const active=connectPublished(service.app,publication,input);
     source.state.mode = "conflict";
     const objects = await read(
-      "/v3/objects?type=" + encodeURIComponent("投诉"),
-      active.key,
+      "/v4/objects?type=" + encodeURIComponent("投诉"),
+      active.key!,
     );
     assert.equal(objects.status, 200);
     const cell = objects.body.items[0].properties.状态;
@@ -109,9 +104,9 @@ test("permissioned evidence is bound to a view and reading, with explicit scope 
       objects.body.items[0].properties.实际反馈.evidenceRef,
       undefined,
     );
-    const path = "/v3/evidence?ref=" + encodeURIComponent(cell.evidenceRef);
+    const path = "/v4/evidence?ref=" + encodeURIComponent(cell.evidenceRef);
     source.state.mode = "normal";
-    const evidence = await read(path, active.key);
+    const evidence = await read(path, active.key!);
     assert.equal(evidence.status, 200);
     assert.equal(evidence.body.evidence.status, "conflict");
     assert.equal(evidence.body.evidence.observations.length, 2);
@@ -127,12 +122,12 @@ test("permissioned evidence is bound to a view and reading, with explicit scope 
     ]) {
       source.state.mode = mode as string;
       const query = await read(
-        "/v3/objects?type=" + encodeURIComponent("投诉"),
-        active.key,
+        "/v4/objects?type=" + encodeURIComponent("投诉"),
+        active.key!,
       );
       const detail = await read(
-        "/v3/evidence?ref=" + query.body.items[0].properties.状态.evidenceRef,
-        active.key,
+        "/v4/evidence?ref=" + query.body.items[0].properties.状态.evidenceRef,
+        active.key!,
       );
       assert.equal(detail.body.evidence.matches[0].status, status);
       assert.equal(
@@ -145,22 +140,10 @@ test("permissioned evidence is bound to a view and reading, with explicit scope 
       );
     }
     source.state.mode = "normal";
-    const narrow = (
-      await restoreHistoricalAccess(service.app, "/api/live/views/propose", {
-        ...input,
-        operationId: "narrow",
-        grants: [{ type: "投诉", fields: ["$id", "状态"], relations: [] }],
-      })
-    ).saved;
-    const b = (
-      await restoreHistoricalAccess(service.app, "/api/live/views/activate", {
-        id: narrow.id,
-        version: narrow.version,
-      })
-    ).saved;
-    assert.equal((await read(path, b.key)).status, 403);
+    const b=connectPublished(service.app,publication,{...input,operationId:"narrow",grants:[{type:"投诉",fields:["$id","状态"],relations:[]}]});
+    assert.equal((await read(path, b.key!)).status, 403);
     const client = new Client({
-      name: "independent-v3-client",
+      name: "independent-v4-client",
       version: "1.0.0",
     });
     const transport = new StdioClientTransport({
@@ -173,22 +156,15 @@ test("permissioned evidence is bound to a view and reading, with explicit scope 
       env: {
         PATH: process.env.PATH!,
         DATAENGINE_URL: origin,
-        DATAENGINE_CONSUMER_KEY: active.key,
+        DATAENGINE_CONSUMER_KEY: active.key!,
       },
     });
     try {
       await client.connect(transport);
       const tools = await client.listTools();
-      assert.deepEqual(
-        tools.tools.map((t) => t.name).sort(),
-        [
-          "describe_catalog",
-          "describe_connection",
-          "describe_type",
-          "query_objects",
-          "read_evidence",
-        ].sort(),
-      );
+      assert.ok(tools.tools.some(tool=>tool.name==="describe_dataset"));
+      assert.ok(tools.tools.some(tool=>tool.name==="read_evidence"));
+      assert.ok(!tools.tools.some(tool=>tool.name==="describe_catalog"));
       const output = await client.callTool({
         name: "read_evidence",
         arguments: { ref: cell.evidenceRef },
@@ -211,34 +187,30 @@ test("permissioned evidence is bound to a view and reading, with explicit scope 
     let newest = "";
     for (let i = 0; i < 26; i++) {
       const page = await read(
-        "/v3/objects?type=" + encodeURIComponent("投诉"),
-        active.key,
+        "/v4/objects?type=" + encodeURIComponent("投诉"),
+        active.key!,
       );
       assert.equal(page.status, 200);
       newest = page.body.items[0].properties.状态.evidenceRef;
     }
     assert.equal(
-      (await read(path, active.key)).status,
+      (await read(path, active.key!)).status,
       403,
       "old references are evicted at the view budget",
     );
     assert.equal(
-      (await read("/v3/evidence?ref=" + newest, active.key)).status,
+      (await read("/v4/evidence?ref=" + newest, active.key!)).status,
       200,
     );
-    const docs = await read("/v3/connection", active.key);
-    assert.equal(docs.status, 200);
-    assert.equal(docs.body.openapi.openapi, "3.1.0");
-    assert.ok(docs.body.openapi.paths["/v3/evidence"]);
-    assert.doesNotMatch(
-      JSON.stringify(docs.body),
-      new RegExp(active.key + "|phone|WO02|sourceId|上门次数"),
-    );
-    await admin("/api/live/views/revoke", {
-      id: active.view.id,
-      version: active.view.version,
-    });
-    assert.equal((await read(path, active.key)).status, 403);
+    const docsResponse=await fetch(origin+"/api/releases/connection?"+new URLSearchParams({id:active.connection.id,version:String(active.connection.version)}),{headers:{"x-dataengine-token":service.adminToken}});
+    assert.equal(docsResponse.status,200);
+    const docs=await docsResponse.json() as any;
+    assert.ok(docs.http.endpoints.some((endpoint:any)=>endpoint.path==="/v4/objects"));
+    assert.ok(docs.tools.includes("read_evidence"));
+    assert.doesNotMatch(JSON.stringify({dataset:docs.dataset,http:docs.http,mcp:docs.mcp,tools:docs.tools}),new RegExp(active.key+"|phone|WO02|sourceId|上门次数"));
+    assert.equal((await fetch(origin+"/api/releases/connection?id="+active.connection.id+"&version="+active.connection.version,{headers:{authorization:"Bearer "+active.key}})).status,403);
+    await admin("/api/releases/revoke",{operationId:"revoke-evidence",connectionRef:ref(active.connection)});
+    assert.equal((await read(path, active.key!)).status, 403);
   } finally {
     await service.close();
     await source.close();

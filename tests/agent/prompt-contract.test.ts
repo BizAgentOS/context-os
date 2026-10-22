@@ -15,7 +15,7 @@ function assertPromptContract(text: string, request: RunRequest, label: string) 
   const available = new Set([
     ...request.tools.map((tool) => tool.name),
     ...(request.nativeTools ?? []),
-    "same_as", "belongs_to", "no_match", // Semantic rule/decision values, not callable tools.
+    "same_as", "belongs_to", "no_match", "enterprise_profile", "metric_reference", "definition_only", // Semantic rule/change/access values, not callable tools.
   ]);
   for (const name of toolReferences(text)) {
     assert(available.has(name), `${label} mentions unavailable tool ${name}`);

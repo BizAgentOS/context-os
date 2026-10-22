@@ -32,3 +32,25 @@ test("the generic message endpoint freezes QA mode and rejects a changed retry b
   await assert.rejects(app.message({taskId:result.task.id,text:"只读查看",messageId:"generic-qa",mode:"build"}),/消息|绑定/);
  }finally{await app.close();rmSync(directory,{recursive:true,force:true});}
 });
+
+test("a mode suggestion waits for the user without changing the frozen message or granting writes",async()=>{
+ const directory=mkdtempSync(join(tmpdir(),"ade-mode-suggestion-"));
+ const driver:AgentDriver={async run(request){
+  assert.ok(request.tools.some(tool=>tool.name==="mode_suggest"));
+  await request.onTool("mode_suggest",{mode:"build",reason:"需要先修正对象关系才能回答。"});
+  await assert.rejects(request.onTool("change_propose",{}),/失效|等待用户|模式|能力/);
+  return{text:"可切换到构建助手处理关系；本轮没有修改本体。",sessionId:"qa",runId:"suggest"};
+ },async stop(){},async close(){}};
+ const app=new AgentApplication(directory,driver,new Set(),false);
+ try{
+  await app.canvasMessage({page:"ontology",text:"请修正关系",messageId:"suggest-build",mode:"qa"});await app.idle();
+  const message=app.memory.getMessage("suggest-build")!;
+  assert.equal(message.binding?.mode,"qa");
+  assert.equal(app.memory.getTask(message.taskId).status,"waiting");
+  assert.equal(app.memory.listArtifacts("ontology_change").length,0);
+  const run=app.memory.listArtifacts("agent_run")[0];
+  assert.equal((run.content.decisions as any[])[0].kind,"mode_suggestion");
+  assert.equal((run.content.decisions as any[])[0].mode,"build");
+  assert.equal(app.memory.listArtifacts("pending_item").length,0);
+ }finally{await app.close();rmSync(directory,{recursive:true,force:true});}
+});

@@ -249,8 +249,10 @@ test("legacy pages migrate once without replaying work or rewriting history and 
       base + "/v1/objects?type=" + encodeURIComponent("投诉"),
       { headers: consumerHeaders },
     );
-    assert.equal(allowed.status, 200);
-    assert.equal((await allowed.json()).items.length, 6);
+    assert.equal(allowed.status, 410);
+    const historical=service.app.consumption.handle({method:"GET",path:"/v1/objects",query:new URLSearchParams({type:"投诉"}),authorization:`Bearer ${credential}`});
+    assert.equal(historical.status,200);
+    assert.equal((historical.body.items as unknown[]).length,6,"local audit still resolves the original permitted historical objects");
     assert.equal(
       (
         await fetch(
@@ -262,7 +264,7 @@ test("legacy pages migrate once without replaying work or rewriting history and 
           { headers: consumerHeaders },
         )
       ).status,
-      403,
+      410,
     );
     assert.equal(
       (
@@ -313,7 +315,7 @@ test("reopening a legacy in-flight task invalidates its write identity before mi
     async stop() {},
     async close() {},
   };
-  let service = await createServer({ directory, driver });
+  let service = await createServer({ directory, driver, automaticApi:false });
   try {
     const task = service.app.memory.createTask("旧页面运行");
     service.app.memory.saveCanvas({
@@ -323,13 +325,14 @@ test("reopening a legacy in-flight task invalidates its write identity before mi
       taskIds: { company: task.id },
     });
     const context = service.app.memory.beginExecution(task.id);
+    const beforeArtifacts=service.app.memory.listArtifacts();
     await service.close();
-    service = await createServer({ directory, driver });
+    service = await createServer({ directory, driver, automaticApi:false });
     assert.equal(service.app.canvasState().currentPage, "setup");
     assert.equal(service.app.canvasState().busy, false);
     assert.equal(service.app.memory.getTask(task.id).status, "paused");
     assert.throws(() => service.app.memory.assertWritable(context));
-    assert.deepEqual(service.app.memory.listArtifacts(), []);
+    assert.deepEqual(service.app.memory.listArtifacts(), beforeArtifacts,"reopen preserves the exact pre-existing artifacts, including initialization metadata");
   } finally {
     await service.close();
     rmSync(directory, { recursive: true, force: true });

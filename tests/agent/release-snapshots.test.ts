@@ -83,7 +83,10 @@ test("a published release keeps serving its locked snapshot after the source cha
     const changed = (diff.datasets as unknown as any[])[0];
     assert.equal(changed.status, "changed");
     assert.deepEqual([changed.added, changed.removed, changed.changed], [1, 0, 1]);
-    assert.deepEqual(changed.samples, [{ kind: "added", k: "C99" }, { kind: "changed", k: "C1" }]);
+    assert.deepEqual(changed.samples, [
+      { kind: "added", k: "C99", before: null, after: { id: "C99", name: "新公司", tier: "silver" } },
+      { kind: "changed", k: "C1", before: { id: "C1", name: "公司1", tier: "gold" }, after: { id: "C1", name: "公司1", tier: "platinum" } },
+    ]);
     assert.ok(f.releases.overview().working.diff.some(d => String(d.path).includes("snapshots")), "the definition diff shows the new snapshot version");
 
     const v2 = await f.publish("v2");

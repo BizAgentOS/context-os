@@ -23,6 +23,8 @@ export interface SemanticQueryOptions extends ExecutionOptions {
   correctionPins?:boolean|PinnedCorrections;identityDecisionPins?:IdentityDecisionPins;propertyCorrectionPins?:PropertyCorrectionPins;
   assertActive?:()=>void;maxPageSize?:number;modelDefinition?:Data;preparedFoundation?:Artifact;
   includeGroupMembers?:boolean;
+  /** Host-only relationship diagnostics; never accepted as part of the query expression. */
+  relationReportId?:string;
   preparedModel?:{definition:Data;foundation:Artifact;assertUnchanged:()=>void};
   scope?:{entityTypeIds:ReadonlySet<string>;propertyIds:ReadonlySet<string>;relationTypeIds:ReadonlySet<string>};
 }

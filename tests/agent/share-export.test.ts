@@ -25,6 +25,11 @@ test("the final offline HTML contains an executable bundle, not replacement-expa
     assert(data);
     assert.equal(JSON.parse(data[1]).formatVersion, 2);
     assert.match(html, /connect-src 'none'/);
+    const template=await readFile(new URL('../../web/agent/index.html',import.meta.url),'utf8');
+    for(const match of template.matchAll(/<link\b[^>]*href="\.\/([^"/]+\.css)"[^>]*>/g)){
+      const stylesheet=await readFile(new URL('../../web/agent/'+match[1],import.meta.url),'utf8');
+      assert(html.includes(stylesheet),`formal stylesheet ${match[1]} must survive offline export`);
+    }
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

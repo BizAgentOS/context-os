@@ -179,9 +179,15 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
     sphere.castShadow = true; sphere.receiveShadow = true;
     const aura = glow(item.color, radius);
     group.add(aura, sphere);
+    let stateRing=null;
+    if(item.item.state||item.highlighted){
+      const points=Array.from({length:97},(_,i)=>vec(Math.cos(i/96*Math.PI*2)*radius*1.2,Math.sin(i/96*Math.PI*2)*radius*1.2,0));
+      const lineMaterial=item.dashed?new THREE.LineDashedMaterial({color:item.color,dashSize:radius*.2,gapSize:radius*.13,transparent:true}):new THREE.LineBasicMaterial({color:item.color,transparent:true});
+      stateRing=new THREE.Line(geometry(new THREE.BufferGeometry().setFromPoints(points)),material(lineMaterial));stateRing.computeLineDistances();group.add(stateRing);
+    }
     const rings = new THREE.Group();
     const connections = item.neighborCount || 0;
-    const layers = item.kind === "concept" ? Math.min(14, connections === 0 ? 2 : 4 + connections * 2) : 1;
+    const layers = item.dashed||item.hollow?0:item.kind === "concept" ? Math.min(14, connections === 0 ? 2 : 4 + connections * 2) : 1;
     const frequency = Math.min(96, 24 + connections * 6);
     // Denser groups retain a fixed silhouette; more layers fill the gaps rather than enlarge the node.
     for (let i = 0; i < layers; i++) {
@@ -204,49 +210,55 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
       ring.castShadow = true; ring.receiveShadow = true;
       rings.add(ring);
     }
-    const rays = createRays(item, radius, connections);
+    const rays = item.dashed||item.hollow?null:createRays(item, radius, connections);
     if (rays) group.add(rays);
     group.add(rings);
 
     world.add(group);
     const label = document.createElement("button"); label.type = "button"; label.className = `os-node-label os-node-${item.kind}`;
     label.dataset.nodeKey = item.key;
+    if(item.state)label.dataset.state=item.state;
+    if(item.highlighted)label.dataset.highlighted='true';
     if (item.kind === "concept") {
       label.dataset.neighborCount = String(connections);
       label.title = `${safeText(item.name)} · ${connections} 个关联节点，外圈密度随关联数量增加`;
     }
-    label.setAttribute("aria-label", `${item.kind === "concept" ? "查看概念" : "查看依据"}：${safeText(item.name)}`);
+    label.setAttribute("aria-label", `${item.kind === "concept" ? "查看实体" : "查看依据"}：${safeText(item.name)}${item.pending?` · ${item.pending} 项待处理`:''}`);
     const name = document.createElement("strong"); name.textContent = safeText(item.name);
     if (item.kind === "evidence") {
       const category = {web: "网页依据", document: "资料依据", user: "用户陈述"}[item.item.kind] || "定义依据";
       name.textContent = `${category} ${String(graph.evidence.indexOf(item.item) + 1).padStart(2, "0")}`;
       label.title = safeText(item.name);
     }
-    const caption = document.createElement("span"); caption.textContent = item.kind !== "concept" ? "说明依据" : item.item.helix
+    const caption = document.createElement("span"); caption.textContent = item.item.state?`${({adopted:'已采用',pending:'待确认',missing:'缺失',empty:'无数据'})[item.state]}${item.pending?` · ${item.pending} 项待处理`:''}`:item.kind !== "concept" ? "说明依据" : item.item.helix
       ? `${item.item.helix.entity.rows} 条记录 · ${item.item.helix.entity.members.length > 1 ? `合并 ${item.item.helix.entity.members.length} 源` : "单一来源"}`
       : `${item.degree} 条关系 · ${item.item.mappingStatus === "bound" ? "已映射" : "未映射"}`;
     label.append(name, caption);
-    label.onclick = event => { event.stopPropagation(); onActivate(item.key); };
+    if(item.item.state){label.style.background='rgba(255,255,255,.92)';label.style.textShadow='none';label.style.borderColor=item.color;label.style.borderStyle=item.dashed?'dashed':'solid';name.style.color='#263b59';caption.style.color='#4b617d';caption.style.background='#e7edf6';caption.style.display='block';}
+    label.onclick = event => { event.stopPropagation(); if(!item.virtual)onActivate(item.key); };
     label.style.setProperty("--node-tint", item.color);
     labels.append(label);
-    items.set(item.key, {item, group, sphere, aura, rings, rays, label, caption, radius, home: group.position.clone(), target: group.position.clone(), opacity: 1, targetOpacity: 1, targetScale: 1});
+    items.set(item.key, {item, group, sphere, aura, rings, rays,stateRing, label, caption, radius, home: group.position.clone(), target: group.position.clone(), opacity: 1, targetOpacity: 1, targetScale: 1});
   }
   const links = graph.edges.map((edge, index) => {
     const positions = new Float32Array(41 * 3);
     const lineGeometry = geometry(new LineGeometry());
     lineGeometry.setPositions(positions);
-    const color = edge.kind === "relation" ? "#eaa0b0" : "#7994ce";
-    const lineMaterial = material(new LineMaterial({color, linewidth: edge.kind === "relation" ? 1.8 : .7, transparent: true, opacity: edge.kind === "relation" ? .65 : .23, depthWrite: false}));
+    const color = edge.stateColor||(edge.kind === "relation" ? "#eaa0b0" : "#7994ce");
+    const lineMaterial = material(new LineMaterial({color, linewidth: edge.highlighted?3:edge.kind === "relation" ? 1.8 : .7, dashed:!!edge.dashed,dashSize:7,gapSize:5, transparent: true, opacity: edge.kind === "relation" ? .65 : .23, depthWrite: false}));
     const line = new Line2(lineGeometry, lineMaterial); line.frustumCulled = false; world.add(line);
     const pulse = new THREE.Mesh(sphereGeometry, material(new THREE.MeshBasicMaterial({color, transparent: true, opacity: .8})));
     pulse.scale.setScalar(edge.kind === "relation" ? 2.2 : 1.3); world.add(pulse);
     const label = document.createElement("button"); label.type = "button"; label.className = "os-edge-label";
-    label.textContent = safeText(edge.name); label.hidden = true;
+    label.textContent = `${safeText(edge.item.state?edge.displayName:edge.name)}${edge.pending?` · 待处理 ${edge.pending}`:''}`; label.hidden = true;
+    if(edge.state)label.dataset.state=edge.state;
+    if(edge.item.state){label.style.background='rgba(255,255,255,.92)';label.style.color=edge.stateColor;label.style.textShadow='none';label.style.marginLeft='0';label.style.maxWidth='220px';label.style.whiteSpace='normal';}
     if (edge.kind === "relation") {
       label.setAttribute("aria-label", `查看关系：${safeText(edge.name)}`);
-      label.onclick = event => {event.stopPropagation(); onActivate(edge.key);}; labels.append(label);
+      label.onclick = event => {event.stopPropagation(); if(!edge.virtual)onActivate(edge.key);}; labels.append(label);
     }
-    return {edge, line, pulse, positions, label, offset: index * .19};
+    const peers=graph.edges.filter(item=>[item.from,item.to].sort().join('|')===[edge.from,edge.to].sort().join('|'));
+    return {edge, line, pulse, positions, label, offset: index * .19,bend:(peers.indexOf(edge)-(peers.length-1)/2)*70,selfRadius:90+peers.indexOf(edge)*35};
   });
   function projection(position) {
     const point = position.clone().applyMatrix4(world.matrixWorld).project(camera);
@@ -300,8 +312,11 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
           item.targetScale = 1.65;
         }
       }
+      if(item.item.dimmed)item.targetOpacity*=.15;
+      if(item.item.highlighted)item.targetScale*=1.1;
       item.label.classList.toggle("is-focused", next.stage !== "global" && (isFocus || item.item.key === selectedKey));
-      item.label.disabled = item.targetOpacity < .2;
+      if(item.item.item.state){const color=item.item.state==='missing'?item.item.color:next.stage!=='global'&&(isFocus||item.item.key===selectedKey)?'#1764bf':item.item.color;item.label.style.borderColor=color;item.stateRing?.material.color.set(color);}
+      item.label.disabled = item.item.virtual||item.targetOpacity < .2;
       item.labelWidth = 0; item.labelHeight = 0;
       if (immediate) {item.group.position.copy(item.target); item.group.scale.setScalar(item.targetScale); item.opacity = item.targetOpacity;}
     }
@@ -409,7 +424,8 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
       item.group.position.lerp(vec(item.target.x, item.target.y + bob, item.target.z), alpha);
       item.opacity += (item.targetOpacity - item.opacity) * alpha;
       const scale = item.group.scale.x + (item.targetScale - item.group.scale.x) * alpha; item.group.scale.setScalar(scale);
-      item.sphere.material.opacity = item.opacity;
+      item.sphere.material.opacity = item.opacity*(item.item.hollow ? .04 : 1);
+      if(item.stateRing){item.stateRing.quaternion.copy(camera.quaternion);item.stateRing.material.opacity=item.opacity;}
       item.rings.quaternion.copy(camera.quaternion);
       item.rings.children.forEach((ring, i) => {
         ring.rotation.z = elapsed * (i % 2 ? -.025 : .02);
@@ -422,18 +438,18 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
         item.rays.material.uniforms.time.value = elapsed;
       }
       // Transparent background nodes must not cast opaque shadows over the active neighborhood.
-      item.sphere.castShadow = item.opacity > .8;
+      item.sphere.castShadow = !item.item.hollow&&item.opacity > .8;
       for (const ring of item.rings.children) ring.castShadow = item.opacity > .8;
       item.aura.quaternion.copy(camera.quaternion);
-      item.aura.material.uniforms.opacity.value = item.opacity * (.2 + Math.sin(elapsed * 1.2) * .02);
+      item.aura.material.uniforms.opacity.value = item.item.hollow?0:item.opacity * (.2 + Math.sin(elapsed * 1.2) * .02);
     }
     world.updateMatrixWorld(true); camera.updateMatrixWorld();
     const labelBounds = placeLabels();
     for (const link of links) {
       const start = items.get(link.edge.from).group.position;
       const end = items.get(link.edge.to).group.position;
-      const middle = start.clone().lerp(end, .5); middle.z += link.edge.kind === "relation" ? 10 : 35;
-      const curve = new THREE.QuadraticBezierCurve3(start, middle, end);
+      const middle = start.clone().lerp(end, .5);middle.x+=link.bend; middle.z += (link.edge.kind === "relation" ? 10 : 35)+Math.abs(link.bend);
+      const curve = link.edge.from===link.edge.to?new THREE.CubicBezierCurve3(start,start.clone().add(vec(-link.selfRadius,link.selfRadius+50,40)),end.clone().add(vec(link.selfRadius,link.selfRadius+50,40)),end):new THREE.QuadraticBezierCurve3(start, middle, end);
       for (let i = 0; i <= 40; i++) curve.getPoint(i / 40).toArray(link.positions, i * 3);
       const attributes = link.line.geometry.attributes;
       for (let i = 0; i < 40; i++) {
@@ -442,11 +458,14 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
         attributes.instanceEnd.setXYZ(i, link.positions[b], link.positions[b + 1], link.positions[b + 2]);
       }
       attributes.instanceStart.needsUpdate = attributes.instanceEnd.needsUpdate = true;
-      const opacity = Math.min(items.get(link.edge.from).opacity, items.get(link.edge.to).opacity);
+      if(link.edge.dashed)link.line.computeLineDistances();
+      const opacity = Math.min(items.get(link.edge.from).opacity, items.get(link.edge.to).opacity)*(link.edge.dimmed ? .15 : 1);
+      const selected=link.edge.kind==='relation'&&view.target?.kind==='foundation_relation'&&view.target.member===link.edge.item.id;
+      if(link.edge.stateColor){link.line.material.color.set(selected&&link.edge.state!=='missing'?'#1764bf':link.edge.stateColor);link.line.material.linewidth=selected||link.edge.highlighted?3:1.8;}
       link.line.material.opacity = opacity * (link.edge.kind === "relation" ? .62 : .28);
       link.pulse.position.copy(curve.getPoint((elapsed * .11 + link.offset) % 1));
       link.pulse.material.opacity = opacity * .85;
-      const showLabel = view.stage === "local" && opacity > .8 && link.edge.kind === "relation";
+      const showLabel = (view.stage === "local"||link.edge.highlighted||link.edge.state==='pending') && opacity > .8 && link.edge.kind === "relation";
       link.label.hidden = !showLabel;
       if (showLabel) {
         const point = projection(curve.getPoint(.52));
@@ -469,7 +488,7 @@ export function createOntologyScene(host, graph, { onActivate, onBackground, onU
     pointer = null;
     const rect = canvas.getBoundingClientRect();
     raycaster.setFromCamera(new THREE.Vector2((event.clientX - rect.left) / width * 2 - 1, -(event.clientY - rect.top) / height * 2 + 1), camera);
-    const hit = raycaster.intersectObjects([...items.values()].filter(item => item.targetOpacity > .2).map(item => item.sphere), false)[0];
+    const hit = raycaster.intersectObjects([...items.values()].filter(item => item.targetOpacity > .2&&!item.item.virtual).map(item => item.sphere), false)[0];
     if (hit) onActivate(hit.object.userData.key); else onBackground();
   }
   canvas.addEventListener("pointerdown", pointerDown);

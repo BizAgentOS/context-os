@@ -1,3 +1,4 @@
+import {currentActor,assertRole} from '../security/actors.ts';
 import { projectLegacyModel, type LayeredModel } from "../semantic/model.ts";
 import { objectIdLimit } from "../semantic/values.ts";
 import { createHash } from "node:crypto";
@@ -261,7 +262,7 @@ export class RelationCorrections {
       throw new Error("采用需由本地管理员确认具体检查版本");
     const args =
       method === "propose" ? proposal.parse(input) : action.parse(input);
-    const actor = context ? `agent:${context.taskId}` : "local-admin";
+    const actor = context ? `agent:${context.taskId}` : currentActor().id;
     const valid = () => {
       assertActive();
       if (context) this.memory.assertWritable(context);

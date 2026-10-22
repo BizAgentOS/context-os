@@ -21,6 +21,7 @@ export class SemanticQuery {
     if(!stored||stored.kind!=='live_ontology'||stored.status!=='adopted')throw new Error('查询需要已采用本体');
     const reader=prepared??this.live.identityReader(stored,options),{model,layered}=reader;
     const {target,fields}=validateQuery(layered,query,options);
+    if(options.relationReportId&&(query.traverse.length!==1||query.traverse[0].relationTypeId!==options.relationReportId||query.traverse[0].recursive||query.target.id||query.filters.length||query.aggregate))throw new Error('关系诊断需要不带筛选的单跳关系查询');
     const usedTypes=new Set([query.target.entityTypeId,target.id]);
     for(const step of query.traverse){const relation=layered.semantic.relationTypes.find(r=>r.id===step.relationTypeId)!;usedTypes.add(relation.from);usedTypes.add(relation.to);}
     const datasets=new Map<string,QueryBinding>(),sources:SourceReading[]=[];
@@ -53,6 +54,7 @@ export class SemanticQuery {
     const propertyCorrections=await validatePropertyCorrections(this.live,stored,selectedProperties,{...options,modelDefinition:model.content,pins:reader.pins,readMode:reader.readMode,assertActive:assertProperties});
     assertProperties();
     const compiler=new QuerySql(layered,datasets,decisions,corrections,propertyCorrections),sql=compiler.select(query,fields,options.includeGroupMembers);
+    if(options.relationReportId)compiler.metadataSql=compiler.relationReportSql(options.relationReportId);
     const execution={signal:options.signal,timeoutMs:options.timeoutMs};
     const [result,metadata]=await Promise.all([this.snapshots.read(compiler.inputs,sql,{...execution,limit:query.page.limit,offset:query.page.offset}),compiler.metadataSql?this.snapshots.read(compiler.inputs,compiler.metadataSql,{...execution,limit:1}):undefined]);
     const uncertainFilterRows=Number(metadata?.rows[0]?.uncertainFilterRows??0);
@@ -73,13 +75,19 @@ export class SemanticQuery {
     const aggregateEvidence=query.aggregate?result.rows.map((row,index)=>({groupId:'group:'+String(query.page.offset+index),measures:Object.fromEntries(query.aggregate!.measures.map((m,i)=>[m.as,{uncertain:Number(row['uncertain'+i]??0),missing:Number(row['missing'+i]??0)}]))})):undefined;
     const uncertainAggregate=aggregateEvidence?.some(group=>Object.values(group.measures).some(measure=>measure.uncertain>0))??false;
     const completeSources=sources.every(s=>s.coverage?.complete===true);
+    const relationReport=options.relationReportId?(()=>{
+      const total=Number(metadata?.rows[0]?.sourceTotal??0),matched=Number(metadata?.rows[0]?.sourceMatched??0),unmatched=total-matched;
+      const samples=JSON.parse(String(metadata?.rows[0]?.unmatchedSamples??'[]')) as Array<{objectId:string}>;
+      return{status:'measured' as const,total:completeSources?total:null,matched:completeSources?matched:null,matchRate:completeSources&&total>0?matched/total:null,observed:{total,matched},
+        unmatched:{total:completeSources?unmatched:null,items:samples,limit:10,complete:completeSources&&samples.length===unmatched},coverage:{complete:completeSources},checkedAt:new Date().toISOString()};
+    })():undefined;
     const groupMembers=query.aggregate&&options.includeGroupMembers?result.rows.map((row,index)=>{
       const members=row.__members?JSON.parse(String(row.__members)) as Array<{objectId:string;values:Record<string,string|null>;status:Record<string,string>}>:[],total=Number(row.__memberTotal);
       return {groupId:items[index].$id,items:members.map(member=>({$id:member.objectId,values:Object.fromEntries(Object.entries(member.values).map(([id,value])=>[id,value===null?null:JSON.parse(value)])),status:member.status})),coverage:{total:completeSources?total:null,shown:members.length,complete:completeSources&&total<=20}};
     }):undefined;
     return {items,evidence,...(aggregateEvidence?{aggregateEvidence}:{}),...(groupMembers?{groupMembers}:{}),...(paths?{paths}:{}),governance:{identityDecisions:decisions.map(d=>({id:d.id,version:d.version})),corrections:corrections.map(d=>({id:d.id,version:d.version})),propertyCorrections:propertyCorrections.map(d=>({id:d.id,version:d.version}))},...(traversal?{traversal}:{}),columns:outputFields.map(id=>{const p=layered.semantic.properties.find(p=>p.id===id);return{id,name:p?.name??id,valueType:p?.valueType??'decimal'};}),
       coverage:{offset:query.page.offset,shown:items.length,total:completeSources&&uncertainFilterRows===0?result.total:null,uncertainFilterRows,uncoveredProperties:[...new Set(evidence.flatMap(e=>Object.entries(e.properties).filter(([,p])=>p.status!=='resolved').map(([id])=>id)))],complete:completeSources&&uncertainFilterRows===0&&!uncertainAggregate&&!traversal?.truncated&&!traversal?.cycleDetected&&query.page.offset===0&&items.length===result.total,sourceComplete:completeSources},
-      ...(prepared?{preview:true}:{}),readMode:reader.readMode,versions:{ontology:prepared?null:(model.content.foundationRef??null) as {id:string;version:number}|null,mapping:prepared?null:{id:model.id,version:model.version}},
+      ...(prepared?{preview:true}:{}),...(relationReport?{relationReport}:{}),readMode:reader.readMode,versions:{ontology:prepared?null:(model.content.foundationRef??null) as {id:string;version:number}|null,mapping:prepared?null:{id:model.id,version:model.version}},
       sources,consistency:readingConsistency(reader.readMode,sources),multiSourceTime:multipleSourceTimes};
   }
 }

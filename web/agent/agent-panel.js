@@ -3,12 +3,12 @@ import { renderMarkdown } from "./message-markdown.js";
 import { renderRunCard } from "./run-card.js";
 import { createAgentModeControls } from "./agent-mode-controls.js";
 
-export function createAgentPanel({ state, ui, $, node, button, api, hasCanvasContent, inspectContext, errorMessage, openPending, highlightRefs, answerDecision, continueRun, modeChanged, modesDisabled, showAnswer }) {
+export function createAgentPanel({ state, ui, $, node, button, api, hasCanvasContent, inspectContext, errorMessage, openPending, highlightRefs, answerDecision, switchMode, continueRun, modeChanged, modesDisabled, showAnswer }) {
 const deferred = new Set();
 $(".interaction").classList.add("agent-panel-shell");
 const modeControls=createAgentModeControls({ui,api,onChange:()=>{modeChanged?.();renderDialogue();},disabled:()=>modesDisabled?.()===true});
 $(".history-panel").prepend(modeControls.root);
-const collapse=$("#collapse-composer");collapse.textContent='收起助手';modeControls.root.append(collapse);
+const collapse=$("#collapse-composer");collapse.textContent='收起助手';modeControls.root.after(collapse);
 function renderDialogue() {
   const lines = state.messages
     .filter(
@@ -53,7 +53,7 @@ function renderDialogue() {
   if (!visible.length) container.append(node("p", "dialogue-empty", "还没有对话，从下面介绍你的企业开始。"));
   visible.forEach(message => {
     if (message.role === "run") {
-      container.append(renderRunCard(message.run, { openPending, highlightRefs, answerDecision, continueRun, showAnswer, deferred, onLater: key => { deferred.add(key); renderDialogue(); }, streaming: message.run.status === "running" && message.run.id === runs.at(-1)?.id ? state.streaming : "" }));
+      container.append(renderRunCard(message.run, { openPending, highlightRefs, answerDecision, switchMode, continueRun, showAnswer, deferred, onLater: key => { deferred.add(key); renderDialogue(); }, streaming: message.run.status === "running" && message.run.id === runs.at(-1)?.id ? state.streaming : "" }));
       return;
     }
     const line = node(

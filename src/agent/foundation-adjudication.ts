@@ -1,4 +1,5 @@
 import { z } from "zod";
+import {currentActor} from '../security/actors.ts';
 import type { Artifact, Data } from "./contracts.ts";
 import type { MemoryStore } from "./memory.ts";
 import type { FoundationService } from "./foundation.ts";
@@ -139,7 +140,7 @@ export class FoundationAdjudication {
     }
     const field = choice.issue.kind === "conflict" ? "conflicts" : "unknowns";
     const nextIssue = items(draft[field]).find(item => item.id === issue.id)!;
-    const decision = { actor: "local-admin", reason: choice.reason, action: choice.action, explanation: choice.explanation ?? null, changeRef: reference(change) };
+    const decision = { actor: currentActor().id, reason: choice.reason, action: choice.action, explanation: choice.explanation ?? null, changeRef: reference(change) };
     nextIssue.resolvedBy = (issue.evidenceRefs ?? []) as string[];
     nextIssue.adjudication = decision;
     const inputs = jsonData({ foundationRef: reference(current), issue: { ...choice.issue, fingerprint: fingerprint(issue) }, evidence: details.evidenceRefs });

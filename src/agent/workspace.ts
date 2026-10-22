@@ -318,7 +318,7 @@ export class Workspace {
     });
     return json({
       profile: this.repo.listArtifacts("profile")[0] ?? null,
-      sources: this.repo.listArtifacts("source").map((a) => ({
+      sources: this.repo.listArtifacts("source",{content:"compact"}).map((a) => ({
         ...summarize(a),
         columns: a.content.columns,
         total: a.content.format === "csv" ? tableRowCount(a) : undefined,
@@ -354,7 +354,7 @@ export class Workspace {
       throw new Error("仅支持 CSV、Markdown 和 TXT 文件名");
     const format = name.toLowerCase().endsWith(".csv") ? "csv" : "text";
     const prior = this.repo
-      .listArtifacts("source")
+      .listArtifacts("source",{content:"compact"})
       .find((a) => a.title === name && a.content.origin !== "feishu");
     let parsed: { columns: string[]; rows: Data[] } = { columns: [], rows: [] };
     let parseError: string | undefined;

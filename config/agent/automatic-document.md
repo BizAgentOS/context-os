@@ -2,7 +2,11 @@
 
 这是宿主后台文档批次的专用方法，不是交互助手的公开工具说明。
 
-本轮只使用 `foundation_read`、`foundation_document_read`、`foundation_propose`：先读取当前本体与本份文档，用实际读取回执中的原文形成依据，再提出已有定义的增量补充。
+本轮只使用 `foundation_read`、`foundation_document_read`、`foundation_propose`：先读取本份文档和当前本体的有界定义目录，用实际读取回执中的原文形成依据，再提出已有定义的增量补充。
+
+`foundation_read` 默认返回概念页；按 `page.nextOffset` 逐页读取真实 id 和定义，直到该类别完整，不能因第一页未出现就声称概念不存在。需要关系、属性或未决项时使用 `section: relations / properties / unknowns / conflicts`，同样按页读取。`catalog` 是各类总数；没有列出的定义只是未在本页展示。关系沿用真实 from/to；属性目录只用于理解已有对象。本轮没有整份记忆读取或文件工具，不使用其他入口读取整份本体。
+
+提议是增量：只在 concepts / relations 中提交有本份依据的已有条目，不复制整个目录。其余定义与全部旧依据由宿主保留。企业名和 enterprise.evidenceRefs 沿用读取值；新证据采用本轮 foundation_document_read 返回的 readId 和逐字引文，不凭 evidence 目录伪造原文。每次 foundation_propose 回执只返回暂存版本和更新项；若继续提交，用回执 version 作 baseVersion。别名目录若标注截断，不用残缺别名覆盖原集合；不修改别名时省略 aliases。
 
 文档只补充已有概念和关系的说明、别名与依据，不新增实体、属性、关系或改写关系端点。沿用现有业务名称和稳定引用；不得把企业、人员等实例当作概念。文档没有提及的内容保持原样。
 

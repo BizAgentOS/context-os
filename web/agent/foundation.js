@@ -1,6 +1,7 @@
 import { safeText, displayValue, technicalDetails } from "./ui-display.js";
 import { bindConcept, previewBinding } from "./foundation-bindings.js";
 import { requestPending } from "./pending-center.js";
+import {documentPosition} from './document-preview.js';
 const el = (tag, className, text) => {
   const element = document.createElement(tag);
   element.className = className;
@@ -120,6 +121,8 @@ export function renderFoundation(
                 ),
                 paragraph,
               );
+              const position=documentPosition(found.documentLocation);if(position)result.prepend(el('p','muted',position));
+              for(const warning of found.documentWarnings||[])result.append(el('p','muted',warning));
             } catch (error) {
               const alert = el("p", "", error.message);
               alert.setAttribute("role", "alert");

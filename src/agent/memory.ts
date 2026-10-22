@@ -1,8 +1,10 @@
+import { currentActor } from "../security/actors.ts";
+import { SourceContent } from "./source-content.ts";
 import { FoundationEvidenceLibrary } from "./foundation-library.ts";
 import { normalizeCanvasPage } from "./canvas-pages.ts";
 import type { ResolvedWorkContext } from "./work-context.ts";
 import { EventEmitter } from "node:events";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, backup } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID, createHash } from "node:crypto";
@@ -70,6 +72,7 @@ export class MemoryStore implements Repository {
   readonly directory: string;
   private db: DatabaseSync;
   private evidenceLibrary: FoundationEvidenceLibrary;
+  private sourceContent:SourceContent;
   readonly changes = new EventEmitter();
   private pendingChanges: Data[] = [];
   private written: Artifact[] = [];
@@ -91,6 +94,10 @@ export class MemoryStore implements Repository {
     this.db = new DatabaseSync(join(directory, "memory.sqlite"));
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
       CREATE TABLE IF NOT EXISTS artifacts (id TEXT, version INTEGER, kind TEXT, body TEXT NOT NULL, PRIMARY KEY(id,version));
+      CREATE INDEX IF NOT EXISTS artifacts_kind_id_version ON artifacts(kind,id,version);
+      CREATE TABLE IF NOT EXISTS artifact_heads (id TEXT PRIMARY KEY,version INTEGER NOT NULL,kind TEXT NOT NULL,status TEXT NOT NULL,position INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS artifact_heads_kind_position ON artifact_heads(kind,position DESC);
+      CREATE INDEX IF NOT EXISTS artifact_heads_position ON artifact_heads(position DESC);
       CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS conversation_sessions (id TEXT PRIMARY KEY, body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, body TEXT NOT NULL);
@@ -100,6 +107,13 @@ export class MemoryStore implements Repository {
       CREATE TABLE IF NOT EXISTS consumer_evidence_cache (id TEXT PRIMARY KEY, view_id TEXT NOT NULL, expires_at INTEGER NOT NULL, body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY, body TEXT NOT NULL);`);
     this.evidenceLibrary = new FoundationEvidenceLibrary(this.db);
+    this.sourceContent = new SourceContent(directory);
+    // Reconstruct compact heads from persisted versions; only the selected heads are parsed by list calls.
+    if(this.db.prepare('SELECT MAX(rowid) position FROM artifacts').get()?.position!==this.db.prepare('SELECT MAX(position) position FROM artifact_heads').get()?.position)this.atomic(()=>{
+      this.db.exec(`DELETE FROM artifact_heads;
+        INSERT INTO artifact_heads SELECT a.id,a.version,a.kind,json_extract(a.body,'$.status'),a.rowid FROM artifacts a
+        JOIN (SELECT id,MAX(version) version FROM artifacts GROUP BY id) latest ON a.id=latest.id AND a.version=latest.version;`);
+    });
     // Upgrade historical foundations and idempotent receipts atomically; no semantic version changes.
     this.atomic(() => {
       for (const row of this.db.prepare("SELECT id,version,body FROM artifacts WHERE kind IN ('foundation','engine_candidate')").all() as { id: string; version: number; body: string }[]) {
@@ -112,6 +126,15 @@ export class MemoryStore implements Repository {
         this.db.prepare("UPDATE operations SET body=? WHERE id=?").run(JSON.stringify(this.evidenceLibrary.encode(artifact)), row.id);
       }
       this.collectFoundationEvidence();
+    });
+    // The original content is immutable; a failed migration leaves the legacy rows intact.
+    this.atomic(()=>{
+      for(const row of this.db.prepare("SELECT id,version,body FROM artifacts WHERE kind='source' AND (json_type(body,'$.content.raw')='text' OR json_type(body,'$.content.rows')='array')").iterate()){
+        const artifact=parse<Artifact>(row);this.db.prepare('UPDATE artifacts SET body=? WHERE id=? AND version=?').run(JSON.stringify(this.sourceContent.encode(artifact)),artifact.id,artifact.version);
+      }
+      for(const row of this.db.prepare("SELECT id,body FROM operations WHERE json_extract(body,'$.kind')='source' AND (json_type(body,'$.content.raw')='text' OR json_type(body,'$.content.rows')='array')").iterate()){
+        this.db.prepare('UPDATE operations SET body=? WHERE id=?').run(JSON.stringify(this.sourceContent.encode(parse<Artifact>(row))),String(row.id));
+      }
     });
     this.db.prepare("DELETE FROM consumer_evidence_cache WHERE expires_at <= ?").run(Date.now());
     for (const task of this.listTasks()) {
@@ -167,6 +190,33 @@ export class MemoryStore implements Repository {
     this.db.close();
   }
 
+  /** Online consistent copy; caller owns the new destination and managed-file manifest. */
+  async backupTo(destination:string){await backup(this.db,destination);}
+  private retainedSourceContent=new Set<string>();
+  retainSourceContent(id:string,version:number){this.retainedSourceContent.add(`${id}@${version}`);}
+  sourceContentPins(){return new Set(this.retainedSourceContent);}
+  artifactHistory(kind?:string,options:{content?:"hydrate"|"compact"}={}):Artifact[]{
+    const rows=kind?this.db.prepare('SELECT body FROM artifacts WHERE kind=? ORDER BY rowid').all(kind):this.db.prepare('SELECT body FROM artifacts ORDER BY rowid').all();
+    return rows.map(row=>this.decodeArtifact(parse<Artifact>(row),options));
+  }
+  /** Called after retention commits and while no backup holds a managed-file lease. */
+  collectSourceContent(){
+    const references=this.db.prepare("SELECT json_extract(body,'$.content.sourceContent') refs FROM artifacts WHERE kind='source' UNION ALL SELECT json_extract(body,'$.content.sourceContent') refs FROM operations WHERE json_extract(body,'$.kind')='source'").all();
+    return this.sourceContent.collect(references.map(row=>row.refs?JSON.parse(String(row.refs)):{}));
+  }
+  /** Retention removes only original content; version, hash and domain facts retain their identity. */
+  expireSourceOriginals(items:Array<{id:string;version:number;raw:boolean;file:boolean}>,expiredAt:string){
+    this.atomic(()=>{for(const item of items){
+      const source=this.getArtifact(item.id,item.version);if(source.kind!=='source')throw new Error('只允许清理来源原文');
+      const content={...source.content};if(item.raw)delete content.raw;
+      if(item.file)for(const key of ['tableFile','documentFile']){const stored=content[key] as Data|undefined;if(stored?.file){const {file,...rest}=stored;content[key]={...rest,expiredAt};}}
+      content.originalRetention={...((content.originalRetention??{}) as Data),...(item.raw?{rawExpiredAt:expiredAt}:{}),...(item.file?{fileExpiredAt:expiredAt}:{})};
+      const encoded=JSON.stringify(this.encodeArtifact({...source,content}));
+      this.db.prepare('UPDATE artifacts SET body=? WHERE id=? AND version=?').run(encoded,source.id,source.version);
+      this.db.prepare("UPDATE operations SET body=? WHERE json_extract(body,'$.id')=? AND json_extract(body,'$.version')=?").run(encoded,source.id,source.version);
+    }});
+  }
+
   private transaction<T>(fn: () => T): T {
     if (this.db.isTransaction) return fn();
     this.db.exec("BEGIN IMMEDIATE");
@@ -196,21 +246,26 @@ export class MemoryStore implements Repository {
     return this.transaction(fn);
   }
 
-  listArtifacts(kind?: string, options: { evidence?: "hydrate" | "compact" } = {}): Artifact[] {
-    const rows = this.db
-      .prepare(
-        `SELECT a.body FROM artifacts a JOIN
-      (SELECT id,MAX(version) version FROM artifacts GROUP BY id) latest
-      ON a.id=latest.id AND a.version=latest.version ORDER BY a.rowid DESC`,
-      )
-      .all();
-    return rows
-      .map((row) => parse<Artifact>(row))
-      .filter((a) => (!kind || a.kind === kind) && !(a.kind === "source" && a.status === "removed") && !(a.kind === "foundation" && a.status === "discarded"))
-      .map(a => options.evidence === "compact" ? a : this.evidenceLibrary.decode(a));
+  listArtifacts(kind?: string, options: { evidence?: "hydrate" | "compact";content?:'hydrate'|'compact';limit?:number;offset?:number } = {}): Artifact[] {
+    const limit=options.limit??-1,offset=options.offset??0;
+    if(!Number.isSafeInteger(offset)||offset<0||options.limit!==undefined&&(!Number.isSafeInteger(limit)||limit<1||limit>10000))throw new Error('成果分页范围无效');
+    const rows=this.db.prepare(`SELECT a.body FROM artifact_heads h JOIN artifacts a ON a.id=h.id AND a.version=h.version
+      WHERE ${kind===undefined?'1':'h.kind=?'} AND NOT(h.kind='source' AND h.status='removed') AND NOT(h.kind='foundation' AND h.status='discarded')
+      ORDER BY h.position DESC LIMIT ? OFFSET ?`).all(...(kind===undefined?[]:[kind]),limit,offset);
+    return rows.map((row) => parse<Artifact>(row))
+      .map(a => this.decodeArtifact(a,options));
+  }
+  private encodeArtifact(artifact:Artifact){return this.sourceContent.encode(this.evidenceLibrary.encode(artifact));}
+  private decodeArtifact(artifact:Artifact,options:{evidence?:'hydrate'|'compact';content?:'hydrate'|'compact'}={}){
+    const content=options.content==='compact'?artifact:this.sourceContent.decode(artifact);
+    return options.evidence==='compact'?content:this.evidenceLibrary.decode(content);
+  }
+  private saveArtifactHead(artifact:Artifact,position:number|bigint){
+    this.db.prepare('INSERT INTO artifact_heads(id,version,kind,status,position) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET version=excluded.version,kind=excluded.kind,status=excluded.status,position=excluded.position')
+      .run(artifact.id,artifact.version,artifact.kind,artifact.status,position);
   }
 
-  getArtifact(id: string, version?: number, options: { evidence?: "hydrate" | "compact" } = {}): Artifact {
+  getArtifact(id: string, version?: number, options: { evidence?: "hydrate" | "compact"; content?:"hydrate"|"compact" } = {}): Artifact {
     const row =
       version === undefined
         ? this.db
@@ -223,7 +278,7 @@ export class MemoryStore implements Repository {
             .get(id, version);
     if (!row) throw new Error("成果不存在或该版本不可用");
     const artifact = parse<Artifact>(row);
-    return options.evidence === "compact" ? artifact : this.evidenceLibrary.decode(artifact);
+    return this.decodeArtifact(artifact,options);
   }
 
   artifactOperation(
@@ -234,7 +289,7 @@ export class MemoryStore implements Repository {
     const row = this.db
       .prepare("SELECT body FROM operations WHERE id=?")
       .get(`${context.executionId}:${operationId}`);
-    return row ? this.evidenceLibrary.decode(parse<Artifact>(row)) : null;
+    return row ? this.decodeArtifact(parse<Artifact>(row)) : null;
   }
 
   putArtifact(
@@ -251,9 +306,9 @@ export class MemoryStore implements Repository {
         const previous = this.db
           .prepare("SELECT body FROM operations WHERE id=?")
           .get(key);
-        if (previous) return this.evidenceLibrary.decode(parse<Artifact>(previous));
+        if (previous) return this.decodeArtifact(parse<Artifact>(previous));
       }
-      const prior = input.id ? this.getArtifact(input.id) : null;
+      const prior = input.id ? this.getArtifact(input.id,undefined,{evidence:"compact",content:"compact"}) : null;
       if (
         prior &&
         (input.expectedVersion !== prior.version || prior.kind !== input.kind)
@@ -268,19 +323,22 @@ export class MemoryStore implements Repository {
         content: input.content,
         version: (prior?.version ?? 0) + 1,
         createdAt: now(),
+        actor:currentActor(),
       };
-      this.db
+      const encoded=JSON.stringify(this.encodeArtifact(artifact));
+      const saved=this.db
         .prepare("INSERT INTO artifacts VALUES (?,?,?,?)")
         .run(
           artifact.id,
           artifact.version,
           artifact.kind,
-          JSON.stringify(this.evidenceLibrary.encode(artifact)),
+          encoded,
         );
+      this.saveArtifactHead(artifact,saved.lastInsertRowid);
       if (key)
         this.db
           .prepare("INSERT INTO operations VALUES (?,?)")
-          .run(key, JSON.stringify(this.evidenceLibrary.encode(artifact)));
+          .run(key, encoded);
       this.written.push(artifact);
       if (context) this.attachArtifact(context.taskId, artifact);
       this.changed({kind:"artifact",id:artifact.id,version:artifact.version,artifactKind:artifact.kind});
@@ -292,8 +350,9 @@ export class MemoryStore implements Repository {
   createArtifact(id: string, input: Omit<ArtifactInput, "id" | "expectedVersion">): Artifact {
     return this.transaction(() => {
       if (this.db.prepare("SELECT 1 FROM artifacts WHERE id=? LIMIT 1").get(id)) throw new Error("成果标识已存在");
-      const artifact: Artifact = { id, kind: input.kind, title: input.title, status: input.status, content: input.content, version: 1, createdAt: now() };
-      this.db.prepare("INSERT INTO artifacts VALUES (?,?,?,?)").run(artifact.id, artifact.version, artifact.kind, JSON.stringify(this.evidenceLibrary.encode(artifact)));
+      const artifact: Artifact = { id, actor:currentActor(), kind: input.kind, title: input.title, status: input.status, content: input.content, version: 1, createdAt: now() };
+      const saved=this.db.prepare("INSERT INTO artifacts VALUES (?,?,?,?)").run(artifact.id, artifact.version, artifact.kind, JSON.stringify(this.encodeArtifact(artifact)));
+      this.saveArtifactHead(artifact,saved.lastInsertRowid);
       this.changed({kind:"artifact",id:artifact.id,version:artifact.version,artifactKind:artifact.kind});
       return artifact;
     });

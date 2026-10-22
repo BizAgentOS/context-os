@@ -4087,6 +4087,7 @@ dialog.ds-dialog > h2 { flex-shrink: 0; }
 /* First-run setup is a sequence inside its own dialog. */
 dialog.onboarding-dialog { --dialog-gutter:24px; --dialog-radius:24px; max-width:calc(100vw - 2 * var(--dialog-gutter)); max-height:min(90dvh,calc(100dvh - 2 * var(--dialog-gutter))); margin:auto; border-radius:var(--dialog-radius); box-shadow:0 28px 90px #0005; width: min(640px, calc(100vw - 2 * var(--dialog-gutter))); padding: 0; color-scheme: light; background: #fff; }
 dialog.onboarding-dialog::backdrop { background:rgb(3 6 15 / 56%); backdrop-filter:blur(6px); }
+dialog.onboarding-dialog.onboarding-question-guide {position:fixed;inset:auto 20px 110px auto;margin:0;width:min(420px,calc(100vw - 24px));max-height:min(65dvh,600px);z-index:35;box-shadow:0 10px 40px #0004;}
 dialog.onboarding-dialog .unified-dialog-close { z-index:2; }
 dialog.onboarding-dialog:has(.ob-concepts) { width: min(760px, calc(100vw - 2 * var(--dialog-gutter))); }
 dialog.onboarding-dialog[open] { display: flex; flex-direction: column; overflow: hidden; }
@@ -4190,3 +4191,10 @@ html:not([data-developer-view="true"]) .dev-only {display:none!important;}
 @media(max-width:600px) {
   .topbar .workspace-version {margin-inline-start:0;max-width:100%;}
 }
+
+.workspace-settings { width:min(640px,calc(100vw - 28px)); max-height:calc(100dvh - 32px); overflow:auto; }
+.workspace-settings section { margin-top:24px; }
+.workspace-settings p { overflow-wrap:anywhere; line-height:1.6; }
+.workspace-settings button { margin:8px 8px 4px 0; }
+.workspace-settings input { min-width:0; max-width:100%; }
+.workspace-settings details { margin-top:18px; }

@@ -2,6 +2,7 @@ import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import type {Data} from "../agent/contracts.ts";
 import type { OntologyDatasets } from "./ontology-datasets.ts";
 
 /** Run the same local MCP bridge an external Agent uses; credentials never enter results. */
@@ -27,8 +28,17 @@ export async function testDatasetMcp(service: OntologyDatasets, input: unknown, 
           const detail = await client.callTool({ name: "read_concept", arguments: { conceptId: concepts[0].id } });
           if (detail.isError) throw new Error("MCP 概念读取失败");
         }
+        const businessTypes=(reading.structuredContent as {businessTypes?:{name:string}[]}).businessTypes??[];
+        let query:Data|null=null;
+        if(businessTypes.length){
+          const result=await client.callTool({name:"query_objects",arguments:{type:businessTypes[0].name,fields:["$id"],limit:1}});
+          if(result.isError||!result.structuredContent)throw new Error("MCP 业务查询失败");
+          const value=result.structuredContent as {items?:unknown[];coverage?:Data};
+          if(!Array.isArray(value.items))throw new Error("MCP 业务查询缺少实际读取回执");
+          query={tool:"query_objects",type:businessTypes[0].name,rows:value.items.length,coverage:value.coverage??null};
+        }
         if (service.authenticate(args.key)?.id !== args.id) throw new Error("数据集已停用");
-        return { ok: true, checkedAt: new Date().toISOString(), tools: tools.tools.map(t => t.name), conceptCount: concepts.length, checkedConcepts: Math.min(concepts.length, 1), scope: "本机 MCP 握手、工具发现、目录与一个概念读取；不代表外部 Agent 已配置或业务来源全部可用" };
+        return { ok: true, checkedAt: new Date().toISOString(), tools: tools.tools.map(t => t.name), conceptCount: concepts.length, checkedConcepts: Math.min(concepts.length, 1), query, scope: query?"本机 MCP 握手、工具发现与一次真实授权业务查询；不代表其他 Agent 已配置或全部来源可用":"本机 MCP 握手、工具发现、目录与一个概念读取；此接入只开放本体知识，未执行业务查询" };
       })(),
       new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("MCP 测试超时")), 12_000); }),
     ]);

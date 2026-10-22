@@ -8,6 +8,7 @@ import type { Capability, SourceConnections } from "../live/sources.ts";
 import { jsonData } from "../live/sources.ts";
 import { fingerprint } from "../engine/release-diff.ts";
 import { incomingDir } from "./executor/paths.ts";
+import {FeishuPageChanged} from "../connectors/feishu-tables.ts";
 
 const pageSize = 100;
 const reference = (item: Artifact) => ({ id: item.id, version: item.version });
@@ -49,6 +50,9 @@ export async function readSnapshotPages(memory: MemoryStore, sources: SourceConn
       checkpoint = memory.putArtifact({ ...checkpoint, expectedVersion: checkpoint.version, content: { ...checkpoint.content, rows, bytes, total, continuation, done, observedFields: [...observedFields].sort() } });
     }
     return { file, filename, checkpoint, rows, total, observedFields: [...observedFields].sort(), excludedFields: excludedFields ?? [...observedFields].filter(field => !cap.fields.includes(field)).sort(), complete: done && (total === null || rows >= total) };
+  } catch(error) {
+    if(error instanceof FeishuPageChanged){memory.putArtifact({...checkpoint,expectedVersion:checkpoint.version,status:"invalid",content:{...checkpoint.content,continuation:null}});await rm(file,{force:true});}
+    throw error;
   } finally { await handle.close(); }
 }
 export async function finishSnapshotPages(memory: MemoryStore, reading: Awaited<ReturnType<typeof readSnapshotPages>>, status: "completed" | "invalid" = "completed") {

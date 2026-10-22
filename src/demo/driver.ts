@@ -10,19 +10,50 @@ const statusLabels: Record<string, string> = {
   no_evidence: "缺少回访依据",
 };
 
+/** The current QA host exposes only semantic reads; demo answers follow those same receipts. */
+async function qaExample(request: RunRequest, question: string) {
+  const directory = await request.onTool('ontology_describe', {}) as any;
+  const entities = directory.result.entities as Data[], relations = directory.result.relations as Data[];
+  if (question === '谁可以调用这些记忆？') return `本地脚本示例：当前视图可读 ${entities.length} 类对象、${relations.length} 条关系。本轮未读取接入授权，不能据此判断谁可调用；请在发布与接入页查看实际接入方和授权范围。演示写操作不会签发真实密钥。`;
+  if (question !== '哪些投诉还缺恢复依据？') return '本地脚本示例：已读取当前本体目录。可试问“哪些投诉还缺恢复依据？”；自定义分析需要接入真实模型。';
+  const complaint = entities.find(item => item.name === '投诉'), callback = entities.find(item => item.name === '回访');
+  const relation = relations.find(item => item.name === '居民回访' && item.from === complaint?.id && item.to === callback?.id);
+  const feedback = (callback?.properties as Data[] | undefined)?.find(item => item.name === '反馈结果');
+  if (!complaint || !relation || !feedback) return '当前本体缺少投诉到回访的可读定义，不能判断恢复依据。';
+  const read = await request.onTool('objects_query', {target: {entityTypeId: complaint.id}}) as any;
+  if (read.status !== 'available' || !read.result.coverage?.complete) return '当前投诉读取不完整，不能给出完整恢复依据统计。请查看本轮实际读取回执。';
+  const counts = new Map<string, number>();
+  for (const item of read.result.items as Data[]) {
+    const result = await request.onTool('relations_traverse', {target: {entityTypeId: complaint.id, id: item.$id}, traverse: [{relationTypeId: relation.id}], fields: [feedback.id]}) as any;
+    const items = (result.result.items ?? []) as Data[];
+    if (!result.result.coverage?.complete || result.status !== 'available')
+      return '部分回访读取不足，不能给出完整恢复依据统计。请查看本轮实际读取回执。';
+    const values = items.map(value => String((value.values as Data)[String(feedback.id)]));
+    const positive = values.some(value => ['已改善', '已恢复'].includes(value)), negative = values.some(value => ['未改善', '未恢复'].includes(value));
+    const status = !items.length ? 'no_evidence' : positive && negative ? 'conflicting_callback_evidence' : negative ? 'negative_callback_evidence' : positive ? 'positive_callback_evidence' : 'unknown_callback_evidence';
+    counts.set(status, (counts.get(status) ?? 0) + 1);
+  }
+  return `本地脚本示例，已实际读取 ${read.result.items.length} 条投诉及其回访：${[...counts].map(([status, count]) => `${count} 条${statusLabels[status]}`).join('，')}。办结不能代表供热恢复，单户回访不能代表整栋楼。原始结果与覆盖范围见本轮读取回执。`;
+}
+
 /** Explicitly scripted preview interactions. Only object results come from execution. */
 export function heatingDemoDriver(): AgentDriver {
   return {
     async run(request: RunRequest) {
       const context = JSON.parse(request.input);
-      const question = String(context.recentMessages?.findLast((item: {role: string}) => item.role === "user")?.content ?? "");
+      const question = String(context.question ?? context.recentMessages?.findLast((item: {role: string}) => item.role === "user")?.content ?? "");
+      if (context.mode === 'qa') {
+        const text = await qaExample(request, question);
+        request.onEvent('assistant.delta', {text});
+        return {text, sessionId: `demo-${randomUUID()}`, runId: randomUUID()};
+      }
       const enterprise = await request.onTool("workspace_overview", {}) as any;
       const verificationPrefix = "请用已保存的本体与真实对象验证这个业务问题：";
       const isVerification = context.page === "ontology" && question.startsWith(verificationPrefix);
       const requestedQuestion = isVerification
         ? question.slice(verificationPrefix.length).split("。请保存实际查询结果和依据；")[0]
         : question;
-      let text = "这是本地演示问答。可以点击输入框里的示例问题，或直接打开背景中的企业信息、资料和对象；企业信息与资料用途也可以直接编辑。";
+      let text = "这是本地演示问答。可以点击输入框里的示例问题，或直接打开背景中的企业信息、资料和对象；编辑与发布操作仅作模拟，不保存实际变更。";
       if (context.page === "setup" && question === "这家企业是什么样的？") {
         const facts = enterprise.profile?.content.statements ?? [];
         const value = (key: string) => facts.find((item: {key: string}) => item.key === key)?.text;

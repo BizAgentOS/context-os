@@ -10,6 +10,7 @@ import { renderSharedAccess } from "./share-workspace.js";
 import { developerView, setDeveloperView, safeText, displayValue, fieldLabel, technicalDetails } from "./ui-display.js";
 import { renderEngineWorkspace, openSource as openEngineSource, showEngineBuilds } from "./engine-workspace.js";
 import { renderReleaseWorkspace } from "./release-workspace.js";
+import {renderDocumentPreview} from './document-preview.js';
 import { dialog as engineDialog } from "./engine-ui.js";
 import { renderOnboarding } from "./onboarding.js";
 import { renderDatasetWorkspace } from "./dataset-workspace.js";
@@ -19,6 +20,9 @@ import { renderOntologySpace } from "./ontology-space.js";
 import { renderLiveObjects } from "./live-objects.js";
 import { renderFoundation } from "./foundation.js";
 import { createCapabilitiesPanel } from "./capabilities.js";
+import {createWorkspaceSettings} from './workspace-settings.js';
+import {createLocalAuth} from './local-auth.js';
+import {openConnections} from './connections.js';
 import {
   renderDefinitionGraph,
   renderObjectGraph,
@@ -136,6 +140,7 @@ if (accessFragment.has("access")) {
 }
 const state = {
   token: initialAccess,
+  actor:null,
   workspaceId: null,
   workspaceVersion: null,
   onboarding: null,
@@ -154,6 +159,7 @@ const state = {
   ontologies: [],
   foundation: null,
   automaticBuild: null,
+  automaticNaming: null,
   automaticApiBuild: null,
   engine: null,
   data: null,
@@ -205,11 +211,12 @@ const ui = {
   pendingMessage: null,
   settingsBusy: false,
 };
+let localAuth;
 
 const workspace = createWorkspaceStore(state);
 const { renderDialogue } = createAgentPanel({ state, ui, $, node, button, api, hasCanvasContent, inspectContext, errorMessage,
   modeChanged:()=>{rememberDraft();updateComposer();},modesDisabled:()=>!!shareMode||!!state.demo,
-  showAnswer:async answer=>{ui.linkedAnswer=answer;await navigate('ontology');const canvas=$("#canvas").firstElementChild;if(canvas?.showAnswer)canvas.showAnswer(answer);},
+  showAnswer:async answer=>{ui.linkedAnswer=answer;await navigate('ontology');setChatMode('collapsed');const canvas=$("#canvas").firstElementChild;if(canvas?.showAnswer)canvas.showAnswer(answer);},
   openPending: ref => pendingCenter.open(ref),
   highlightRefs: async refs => {
     const items = await Promise.all(refs.map(ref => api(`/api/pending/read?id=${encodeURIComponent(ref.id)}`)));
@@ -218,6 +225,7 @@ const { renderDialogue } = createAgentPanel({ state, ui, $, node, button, api, h
     if (!$("#canvas").firstElementChild?.focusReferences?.(ids)) pendingCenter.open(refs[0]);
   },
   answerDecision: ({ question, option }) => askAssistant(`关于“${question}”，我的选择是：${option.label}`),
+  switchMode: mode=>{selectAssistantMode(mode);openComposer();},
   continueRun: ({ goal, runId }) => { ui.continuationRunId = runId; askAssistant(`请继续上次目标：${goal}。请核对已保存的成果，继续未完成的部分。`); },
 });
 const { renderAgentTask } = createTaskCenter({ state, ui, $, node, button, navigate, setChatMode, dataActions, openDefinitions, isOnboarding: () => onboardingDialog?.open });
@@ -323,9 +331,11 @@ async function api(path, body, method) {
     .catch(() => ({ error: "暂时无法读取页面，请重试。" }));
   if (response.status === 401)
     throw new Error("请使用本机服务启动时提供的链接打开企业记忆。");
+  if(response.status===403&&!data.code&&['/api/canvas/bootstrap','/api/bootstrap','/api/auth/me'].includes(path))localAuth?.openLogin();
   if (!response.ok || data.error)
     throw Object.assign(new Error(data.error || "请求未完成，请重试。"), {
       status: response.status,
+      ...(data.code==='demo_simulated'?{simulated:true}:{}),
     });
   return data;
 }
@@ -350,7 +360,7 @@ function restoreDraft(draft) {
   $("#message-input").value = draft?.text || "";
   ui.focus = draft?.focus || null;
   ui.pendingMessage = draft?.pendingMessage || null;
-  ui.agentMode = draft?.agentMode || (ui.page==='setup'?'build':'qa'); ui.dataView=draft?.dataView||{kind:'working'}; ui.pendingReference = draft?.pendingReference || null; ui.continuationRunId = draft?.continuationRunId || null;
+  ui.agentMode = draft?.agentMode || (ui.page==='setup'?'build':'qa'); ui.dataView=draft?.dataView||{kind:'working'}; ui.preferCurrentRelease=!shareMode&&!state.demo&&ui.page==='consumption'&&!draft?.dataView; ui.pendingReference = draft?.pendingReference || null; ui.continuationRunId = draft?.continuationRunId || null;
   ui.nextRefreshSources = draft?.nextRefreshSources === true;
   ui.draftRef = draft?.draftRef || { id: crypto.randomUUID(), revision: 0 };
   ui.contextRevision = draft?.contextRevision || 0;
@@ -393,7 +403,7 @@ function applySnapshot(snapshot, scope) {
     const earlier = state.messages.filter(message => !newest.has(message.id));
     if (earlier.length) { snapshot.messages = [...earlier, ...snapshot.messages]; snapshot.messagePage = state.messagePage; }
   }
-  const pageFields = ui.page === "setup" ? ["sources", "sourceSummary", "data", "engine", "profile"] : ui.page === "ontology" ? ["foundation", "sourceSummary"] : ["consumers", "accessLogs"];
+  const pageFields = ui.page === "setup" ? ["sources", "sourceSummary", "data", "engine", "profile", "automaticNaming"] : ui.page === "ontology" ? ["foundation", "sourceSummary"] : ["consumers", "accessLogs"];
   if (firstLoad || Object.keys(snapshot).some(key => pageFields.includes(key))) ui.canvasDirty = true;
   workspace.patch(snapshot);
   if (snapshot.eventCursor) ui.eventCursor = snapshot.eventCursor;
@@ -481,6 +491,8 @@ async function navigate(page) {
   render(); await refresh();
 }
 const capabilityPanel = createCapabilitiesPanel(api, () => renderCanvas(true));
+localAuth=createLocalAuth({onLogin:async({token,user})=>{disconnectEvents?.();state.token=token;state.actor={kind:'human',...user};ui.generation++;ui.sessionGeneration++;ui.pageGeneration++;ui.focus=null;ui.pendingReference=null;ui.continuation=null;ui.agentMode=user.role==='viewer'?'qa':'build';ui.dataView={kind:'working'};const snapshot=await api('/api/canvas/bootstrap');applySnapshot(snapshot);await sessions?.load();await initializeEvents();},onLogout:()=>{disconnectEvents?.();state.token='';state.actor=null;location.reload();}});
+const workspaceSettings=createWorkspaceSettings({api,state:()=>state,actor:()=>state.actor,label,model:openSettings,capabilities:()=>capabilityPanel.open(),login:()=>localAuth.openLogin(),logout:()=>localAuth.logout(state.token),ask:text=>{ui.agentMode='build';ui.dataView={kind:'working'};ui.pendingReference=null;ui.continuation=null;askAssistant(text);renderDialogue();}});
 const pendingCenter = createPendingCenter({ api, refresh,
   handoffGap: result=>{ui.agentMode='build';ui.dataView={kind:'working'};ui.pendingReference=result.pendingRef;pendingCenter.close();askAssistant(result.message);renderDialogue();},
   continueGap:gap=>{ui.agentMode='build';ui.dataView={kind:'working'};ui.pendingReference={id:gap.id,version:gap.version};pendingCenter.close();askAssistant(`请继续修复缺口「${gap.title}」，读取原查询与关联变更，复验并预览后交给我采用。`);renderDialogue();},
@@ -526,7 +538,7 @@ function render() {
   pendingButton.textContent = `待处理（${state.pendingSummary?.total ?? 0}）`;
   pendingCenter.sync(state.pendingSummary);
   pendingButton.hidden = !!shareMode;
-  capabilityPanel.button.hidden = !!shareMode || !!state.demo || !developerView();
+  capabilityPanel.button.hidden = true;
   $("#demo-badge").hidden = !state.demo;
   $("#demo-badge").title = shareMode
     ? "虚构热力企业的离线快照，可直接浏览；示例问答不调用 AI，也不修改数据。"
@@ -563,11 +575,11 @@ function renderCanvas(force = false) {
   current?.dispose?.();
   if (spatial && ["compact", "collapsed"].includes(ui.chatMode)) setChatMode("composer");
   if (ui.page === "setup") canvas.replaceChildren(renderSetup());
-  else if (ui.page === "consumption") canvas.replaceChildren(shareMode || state.demo ? renderSharedAccess(state) : renderReleaseWorkspace(state, {
-    api, events: workspace, ontology: () => navigate("ontology"), ask: askAssistant,
+  else if (ui.page === "consumption") canvas.replaceChildren(renderReleaseWorkspace(state, {
+    api, events: workspace, ontology: () => navigate("ontology"), ask: askAssistant, askBuild,
+    askConsumer:({releaseRef,connectionRef})=>{selectAssistantMode('qa',{kind:'consumer',releaseRef,connectionRef});openComposer();},
     onChanged: () => { if (ui.page === "consumption") renderCanvas(true); },
   }));
-  else if (shareMode || state.demo) canvas.replaceChildren(renderOntology());
   else canvas.replaceChildren(renderOntologyBoard({
     selections: ui.graphSelections,
     select: (model, target, isCurrent, focusComposer = false) => selectLiveContext(model, target, undefined, focusComposer, isCurrent),
@@ -582,7 +594,7 @@ function renderCanvas(force = false) {
   canvas.scrollTop = scroll;
 }
 function renderOntologyBoard(actions) {
-  return renderOntologyWorkspace(state, {api, refresh, selections:ui.graphSelections, linkedAnswer:ui.linkedAnswer, exitAnswer:()=>{ui.linkedAnswer=null;}, ask:askAssistant, askBuild:text=>{ui.agentMode="build";ui.dataView={kind:'working'};askAssistant(text);renderDialogue();}, data:()=>navigate("setup"), select:actions.select});
+  return renderOntologyWorkspace(state, {api, refresh, selections:ui.graphSelections, linkedAnswer:ui.linkedAnswer, exitAnswer:()=>{ui.linkedAnswer=null;}, ask:askAssistant, askBuild, data:()=>navigate("setup"), select:actions.select});
 }
 
 function followOntologySelection(artifact, target, guard) {
@@ -638,6 +650,12 @@ function askAssistant(text) {
   const input=$("#message-input");input.value=input.value.trim()?`${input.value}\n${text}`:text;
   rememberDraft();resizeInput();openComposer();
 }
+function selectAssistantMode(mode,dataView={kind:'working'}){
+  ui.agentMode=mode;ui.dataView=structuredClone(dataView);ui.preferCurrentRelease=false;
+  ui.pendingReference=null;ui.continuationRunId=null;ui.focus=null;ui.contextRequest++;ui.contextRevision++;ui.contextResolving=false;ui.nextRefreshSources=false;
+  rememberDraft();renderDialogue();updateComposer();
+}
+function askBuild(text){selectAssistantMode('build');askAssistant(text);}
 function dataActions() {return {api,events:workspace,apply:applySnapshot,fileDetails:source=>openSource(source),upload:()=>$("#file-input").click(),refresh,ask:askAssistant,ontology:()=>navigate("ontology")};}
 let onboardingDialog;
 let onboardingWorkspace;
@@ -689,7 +707,8 @@ function syncOnboarding() {
   if (onboardingWorkspace !== state.workspaceId) {
     try { onboardingDismissed = sessionStorage.getItem(`de-onboarding-dismissed:${state.workspaceId}`) ? state.workspaceId : null; } catch { onboardingDismissed = null; }
   }
-  const active = ui.page === "setup" && state.onboarding?.active && onboardingDismissed !== state.workspaceId && !shareMode && !state.demo;
+  const ontologyGuide=ui.page==='ontology'&&state.onboarding?.flow==='engine'&&state.onboarding?.step===6;
+  const active = (ui.page === "setup"||ontologyGuide) && state.onboarding?.active && onboardingDismissed !== state.workspaceId && !shareMode && !state.demo;
   if (onboardingDialog && (onboardingWorkspace !== state.workspaceId || (!state.onboarding?.active && state.onboarding?.completedAt))) {
     onboardingDialog.close();
     onboardingDialog.remove();
@@ -704,7 +723,10 @@ function syncOnboarding() {
     dialog.setAttribute("aria-label", "初始化数据工作区");
     const close = button("关闭", "quiet-button", dismissOnboarding);
     const component = renderOnboarding(state, {
-      ...dataActions(), connect: kind => openEngineSource(kind, dataActions()),
+      ...dataActions(),page:()=>ui.page, connect: kind => {onboardingDialog?.close();openEngineSource(kind, dataActions());},
+      openPending:ref=>{setOnboardingDismissed(true);onboardingDialog?.close();pendingCenter.open(ref);},
+      showOntology:()=>navigate('ontology'),finish:()=>navigate('ontology'),
+      askExample:async question=>{await navigate('ontology');selectAssistantMode('qa',{kind:'working'});$('#message-input').value=question;rememberDraft();resizeInput();await sendMessage();},
     });
     dialog.component = component;
     dialog.closeButton = close;
@@ -718,18 +740,15 @@ function syncOnboarding() {
     onboardingDialog = dialog;
     onboardingWorkspace = state.workspaceId;
   } else onboardingDialog.component.update(state);
-  if (!onboardingDialog.open) onboardingDialog.showModal();
+  onboardingDialog.classList.toggle('onboarding-question-guide',ontologyGuide);
+  if(onboardingDialog.open&&onboardingDialog.dataset.display!==(ontologyGuide?'guide':'modal'))onboardingDialog.close();
+  if (!onboardingDialog.open) {if(ontologyGuide)onboardingDialog.show();else onboardingDialog.showModal();onboardingDialog.dataset.display=ontologyGuide?'guide':'modal';}
   onboardingDialog.closeButton.disabled = onboardingClosing;
 }
 function renderSetup() {
-  if (shareMode || state.demo) return renderDataProfile();
   const workspace = renderEngineWorkspace(state, {...dataActions(),
     initialize: !state.onboarding?.completedAt || state.onboarding?.active ? () => startOnboarding() : null,
-    advanced: () => {
-    const dialog = engineDialog("企业资料与已有连接", true);
-    dialog.body.append(renderDataProfile());
-    dialog.addEventListener("close", () => dialog.body.firstElementChild?.dispose?.());
-  }});
+    advanced: () => openConnections(api,undefined,{onChanged:()=>void refresh()})});
   return workspace;
 }
 function emptyCanvas(fallback) {
@@ -1665,13 +1684,17 @@ function openStatement(statement, artifact = state.profile) {
   );
 }
 function openSource(artifact, options = {}) {
-  if (artifact.content.rowStorage && !options.loaded) {
+  if ((artifact.content.rowStorage||artifact.content.sourceContent?.rows&&artifact.content.format==='csv') && !options.loaded) {
     const generation = ++ui.detailRequest;
     const offset = options.offset ?? (options.row ? Math.floor((options.row - 1) / 50) * 50 : 0);
     api(`/api/sources/rows?id=${encodeURIComponent(artifact.id)}&version=${artifact.version}&offset=${offset}&limit=50`).then(value => {
-      if (generation === ui.detailRequest) openSource(value, {...options, offset, loaded: true});
+      if (generation === ui.detailRequest) openSource(value, {...options, offset, loaded: true,paged:true});
     }).catch(error => { if (generation === ui.detailRequest) errorMessage(error.message); });
     return;
+  }
+  if(artifact.content.sourceContent?.raw&&!options.loaded){
+    const generation=++ui.detailRequest;
+    api(`/api/artifacts/${encodeURIComponent(artifact.id)}?version=${artifact.version}`).then(value=>{if(generation===ui.detailRequest)openSource(value,{...options,loaded:true});}).catch(error=>{if(generation===ui.detailRequest)errorMessage(error.message);});return;
   }
   ui.detailRequest += 1;
   const offset =
@@ -1707,7 +1730,7 @@ function openSource(artifact, options = {}) {
   if (artifact.content.parseParameters && !shareMode) section.append(tableParsingEditor(artifact));
   const rows = artifact.content.rows;
   const columns = artifact.content.columns;
-  const pagedRows = !!artifact.content.rowStorage;
+  const pagedRows = !!artifact.content.rowStorage||options.paged===true;
   const rowCount = pagedRows ? artifact.content.total ?? artifact.content.rowCount : rows?.length;
   if (
     Array.isArray(rows) &&
@@ -1754,6 +1777,8 @@ function openSource(artifact, options = {}) {
         `${rowCount} 条记录`,
       ),
     );
+  } else if(artifact.content.documentFile){
+    section.append(renderDocumentPreview(artifact));
   } else {
     section.append(
       node(
@@ -2196,7 +2221,7 @@ function updateComposer() {
   const input = $("#message-input");
   const busy = state.busy;
   const blocked =
-    ui.requesting || ui.uploading || ui.contextResolving || !ui.initialized;
+    ui.requesting || ui.uploading || ui.contextResolving || ui.preferCurrentRelease || !ui.initialized;
   input.placeholder = $(".canvas-app").classList.contains("is-ontology-space") ? input.dataset.spatialPlaceholder || "向企业本体提问…" : ui.chatMode === "compact" ? "随心输入" : shareMode
     ? "选择下方示例问题，了解这一页…"
     : placeholders[ui.page];
@@ -2226,6 +2251,8 @@ function updateComposer() {
     ? "示例问答"
     : ui.contextResolving
       ? "正在核对引用…"
+      : ui.preferCurrentRelease
+        ? "正在核对当前发布；也可手动选择数据视图。"
       : ui.pendingMessage && !busy
         ? ui.pendingMessage.body
           ? `待核对上次发送：${ui.pendingMessage.label || "当前页面"}（点击发送重试原消息）`
@@ -2277,7 +2304,7 @@ async function sendMessage() {
     (!text && !ui.pendingMessage) ||
     ui.requesting ||
     state.busy ||
-    ui.contextResolving
+    ui.contextResolving || ui.preferCurrentRelease
   )
     return;
   if (ui.pendingMessage?.id && !ui.pendingMessage.body) {
@@ -2383,26 +2410,51 @@ async function uploadFiles(fileList) {
   if (ui.page === "consumption") return errorMessage("请返回企业与数据页接入资料。");
   if (files.length > 100) return errorMessage("每批最多上传100份文件。");
   const origin = { page: ui.page, sessionId: state.currentSessionId };
-  const documents = files.filter(file => /\.(md|txt)$/i.test(file.name));
+  const documents = files.filter(file => /\.(md|txt|pdf|docx)$/i.test(file.name));
   const tables = files.filter(file => /\.(csv|tsv|xlsx)$/i.test(file.name));
-  if (documents.length + tables.length !== files.length) return errorMessage("请上传 CSV、TSV、Excel、Markdown 或 TXT 文件。");
+  if (documents.length + tables.length !== files.length) return errorMessage("请上传 CSV、TSV、Excel、PDF、Word、Markdown 或 TXT 文件。");
   ui.uploading = true; updateComposer(); errorMessage();
   const errors = [];
   try {
-    for (const file of tables) {
-      try {
-        if (file.size > 100_000_000) throw new Error("表格文件不能超过100 MB");
-        const query = new URLSearchParams({ ...origin, name: file.name });
-        const response = await fetch(`/api/canvas/upload/table?${query}`, { method: "POST", headers: { "X-DataEngine-Token": state.token, "Content-Type": "application/octet-stream" }, body: file });
-        const result = await response.json(); if (!response.ok) throw new Error(result.error || "上传失败");
-        if (origin.page === ui.page && origin.sessionId === state.currentSessionId) applySnapshot(result);
-        for (const warning of result.tableImport.warnings || []) errors.push(`${file.name}：${warning}`);
-      } catch (error) { errors.push(`${file.name}：${error.message}`); }
+    if(tables.length){
+      const accepted=tables.filter(file=>{if(file.size<=100_000_000)return true;errors.push(`${file.name}：表格文件不能超过100 MB`);return false;});
+      if(accepted.length){
+        const {batch}=await api('/api/canvas/upload/table-batch/start',{...origin,operationId:crypto.randomUUID()});
+        for(const file of accepted){
+          const payload={batchId:batch.id,operationId:crypto.randomUUID(),name:file.name};let received=false,lastError;
+          for(let attempt=0;attempt<2&&!received;attempt++){
+            try{
+              const response=await fetch(`/api/canvas/upload/table?${new URLSearchParams(payload)}`,{method:'POST',headers:{'X-DataEngine-Token':state.token,'Content-Type':'application/octet-stream'},body:file});
+              const result=await response.json();if(!response.ok)throw new Error(result.error||'表格上传失败');received=true;
+              if(result.error)errors.push(`${file.name}：${result.error}`);
+              for(const warning of result.tableImport?.warnings||[])errors.push(`${file.name}：${warning}`);
+            }catch(error){lastError=error;try{const saved=await api(`/api/canvas/upload/table-batch/read?id=${encodeURIComponent(batch.id)}`);const operation=saved.batch.content.operations.find(item=>item.operationId===payload.operationId);received=!!operation;if(operation?.error)errors.push(`${file.name}：${operation.error}`);for(const warning of operation?.receipt?.warnings||[])errors.push(`${file.name}：${warning}`);}catch{}}
+          }
+          if(!received)throw new Error(`${file.name}：未能确认上传回执，本批次尚未提交。${lastError?.message||'请恢复连接后重试。'}`);
+        }
+        const result=await api('/api/canvas/upload/table-batch/finalize',{batchId:batch.id});
+        if(origin.page===ui.page&&origin.sessionId===state.currentSessionId)applySnapshot(result);
+      }
     }
     if (documents.length) {
       const { batch } = await api("/api/canvas/upload/batch/start", { ...origin, operationId: crypto.randomUUID() });
       for (const file of documents) {
         const payload = { batchId: batch.id, operationId: crypto.randomUUID(), name: file.name };
+        if(/\.(pdf|docx)$/i.test(file.name)){
+          if(file.size>100_000_000){await api("/api/canvas/upload/batch/file",{...payload,error:"文档原件不能超过100 MB"});continue;}
+          let received=false,lastError;
+          for(let attempt=0;attempt<2&&!received;attempt++){
+            try{
+              const response=await fetch(`/api/canvas/upload/document?${new URLSearchParams(payload)}`,{method:"POST",headers:{"X-DataEngine-Token":state.token,"Content-Type":"application/octet-stream"},body:file});
+              const result=await response.json();if(!response.ok)throw new Error(result.error||"文档上传失败");received=true;
+            }catch(error){
+              lastError=error;
+              try{const saved=await api(`/api/canvas/upload/batch/read?id=${encodeURIComponent(batch.id)}`);received=saved.batch.content.operations.some(item=>item.operationId===payload.operationId);}catch{}
+            }
+          }
+          if(!received)throw new Error(`${file.name}：未能确认上传回执，本批次尚未提交。${lastError?.message||"请恢复连接后重试。"}`);
+          continue;
+        }
         try {
           if (file.size > 5_000_000) throw new Error("文本资料不能超过5 MB");
           payload.content = new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer());
@@ -2580,7 +2632,7 @@ $("#developer-view-input").addEventListener("change", event => {
   ui.canvasDirty = true; ui.dialogueKey = "";
   render();
 });
-$("#open-settings").addEventListener("click", openSettings);
+$("#open-settings").addEventListener("click", ()=>void workspaceSettings.open());
 $("#close-settings").addEventListener("click", () =>
   $("#settings-dialog").close(),
 );

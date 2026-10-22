@@ -179,7 +179,8 @@ export class ProgramBuilds {
       if (!cap) throw new Error("已保存来源能力不存在");
       return cap;
     } });
-    const previous = this.activeModel()?.content.layered;
+    const active = this.activeModel();
+    const previous = active ? this.live.projectModel(active).content.layered : undefined;
     return previous ? reconcileLayeredModel(previous as unknown as LayeredModel, migrated) : migrated;
   }
   private assertInputs(content: Pick<BuildContent, "sourceVersions" | "baseFoundationRef" | "baseModelRef">) {
@@ -703,9 +704,11 @@ export class ProgramBuilds {
 
   private virtualFoundation(content: CandidateContent): Artifact {
     const current = this.foundation.read().current;
-    const keys = ["enterprise", "concepts", "relations", "evidence", "unknowns", "conflicts", "documentVersions", "profileRef"];
-    if (current?.status === "adopted" && keys.every(key => equal(current.content[key] ?? null, content.foundation[key] ?? null))) return current;
-    return { id: current?.id ?? "engine-new-foundation", version: (current?.version ?? 0) + 2, kind: "foundation", status: "adopted", title: "数据底座本体", createdAt: now(), content: content.foundation };
+    const retained = this.foundation.read().adopted?.content;
+    const definition: Data = { ...content.foundation, ...(retained?.properties !== undefined ? { properties: (retained.properties as Data[]).filter(property => dataArray(content.foundation.concepts).some(concept => concept.id === property.entityTypeId)) } : {}), metricReferences: retained?.metricReferences ?? [] };
+    const keys = ["properties", "metricReferences", "enterprise", "concepts", "relations", "evidence", "unknowns", "conflicts", "documentVersions", "profileRef"];
+    if (current?.status === "adopted" && keys.every(key => equal(current.content[key] ?? null, definition[key] ?? null))) return current;
+    return { id: current?.id ?? "engine-new-foundation", version: (current?.version ?? 0) + 2, kind: "foundation", status: "adopted", title: "数据底座本体", createdAt: now(), content: definition };
   }
 
   private async verifyGovernedRelations(definition: Data) {

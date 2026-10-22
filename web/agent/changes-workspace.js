@@ -1,8 +1,9 @@
 import { el, action, ref, when, dialog, message, transact, table, field, check } from "./engine-ui.js";
 import { technicalDetails } from "./ui-display.js";
+import {renderNamingReview} from './naming-review.js';
 
 const states = { proposed: "待复验", verified: "已复验", failed: "复验未通过", adopted: "已采用", rejected: "已拒绝", deprecated: "已弃用", superseded: "已替代" };
-const kinds = { entity: "实体", property: "属性", relation: "关系", binding: "数据对应", naming: "命名", description: "说明", local_correction: "局部纠正", identity_rule: "身份规则", identity_decision: "身份决定", deprecation: "弃用", restore: "恢复工作版", data_issue: "数据问题", adjudication: "资料裁决", gap: "问题缺口" };
+const kinds = { entity: "实体", property: "属性", relation: "关系", binding: "数据对应", naming: "命名", description: "说明", local_correction: "局部纠正", identity_rule: "身份规则", identity_decision: "身份决定", deprecation: "弃用", restore: "恢复工作版", data_issue: "数据问题", adjudication: "资料裁决", gap: "问题缺口",enterprise_profile:'企业资料',metric_reference:'指标引用' };
 const origins = { program: "程序发现", human: "人工提议", agent: "助手提议", qa: "问答反馈" };
 const results = { passed: "通过", review: "需要核对", failed: "未通过" };
 const metricNames = { matchRate: "匹配率", matched: "匹配记录", total: "检查记录", targetUnique: "目标唯一", targetExists: "目标存在", nameUnique: "名称唯一", complete: "覆盖完整", valid: "检查通过", rows: "记录数", changes: "变更数", snapshots: "快照数", maxDepth: "最大层级", acyclic: "无环", typeCompatible: "类型相容", sourceNonNullRate: "起点非空率", cardinalityValid: "符合关系数量约束", cycleDetected: "存在循环", withinMaxDepth: "未超过层级上限", leftRecords: "起点记录", rightRecords: "目标记录", ambiguous: "目标不唯一的记录", reverseAmbiguous: "补充来源不唯一的对象", multipleSourceTargets: "对应多个来源记录的目标", empty: "匹配字段为空", botRecords: "疑似机器人记录", leftExists: "起点记录存在", rightExists: "指定目标记录存在", explicitExclusion: "明确排除", records: "记录数", hasTime: "存在有效时间字段" };
@@ -23,28 +24,45 @@ export function showChange(reference, actions, onChanged = () => {}, container) 
   if (!container) { window.dispatchEvent(new CustomEvent("dataengine:pending", { detail: reference })); return; }
   const d = Object.assign(container, { body: container }), output = message(d.body), host = el("div", null, "change-detail");
   d.body.append(host);
-  let current, scopeArtifact, scopeVersion, datasets = [], request = 0;
+  let current, scopeArtifact, scopeVersion, scopeSemantic, reviewImpact,impactError, datasets = [], request = 0;
   const operations = new Map();
   async function scope(change) {
     const subject = change.content.subject || {}, target = subject.candidateRef || subject.ownerRef;
     const workspace = subject.workspaceVersionRef ? await actions.api(`/api/artifacts/${encodeURIComponent(subject.workspaceVersionRef.id)}?version=${subject.workspaceVersionRef.version}`) : null;
     const governed = ["identity_rule", "identity_decision", "data_issue", "local_correction", "entity", "property", "binding", "deprecation"].includes(change.content.type) || change.content.type === "deprecation" && subject.path;
-    const definition = workspace?.content.composition.semantic || target || (change.content.type === "adjudication" ? subject.foundationRef : null) || (governed ? change.content.baseline?.modelRef : null);
+    const definition = workspace?.content.composition.semantic || target || (change.content.type === "adjudication" ? subject.foundationRef : null) || (change.content.type==='enterprise_profile'?subject.profileRef:null) || (change.content.type==='metric_reference'?change.content.baseline?.foundationRef:null) || (governed ? change.content.baseline?.modelRef : null);
     const artifact = definition ? await actions.api(`/api/artifacts/${encodeURIComponent(definition.id)}?version=${definition.version}`) : null;
+    const modelRef=change.content.type==='metric_reference'?change.content.baseline?.modelRef:null;
+    const model=modelRef?await actions.api(`/api/artifacts/${encodeURIComponent(modelRef.id)}?version=${modelRef.version}`):null;
     const data = subject.from?.datasetId || governed ? await actions.api("/api/data") : null;
     if (artifact?.content.layered && ["identity_rule", "identity_decision"].includes(change.content.type)) {
       const ids = [...new Set([subject.left, subject.right].filter(Boolean).map(end => artifact.content.layered.bindings.entities.find(item => item.id === end.bindingId)?.dataset.sourceId).filter(Boolean))];
       const connections = await Promise.all(ids.map(id => actions.api(`/api/artifacts/${encodeURIComponent(id)}`)));
       for (const dataset of data?.datasets || []) dataset.bindingSourceIds = connections.filter(connection => connection.id === dataset.content.sourceId || connection.content.localSource?.id === dataset.content.sourceId).map(connection => connection.id);
     }
-    return { artifact, workspace, datasets: data?.datasets || [] };
+    let impact=null,error='';
+    if(['enterprise_profile','metric_reference'].includes(change.content.type)&&undecided(change)){
+      try{impact=(await actions.api('/api/changes/impact?'+new URLSearchParams({id:change.id,version:String(change.version)}))).impact;}catch(cause){error=cause.message;}
+    }
+    if(change.content.type==='enterprise_profile'&&!undecided(change)){
+      const savedRef=change.content.effect?.profileRef,saved=savedRef?await actions.api(`/api/artifacts/${encodeURIComponent(savedRef.id)}?version=${savedRef.version}`):null;
+      impact={updates:subject.updates.map(update=>{const before=artifact?.content.statements?.find(item=>item.key===update.key),after=saved?.content.statements?.find(item=>item.key===update.key),conflict=saved?.content.conflicts?.find(item=>item.key===update.key&&item.changeRef?.id===change.id);return{key:update.key,before,after,action:conflict?'retain':'replace',evidence:conflict?.evidence||after?.citations||[]};})};
+    }
+    if(change.content.type==='metric_reference'&&!undecided(change)){
+      impact=change.content.verification?.inputs?.reviewedMetric||null;
+      if(!impact&&change.status==='adopted'){
+        const savedRef=change.content.effect?.foundationRef,saved=savedRef?await actions.api(`/api/artifacts/${encodeURIComponent(savedRef.id)}?version=${savedRef.version}`):null;
+        impact={before:artifact?.content.metricReferences?.find(item=>item.id===subject.metric.id)||null,after:saved?.content.metricReferences?.find(item=>item.id===subject.metric.id)||null};
+      }
+    }
+    return { artifact, workspace,semantic:model?.content.layered?.semantic,impact,error, datasets: data?.datasets || [] };
   }
   async function load() {
     const generation = ++request;
     const { change } = await actions.api(`/api/changes/read?id=${encodeURIComponent(reference.id)}`);
     const detail = await scope(change);
     if (!d.isConnected || generation !== request) return;
-    current = change; scopeArtifact = detail.artifact; scopeVersion = detail.workspace; datasets = detail.datasets; render();
+    current = change; scopeArtifact = detail.artifact; scopeVersion = detail.workspace;scopeSemantic=detail.semantic; datasets = detail.datasets;reviewImpact=detail.impact;impactError=detail.error; render();
   }
   async function decide(method, extra = {}) {
     const args = { ...ref(current), ...extra }, key = JSON.stringify([method, args]);
@@ -54,7 +72,7 @@ export function showChange(reference, actions, onChanged = () => {}, container) 
     current = response.change;
     const detail = await scope(current);
     if (!d.isConnected) return;
-    scopeArtifact = detail.artifact; scopeVersion = detail.workspace; datasets = detail.datasets;
+    scopeArtifact = detail.artifact; scopeVersion = detail.workspace;scopeSemantic=detail.semantic; datasets = detail.datasets;reviewImpact=detail.impact;impactError=detail.error;
     // Keep the current controls disabled until refreshing finishes; freshly rendered controls must not
     // accept a click while transact is still busy and would discard that next action.
     try { await actions.refresh(); await onChanged(); }
@@ -73,6 +91,31 @@ export function showChange(reference, actions, onChanged = () => {}, container) 
     if (content.subject?.name) host.append(el("p", `建议名称：${content.subject.name}`));
     if (content.subject?.description) host.append(el("p", `建议说明：${content.subject.description}`));
     renderScope(host, current, scopeArtifact, datasets, scopeVersion);
+    if(content.type==='enterprise_profile'){
+      host.append(el('h4','企业资料修改范围'));
+      for(const update of content.subject.updates){const impact=reviewImpact?.updates?.find(item=>item.key===update.key),before=impact?.before?.text;
+        const card=el('section',null,'engine-panel');card.append(el('h4',({'company.name':'企业名称','company.business':'业务说明','company.goal':'业务目标'})[update.key]||update.key),el('p',`原陈述：${before??(impact?'尚无陈述':'查看原档案或复验后核对')}`),el('p',`提议陈述：${update.text}`),el('p',`${update.kind==='suggestion'?'待核实建议':'有真实依据的事实'} · ${impact?.action==='retain'||(!impact&&update.action!=='replace')?'保留原陈述，记录分歧':'人工确认后采用新陈述'}`));
+        for(const evidence of impact?.evidence||[])card.append(el('blockquote',evidence.quote||'依据已记录'),el('small',`${evidence.sourceVersion?`资料版本 v${evidence.sourceVersion}`:evidence.kind==='user-statement'?'用户原话':'已保存的读取依据'}${evidence.documentLocation?.pages?.length?` · PDF 第 ${evidence.documentLocation.pages.join('、')} 页`:''}`));
+        host.append(card);
+      }
+      host.append(el('p','采用会保留真实来源和人工确认责任；模型建议仍标为待核实建议。','engine-muted'));
+    }
+    if(content.type==='metric_reference'){
+      host.append(el('h4','指标口径与维度对应'));
+      const describe=(label,metric)=>{
+        const card=el('section',null,'engine-panel');card.append(el('h4',label));
+        if(!metric){card.append(el('p',label==='采用后'?'移除此指标引用':'尚无指标引用','engine-muted'));return card;}
+        const definition=metric.definition,properties=[...(scopeArtifact?.content.properties||[]),...(scopeSemantic?.properties||[])],entities=scopeArtifact?.content.concepts||scopeSemantic?.entityTypes||[];
+        card.append(el('p',metric.name),el('p',definition.description),el('p',`${definition.revision} · ${definition.unit} · ${definition.grain==='month'?'每月':'每日'} · ${definition.timeZone}`),el('p',`聚合口径：${({sum:'求和',ratio:'比率',average:'平均',distinct_count:'去重计数',snapshot:'时点存量'})[definition.aggregation.kind]}；${definition.aggregation.timeAdditive?'允许跨期间加总':'不可跨期间直接加总'}`));
+        for(const mapping of metric.dimensions){const dimension=definition.dimensions.find(item=>item.name===mapping.dimension),property=properties.find(item=>item.id===mapping.propertyId),entity=entities.find(item=>item.id===metric.entityTypeId);card.append(el('p',`${dimension?.label||mapping.dimension} → ${entity?.name||'所属实体'} · ${property?.name||'当时的属性未记录'}`));}
+        card.append(el('p',({query:'可查询实际观测',historical_observations:'可查询历史观测',definition_only:'仅支持查看定义，不读取指标数值'})[metric.access],'engine-muted'));return card;
+      };
+      if(reviewImpact)host.append(describe('原口径',reviewImpact.before),describe('采用后',reviewImpact.after));
+      else host.append(el('p',undecided(current)?'重新读取并复验后，可核对实际 BI 定义和每个维度对应。':'此提议未采用；旧记录没有保存完整口径，当前工作版未受影响。','engine-muted'));
+      host.append(el('p','采用仅更新当前工作版。发布时固定口径定义；历史观测能否读取取决于来源，不承诺按旧口径重新计算。','engine-muted'));
+    }
+    if(impactError)host.append(el('p',`暂时无法核对影响：${impactError}。请重新读取和复验。`,'engine-message'));
+    if(scopeArtifact?.kind==='naming_batch')host.append(renderNamingReview(scopeArtifact,{api:actions.api,container:d,output,editable:undecided(current),reload:async saved=>{await actions.refresh();await onChanged();await load();output.textContent=saved?'命名条目已保存，请重新复验整批变更。':'';}}));
     if (verification) {
       host.append(el("h4", `复验结果：${results[verification.result] || "尚未复验"}`));
       const metrics = Object.entries(verification.metrics || {}).filter(([key]) => metricNames[key]);
@@ -89,8 +132,8 @@ export function showChange(reference, actions, onChanged = () => {}, container) 
       let acknowledgement;
       if (current.status === "verified" && verification?.result === "review") acknowledgement = check(host, "我已核对上述待审内容", "采用会更新当前工作版。", false);
       const adopt = action("采用此变更", () => transact(d, output, () => decide("adopt", { acknowledgeReview: acknowledgement?.checked === true })), "engine-primary");
-      adopt.disabled = current.status !== "verified" || (acknowledgement && !acknowledgement.checked);
-      acknowledgement?.addEventListener("change", () => { adopt.disabled = !acknowledgement.checked; });
+      adopt.disabled = current.status !== "verified" || !!impactError || (acknowledgement && !acknowledgement.checked);
+      acknowledgement?.addEventListener("change", () => { adopt.disabled = !acknowledgement.checked||!!impactError; });
       controls.append(adopt); host.append(controls);
       const reason = field(host, "拒绝理由", "", true);
       reason.maxLength = 2000;

@@ -306,6 +306,12 @@ export class KodaXDriver implements AgentDriver {
         }
         if (event.type === "run.progress" && payload.kind === "iteration_start")
           request.onEvent("run.progress", { iteration: Number(payload.iter) });
+        if (event.type === "run.progress" && payload.kind === "iteration_end") {
+          const info=payload.info as Record<string,unknown>;
+          // tokenCount is the current context size, not incremental provider consumption.
+          request.onEvent("run.usage", {sampleId:`${String(info.turnId??session.id)}:${String(info.scope??'parent')}:${String(info.iter)}`,
+            usage:info.tokenSource==='api'&&info.usage?JSON.parse(JSON.stringify(info.usage)) as Json:null});
+        }
       },
     );
     let timedOut = false;

@@ -1,10 +1,11 @@
+import {sourceTextLength} from "./source-content.ts";
 import type { Artifact, Data, Repository } from "./contracts.ts";
 import {tableRowCount} from "../data/table-rows.ts";
 
 /** One workspace projection, shared by all three pages. Local CSV adapters are aliases. */
 export function sourceSummary(repo: Repository) {
-  const files = repo.listArtifacts("source");
-  const connections = repo.listArtifacts("source_connection");
+  const files = repo.listArtifacts("source",{content:"compact"}).filter(item=>item.status!=='removed');
+  const connections = repo.listArtifacts("source_connection").filter(item=>item.status!=='removed');
   const canonical = new Map(connections.map(a => [a.id, String((a.content.localSource as Data | undefined)?.id ?? a.id)]));
   const datasets = repo.listArtifacts("data_dataset");
   const syncIssues=repo.listArtifacts('sync_issue').filter(item=>item.status==='open');
@@ -35,7 +36,7 @@ export function sourceSummary(repo: Repository) {
     const rows = sets.length ? cutoffs.every(Boolean) ? sets.reduce((n, a) => n + Number((a.content.profile as Data | null)?.rows ?? 0), 0) : null
       : source.kind === "source" && category === "table" ? tableRowCount(source) : null;
     const size = category === "table" ? { value: rows, unit: "行" }
-      : category === "document" && source.kind === "source" ? { value: String(source.content.raw ?? "").length, unit: "字" }
+      : category === "document" && source.kind === "source" ? { value: sourceTextLength(source), unit: "字" }
         : { value: null, unit: category === "metric" ? "项指标" : "份文档" };
     return {
       id: capability ? `${source.id}:${capability}` : source.id, title: capability ?? source.title, version: source.version, category,

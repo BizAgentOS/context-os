@@ -41,6 +41,12 @@ export class AutomaticApi {
     this.memory.putArtifact({kind: "api_build", title: source.title, status: "queued", content: {sourceId: source.id, sourceVersion: source.version, attempts: 0, ...(trigger ? {trigger} : {})}});
   }
   enqueueUpload(source: Artifact) { if (source.kind === "source" && source.content.format === "csv") this.enqueue(source); }
+  enqueueBatch(sources:Artifact[],batchId:string){
+    const selected=sources.filter(source=>source.kind==='source'&&source.status==='ready'&&source.content.format==='csv');if(!selected.length)return;
+    if(this.jobs().some(job=>job.content.uploadBatchId===batchId))return;
+    const source=selected[0];
+    this.memory.putArtifact({kind:'api_build',title:`表格批次 · ${selected.length} 张表`,status:'queued',content:{sourceId:source.id,sourceVersion:source.version,sourceRefs:selected.map(ref),uploadBatchId:batchId,attempts:0}});
+  }
   retry() {
     let rebindQueued = false;
     for (const job of this.jobs().filter(item => item.status === "failed")) {
@@ -72,6 +78,8 @@ export class AutomaticApi {
     } catch { return false; }
   }
   pending() {
+    // A source may already be on disk while the rest of the same browser selection is still uploading.
+    if(this.memory.listArtifacts('table_upload_batch').some(batch=>batch.status==='collecting'))return undefined;
     for (const job of this.jobs()) {
       const source = this.memory.getArtifact(String(job.content.sourceId));
       if ((source.status !== "ready" || source.version !== job.content.sourceVersion) && job.status !== "superseded") this.update(job, "superseded");
@@ -160,12 +168,15 @@ export class AutomaticApi {
   async run(job: Artifact, context: WriteContext, _driver: AgentDriver, safeError: (error: unknown) => string) {
     let failure: string | undefined;
     const source = this.memory.getArtifact(String(job.content.sourceId), Number(job.content.sourceVersion));
+    const batchSources=Array.isArray(job.content.sourceRefs)?(job.content.sourceRefs as Data[]).map(item=>this.memory.getArtifact(String(item.id),Number(item.version))):[source];
     const caps = recordCaps(source);
     const assertCurrent = () => {
       this.memory.assertWritable(context);
       const current = this.memory.getArtifact(source.id);
       if (current.status !== "ready" || current.version !== source.version) throw new Error("来源版本或授权已变化，请重新构建");
       if (source.kind === "source_connection") for (const cap of caps) this.live.sources.capability(source.id, String(cap.name), source.version);
+      for(const member of batchSources){const latest=this.memory.getArtifact(member.id);if(latest.version!==member.version||latest.status!=='ready')throw new Error('批次来源已变化，请重新构建');}
+      if(job.content.uploadBatchId&&this.memory.getArtifact(String(job.content.uploadBatchId)).status!=='finalized')throw new Error('表格上传批次尚未提交');
     };
     try {
       assertCurrent();
@@ -192,7 +203,7 @@ export class AutomaticApi {
         });
         return;
       }
-      const run = await this.programBuilds.build({operationId: `api:${job.id}:${attempts}`, sourceIds: [source.id], autoAdopt: true}, assertCurrent);
+      const run = await this.programBuilds.build({operationId: `api:${job.id}:${attempts}`, sourceIds: batchSources.map(item=>item.id), autoAdopt: true}, assertCurrent);
       assertCurrent();
       this.update(job, "running", {engineJobRef: ref(run)});
       if (run.status !== "completed" || run.content.outcome !== "adopted") {
@@ -228,6 +239,7 @@ export class AutomaticApi {
       const boundSource = (binding: Data) => source.kind === "source_connection" ? binding.sourceId === source.id
         : (this.memory.getArtifact(String(binding.sourceId)).content.localSource as Data | undefined)?.id === source.id;
       if (caps.some(cap => !bindings.some(binding => boundSource(binding) && binding.capability === cap.name))) throw new Error("当前连接仍有记录能力未映射，不能报告全部生效");
+      if(batchSources.some(member=>!this.covers(model,member)))throw new Error('批次仍有表格未映射，不能报告整批已生效');
       assertCurrent();
       this.memory.atomic(() => {
         assertCurrent();

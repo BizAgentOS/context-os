@@ -1,4 +1,15 @@
 import { QuestionAnswering } from "./qa-tools.ts";
+import {connectEnterpriseProfileChanges} from '../engine/enterprise-profile.ts';
+import {connectMetricReferenceChanges} from '../engine/metric-references.ts';
+import {WorkspaceRetention} from '../security/workspace-retention.ts';
+import {BackupService} from '../security/workspace-backup.ts';
+import {SourceLifecycle} from '../engine/source-lifecycle.ts';
+import {sourceTextLength} from './source-content.ts';
+import {tableRowCount} from '../data/table-rows.ts';
+import {LocalUsers} from '../security/local-users.ts';
+import {AuditTrail} from '../security/audit-trail.ts';
+import {UsageService} from './usage.ts';
+import {withActor,agentActor,programActor,currentActor} from '../security/actors.ts';
 import { SyncGovernance, SyncScheduler } from "../data/sync-governance.ts";
 import { qaDataViewSchema } from "./qa-view.ts";
 import { connectLocalChanges } from "../engine/local-changes.ts";
@@ -8,9 +19,13 @@ import { agentModePrompt } from "./agent-prompts.ts";
 import { AgentChangeTools } from "./agent-change-tools.ts";
 import { freezeAgentTurn, modeTools, modeNativeTools, assertAgentTool, type FrozenAgentTurn } from "./agent-modes.ts";
 import { DocumentUploadBatches } from "./document-upload-batches.ts";
+import { TableUploadBatches } from "./table-upload-batches.ts";
 import { TableFiles } from "../data/table-files.ts";
 import { FoundationAdjudication } from "./foundation-adjudication.ts";
-import { decisionRequestTool, requestDecision } from "./decision-requests.ts";
+import { decisionRequestTool, requestDecision, modeSuggestionTool, requestModeSuggestion } from "./decision-requests.ts";
+import { NamingBatches } from "../engine/naming-batches.ts";
+import { AutomaticNaming } from "./automatic-naming.ts";
+import type {FeishuTableConnections} from '../connectors/feishu-tables.ts';
 import { connectDiscoveryChanges } from "../engine/discovery-changes.ts";
 import { PendingCenter } from "../engine/pending.ts";
 import { RunPresentation, projectAgentRuns } from "./run-presentation.ts";
@@ -171,6 +186,9 @@ const controlTools: DomainTool[] = [
 
 export class AgentApplication {
   readonly memory: MemoryStore;
+  readonly users:LocalUsers;
+  readonly audit:AuditTrail;
+  readonly usage:UsageService;
   readonly live: LiveMemory;
   readonly contexts: WorkContexts;
   readonly foundation: FoundationService;
@@ -186,28 +204,36 @@ export class AgentApplication {
   readonly snapshots: Snapshots;
   readonly syncGovernance: SyncGovernance;
   readonly syncScheduler: SyncScheduler;
+  readonly retention: WorkspaceRetention;
+  readonly backups: BackupService;
   readonly semanticQuery: SemanticQuery;
   readonly questionAnswering: QuestionAnswering;
   readonly capabilities: AgentCapabilities;
+  readonly feishuTables: FeishuTableConnections;
   readonly consumption: ConsumptionService;
   readonly driver: AgentDriver;
   private actualDriver?: KodaXDriver;
   private interactions = new Map<string, {context:WriteContext;promise:Promise<void>;driver:AgentDriver}>();
   private background?: {context:WriteContext;promise:Promise<void>;driver:AgentDriver;automatic?:boolean};
   private poolDrivers = new Map<string, AgentDriver>();
+  private ownedPoolDrivers=new Set<AgentDriver>();
   private get active() { return this.interactions.values().next().value ?? this.background; }
   private runDriver(scope: string) {
     let driver=this.poolDrivers.get(scope);
-    if(!driver){driver=this.driver.fork?.(scope)??this.driver;this.poolDrivers.set(scope,driver);}
+    if(!driver){const raw=this.driver.fork?.(scope)??this.driver;driver=this.usage.wrap(raw,()=>this.settings,scope);this.poolDrivers.set(scope,driver);if(raw!==this.driver)this.ownedPoolDrivers.add(driver);}
     return driver;
   }
   readonly automaticBuild: AutomaticFoundation;
+  readonly namingBatches: NamingBatches;
+  readonly automaticNaming: AutomaticNaming;
   readonly documentUploads: DocumentUploadBatches;
+  readonly tableUploads: TableUploadBatches;
   readonly automaticApiBuild: AutomaticApi;
   private automaticApiEnabled: boolean;
   private closing = false;
   private stopping = false;
   private modelTest = false;
+  private retentionTimer?:ReturnType<typeof setInterval>;
   private streams = new Map<string,string>();
   private settings: ModelSettings;
   private credentials: ModelCredentials;
@@ -225,6 +251,8 @@ export class AgentApplication {
       throw new Error("测试网页来源仅允许显式测试 driver");
     this.researchTestOrigins = researchTestOrigins;
     this.memory = new MemoryStore(directory);
+    this.users=new LocalUsers(this.memory);
+    this.usage=new UsageService(this.memory);
     this.live = new LiveMemory(directory, this.memory);
     this.foundation = new FoundationService(this.memory, this.live);
     this.snapshots = new Snapshots(this.memory, this.live, directory);
@@ -240,16 +268,23 @@ export class AgentApplication {
     this.pendingCenter = new PendingCenter(this.memory, this.changes, this.foundation);
     this.syncGovernance=new SyncGovernance(this.memory,this.snapshots);
     this.syncScheduler=new SyncScheduler(this.memory,this.snapshots,this.syncGovernance);
+    this.retention=new WorkspaceRetention(this.memory,this.snapshots);
+    this.backups=new BackupService(this.memory);
     this.pendingCenter.register(this.syncGovernance);
     this.adjudication = new FoundationAdjudication(this.memory, this.foundation, this.changes);
     this.pendingCenter.register(this.adjudication.provider);
     this.tableFiles = new TableFiles(this.memory, directory);
     this.workspaceVersions = new WorkspaceVersions(this.memory, this.foundation, this.live);
+    this.audit=new AuditTrail(this.memory);
     connectChanges(this.memory, this.foundation, this.live, this.changes);
+    connectEnterpriseProfileChanges(this.memory,this.foundation,this.changes);
+    connectMetricReferenceChanges(this.memory,this.foundation,this.live,this.changes);
     connectStructureChanges(this.memory, this.foundation, this.live, this.snapshots, this.changes);
     connectLocalChanges(this.memory, this.live, this.changes);
     connectIdentityChanges(this.memory, this.foundation, this.live, this.changes);
     connectDiscoveryChanges(this.memory, this.foundation, this.live, this.snapshots, this.programBuilds, this.changes);
+    this.namingBatches=new NamingBatches(this.memory,this.foundation,this.live,this.snapshots,this.changes);
+    this.namingBatches.connectBuilds(this.programBuilds);
     connectProgramChanges(this.memory, this.programBuilds, this.changes);
     this.questionAnswering = new QuestionAnswering(this.memory, this.foundation, this.live, this.snapshots, this.workspaceVersions, this.changes);
     this.pendingCenter.register(this.questionAnswering.gaps);
@@ -260,9 +295,10 @@ export class AgentApplication {
       const prepared = await restore.prepare(workspaceRestoreSubject.parse(change.content.subject));
       return { verification: { result: "passed", metrics: prepared.metrics, inputs: prepared.inputs, notes: prepared.notes }, apply: prepared.apply };
     } });
-    this.onboarding = new Onboarding(this.memory, this.foundation, () => this.canvasTask("setup").id);
+    this.onboarding = new Onboarding(this.memory, this.foundation, () => this.canvasTask("setup").id, this.live);
     this.contexts = new WorkContexts(this.memory, this.live);
     this.capabilities = new AgentCapabilities(directory, this.memory);
+    this.feishuTables=this.live.sources.attachFeishu(this.capabilities.feishu);
     this.consumption = new ConsumptionService(directory, this.memory);
     const saved = this.memory.getSettings();
     const provider = (
@@ -286,19 +322,27 @@ export class AgentApplication {
     this.automaticBuild = new AutomaticFoundation(this.memory, this.foundation, this.capabilities);
     this.documentUploads = new DocumentUploadBatches(this.memory, this.automaticBuild);
     this.automaticApiBuild = new AutomaticApi(this.memory, this.foundation, this.live, this.capabilities, this.programBuilds);
+    this.tableUploads = new TableUploadBatches(this.memory, this.tableFiles, this.automaticApiBuild);
+    this.automaticNaming=new AutomaticNaming(this.memory,this.namingBatches);
+    this.namingBatches.onQueued=()=>this.startAutomaticBuild();
     this.delegations = new AgentDelegations(this.memory, this.live, ()=>this.runDriver("background"), {
       configured: () => this.model().configured,
       start: (taskId, run) => this.startDelegatedRun(taskId, run),
       stop: taskId => this.stop(taskId),
       safeError: error => this.safeError(error),
-    });
+      beforeRun:()=>{if(!this.injected)this.credentials.restore(this.settings);},
+    },this.questionAnswering);
     if (automaticApi) {
-      this.syncScheduler.start();
+      withActor(programActor('scheduled-sync'),()=>this.syncScheduler.start(),()=>{});
       this.live.sources.onSaved = source => { this.automaticApiBuild.enqueue(source); this.startAutomaticBuild(); };
       for (const source of this.live.sources.list()) this.automaticApiBuild.enqueue(source);
     }
     this.capabilities.feishuDocuments!.onSaved = source => { this.automaticBuild.enqueue(source); this.startAutomaticBuild(); };
-    queueMicrotask(() => this.startAutomaticBuild());
+    withActor(programActor('background-queue'),()=>queueMicrotask(() => this.startAutomaticBuild()),()=>{});
+    if(automaticApi){
+      const clean=()=>{if(!this.closing)void withActor(programActor('scheduled-retention'),()=>this.retention.run({operationId:`retention-daily-${new Date().toISOString().slice(0,10)}`}).catch(()=>{}),()=>{});};
+      queueMicrotask(clean);this.retentionTimer=setInterval(clean,86400000);this.retentionTimer.unref();
+    }
   }
 
   model() {
@@ -402,7 +446,7 @@ export class AgentApplication {
 
   private sourcesReady(): boolean {
     return this.memory
-      .listArtifacts("source")
+      .listArtifacts("source",{content:'compact'})
       .some((source) => this.sourceUsable(source));
   }
 
@@ -410,12 +454,11 @@ export class AgentApplication {
     if (source.kind !== "source" || source.status !== "ready") return false;
     if (source.content.format === "csv")
       return (
-        Array.isArray(source.content.rows) && source.content.rows.length > 0
+        tableRowCount(source)>0
       );
     return (
       source.content.format === "text" &&
-      typeof source.content.raw === "string" &&
-      !!source.content.raw.trim()
+      (typeof source.content.raw === "string"?!!source.content.raw.trim():sourceTextLength(source)>0)
     );
   }
 
@@ -436,7 +479,7 @@ export class AgentApplication {
   private canvasAttention(progress: CanvasProgress): CanvasAttention[] {
     const items = new Map<string, CanvasAttention>();
     const add = (item: CanvasAttention) => items.set(item.id, item);
-    const sources = this.memory.listArtifacts("source");
+    const sources = this.memory.listArtifacts("source",{content:'compact'});
     const models = this.memory.listArtifacts("ontology");
     const active = models.find((model) => model.status === "adopted");
     const definitions = [
@@ -788,7 +831,7 @@ export class AgentApplication {
     const messagePage=this.memory.sessionMessages(session.id);
     const pending = task?.pending;
     const profile = this.memory.listArtifacts("profile")[0] ?? null;
-    const sources = this.memory.listArtifacts("source");
+    const sources = this.memory.listArtifacts("source",{content:'compact'});
     const ontologies = this.memory.listArtifacts("ontology");
     const consumers = this.consumption.list();
     const prompt =
@@ -805,7 +848,7 @@ export class AgentApplication {
       pendingSummary: this.pendingCenter.summary(),
       // FEATURE_041 T041-04c: the working version is the only definition version the main UI shows beside a release.
       workspaceVersion: (() => { const latest = this.workspaceVersions.latest(); return latest ? { id: latest.id, version: latest.version, number: Number(latest.content.number) } : null; })(),
-      onboarding: this.onboarding.view(),
+      onboarding: this.onboarding.view(this.model().configured),
       legacyHistory: page === "setup" ? this.legacyHistory() : [],
       setupSection: setupSection(value) ?? progress.setupSection ?? "company",
       currentPage: page,
@@ -849,6 +892,7 @@ export class AgentApplication {
       engine: this.programBuilds.overview(),
       data: this.snapshots.overview(),
       automaticBuild: this.automaticBuild.view(this.model().configured),
+      automaticNaming:this.automaticNaming.view(this.model().configured),
       automaticApiBuild: this.automaticApiBuild.view(this.model().configured),
       evidence: new EvidenceService(this.memory, this.live).list(),
       outlines: this.memory.listArtifacts("ontology_outline"),
@@ -1071,9 +1115,16 @@ export class AgentApplication {
     const source = this.memory.getArtifact(id);
     if (source.kind !== "source" || source.content.origin === "feishu") throw new Error("只能删除上传资料");
     if (!Number.isSafeInteger(body.version) || source.version !== body.version) throw new Error("资料版本已变化，请刷新后重试");
-    await this.stopActive("上传资料已删除，请使用当前资料继续。");
-    this.memory.putArtifact({ ...source, expectedVersion: source.version, status: "removed" });
+    await this.manageSource({id,version:body.version,operationId:body.operationId,action:'remove',acknowledgeImpact:body.acknowledgeImpact});
     return this.canvasState();
+  }
+
+  async manageSource(body:Record<string,unknown>){
+    // Validate the concrete choice before stopping unrelated active work.
+    const lifecycle=new SourceLifecycle(this.memory,this.live),plan=lifecycle.validate(body);
+    if(plan.prior)return lifecycle.manage(body);
+    await this.stopActive('来源范围正在变更，请使用当前来源继续。');
+    return lifecycle.manage(body);
   }
 
   async canvasUpload(body: Record<string, unknown>) {
@@ -1107,6 +1158,18 @@ export class AgentApplication {
     const task = this.canvasTask(page, input.sessionId);
     return { batch: this.documentUploads.start(input.operationId, task.id, page, input.sessionId) };
   }
+  canvasTableBatchStart(body: Record<string, unknown>) {
+    const args=z.object({operationId:z.string().min(1).max(200),page:z.unknown().optional(),sessionId:z.string().optional()}).strict().parse(body);
+    const page=this.canvasPage(args.page);
+    if(page==='consumption')throw new Error('请在企业与数据页接入资料。');
+    return {batch:this.tableUploads.start({operationId:args.operationId,taskId:this.canvasTask(page,args.sessionId).id,page,sessionId:args.sessionId})};
+  }
+  canvasTableBatchFinalize(body: Record<string, unknown>) {
+    const {batchId}=z.object({batchId:z.string().min(1)}).strict().parse(body);
+    const uploadBatch=this.tableUploads.finalize(batchId);
+    this.startAutomaticBuild();
+    return {...this.canvasState(this.canvasPage(uploadBatch.content.page),typeof uploadBatch.content.sessionId==='string'?uploadBatch.content.sessionId:undefined),uploadBatch};
+  }
   canvasDocumentBatchFinalize(body: Record<string, unknown>) {
     const { batchId } = z.object({ batchId: z.string().min(1) }).strict().parse(body);
     const uploadBatch = this.documentUploads.finalize(batchId);
@@ -1116,6 +1179,11 @@ export class AgentApplication {
 
   async canvasTableUpload(body: Record<string, unknown>, input: AsyncIterable<Uint8Array>) {
     if (this.modelTest) throw new Error("正在测试连接，请稍后上传");
+    if(body.batchId!==undefined){
+      const result=await this.tableUploads.addFile({batchId:body.batchId,operationId:body.operationId,name:body.name,options:body.options},input);
+      const page=this.canvasPage(result.batch.content.page),sessionId=typeof result.batch.content.sessionId==='string'?result.batch.content.sessionId:undefined;
+      return {...this.canvasState(page,sessionId),...result};
+    }
     const page = this.canvasPage(body.page);
     if (page === "consumption") throw new Error("请在企业与数据页接入资料。");
     const sessionId = typeof body.sessionId === "string" ? body.sessionId : undefined;
@@ -1378,7 +1446,7 @@ export class AgentApplication {
 
   pools() {
     const view=(active:{context:WriteContext})=>{const task=this.memory.getTask(active.context.taskId);return {taskId:task.id,sessionId:this.memory.sessionForTask(task.id)?.id??null,status:task.status,stage:task.nextStep};};
-    const queued=this.memory.listArtifacts().filter(a=>["document_build","api_build","agent_delegation"].includes(a.kind)&&a.status==="queued").map(a=>({id:a.id,title:a.title,kind:a.kind}));
+    const queued=["document_build","api_build","naming_job","agent_delegation"].flatMap(kind=>this.memory.listArtifacts(kind,{content:'compact'})).filter(a=>a.status==="queued").map(a=>({id:a.id,title:a.title,kind:a.kind}));
     return {interactive:[...this.interactions.values()].map(view),background:{active:this.background?view(this.background):null,queued}};
   }
 
@@ -1406,7 +1474,7 @@ export class AgentApplication {
   }
 
   retryAutomaticBuild() {
-    this.automaticBuild.retry();this.automaticApiBuild.retry();this.startAutomaticBuild(true);return this.canvasState();
+    this.automaticBuild.retry();this.automaticApiBuild.retry();this.automaticNaming.retry();this.startAutomaticBuild(true);return this.canvasState();
   }
   get automaticRunning(){return this.background?.automatic===true;}
 
@@ -1416,10 +1484,11 @@ export class AgentApplication {
     if(this.delegations?.pump())return;
     const apiJob=this.automaticApiEnabled?this.automaticApiBuild.pending():undefined;
     const jobs=!apiJob&&this.model().configured?this.automaticBuild.pending():[];
-    if(!jobs.length&&!apiJob)return;
-    const task=this.memory.createTask(apiJob?"后台数据构建":"后台资料补充");
+    const namingJob=!apiJob&&!jobs.length&&this.model().configured?this.automaticNaming.pending():undefined;
+    if(!jobs.length&&!apiJob&&!namingJob)return;
+    const task=this.memory.createTask(apiJob?"后台数据构建":namingJob?"后台业务命名":"后台资料补充");
     const context=this.memory.beginExecution(task.id),driver=this.runDriver("background");
-    const promise=Promise.resolve().then(()=>apiJob?this.automaticApiBuild.run(apiJob,context,driver,error=>this.safeError(error)):this.automaticBuild.run(jobs,context,driver,error=>this.safeError(error)));
+    const promise=Promise.resolve().then(()=>withActor(apiJob?programActor('automatic-data-build'):agentActor(context.executionId),()=>apiJob?this.automaticApiBuild.run(apiJob,context,driver,error=>this.safeError(error)):namingJob?this.automaticNaming.run(namingJob,context,driver,error=>this.safeError(error)):this.automaticBuild.run(jobs,context,driver,error=>this.safeError(error))));
     this.background={context,promise,driver,automatic:true};
     void promise.finally(()=>{if(this.background?.context.executionId===context.executionId)this.background=undefined;this.memory.changes.emit("change",{kind:"runtime"});this.startAutomaticBuild();}).catch(()=>{});
   }
@@ -1513,7 +1582,8 @@ export class AgentApplication {
   ) {
     const context=this.memory.beginExecution(taskId),driver=this.runDriver(`interactive-${this.memory.sessionForTask(taskId)?.id??taskId}`);
     this.streams.set(taskId,"");
-    const promise=Promise.resolve().then(()=>this.run(context,input,focus,page,workContext,driver,messageBinding));
+    const actor=agentActor(context.executionId);
+    const promise=Promise.resolve().then(()=>withActor(actor,()=>this.run(context,input,focus,page,workContext,driver,messageBinding)));
     this.interactions.set(taskId,{context,promise,driver});
     void promise.finally(()=>{if(this.interactions.get(taskId)?.context.executionId===context.executionId)this.interactions.delete(taskId);this.memory.changes.emit("change",{kind:"runtime",id:taskId});this.startAutomaticBuild();}).catch(()=>{});
   }
@@ -1547,7 +1617,7 @@ export class AgentApplication {
       : new Workspace(this.memory, context);
     const titleTool:DomainTool={name:"session_title",description:"为首轮会话生成简短标题；人工改名后不会覆盖。",mutates:true,inputSchema:objectSchema({title:{type:"string",minLength:1,maxLength:80}},["title"])};
     const legacyCatalog = [...domainTools, ...controlTools, ...liveTools, ...foundationTools, ...metricTools,
-      ...evidenceTools, ...engineTools, ...capabilityTools, titleTool, decisionRequestTool,
+      ...evidenceTools, ...engineTools, ...capabilityTools, titleTool, decisionRequestTool, modeSuggestionTool,
       ...(page === "setup" ? [historyReadTool] : []),
       ...(workContext?.target ? [contextReadTool] : [])];
     const tools = modeTools(turn.mode, [...legacyCatalog, ...this.agentChanges.tools, ...(qaRun?.tools??[])]);
@@ -1566,7 +1636,7 @@ export class AgentApplication {
     const evidenceService = new EvidenceService(this.memory, this.live);
     let foundationSkill = "";
     const delivery = new TurnDelivery();
-    const presentation = new RunPresentation(this.memory, context, { goal: turn.mode === "qa" ? question : task.goal, workContext:turn.mode === "qa" ? undefined : workContext });
+    const presentation = new RunPresentation(this.memory, context, { goal: question, workContext:turn.mode === "qa" ? undefined : workContext });
     const trackTool = (execute: (name: string, args: Record<string, unknown>) => Promise<Json>) =>
       async (name: string, args: Record<string, unknown>, operationId?: string) => {
         try {
@@ -1611,6 +1681,7 @@ export class AgentApplication {
     try {
       const prepared=qaRun ? qaConversationContext(this.memory,task.id,agentModePrompt(turn.mode),serializable({mode:turn.mode,dataView:qaRun.view.receipt,question,...(session?.titleOrigin==="pending"?{sessionTitle:compact.sessionTitle}:{})}) as Data,serializable(qaRun.view.selection) as Data) : conversationContext(this.memory,task.id,agentModePrompt(turn.mode),serializable(compact) as Data);
       this.memory.event(task.id,"context.prepared",{estimatedTokens:prepared.estimatedTokens,limit:prepared.limit,recentCount:prepared.recentCount,summaryCharacters:prepared.summaryCharacters});
+      if(!this.injected)this.credentials.restore(this.settings);
       const outcome = await driver.run({
         ephemeral: true,
         ...(page
@@ -1619,7 +1690,7 @@ export class AgentApplication {
               capabilities: this.capabilities,
             }
           : {}),
-        title: qaRun ? question : task.goal,
+        title: question,
         system: agentModePrompt(turn.mode),
         tools,
         authorizeTool: name => assertAgentTool(this.memory, context, turn, name),
@@ -1630,6 +1701,7 @@ export class AgentApplication {
         onEvent: (kind, data) => {
           if (kind === "run.timed_out" && this.memory.getTask(task.id).executionId === context.executionId)
             this.memory.pauseTask(task.id, "运行超时，已保存的成果保留，可继续核对未完成事项。");
+          if(kind==='run.budget_exceeded'&&this.memory.getTask(task.id).executionId===context.executionId)this.memory.pauseTask(task.id,String(data.reason||'模型用量已达到上限，已停止本轮。'));
           presentation.event(kind, data);
           if (kind === "assistant.delta") {
             if (
@@ -1751,6 +1823,10 @@ export class AgentApplication {
                 string(args.nextStep, "下一步", 3000),
               ),
             );
+          if (name === "mode_suggest") {
+            const result=requestModeSuggestion(this.memory,context,turn.mode,args);
+            startClosing();return serializable(result);
+          }
           if (name === "decision_request") {
             const result = requestDecision(this.memory, context, args, this.pendingCenter);
             startClosing();
@@ -2022,7 +2098,7 @@ export class AgentApplication {
         : outcome.status === "failed" ? "模型执行失败，尚未形成可验证的回答" : undefined;
       const interrupted =
         page && this.memory.getTask(task.id).revision !== context.taskRevision;
-      if (qaRun && !failure && !interrupted && !["stopped","timed_out"].includes(outcome.status??"")) {
+      if (qaRun && !failure && !interrupted && this.memory.getTask(task.id).status !== "waiting" && !["stopped","timed_out"].includes(outcome.status??"")) {
         const answer=qaRun.answer(outcome.text);
         presentation.answer(answer);
         this.memory.event(task.id,"answer",answer);
@@ -2070,8 +2146,12 @@ export class AgentApplication {
         );
     } finally {
       if (closingTimer) clearTimeout(closingTimer);
-      presentation.finish({ status: this.memory.getTask(task.id).status === "paused" ? "stopped" : failure ? "failed" : "completed", ...(failure ? { error: failure } : {}) });
-      this.memory.endExecution(context, failure);
+      let revoked=false;try{currentActor();}catch{revoked=true;}
+      // Lifecycle cleanup has no domain-write capability and must survive withdrawal of the initiating session.
+      withActor(programActor('run-cleanup'),()=>{
+      if(revoked){failure='操作者授权已变化，运行已停止；已保存成果保留。';if(this.memory.getTask(task.id).executionId===context.executionId)this.memory.pauseTask(task.id,failure);}
+      try{presentation.finish({ status: this.memory.getTask(task.id).status === "paused" ? "stopped" : failure ? "failed" : "completed", ...(failure ? { error: failure } : {}) });}
+      finally{this.memory.endExecution(context, failure);this.streams.delete(task.id);}
       if (page) {
         this.memory.trimMessages(task.id);
         const current = this.memory.getTask(task.id);
@@ -2091,7 +2171,7 @@ export class AgentApplication {
           this.memory.saveCanvas(progress);
         }
       }
-      this.streams.delete(task.id);
+      },()=>{});
     }
   }
 
@@ -2247,7 +2327,8 @@ export class AgentApplication {
     this.settings = settings;
     this.memory.saveSettings({ ...this.settings });
     if (this.actualDriver) this.actualDriver.settings = this.settings;
-    for(const driver of new Set(this.poolDrivers.values()))if(driver!==this.driver)await driver.close();
+    for(const driver of this.ownedPoolDrivers)await driver.close();
+    this.ownedPoolDrivers.clear();
     this.poolDrivers.clear();
     const connection = body.testConnection === true ? await this.testConnection() : undefined;
     this.startAutomaticBuild();
@@ -2255,7 +2336,7 @@ export class AgentApplication {
   }
 
   async updateOnboarding(action: string, body: Record<string, unknown>) {
-    if (this.active || this.modelTest) throw new Error("请等待当前运行结束，或先停止运行");
+    if ((this.active || this.modelTest) && !['start','suspend','step','complete'].includes(action)) throw new Error("请等待当前运行结束，或先停止运行");
     if (action === "start") this.onboarding.start(body);
     else if (action === "suspend") this.onboarding.suspend(body);
     else if (action === "company") this.onboarding.company(body);
@@ -2263,8 +2344,7 @@ export class AgentApplication {
     else if (action === "pack") this.onboarding.applyPack(body);
     else if (action === "complete") this.onboarding.complete(body, this.model().configured);
     else throw new Error("无效的初始化操作");
-    await this.canvasNavigate({page:"setup"});
-    return this.canvasState("setup");
+    return this.canvasState(this.canvasPage(body.page));
   }
 
   async researchOnboarding(body: Record<string, unknown>) {
@@ -2368,7 +2448,8 @@ export class AgentApplication {
     if (!this.model().configured) throw new Error("请先配置 API Key");
     this.modelTest = true;
     try {
-      const result = await this.driver.run({
+      if(!this.injected)this.credentials.restore(this.settings);
+      const result = await this.usage.wrap(this.driver,()=>this.settings,'connection-test').run({
         title: "模型连接检查",
         system: "请用中文简短回答。",
         input: "只回复：连接成功。",
@@ -2389,11 +2470,13 @@ export class AgentApplication {
 
   async close() {
     this.closing = true;
+    if(this.retentionTimer)clearInterval(this.retentionTimer);
     await this.syncScheduler.close();
     await this.stopActive();
     await this.programBuilds.close();
     await this.snapshots.close();
-    for(const driver of new Set(this.poolDrivers.values()))if(driver!==this.driver)await driver.close();
+    for(const driver of this.ownedPoolDrivers)await driver.close();
+    this.ownedPoolDrivers.clear();
     await this.driver.close();
     await this.capabilities.close();
     this.consumption.close();

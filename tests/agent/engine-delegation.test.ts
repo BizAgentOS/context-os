@@ -75,3 +75,28 @@ test('delegated cancellation blocks late results and a restart reports queued ta
   const recovered=(await call('/v4/agent/tasks/'+queued.id,undefined,connection.key)).body.task;assert.equal(recovered.status,'interrupted');assert.equal(recovered.content.result,undefined);
  }finally{unblock?.();await service.close();rmSync(directory,{recursive:true,force:true});}
 });
+
+test('delegated budget exhaustion, SDK stop and timeout never publish partial narration as a completed investigation',{timeout:15000},async()=>{
+ const directory=mkdtempSync(join(tmpdir(),'ade-delegation-outcome-'));let mode:'budget'|'stopped'|'timed_out'='budget',stops=0;
+ const driver:AgentDriver={async run(request){await request.onTool('describe_dataset',{});
+  if(mode==='budget')request.onEvent('run.usage',{sampleId:'actual-provider-response',usage:{inputTokens:20,outputTokens:10,totalTokens:30}});
+  return {status:mode==='budget'?'completed':mode,text:'尚未核对的部分说明，不能当作完成结果',sessionId:'protocol-fixture',runId:'protocol-fixture',usage:{inputTokens:20,outputTokens:10,totalTokens:30}};
+ },async stop(){stops++;},async close(){}};
+ const service=await createServer({directory,driver,automaticApi:false});await new Promise<void>(resolve=>service.server.listen(0,'127.0.0.1',resolve));
+ const origin=`http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
+ const call=async(path:string,body?:unknown,key?:string)=>{const response=await fetch(origin+path,{method:body===undefined?'GET':'POST',headers:{...(key?{authorization:'Bearer '+key}:{'x-dataengine-token':service.adminToken}),'content-type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});assert(response.ok,`${path}: ${response.status}`);return await response.json() as any;};
+ try{
+  service.app.memory.putArtifact({kind:'foundation',title:'委托停止测试',status:'adopted',content:{enterprise:{name:'虚构企业'},concepts:[{id:'company',name:'公司',description:'组织'}],relations:[],evidence:[],unknowns:[],conflicts:[]}});
+  const overview=await call('/api/releases'),check=await call('/api/releases/check',{inputHash:overview.working.inputHash}),publication=await call('/api/releases/publish',{operationId:'publish',checkRef:{id:check.id,version:check.version},name:'停止边界'});
+  const connection=await call('/api/releases/connect',{operationId:'connect',name:'外部调查',releaseRef:{id:publication.release.id,version:publication.release.version},conceptIds:['company'],relationIds:[],agentEnabled:true});
+  for(const next of ['budget','stopped','timed_out'] as const){
+   mode=next;service.app.usage.configure({operationId:next,perRun:{tokens:next==='budget'?25:null}});
+   const submitted=await call('/v4/agent/tasks',{operationId:next,prompt:'核对公司定义'},connection.key);await service.app.idle();
+   const receipt=(await call('/v4/agent/tasks/'+submitted.task.id,undefined,connection.key)).task;
+   assert.equal(receipt.status,'failed',next);assert.equal(receipt.content.result,undefined,next+' must not expose partial text as a completed result');
+   assert.match(receipt.content.error,next==='budget'?/上限|预算/:next==='timed_out'?/超时/:/停止/);
+   assert.equal(receipt.content.readings.length,1,'already saved authorized readings remain inspectable');
+  }
+  assert.equal(stops,1,'the budget boundary requests one actual driver stop');assert.equal(service.app.usage.overview().today.tokens,90,'all real provider usage remains accounted');
+ }finally{await service.close();rmSync(directory,{recursive:true,force:true});}
+});

@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { DomainTool } from "./contracts.ts";
+import { metricDefinitionSchema as definitionSchema, metricHash as hash } from "../semantic/metric-contract.ts";
 import type { SourceConnections } from "../live/sources.ts";
 
 const label = z.string().trim().min(1).max(200);
@@ -24,54 +25,6 @@ const dimensions = z.preprocess(
   },
   z.record(dimensionName, z.string().min(1).max(500)),
 );
-const definitionSchema = z
-  .object({
-    id: label,
-    name: label,
-    description: z.string().trim().min(1).max(2000),
-    revision: label,
-    unit: label,
-    grain: z.enum(["day", "month"]),
-    timeZone: label.refine((v) => {
-      try {
-        new Intl.DateTimeFormat("en", { timeZone: v });
-        return true;
-      } catch {
-        return false;
-      }
-    }, "时区无效"),
-    dimensions: z
-      .array(z.object({ name: dimensionName, label }).strict())
-      .max(10),
-    aggregation: z
-      .object({
-        kind: z.enum(["sum", "ratio", "average", "distinct_count", "snapshot"]),
-        additiveDimensions: z.array(dimensionName).max(10),
-        timeAdditive: z.boolean(),
-      })
-      .strict(),
-  })
-  .strict()
-  .superRefine((d, ctx) => {
-    const names = d.dimensions.map((x) => x.name),
-      additive = d.aggregation.additiveDimensions;
-    if (
-      new Set(names).size !== names.length ||
-      new Set(additive).size !== additive.length ||
-      additive.some((x) => !names.includes(x))
-    )
-      ctx.addIssue({ code: "custom", message: "维度或可加总维度契约无效" });
-    if (
-      ["ratio", "average", "distinct_count"].includes(d.aggregation.kind) &&
-      (additive.length || d.aggregation.timeAdditive)
-    )
-      ctx.addIssue({
-        code: "custom",
-        message: "比率、平均与去重指标不可直接加总",
-      });
-    if (d.aggregation.kind === "snapshot" && d.aggregation.timeAdditive)
-      ctx.addIssue({ code: "custom", message: "时点存量不可跨期间加总" });
-  });
 const base = z
   .object({
     sourceId: label,
@@ -126,20 +79,6 @@ const resultSchema = z
   })
   .strict();
 type Definition = z.infer<typeof definitionSchema>;
-const canonical = (v: unknown): unknown =>
-  Array.isArray(v)
-    ? v.map(canonical)
-    : v && typeof v === "object"
-      ? Object.fromEntries(
-          Object.entries(v)
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([k, x]) => [k, canonical(x)]),
-        )
-      : v;
-const hash = (v: unknown) =>
-  createHash("sha256")
-    .update(JSON.stringify(canonical(v)))
-    .digest("hex");
 function validatePeriod(start: string, end: string, grain: "day" | "month") {
   const duration = Date.parse(end) - Date.parse(start);
   if (
@@ -221,6 +160,7 @@ export class MetricReader {
   async query(args: unknown) {
     const input = metricQuerySchema.parse(args),
       { cap } = this.capability(input);
+    if (cap.metricAccess === "definition_only") throw new Error("该来源仅开放指标定义，不能读取观测");
     // Generic date bounds apply before source I/O; grain is checked against its definition below.
     validatePeriod(input.start, input.end, "day");
     const current = await this.describe({

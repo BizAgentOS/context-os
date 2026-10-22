@@ -13,7 +13,7 @@ import {xlsxTables} from "./table-xlsx.ts";
 
 export const MAX_TABLE_FILE_BYTES=100_000_000;
 const optionsSchema=z.object({encoding:z.enum(["utf8","gbk","gb18030"]).optional(),delimiter:z.enum([",","\t",";"]).optional(),headerRow:z.number().int().min(1).max(1000).optional()}).strict();
-export interface TableImport {name:string;input:AsyncIterable<Uint8Array>;options?:unknown;}
+export interface TableImport {name:string;input:AsyncIterable<Uint8Array>;options?:unknown;/** Host-only hook in the source transaction; throwing rolls back all imported sheets. */onSaved?:(sources:Artifact[],receipt:Omit<TableImportResult,'sources'>)=>void;}
 export interface TableImportResult {sources:Artifact[];skippedSheets:string[];warnings:string[];parameters:Data[];}
 
 export class TableFiles {
@@ -24,7 +24,7 @@ export class TableFiles {
     const options=optionsSchema.parse(input.options??{}),dir=tableDirectory(this.directory);await mkdir(dir,{recursive:true,mode:0o700});
     const original=randomUUID()+".original",file=join(dir,original),out=createWriteStream(file,{flags:"wx",mode:0o600}),done=finished(out);void done.catch(()=>{});let bytes=0;const hash=createHash("sha256");
     try{for await(const chunk of input.input){bytes+=chunk.byteLength;if(bytes>MAX_TABLE_FILE_BYTES)throw new Error("表格文件不能超过 100 MB");hash.update(chunk);if(!out.write(chunk))await once(out,"drain");}out.end();await done;
-      if(!bytes)throw new Error("表格文件为空");return await this.parseAndSave(input.name,original,hash.digest("hex"),bytes,options);
+      if(!bytes)throw new Error("表格文件为空");return await this.parseAndSave(input.name,original,hash.digest("hex"),bytes,options,undefined,input.onSaved);
     }catch(error){out.destroy();await done.catch(()=>{});await rm(file,{force:true});throw error;}
   }
   async reparse(input:{sourceId:string;version:number;options:unknown}):Promise<TableImportResult>{
@@ -33,7 +33,7 @@ export class TableFiles {
     storedTableFile(this.memory,original.file);
     return this.parseAndSave(String(original.name),String(original.file),String(original.hash),Number(original.bytes),optionsSchema.parse(input.options),source);
   }
-  private async parseAndSave(name:string,original:string,hash:string,bytes:number,options:TableOptions,only?:Artifact):Promise<TableImportResult>{
+  private async parseAndSave(name:string,original:string,hash:string,bytes:number,options:TableOptions,only?:Artifact,onSaved?:TableImport['onSaved']):Promise<TableImportResult>{
     const file=storedTableFile(this.memory,original),excel=/\.xlsx$/i.test(name),created:string[]=[],skippedSheets:string[]=[],prepared:Array<{name:string|null;parsed:NonNullable<Awaited<ReturnType<TableFiles["storeRows"]>>>}>=[];
     if(excel&&(options.encoding||options.delimiter))throw new Error("Excel 不使用 CSV 编码或分隔符");
     try{
@@ -44,6 +44,7 @@ export class TableFiles {
         if(!parsed){skippedSheets.push(table.name??name);continue;}prepared.push({name:table.name,parsed});
       }
       if(!prepared.length)throw new Error("表格没有有效表头或数据");
+      const receipt={skippedSheets,warnings:skippedSheets.map(sheet=>`工作表 ${sheet} 为空，已跳过`),parameters:prepared.map(p=>p.parsed.parameters)};
       const sources=this.memory.atomic(()=>{
         if(only&&this.memory.getArtifact(only.id).version!==only.version)throw new Error("表格来源已变化，请重新解析");
         if(excel&&!only){
@@ -52,12 +53,13 @@ export class TableFiles {
             .map(source=>(source.content.parseParameters as Data)?.sheet).filter(sheet=>typeof sheet==="string"&&!present.has(sheet));
           if(missing.length)throw new Error(`新工作簿缺少或清空了已接入工作表 ${missing.join("、")}；请先明确移除这些旧来源，再重新上传`);
         }
-        return prepared.map(({name:sheet,parsed})=>{
+        const saved=prepared.map(({name:sheet,parsed})=>{
           const title=sheet?`${name} · ${sheet}`:name,prior=only??this.memory.listArtifacts("source").find(a=>a.title===title&&a.content.origin!=="feishu");
           return this.memory.putArtifact({...(prior?{id:prior.id,expectedVersion:prior.version}:{}),kind:"source",title,status:"ready",content:{format:"csv",fileFormat:excel?"xlsx":"csv",hash,columns:parsed.columns,rows:parsed.preview,rowCount:parsed.count,rowStorage:{file:parsed.file},tableFile:{file:original,name,hash,bytes},parseParameters:parsed.parameters}});
         });
+        onSaved?.(saved,receipt);return saved;
       });
-      return {sources,skippedSheets,warnings:skippedSheets.map(sheet=>`工作表 ${sheet} 为空，已跳过`),parameters:prepared.map(p=>p.parsed.parameters)};
+      return {sources,...receipt};
     }catch(error){await Promise.all(created.map(file=>rm(join(tableDirectory(this.directory),file),{force:true})));throw error;}
   }
   private async storeRows(table:ParsedTable,options:TableOptions,created:string[]){

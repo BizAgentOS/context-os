@@ -14,7 +14,7 @@ const reference = (source: Artifact) => ({ sourceId: source.id, version: source.
 
 /** Deliberately fictional, local demonstration. Existing enterprise memory is never replaced. */
 export function seedHeatingDemo(app: AgentApplication) {
-  if (app.memory.listArtifacts().length) return { seeded: false };
+  if (app.memory.listArtifacts().some(item=>item.kind!=='naming_initialization')) return { seeded: false };
   const workspace = new Workspace(app.memory);
   const policies = new SourcePolicyService(app.memory);
   const add = (name: string, raw: string, purpose: string, owner: string, sensitiveFields: string[] = []) => {
@@ -170,7 +170,7 @@ export function seedHeatingDemo(app: AgentApplication) {
   const prompts: Record<CanvasPage, string> = {
     setup: "澄川热力的企业信息和 8 份演示资料已接入。点开可查看或补充信息、原始记录与使用范围。",
     ontology: "6 类对象已经连接起来。可以从投诉查看处理工单和回访，或用一个业务问题验证定义。",
-    consumption: "当前演示未发布或授予外部访问。正式接入需在发布与接入页选择发布版本并创建接入方。",
+    consumption: "已保存热力服务演示发布，但未授予外部访问。写操作仅作模拟；实际发布与接入授权请在正式工作区完成。",
   };
   for (const page of Object.keys(prompts) as CanvasPage[]) {
     const task = app.memory.createTask(`热力公司演示 · ${page}`);

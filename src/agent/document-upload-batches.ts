@@ -4,6 +4,7 @@ import type {MemoryStore} from "./memory.ts";
 import type {AutomaticFoundation} from "./automatic-foundation.ts";
 import {Workspace} from "./workspace.ts";
 import {fingerprint} from "../engine/release-diff.ts";
+import {DocumentFiles} from "../data/document-files.ts";
 
 const identifier=z.string().trim().min(1).max(200);
 const fileInput=z.object({batchId:identifier,operationId:identifier,name:z.string().min(1).max(180),content:z.string().max(5_000_000).optional(),error:z.string().min(1).max(1500).optional()}).strict()
@@ -21,6 +22,29 @@ export class DocumentUploadBatches {
     return this.memory.putArtifact({kind:"document_upload_batch",title:"资料上传批次",status:"collecting",content:{operationId,taskId,page,sessionId:sessionId??null,sources:[],errors:[],operations:[]}});
   }
   read(id:string){const batch=this.memory.getArtifact(id);if(batch.kind!=="document_upload_batch")throw new Error("资料批次不存在");return batch;}
+  async addFile(input:unknown,stream:AsyncIterable<Uint8Array>){
+    const args=z.object({batchId:identifier,operationId:identifier,name:z.string().min(1).max(180)}).strict().parse(input);
+    const initial=this.read(args.batchId),prior=(initial.content.operations??[]) as Data[];
+    if(initial.status!=="collecting"&&!prior.some(item=>item.operationId===args.operationId))throw new Error("批次已结束，不能再添加文件");
+    if(prior.length>=100&&!prior.some(item=>item.operationId===args.operationId))throw new Error("每批最多接入100份资料");
+    let prepared:Awaited<ReturnType<DocumentFiles["prepare"]>>;
+    try{prepared=await new DocumentFiles(this.memory.directory).prepare(args.name,stream);}
+    catch(error){return this.add({...args,error:(error instanceof Error?error.message:"文件接入失败").slice(0,1500)});}
+    let saved=false;
+    try{return this.memory.atomic(()=>{
+      const batch=this.read(args.batchId),operations=(batch.content.operations??[]) as Data[],signature=fingerprint({...args,hash:prepared.signature});
+      const previous=operations.find(item=>item.operationId===args.operationId);
+      if(previous){if(previous.signature!==signature)throw new Error("文件操作标识已绑定不同内容");return batch;}
+      if(batch.status!=="collecting")throw new Error("批次已结束，不能再添加文件");
+      if(operations.length>=100)throw new Error("每批最多接入100份资料");
+      const current=this.memory.listArtifacts("source").find(item=>item.title===args.name&&item.content.origin!=="feishu");
+      const source=this.memory.putArtifact({...(current?{id:current.id,expectedVersion:current.version}:{}),kind:"source",title:args.name,status:prepared.status,content:{...prepared.content,uploadBatchId:batch.id}});
+      this.memory.attachArtifact(String(batch.content.taskId),source);
+      const errors=[...(batch.content.errors??[]) as Data[],...(source.status==="ready"?[]:[{operationId:args.operationId,name:args.name,message:String(source.content.parseError)}])];
+      const result=this.memory.putArtifact({...batch,expectedVersion:batch.version,content:{...batch.content,sources:[...(batch.content.sources??[]) as Data[],{id:source.id,version:source.version}],errors,operations:[...operations,{operationId:args.operationId,signature}]}});
+      saved=true;return result;
+    });}finally{if(!saved)await prepared.discard();}
+  }
   add(input:unknown){
     const args=fileInput.parse(input),signature=fingerprint(args);
     return this.memory.atomic(()=>{

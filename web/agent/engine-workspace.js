@@ -1,7 +1,7 @@
 import { showDatabaseConnection } from "./database-connection.js";
 import { showSyncSettings } from "./sync-settings.js";
 import { updateRegion } from "./page-region.js";
-import { el, action, ref, when, statusLabels, dialog, message, transact, table, issues, snapshotReport } from "./engine-ui.js";
+import { el, action, ref, when, statusLabels, dialog, message, transact, table, issues, snapshotReport,check } from "./engine-ui.js";
 import { openApiImport } from "./openapi-import.js";
 import { openConnections } from "./connections.js";
 import { showChanges } from "./changes-workspace.js";
@@ -65,7 +65,7 @@ export function renderEngineWorkspace(state, actions) {
   function sourceDetail(source,isFile,summary) {
     const d=dialog(summary.connectionTitle ? `${summary.connectionTitle} · ${summary.title}` : source.title,true),c=source.content,sets=(data?.datasets||[]).filter(s=>s.content.sourceId===source.id);
     const snapshots=snapshotsOf(source.id).filter(set=>!summary.capability||set.content.capability===summary.capability);
-    d.body.append(el("p",`${c.origin==="feishu"?"飞书文档":isFile?"上传文件":c.adapter==="database"?({postgres:"PostgreSQL",mysql:"MySQL"}[c.protocol]||"数据库"):c.protocol==="mcp"?"MCP":"HTTP API"} · ${source.status==="ready"?"可读取":source.status} · ${summary.category!=="table"?"按许可读取资料内容":snapshots.length?`${snapshots.length} 个数据集已同步快照`:"尚未同步快照"}`,"engine-muted"));
+    d.body.append(el("p",`${c.origin==="feishu"?"飞书文档":isFile?"上传文件":c.adapter==="database"?({postgres:"PostgreSQL",mysql:"MySQL"}[c.protocol]||"数据库"):c.protocol==="mcp"?"MCP":"HTTP API"} · ${{ready:"可读取",disabled:"已停用",removed:"已移除",failed:"读取失败",draft:"待完成",revoked:"已撤销"}[source.status]||"需要核对"} · ${summary.category!=="table"?"按许可读取资料内容":snapshots.length?`${snapshots.length} 个数据集已同步快照`:"尚未同步快照"}`,"engine-muted"));
     if(c.parseError)d.body.append(el("p",c.parseError,"engine-message"));
     if(summary.problems?.length){const problems=el('section',null,'engine-panel');problems.append(el('h3','需要处理的问题'));for(const issue of summary.problems)problems.append(el('p',issue.reasons.map(reason=>reason.message).join('；')),action('处理这个数据问题',()=>{d.close();requestPending(issue);}));d.body.append(problems);}
     const sample=el('section',null,'engine-panel'),sampleOutput=message(sample);sample.append(el('h3','字段与样本'));d.body.append(sample);
@@ -93,7 +93,9 @@ export function renderEngineWorkspace(state, actions) {
     else if(!snapshots.length)d.body.append(el("p",summary.category==="document"?"资料已保存，可用于补充实体说明与依据。":summary.category==="metric"?"指标按许可范围读取定义与观测值。":"尚未同步或构建。连接成功不代表数据已被检查。","engine-muted"));
     const controls=el("div",null,"engine-actions");if(source.status==="ready"&&(isFile?c.format==="csv":c.capabilities?.some(cap=>!cap.contentKind||cap.contentKind==="records"))){controls.append(action("同步快照",()=>{d.close();void sync(source.id);}),action("同步并构建",()=>{d.close();void build(source.id);},"engine-primary"));}
     if(summary.category==='table')controls.append(action('同步与质量设置',()=>{d.close();void showSyncSettings(source,actions);}));
-    controls.append(action("让助手协助",()=>{d.close();actions.ask(`请协助检查来源“${source.title}”（${source.id}）的接入、字段与读取问题。`);}));d.body.append(controls,technicalDetails({sourceId:source.id,sourceVersion:source.version}));
+    controls.append(action("让助手协助",()=>{d.close();actions.ask(`请协助检查来源“${source.title}”（${source.id}）的接入、字段与读取问题。`);}));d.body.append(controls);
+    const history=(snap?.jobs||[]).filter(job=>job.content.sourceIds?.includes(source.id)||Object.hasOwn(job.content.sourceVersions||{},source.id)).slice(0,5);if(history.length){d.body.append(el('h3','同步历史'));for(const job of history)d.body.append(el('p',`${when(job.createdAt)} · ${statusLabels[job.status]||job.status}${job.content.issues?.length?` · ${job.content.issues.length} 项提示`:''}`));}
+    const advanced=el('details');advanced.append(el('summary','高级：来源范围与删除'),el('p','先核对本体和发布引用，再停用或删除来源。原件与快照按保留策略处理。','engine-muted'),action('查看停用与删除影响',()=>{d.close();void showSourceManagement(source,actions);}),technicalDetails({sourceId:source.id,sourceVersion:source.version}));d.body.append(advanced);
   }
   function render() {
     const view=el("section",null,root.className);view.setAttribute("aria-label",root.getAttribute("aria-label"));
@@ -103,6 +105,12 @@ export function renderEngineWorkspace(state, actions) {
     const sources=(state.sourceSummary?.sources||[]).map(summary=>({s:[...(state.sources||[]),...(state.live?.connections||[])].find(s=>s.id===(summary.sourceId??summary.id)),file:summary.file,summary})).filter(item=>item.s);
     const stats=el("div",null,"engine-stats");const pending=(snap?.datasets||[]).filter(d=>d.content.pendingVersion).length,running=[...(data?.jobs||[]),...(snap?.jobs||[])].filter(j=>["queued","running"].includes(j.status)).length;
     for(const [count,label] of [[state.sourceSummary?.total ?? 0,"已接入来源"],[(snap?.datasets||[]).length,"已同步数据集"],[pending,"结构变化待确认"],[running,"进行中任务"]]){const item=el("div");item.append(el("strong",String(count)),el("span",label));stats.append(item);}view.append(stats);
+    const naming=state.automaticNaming;
+    if(naming&&['failed','stopped','running','queued','waiting_model'].includes(naming.status)){
+      const panel=el('section',null,'engine-panel');panel.append(el('h2','业务命名'),el('p',({failed:'本次命名没有完整提交；已有草稿保留，可以继续处理。',stopped:'命名已停止，已保存的草稿保留。',running:'助手正在依据实际字段和样本整理名称。',queued:'业务命名正在排队。',waiting_model:'连接模型后可继续业务命名。'})[naming.status],'engine-muted'));
+      if(naming.error)panel.append(el('p',naming.error,'engine-muted'));
+      if(['failed','stopped'].includes(naming.status)){const output=message(panel);panel.append(action('重试业务命名',()=>transact(panel,output,async()=>{actions.apply(await actions.api('/api/naming/retry',{page:'setup'}));await actions.refresh();}),'engine-primary'));}view.append(panel);
+    }
     const section=el("section",null,"engine-source-list");section.append(el("h2","已接入来源"));
     if(!sources.length){const empty=el("div",null,"engine-empty");empty.append(el("h2","从第一份数据开始"),el("p","接入 MCP、API 或文件，随后检查字段、样本与读取状态。","engine-muted"),action("选择接入方式",()=>sourceChooser(sourceActions),"engine-primary"),action("让助手帮助接入",()=>actions.ask("请协助我确定数据接入方式，并指导我配置来源。")));section.append(empty);}
     const list=el("div",null,"engine-source-groups"),groups=new Map();
@@ -118,7 +126,7 @@ export function renderEngineWorkspace(state, actions) {
     for(const {group,grid}of groups.values())if(!grid.children.length)group.remove();section.append(list);view.append(section);
     const syncJob=snap?.jobs?.[0];if(syncJob){const row=el("div",null,"engine-task-summary");row.append(el("div",`最近同步 · ${statusLabels[syncJob.status]||syncJob.status}${syncJob.content.issues?.length?` · ${syncJob.content.issues.length} 项提示`:""}`));if(syncJob.content.issues?.length)row.append(action("查看提示",()=>{const d=dialog("同步提示",true);issues(d.body,syncJob.content.issues,actions.ask);}));view.append(row);}
     if(data?.jobs?.length){const latest=data.jobs[0],row=el("div",null,"engine-task-summary");row.append(el("div",`最近构建 · ${statusLabels[latest.status]||latest.status}`),action("查看任务与结果",()=>showEngineBuilds(state,{...actions,initial:data})));view.append(row);}
-    const footer=el("footer",null,"engine-page-footer");footer.append(action("管理已有连接与企业资料",actions.advanced),action("刷新状态",()=>void load()),el("span","结构化记录同步为不可变快照；设为实时读取的数据集按需读取","engine-muted"));view.append(footer);
+    const footer=el("footer",null,"engine-page-footer");footer.append(action("管理已有连接",actions.advanced),action("刷新状态",()=>void load()),el("span","结构化记录同步为不可变快照；设为实时读取的数据集按需读取","engine-muted"));view.append(footer);
 
     updateRegion(root,view);
 }
@@ -164,3 +172,22 @@ export function showEngineBuilds(state, actions) {
   if(data)render();void load();return d;
 }
 import { requestPending } from "./pending-center.js";
+
+export async function showSourceManagement(source,actions){
+ const view=dialog('来源管理'),output=message(view.body);
+ output.textContent='正在核对来源引用…';
+ try{
+  const impact=await actions.api('/api/sources/impact?'+new URLSearchParams({id:source.id,version:String(source.version)}));if(!view.isConnected)return;
+  output.textContent='';view.body.append(el('h3',impact.source.title),el('p',impact.consequence));
+  view.body.append(el('p',`工作本体：${impact.entities.map(item=>item.name).join('、')||'暂无实体引用'}；受管数据集 ${impact.datasets.length} 个。`));
+  view.body.append(el('p',`已发布引用：${impact.releases.map(item=>item.title).join('、')||'无'}。`));
+  if(!impact.allowed.remove)view.body.append(el('p','这份来源已用于发布，只能停用。历史发布和受保护快照将保留。'));
+  const confirmed=check(view.body,'我已核对来源引用与读取影响','停用或删除可能使已有查询和接入方无法继续读取。');
+  const controls=el('div',null,'engine-actions'),choices=[];
+  for(const [kind,title]of [['disable','停用来源'],...(impact.allowed.remove?[['remove','删除来源']]:[])]){
+   if(kind==='disable'&&!impact.allowed.disable)continue;
+   const operationId=crypto.randomUUID(),submit=action(title,()=>transact(view,output,async()=>{await actions.api('/api/sources/manage',{...ref(source),operationId,action:kind,acknowledgeImpact:true});view.close();await actions.refresh();}));submit.disabled=true;choices.push(submit);controls.append(submit);
+  }
+  confirmed.onchange=()=>choices.forEach(node=>node.disabled=!confirmed.checked);view.body.append(controls,el('p','原件与旧快照的清理按设置中的保留策略执行；已有引用保护会保留。','engine-muted'));
+ }catch(error){if(view.isConnected)output.textContent=error.message;}
+}

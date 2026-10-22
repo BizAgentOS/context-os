@@ -34,7 +34,7 @@ export function runUsage(value?: Json): RunUsage {
 }
 
 function operation(name: string): { kind: StepKind; summary: string } {
-  if (/decision_request|task_ask/.test(name)) return { kind: "decision", summary: "等待你的决定" };
+  if (/decision_request|task_ask|mode_suggest/.test(name)) return { kind: "decision", summary: "等待你的决定" };
   if (/check|verify|test|validate/.test(name)) return { kind: "check", summary: "复验来源与变更" };
   if (/propose|suggest/.test(name)) return { kind: "propose", summary: "提出变更建议" };
   if (/query|search|execute/.test(name)) return { kind: "query", summary: "查询业务数据" };
@@ -134,6 +134,12 @@ export class RunPresentation {
   }
   finish(input: { status: Exclude<RunStatus, "running">; error?: string; usage?: Json; pending?: Data | null }) {
     if (this.card.status !== "running") {
+      if(this.saved.status==='running'){
+        if(input.status==='stopped'&&this.card.status!=='timed_out')this.card.status='stopped';
+        if(input.error)this.card.error=input.error;
+        if(input.usage)this.card.usage=runUsage(input.usage);
+        this.save();return;
+      }
       if (input.usage) { this.card.usage = runUsage(input.usage); this.save(); }
       return;
     }

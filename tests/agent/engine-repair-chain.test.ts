@@ -1,3 +1,4 @@
+import {runNamingProtocol} from "./naming-protocol-fixture.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -13,10 +14,11 @@ const ref = (a: Artifact) => ({id: a.id, version: a.version});
 
 test("program construction, Agent wording repair and versioned publication preserve an existing consumer", async () => {
   const directory = mkdtempSync(join(tmpdir(), "ade-repair-chain-"));
-  let calls = 0;
+  let calls = 0,namingCalls=0;
   let repaired: Artifact | undefined;
   const driver: AgentDriver = {
     async run(request) {
+      if(request.tools.some(tool=>tool.name==="naming_context_read")){namingCalls++;return runNamingProtocol(request);}
       calls++;
       const input = JSON.parse(request.input);
       const foundation = (await request.onTool("foundation_read", {}) as any).current;
@@ -45,7 +47,9 @@ test("program construction, Agent wording repair and versioned publication prese
   try {
     await api("/api/canvas/upload", {page: "setup", name: "companies.csv", content: "id,name\nA,Example\n"});
     await service.app.idle();
-    assert.equal(calls, 0, "program construction must not invoke the model");
+    assert.equal(calls, 0, "program construction must not invoke the interactive repair model");
+    assert.equal(namingCalls,1,"first construction queues exactly one separate naming batch");
+    assert.equal(service.app.changes.list({type:"naming"}).total,1);
     const initial = service.app.foundation.read().adopted!;
     const initialModel = service.app.live.overview().models.find(m => m.status === "adopted")!;
     const originalType = (initialModel.content.types as any[])[0], conceptId = originalType.conceptId;

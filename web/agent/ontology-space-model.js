@@ -1,10 +1,21 @@
 // A view projection of one foundation version. No inferred business relations.
-export function buildOntologyGraph(artifact) {
+export function buildOntologyGraph(artifact, {highlight = null} = {}) {
   const content = artifact?.content || {};
-  const concepts = content.concepts || [];
+  const concepts = [...(content.concepts || [])];
   const evidence = content.evidence || [];
+  const overlay = [];
+  if(highlight?.missing&&concepts.some(item=>item.id===highlight.missing.from)){
+    let id='answer-missing';while(concepts.some(item=>item.id===id))id+='-';
+    concepts.push({id,name:'缺少可验证的连接',state:'missing',pending:0,virtual:true});
+    overlay.push({id:'answer-missing-edge',name:'缺少可验证的连接',from:highlight.missing.from,to:id,state:'missing',virtual:true});
+  }
   const conceptIds = new Set(concepts.map(item => item.id));
-  const relations = (content.relations || []).filter(item => conceptIds.has(item.from) && conceptIds.has(item.to));
+  const relations = [...(content.relations || []),...overlay].filter(item => conceptIds.has(item.from) && conceptIds.has(item.to));
+  const appearance=(item,kind)=>{
+    const state=item.state||'adopted',highlighted=!!highlight&&(item.virtual||(kind==='entity'?highlight.entityTypeIds:highlight.relationTypeIds)?.includes(item.id));
+    return {state,pending:item.pending||0,virtual:!!item.virtual,dashed:['pending','missing'].includes(state),hollow:['empty','missing'].includes(state),highlighted,dimmed:!!highlight&&!highlighted,
+      stateColor:state==='missing'?'#bf384a':highlighted?'#1764bf':state==='pending'?'#b67a20':state==='empty'?'#8c9db4':'#789ac8'};
+  };
   const degree = new Map(concepts.map(item => [item.id, 0]));
   const neighbors = new Map(concepts.map(item => [item.id, new Set()]));
   for (const relation of relations) {
@@ -19,11 +30,12 @@ export function buildOntologyGraph(artifact) {
   const nodes = concepts.map((item, index) => ({
     key: `concept:${item.id}`, id: item.id, kind: "concept", name: item.name,
     item, degree: degree.get(item.id), neighborCount: neighbors.get(item.id).size, primary: item.id === primary,
-    color: item.id === primary ? "#e9889e" : index % 2 ? "#c0a1ed" : "#e79fbd",
+    ...appearance(item,'entity'),color: item.state?appearance(item,'entity').stateColor:item.id === primary ? "#e9889e" : index % 2 ? "#c0a1ed" : "#e79fbd",
     target: {kind: "foundation_concept", member: item.id},
   }));
   const edges = relations.map(item => ({
-    key: `relation:${item.id}`, kind: "relation", name: item.name, item,
+    key: `relation:${item.id}`, kind: "relation", name: item.name, item,...appearance(item,'relation'),
+    displayName:`${concepts.find(entity=>entity.id===item.from)?.name} → ${item.name} → ${concepts.find(entity=>entity.id===item.to)?.name}`,
     from: `concept:${item.from}`, to: `concept:${item.to}`,
     target: {kind: "foundation_relation", member: item.id},
   }));

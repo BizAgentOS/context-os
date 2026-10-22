@@ -1,4 +1,4 @@
-import { restoreHistoricalAccess } from "./historical-consumers-fixture.ts";
+import {publishedDefinition,publishWorking,connectPublished} from "./published-consumers-fixture.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -62,7 +62,7 @@ test("global field revision retains shared impact, sample evidence and checked d
         capabilities: [supplementCapability],
       })
     ).saved;
-    const definition: any = fusionDefinition(primary.id, extra.id);
+    const definition: any = publishedDefinition(service.app,fusionDefinition(primary.id, extra.id));
     definition.types[0].fields.readAt = "status";
     const candidate = (await api("/api/live/propose", definition)).saved;
     const base = (
@@ -146,20 +146,8 @@ test("global field revision retains shared impact, sample evidence and checked d
       countBeforeOversize,
     );
     upstream.primary[0].status = "已办结";
-    const consumer = (
-      await restoreHistoricalAccess(service.app, "/api/live/prepare", {
-        name: "existing client",
-        purpose: "feedback",
-        modelId: base.id,
-        grants: [{ type: "投诉", fields: ["$id", "实际反馈"], relations: [] }],
-      })
-    ).saved;
-    const activation = (
-      await restoreHistoricalAccess(service.app, "/api/live/activate", {
-        id: consumer.id,
-        version: consumer.version,
-      })
-    ).saved;
+    const publication=await publishWorking(service.app);
+    const activation=connectPublished(service.app,publication,{name:"existing client",purpose:"feedback",grants:[{type:"投诉",fields:["$id","实际反馈"],relations:[]}]});
     const p = await act("propose", draft);
     assert.equal(p.status, "candidate");
     assert.equal(p.content.diff.before, "outcome");
@@ -229,7 +217,7 @@ test("global field revision retains shared impact, sample evidence and checked d
     });
     assert.equal(original.items[0].实际反馈, "未改善");
     const external = await fetch(
-      `http://127.0.0.1:${(service.server.address() as AddressInfo).port}/v2/objects?type=${encodeURIComponent("投诉")}`,
+      `http://127.0.0.1:${(service.server.address() as AddressInfo).port}/v4/objects?type=${encodeURIComponent("投诉")}`,
       { headers: { authorization: "Bearer " + activation.key } },
     );
     assert.equal(external.status, 200);

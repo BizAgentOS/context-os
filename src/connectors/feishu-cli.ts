@@ -23,6 +23,7 @@ export interface FeishuCliPort {
   prepare(signal: AbortSignal): Promise<void>;
   run(request: CliRequest): Promise<string>;
   downloadText(request: CliRequest): Promise<{ content: string; bytes: number }>;
+  exportRecords?(request: CliRequest): Promise<{ records: Record<string, unknown>[]; manifest: Record<string, unknown> }>;
 }
 export function extractExecutable(archive: Buffer): Buffer {
   const tar = gunzipSync(archive, { maxOutputLength: 100 * 1024 * 1024 });
@@ -121,6 +122,25 @@ export function createFeishuCli(directory: string): FeishuCliPort {
           else resolve(stdout);
         });
       });
+    },
+    async exportRecords(request) {
+      const directory = await mkdtemp(join(root, ".table-reading-")), file = join(directory, "records.ndjson"), manifestFile = join(directory, "records.manifest.json");
+      const limit = 16_000_000, controller = new AbortController();
+      const timer = setInterval(() => { for (const path of [file, manifestFile]) void lstat(path).then(info => { if (info.size > limit) controller.abort(new Error("飞书表格单页内容超过 16 MB，请缩小范围")); }).catch(() => {}); }, 50);
+      try {
+        if(request.args[request.args.indexOf("--as")+1]!=="user")throw new Error("飞书表格只允许已核验的用户身份读取");
+        // v1.0.92 prints the manifest directly, unlike ordinary shortcut response envelopes.
+        const receipt = JSON.parse(await cli.run({ ...request, args: [...request.args, "--format", "ndjson", "--output", relative(root, file)], signal: AbortSignal.any([request.signal, controller.signal]) }));
+        const [info, manifestInfo] = await Promise.all([lstat(file), lstat(manifestFile)]);
+        if (!info.isFile() || !manifestInfo.isFile() || info.size > limit || manifestInfo.size > 1_000_000) throw new Error("飞书表格文件超过范围或不是普通文件");
+        const manifest = JSON.parse(await readFile(manifestFile, "utf8"));
+        if (manifest.record_file !== file || manifest.manifest_file !== manifestFile || manifest.record_file_size_bytes !== info.size || JSON.stringify(receipt) !== JSON.stringify(manifest)) throw new Error("飞书表格文件与读取回执不一致");
+        const content = new TextDecoder("utf-8", { fatal: true }).decode(await readFile(file));
+        const records = content.split(/\r?\n/).filter(line => line.trim()).map(line => JSON.parse(line));
+        if (records.length > 100 || records.length !== manifest.records_count || records.some(row => !row || typeof row !== "object" || Array.isArray(row))) throw new Error("飞书表格记录数或行格式无法验证");
+        return { records, manifest };
+      } catch (error) { if (controller.signal.aborted) throw controller.signal.reason; throw error; }
+      finally { clearInterval(timer); await rm(directory, { recursive: true, force: true }); }
     },
     async downloadText(request) {
       const directory = await mkdtemp(join(root, ".reading-"));

@@ -1,3 +1,4 @@
+import {currentActor,assertRole} from '../security/actors.ts';
 import { prepareIdentityDecisionMigration } from "./identity-migration.ts";
 import { prepareCorrectionMigration } from "./correction-migration.ts";
 import { createHash } from "node:crypto";
@@ -436,7 +437,7 @@ export class MappingChanges {
         method === "propose"
           ? proposeSchema.parse(input)
           : actionSchema.parse(input),
-      actor = context ? `agent:${context.taskId}` : "local-admin";
+      actor = context ? `agent:${context.taskId}` : currentActor().id;
     const valid = () => {
       assertActive();
       if (context) this.memory.assertWritable(context);

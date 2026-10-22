@@ -1,6 +1,6 @@
 {
   "name": "dataengine-lab",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -17,7 +17,8 @@
     "live:demo": "node scripts/live-heating.ts",
     "sources:demo": "node src/live/heating-sources.ts",
     "verify:chain": "node scripts/verification/fusion-chain.ts",
-    "verify:snapshots": "node scripts/verification/snapshot-chain.ts"
+    "verify:snapshots": "node scripts/verification/snapshot-chain.ts",
+    "verify:scale": "node scripts/verification/enterprise-scale.ts"
   },
   "dependencies": {
     "@duckdb/node-api": "1.5.5-r.1",
@@ -28,6 +29,7 @@
     "csv-parse": "7.0.3",
     "esbuild": "0.28.2",
     "iconv-lite": "0.7.3",
+    "pdfjs-dist": "6.4.299",
     "saxes": "6.0.0",
     "three": "0.186.0",
     "unzipper": "0.12.5",

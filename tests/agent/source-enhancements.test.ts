@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type RequestListener } from "node:http";
-import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir, networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { MemoryStore } from "../../src/agent/memory.ts";
@@ -80,7 +80,8 @@ test("OAuth refresh, bounded transient retries and explicit flattening preserve 
     assert.equal((await reopened.readRecords(source.id, "customers")).items.length, 1);
     assert.equal(grants.length, 2, "a valid token survives host restart without a fresh grant");
     reopened.disable(source.id, source.version);
-    assert.doesNotMatch(readFileSync(join(f.directory, "source-oauth.json"), "utf8"), /fixture-(?:client-secret|refresh-secret|access-)/);
+    assert.equal(existsSync(join(f.directory,"source-oauth.json")),false);
+    assert.doesNotMatch(readFileSync(join(f.directory,"credentials","vault.json"), "utf8"), /fixture-(?:client-secret|refresh-secret|access-)/);
   } finally { await f.close(); }
 });
 

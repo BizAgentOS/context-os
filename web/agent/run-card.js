@@ -8,7 +8,7 @@ const el = (tag, text, className) => { const node = document.createElement(tag);
 const list = values => { const node = el("ul"); for (const value of values) node.append(el("li", value)); return node; };
 const details = (title, key, content, open = false) => { const node = el("details"); node.dataset.detailKey = key; node.open = open; node.append(el("summary", title), content); return node; };
 
-export function renderRunCard(run, { openPending, highlightRefs, answerDecision, continueRun, showAnswer, renderPendingActions, deferred, onLater, streaming } = {}) {
+export function renderRunCard(run, { openPending, highlightRefs, answerDecision, switchMode, continueRun, showAnswer, renderPendingActions, deferred, onLater, streaming } = {}) {
   const card = el("article", undefined, "agent-run-card"); card.dataset.runId = run.id;
   const heading = el("header"); heading.append(el("strong", labels[run.status] || "处理记录"));
   const started = new Date(run.startedAt), ended = run.finishedAt ? new Date(run.finishedAt) : null;
@@ -39,8 +39,8 @@ export function renderRunCard(run, { openPending, highlightRefs, answerDecision,
   for (const result of run.tables || []) card.append(renderResultTable(result));
   for (const [index, decision] of (run.decisions || []).entries()) {
     const key = `${run.id}:decision:${index}`;
-    const node = renderDecisionCard(decision, { openPending, highlightRefs, answerDecision, renderPendingActions, onLater: () => onLater?.(key) });
-    if (deferred?.has(key)) card.append(details("稍后决定 · 仍在待处理中", key, node)); else card.append(node);
+    const node = renderDecisionCard(decision, { openPending, highlightRefs, answerDecision, switchMode, renderPendingActions, onLater: () => onLater?.(key) });
+    if (deferred?.has(key)) card.append(details(decision.kind==="mode_suggestion"?"稍后切换模式":"稍后决定 · 仍在待处理中", key, node)); else card.append(node);
   }
   for (const event of run.systemEvents || []) card.append(el("p", `系统 · ${event.message}`, "agent-system-event"));
   if (["stopped", "timed_out", "failed"].includes(run.status)) {

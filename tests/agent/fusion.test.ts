@@ -1,4 +1,4 @@
-import { restoreHistoricalAccess } from "./historical-consumers-fixture.ts";
+import {publishedDefinition,publishWorking,connectPublished} from "./published-consumers-fixture.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -75,7 +75,7 @@ test("one object resolves complementary values and preserves conflict, absent, a
         capabilities: [supplementCapability],
       })
     ).saved;
-    definition = fusionDefinition(primary.id, extra.id);
+    definition = publishedDefinition(service.app,fusionDefinition(primary.id, extra.id));
     definition.types[0].supplements[0].fields.constructor = "outcome";
     candidate = await service.app.live.propose(definition);
     await api("/api/canvas/message", {
@@ -148,22 +148,10 @@ test("one object resolves complementary values and preserves conflict, absent, a
       /过滤|主来源/,
     );
     // Explicit grants may consume the new field, but never raw provenance or ungranted properties.
-    const consumer = (
-      await restoreHistoricalAccess(service.app, "/api/live/prepare", {
-        name: "客服",
-        purpose: "仅反馈",
-        modelId: adopted.id,
-        grants: [{ type: "投诉", fields: ["$id", "实际反馈"], relations: [] }],
-      })
-    ).saved;
-    const activation = (
-      await restoreHistoricalAccess(service.app, "/api/live/activate", {
-        id: consumer.id,
-        version: consumer.version,
-      })
-    ).saved;
+    const publication=await publishWorking(service.app);
+    const activation=connectPublished(service.app,publication,{name:"客服",purpose:"仅反馈",grants:[{type:"投诉",fields:["$id","实际反馈"],relations:[]}]});
     const external = await fetch(
-      origin + "/v2/objects?type=" + encodeURIComponent("投诉"),
+      origin + "/v4/objects?type=" + encodeURIComponent("投诉"),
       { headers: { authorization: "Bearer " + activation.key } },
     );
     assert.equal(external.status, 200);
@@ -279,7 +267,7 @@ test("fusion work is bounded and missing business keys never become wildcard mat
       url: upstream.url + "/mcp",
       capabilities: [supplementCapability],
     });
-    const definition = fusionDefinition(primary.id, extra.id);
+    const definition = publishedDefinition(service.app,fusionDefinition(primary.id, extra.id));
     const binding = definition.types[0].supplements[0];
     definition.types[0].supplements = [
       binding,

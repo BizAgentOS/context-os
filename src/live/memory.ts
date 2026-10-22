@@ -1,3 +1,4 @@
+import { projectMetricReferences } from "../semantic/metric-projection.ts";
 import {prepareFusionBatch} from "./query-fusion.ts";
 import {propertyCorrectionsForModel,validatePropertyCorrections,preparePropertyCorrectionMigration,type PropertyCorrectionPins} from "./property-corrections.ts";
 import {SemanticQuery} from "../semantic/query.ts";
@@ -187,7 +188,39 @@ export class LiveMemory {
     if (fixedSemantic || artifact.status !== "adopted" || !artifact.content.layered) return artifact;
     const current = this.adoptedFoundation();
     if (!current || (artifact.content.foundationRef as Data | undefined)?.id !== current.id) return artifact;
-    const layered = structuredClone(artifact.content.layered) as unknown as LayeredModel;
+    let layered = structuredClone(artifact.content.layered) as unknown as LayeredModel;
+    const renamedProperties = ((current.content.properties ?? []) as Data[]).filter(definition =>
+      !layered.semantic.properties.some(item => item.id === definition.id)
+      && layered.semantic.properties.some(item => item.entityTypeId === definition.entityTypeId && item.name === definition.name));
+    if (renamedProperties.length) {
+      // Older legacy rebuilds derived new IDs from confirmed display names.
+      // Recover working semantics only when every immutable ancestor transition
+      // proves exactly the same source binding. Explicit version/release reads remain untouched.
+      const descendants: LayeredModel[] = [], seen = new Set<string>();
+      let ancestor = artifact, proven = layered;
+      while (renamedProperties.some(definition => !proven.semantic.properties.some(item => item.id === definition.id))) {
+        const key = `${ancestor.id}@${ancestor.version}`;
+        if (seen.has(key)) break;
+        seen.add(key);
+        const base = (ancestor.content.baseModelRef ?? ancestor.content.base) as {id:string;version:number}|undefined;
+        if (!base) break;
+        const previous = this.repo.getArtifact(base.id, base.version);
+        if (previous.kind !== "live_ontology" || !previous.content.layered
+          || (previous.content.foundationRef as Data | undefined)?.id !== current.id) break;
+        descendants.push(proven);
+        ancestor = previous;
+        proven = parseLayeredModel(previous.content.layered);
+      }
+      // Reconcile each immutable transition in order. Comparing only the newest
+      // and oldest model would incorrectly skip a changed-and-reverted binding.
+      if (renamedProperties.every(definition => proven.semantic.properties.some(item => item.id === definition.id))) {
+        for (const descendant of descendants.reverse())
+          proven = reconcileLayeredModel(proven, descendant, {requireMatchingBindings:true});
+        layered = proven;
+      }
+      if (renamedProperties.some(definition => !layered.semantic.properties.some(item => item.id === definition.id)))
+        throw new Error("已确认属性的引用与当前绑定不一致，无法从历史绑定唯一恢复，请核对属性映射");
+    }
     for (const [items, definitions] of [[layered.semantic.entityTypes,current.content.concepts],[layered.semantic.relationTypes,current.content.relations]] as const) {
       for (const item of items) {
         const definition = (definitions as Data[]).find(entry => entry.id === item.id);
@@ -206,6 +239,7 @@ export class LiveMemory {
         if (definition[key] !== undefined) Object.assign(item, { [key]: definition[key] });
       item.aliases = [...new Set([...item.aliases, ...(previousName !== item.name ? [previousName] : [])])];
     }
+    layered = projectMetricReferences(layered, current.content);
     return {...artifact,content:jsonData({...artifact.content,...projectLegacyModel(layered,{allowTransforms:true}),layered,
       foundationRef:{id:current.id,version:current.version}})};
   }
@@ -694,7 +728,9 @@ export class LiveMemory {
     this.checkConnections({ ...d, connections }, preparedFoundation);
     if (d.foundationRef) this.checkExecutionBase(d.baseModelRef);
     assertActive();
-    const canonical = layered ?? (base?.content.layered ? reconcileLayeredModel(base.content.layered as unknown as LayeredModel, this.layerLegacy(d)) : this.layerLegacy(d));
+    let canonical = layered ?? (base?.content.layered ? reconcileLayeredModel(this.projectModel(base).content.layered as unknown as LayeredModel, this.layerLegacy(d)) : this.layerLegacy(d));
+    const semanticFoundation = preparedFoundation ?? (d.foundationRef ? this.adoptedFoundation() : null);
+    if (semanticFoundation) canonical = projectMetricReferences(canonical, semanticFoundation.content);
     const definition = jsonData({...d,layered: canonical,connections,checks,base:base ? {id:base.id,version:base.version} : null});
     const propertyCorrectionMigration = await preparePropertyCorrectionMigration(this.repo, this, definition);
     assertActive();

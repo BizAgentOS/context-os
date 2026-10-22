@@ -1,3 +1,4 @@
+import {runNamingProtocol} from "./naming-protocol-fixture.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -7,11 +8,11 @@ import type { AddressInfo } from "node:net";
 import type { AgentDriver } from "../../src/agent/runtime.ts";
 import { createServer } from "../../src/agent/server.ts";
 
-test("fixture CSV crosses public upload, program build, release, scoped external read, and revocation without model calls", async () => {
+test("fixture CSV crosses public upload, program build, release, scoped external read, and revocation without structural model calls; one naming batch remains pending", async () => {
   const directory = mkdtempSync(join(tmpdir(), "ade-engine-chain-fixture-"));
-  let modelCalls = 0;
+  let modelCalls = 0,namingCalls=0;
   const driver: AgentDriver = {
-    async run() { modelCalls++; throw new Error("Fixture program build must not call a model"); },
+    async run(request) { if(request.tools.some(tool=>tool.name==="naming_context_read")){namingCalls++;return runNamingProtocol(request);}modelCalls++; throw new Error("Fixture program build must not call a model"); },
     async stop() {},
     async close() {},
   };
@@ -51,7 +52,10 @@ test("fixture CSV crosses public upload, program build, release, scoped external
 
     const overview = await manage("/api/releases");
     assert.equal(overview.releases.length, 0, "automatic construction does not publish data");
-    assert.deepEqual(overview.working.pending, []);
+    assert.equal(namingCalls,1,"first program construction has one separate background naming run");
+    assert.equal(overview.working.pending.length,1);
+    assert.equal(overview.working.pending[0].kind,"ontology_change");
+    assert.equal(service.app.memory.getArtifact(overview.working.pending[0].id).content.type,"naming");
     const checked = await manage("/api/releases/check", { inputHash: overview.working.inputHash });
     assert.equal(checked.status, "ready", JSON.stringify(checked.content.issues));
     const published = await manage("/api/releases/publish", {
@@ -88,6 +92,7 @@ test("fixture CSV crosses public upload, program build, release, scoped external
     assert.equal((await external(objectsPath)).status, 403);
     assert.equal((await external(evidencePath)).status, 403, "saved evidence must obey current connection revocation");
     assert.equal(modelCalls, 0);
+    assert.equal(namingCalls,1,"external reads do not start another naming job");
   } finally {
     await service.close();
     rmSync(directory, { recursive: true, force: true });

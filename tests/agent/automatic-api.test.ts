@@ -9,9 +9,10 @@ import { AgentApplication } from "../../src/agent/app.ts";
 import type { AgentDriver } from "../../src/agent/runtime.ts";
 import { providers } from "../../src/agent/runtime.ts";
 import { createServer as createAppServer } from "../../src/agent/server.ts";
+import {runNamingProtocol} from './naming-protocol-fixture.ts';
 
 async function fixture() {
-  let broken = false, emptySales = false, block: Promise<void> | undefined, entered: (() => void) | undefined, modelCalls = 0, reads = 0, failAt: number | undefined;
+  let broken = false, emptySales = false, block: Promise<void> | undefined, entered: (() => void) | undefined, modelCalls = 0, namingCalls=0, reads = 0, failAt: number | undefined;
   const server = createServer(async (req, res) => {
     if (++reads === failAt) broken = true;
     entered?.(); if (block) await block;
@@ -25,11 +26,11 @@ async function fixture() {
   });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   const directory = mkdtempSync(join(tmpdir(), "ade-auto-api-program-"));
-  const driver: AgentDriver = {async run() {modelCalls++; throw new Error("程序构建不应调用模型");}, async stop() {}, async close() {}};
+  const driver: AgentDriver = {async run(request) {if(JSON.parse(request.input).mode==='automatic-naming'){namingCalls++;return runNamingProtocol(request);}modelCalls++; throw new Error("程序构建不应调用模型");}, async stop() {}, async close() {}};
   const app = new AgentApplication(directory, driver);
   const config = {name: "门店 API", protocol: "http", url: `http://127.0.0.1:${(server.address() as {port:number}).port}`,
     capabilities: [{name: "stores", path: "/stores", fields: ["id", "name", "company"], idField: "id", filters: {id: "id"}, totalPath: "total"}]};
-  return {app, config, directory, driver, calls: () => modelCalls, breakSource: () => {broken = true;}, restoreSource: () => {broken = false; failAt = undefined;}, failAfterReads: (count: number) => { failAt = reads + count; }, emptySales: () => {emptySales = true;},
+  return {app, config, directory, driver, calls: () => modelCalls, namingCalls:()=>namingCalls, breakSource: () => {broken = true;}, restoreSource: () => {broken = false; failAt = undefined;}, failAfterReads: (count: number) => { failAt = reads + count; }, emptySales: () => {emptySales = true;},
     pause() {let release!: () => void; const started = new Promise<void>(resolve => {entered = resolve;}); block = new Promise<void>(resolve => {release = resolve;}); return {started, release: () => {block = undefined; entered = undefined; release();}};},
     async close() {await app.close(); await new Promise<void>(resolve => server.close(() => resolve())); rmSync(directory, {recursive: true, force: true});} };
 }
@@ -41,6 +42,7 @@ test("API connection automatically builds queryable objects without a model loop
     const state = f.app.canvasState("ontology");
     assert.equal(state.automaticApiBuild.status, "completed", JSON.stringify(state.automaticApiBuild));
     assert.equal(f.calls(), 0);
+    assert.equal(f.namingCalls(),1);assert.equal(f.app.memory.listArtifacts('naming_batch')[0].status,'candidate','a separate naming protocol run proposes wording without changing structure');
     const model = state.live.models.find(item => item.status === "adopted")!;
     const type = (model.content.types as any[])[0];
     const query = await f.app.live.query({modelId: model.id, conceptId: type.conceptId});

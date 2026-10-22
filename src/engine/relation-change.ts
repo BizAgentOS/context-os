@@ -9,6 +9,7 @@ import type { LiveMemory } from "../live/memory.ts";
 import type { Snapshots } from "../data/snapshots.ts";
 import { ChangeConflict, OntologyChanges } from "./changes.ts";
 import { fingerprint } from "./release-diff.ts";
+import { confirmedRelationWording } from "./naming-relation-labels.ts";
 
 const ref = (a: Artifact) => ({ id: a.id, version: a.version });
 const rows = (x: unknown): Data[] => Array.isArray(x) ? structuredClone(x) : [];
@@ -41,9 +42,10 @@ export function connectRelationChanges(memory: MemoryStore, foundation: Foundati
         throw new ChangeConflict("batch_conflict", "工作版或选中批次已经包含同一关系，请逐项处理");
       const concepts = rows(base.content.concepts);
       const evidenceRefs = [...new Set(concepts.filter(c => c.id === from.type.conceptId || c.id === to.type.conceptId).flatMap(c => (c.evidenceRefs ?? []) as string[]))];
-      const name = `${from.property === "$id" ? "关联" : from.property} → ${String(to.type.name)}`;
+      const wording = confirmedRelationWording(memory, subject);
+      const name = wording ? String(wording.name) : `${from.property === "$id" ? "关联" : from.property} → ${String(to.type.name)}`;
       semanticRelations.push({ id: relationId, name, origin: "human", governed: true, from: from.type.conceptId, to: to.type.conceptId,
-        description: `按 ${subject.from.column} 与 ${subject.to.column} 的已复验对应关系关联`, evidenceRefs });
+        description: wording ? String(wording.description) : `按 ${subject.from.column} 与 ${subject.to.column} 的已复验对应关系关联`, ...(wording ? { aliases: wording.aliases } : {}), evidenceRefs });
       relations.push({ name, from: from.type.name, to: to.type.name, fromField: from.property, toField: to.property, relationId,
         fromColumns: [subject.from.column], toColumns: [subject.to.column] });
       relationIds.push(relationId);

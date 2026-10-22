@@ -1,7 +1,5 @@
 import { z } from "zod";
-import { readFileSync, writeFileSync, renameSync, chmodSync } from "node:fs";
-import { join } from "node:path";
-import { randomUUID } from "node:crypto";
+import { CredentialVault } from "../security/credential-vault.ts";
 import type { Artifact, Data, Repository } from "../agent/contracts.ts";
 import { DuckDatabaseScanner, type DatabaseConfig, type DatabaseScanner, type SelectedDatabaseTable } from "./database-scanner.ts";
 
@@ -14,18 +12,15 @@ const data = (value: unknown): Data => JSON.parse(JSON.stringify(value));
 
 export class DatabaseConnections {
   private repo: Repository;
-  private file: string;
-  private passwords: Record<string, string>;
+  private vault: CredentialVault;
+  private get passwords():Record<string,string>{return z.record(z.string(),z.string()).parse(this.vault.get('database'));}
   private scanner: DatabaseScanner;
   private saved: (source: Artifact) => void;
   constructor(directory: string, repo: Repository, saved: (source: Artifact) => void, scanner?: DatabaseScanner) {
     this.repo = repo; this.saved = saved; this.scanner = scanner ?? new DuckDatabaseScanner(directory);
-    this.file = join(directory, "database-credentials.json");
-    try { this.passwords = JSON.parse(readFileSync(this.file, "utf8")); chmodSync(this.file, 0o600); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; this.passwords = {}; }
+    this.vault=new CredentialVault(directory);this.vault.migrateJson('database','database-credentials.json');
   }
-  private persist() { const tmp = this.file + "." + randomUUID(); writeFileSync(tmp, JSON.stringify(this.passwords), { mode: 0o600 }); renameSync(tmp, this.file); }
-  forget(id: string) { if (Object.hasOwn(this.passwords, id)) { delete this.passwords[id]; this.persist(); } }
+  forget(id: string) {const passwords=this.passwords;if(Object.hasOwn(passwords,id)){delete passwords[id];this.vault.set('database',passwords);}}
   private parse(input: unknown): DatabaseConfig { const value = databaseConfig.parse(input); return { ...value, port: value.port ?? (value.kind === "postgres" ? 5432 : 3306) }; }
   private source(id: string, version?: number) {
     const source = this.repo.getArtifact(id);
@@ -43,9 +38,8 @@ export class DatabaseConnections {
     const { password, name, ...safe } = config;
     const source = this.repo.putArtifact({ kind: "source_connection", title: name, status: "ready", content: data({ name, protocol: config.kind,
       adapter: "database", database: safe, readOnly: true, capabilities: [], databaseTables: [] }) });
-    this.passwords[source.id] = password;
-    try { this.persist(); return source; }
-    catch (error) { delete this.passwords[source.id]; this.repo.putArtifact({ ...source, expectedVersion: source.version, status: "disabled" }); throw error; }
+    try { this.vault.set('database',{...this.passwords,[source.id]:password}); return source; }
+    catch (error) { this.repo.putArtifact({ ...source, expectedVersion: source.version, status: "disabled" }); throw error; }
   }
   async tables(id: string) { const source = this.source(id), tables = await this.scanner.tables(this.config(source)); this.source(id, source.version); return { id, version: source.version, tables, selected: source.content.databaseTables }; }
   async select(input: unknown) {

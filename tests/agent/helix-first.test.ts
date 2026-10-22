@@ -14,6 +14,7 @@ import { Snapshots } from "../../src/data/snapshots.ts";
 import { ProgramBuilds } from "../../src/engine/program-builds.ts";
 import { validateDefinition } from "../../src/engine/validation.ts";
 import { adoptDiscoveredRelations } from "./discovery-test-helpers.ts";
+import { runNamingProtocol } from "./naming-protocol-fixture.ts";
 
 const people = "employee_no,name,team_id\nE1,王晨,T1\nE2,李琪,T1\nE3,高远,T2\n";
 const teams = "team_id,team_name\nT1,研发组\nT2,平台组\n";
@@ -23,12 +24,18 @@ const document = "研发组负责 FlowPilot 的交付。";
 function enrichingDriver(log: string[], app: () => AgentApplication) {
   return {
     async run(request) {
-      log.push(`model:api=${app().canvasState().automaticApiBuild.status}`);
       const input = JSON.parse(request.input);
-      const current = (await request.onTool("foundation_read", {}) as any).current;
+      if(input.mode==='automatic-naming')return runNamingProtocol(request);
+      assert.equal(input.mode,'automatic-document-ontology');
+      log.push(`model:api=${app().canvasState().automaticApiBuild.status}`);
+      const definitions = await request.onTool("foundation_read", { section: "concepts" }) as any;
+      const current = definitions.current;
       const source = input.sources[0];
       const part = await request.onTool("foundation_document_read", { sourceId: source.id, version: source.version }) as any;
-      const concept = (current.content.concepts as any[]).find(c => c.origin === "program");
+      assert.equal(definitions.catalog.concepts, 1, "the first table produces one semantic concept");
+      assert.equal(definitions.page.nextOffset, null, "the complete one-concept page has been read");
+      const concept = current.content.concepts[0];
+      assert(concept?.id, "the document job uses the semantic identifier returned by the bounded catalog");
       await request.onTool("foundation_propose", { baseVersion: current.version, enterprise: current.content.enterprise,
         concepts: [{ id: concept.id, name: concept.name, description: "研发组负责 FlowPilot 的交付。", evidenceRefs: ["doc"] }], relations: [],
         evidence: [{ id: "doc", kind: "document", readId: part.readId, quote: "研发组负责 FlowPilot 的交付。" }], unknowns: [], conflicts: [] });
@@ -50,6 +57,7 @@ test("structured uploads are built by the program before queued documents, which
     await app.canvasUpload({ page: "setup", name: "teams.csv", content: teams });
     await app.idle();
     assert.deepEqual(log, ["model:api=completed"], "the program build finishes before the document run starts");
+    assert.equal(app.memory.listArtifacts('naming_batch').length,1,'naming is an independent bounded background proposal');
     const state = app.canvasState("ontology");
     assert.equal(state.automaticBuild.status, "completed");
     const concepts = state.foundation.current!.content.concepts as any[];
@@ -162,7 +170,7 @@ test("a manual sync with new data and an accepted schema change rebuild through 
   });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   const directory = mkdtempSync(join(tmpdir(), "de-helix-sync-"));
-  const driver: AgentDriver = { async run() { throw new Error("程序构建不应调用模型"); }, async stop() {}, async close() {} };
+  const driver: AgentDriver = { async run(request) { if(JSON.parse(request.input).mode==='automatic-naming')return runNamingProtocol(request);throw new Error("程序构建不应调用模型"); }, async stop() {}, async close() {} };
   const app = new AgentApplication(directory, driver);
   try {
     await app.live.sources.connect({ name: "门店", protocol: "http", url: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
@@ -181,14 +189,15 @@ test("a manual sync with new data and an accepted schema change rebuild through 
 
 test("the legacy upload endpoint sends CSV to the program build instead of a model run", async () => {
   const directory = mkdtempSync(join(tmpdir(), "de-helix-legacy-"));
-  let calls = 0;
-  const driver: AgentDriver = { async run() { calls++; throw new Error("不应调用模型"); }, async stop() {}, async close() {} };
+  let calls = 0,namingCalls=0;
+  const driver: AgentDriver = { async run(request) { if(JSON.parse(request.input).mode==='automatic-naming'){namingCalls++;return runNamingProtocol(request);}calls++; throw new Error("不应调用模型"); }, async stop() {}, async close() {} };
   const app = new AgentApplication(directory, driver);
   try {
     await app.upload({ name: "teams.csv", content: teams });
     await app.idle();
     assert.equal(app.canvasState().automaticApiBuild.status, "completed");
     assert.equal(calls, 0);
+    assert.equal(namingCalls,1,'naming runs only after deterministic structure adoption');
   } finally { await app.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 

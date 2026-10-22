@@ -1,3 +1,4 @@
+import {currentActor,assertRole} from '../security/actors.ts';
 import { z } from "zod";
 import { verifyLocalRelationConstraints } from "./local-relation-constraints.ts";
 import type { Artifact, Data } from "../agent/contracts.ts";
@@ -41,7 +42,7 @@ export function connectLocalChanges(memory: MemoryStore, live: LiveMemory, chang
       const prior = previous();
       assertBaseline();
       const content = jsonData({ ...subject, modelRef: ref(model), scope: captured.scope, fingerprint: captured.fingerprint, snapshot: captured.snapshot,
-        changeRef: ref(change), responsible: "local-admin", adoptedAt: new Date().toISOString(), previous: ref(prior) });
+        changeRef: ref(change), responsible: currentActor().id, adoptedAt: new Date().toISOString(), previous: ref(prior) });
       const hypothetical: Artifact = { id: prior?.id ?? `preview:${change.id}`, version: (prior?.version ?? 0) + 1,
         kind: "property_correction", title: `${captured.entityName} ${subject.objectId} · ${captured.propertyName}`, status: "adopted", createdAt: new Date().toISOString(), content };
       const properties = [...propertyCorrectionsForModel(memory, model).filter(item => propertyCorrectionKey(item.content) !== propertyCorrectionKey(content)), hypothetical];
@@ -64,9 +65,9 @@ export function connectLocalChanges(memory: MemoryStore, live: LiveMemory, chang
     const previous = () => activeCorrection(memory, target, relation.id, model.content), prior = previous();
     assertBaseline();
     const content = jsonData({ target, targetKey: relationKey(target), modelDefinition: captured.modelDefinition, targetIds: subject.targetIds,
-      base: ref(prior), reason: subject.reason, evidence: subject.evidence, evidenceKind: "submitted_rationale", responsible: "local-admin",
+      base: ref(prior), reason: subject.reason, evidence: subject.evidence, evidenceKind: "submitted_rationale", responsible: currentActor().id,
       condition: "model_and_source_snapshot_unchanged", fingerprint: captured.fingerprint, snapshot: captured,
-      scope: "internal_local_relation", changeRef: ref(change), decision: { actor: "local-admin", at: new Date().toISOString() } });
+      scope: "internal_local_relation", changeRef: ref(change), decision: { actor: currentActor().id, at: new Date().toISOString() } });
     const hypothetical: Artifact = { id: `preview:${change.id}`, version: 1, kind: "relation_correction", title: `${entity.name} ${subject.objectId} → ${relation.name}`,
       status: "adopted", createdAt: new Date().toISOString(), content };
     const relations = [...memory.listArtifacts("relation_correction").filter(item => {

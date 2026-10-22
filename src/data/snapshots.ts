@@ -1,4 +1,5 @@
 import { retrySourceRead } from "./source-retry.ts";
+import {pruneDatasetSnapshots} from '../security/workspace-retention.ts';
 import { snapshotWatermark, validateIncrement, type Watermark } from "./snapshot-increment.ts";
 import { readSnapshotPages, finishSnapshotPages } from "./snapshot-pages.ts";
 import { policyFor, qualityBreaks } from "./sync-policy.ts";
@@ -36,7 +37,6 @@ export interface DatasetContent {
 }
 const SCOPE = "workspace";
 const PAGE = 100;
-const RETAINED = 5;
 const now = () => new Date().toISOString();
 const maxRows = () => Math.max(1, Number(process.env.ADE_SNAPSHOT_MAX_ROWS) || 1_000_000);
 const shape = (p: SnapshotProfile | null) => JSON.stringify((p?.columns ?? []).map(c => [c.name, c.type]));
@@ -403,16 +403,7 @@ export class Snapshots {
 
   /** Keeps the newest versions and every version a release pins; files of other versions are removed. */
   private async prune(datasetId: string) {
-    const dataset = this.dataset(datasetId), c = dataset.content as unknown as DatasetContent;
-    const pinned = new Set(this.memory.listArtifacts("data_release").flatMap(r => (((r.content.definition as Data | undefined)?.snapshots as Data[] | undefined) ?? []).map(s => String(s.snapshotId))));
-    const keep = new Set([...c.versions.slice(0, RETAINED), c.activeVersion, c.pendingVersion].filter(Boolean) as string[]);
-    const dropped = c.versions.filter(v => !keep.has(v) && !pinned.has(v));
-    if (!dropped.length) return;
-    this.memory.atomic(() => {
-      const saved = this.memory.putArtifact({ ...dataset, expectedVersion: dataset.version, content: jsonData({ ...c, versions: c.versions.filter(v => !dropped.includes(v)) }) });
-      for (const issue of this.memory.listArtifacts("sync_issue").filter(item => item.status === "open" && (item.content.datasetRef as Data | null)?.id === dataset.id)) this.memory.putArtifact({ ...issue, expectedVersion: issue.version, content: { ...issue.content, datasetRef: { id: saved.id, version: saved.version } } });
-    });
-    for (const v of dropped) await rm(snapshotFile(this.root, SCOPE, v), { force: true });
+    pruneDatasetSnapshots(this.memory,this.memory.directory,datasetId);
   }
 }
 

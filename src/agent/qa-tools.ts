@@ -1,4 +1,4 @@
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
 import {consumerResult,assertConsumerQueryScope} from '../live/consumer-semantic.ts';
 import {z} from 'zod';
 import type {Artifact,Data,DomainTool} from './contracts.ts';
@@ -14,23 +14,27 @@ import {freezeQaView,type QaView} from './qa-view.ts';
 import {jsonData} from '../live/sources.ts';
 import {Gaps,type GapReading} from '../engine/gaps.ts';
 import {parseLayeredModel} from '../semantic/model.ts';
+import {MetricReader} from './metrics.ts';
+import {readMetricReference,semanticMetricQuerySchema,publicMetric} from '../semantic/metric-reading.ts';
 import {identityDecisionsForModel} from '../live/identity.ts';
 
 const text=z.string().trim().min(1).max(200),page={offset:z.number().int().min(0).default(0),limit:z.number().int().min(1).max(20).default(20)};
 const directory=z.object({...page,entityTypeId:text.optional()}).strict();
 const search=z.object({...page,query:z.string().trim().min(1).max(500)}).strict();
 const query=semanticQuerySchema.extend({page:z.object(page).strict().default({offset:0,limit:20})});
+const traversal=query.extend({relationName:text.optional(),toEntityTypeId:text.optional()});
 const evidence=z.object({readId:text,objectId:text.optional(),propertyId:text.optional()}).strict();
 const gap=z.object({readId:text,observation:z.string().trim().min(1).max(2000)}).strict();
-const schemas={ontology_describe:directory,ontology_search:search,objects_query:query,relations_traverse:query,objects_aggregate:semanticQuerySchema,evidence_read:evidence,knowledge_query:search,gap_report:gap};
+const schemas={ontology_describe:directory,ontology_search:search,objects_query:query,relations_traverse:traversal,objects_aggregate:semanticQuerySchema,evidence_read:evidence,knowledge_query:search,metric_query:semanticMetricQuerySchema,gap_report:gap};
 const descriptions:Record<keyof typeof schemas,string>={
   ontology_describe:'读取当前数据视图内的实体、稳定属性和关系目录；没有原始来源或待处理内容。',
   ontology_search:'按名称、别名和说明检索当前数据视图的定义，返回稳定语义编号。',
   objects_query:'用稳定实体和属性编号读取最多20个对象，可按属性过滤与排序。返回实际覆盖、版本和依据引用。',
-  relations_traverse:'用稳定关系编号向前或回溯最多3跳；自引用最多10层。未知关系、未绑定和身份不确定会明确说明。',
+  relations_traverse:'用目录中的稳定关系编号向前或回溯最多3跳；自引用最多10层。目录缺少所需关系时，不编造编号：用relationName和目录中的toEntityTypeId检查从target出发的关系，省略traverse。宿主保存可重放的缺失关系查询，返回readId后可报告缺口。',
   objects_aggregate:'对获准属性计数、求和、平均或取极值；最多1000分组。不能把冲突、未知或覆盖不足当零。',
   evidence_read:'读取本轮查询readId中已获准的属性依据；不能传任意文档、快照或来源编号。',
-  knowledge_query:'只检索当前视图已采用本体引用的文档片段，不读取任意原始来源。',
+  knowledge_query:'按一个连续关键词、短语或完整文件名，匹配当前视图已采用本体引用片段的标题或原文。不是多关键词语义搜索：不要把多个词、文件名和问题拼成query；零命中时改用更短的单个关键词。只读取获准片段，不读取任意原始来源。',
+  metric_query:'按当前视图已采用的metricReferenceId及稳定维度属性读取BI观测；期间左闭右开。返回固定口径、单位、粒度、时区、可加总性和实际覆盖；不能自造聚合或以新口径重算旧发布。',
   gap_report:'根据本轮实际失败读取的readId记录缺口；原因、查询和回执由服务填写，不会修改本体或治理决定。',
 };
 export const qaTools:DomainTool[]=Object.entries(schemas).map(([name,schema])=>({name,description:descriptions[name as keyof typeof schemas],mutates:name==='gap_report',inputSchema:z.toJSONSchema(schema)}));
@@ -43,21 +47,33 @@ export class QaRun {
   readonly tools=qaTools;readonly view:QaView;
   private reads:Reading[]=[];private calls=0;private bytes=0;private limits=new Set<string>();
   private reportedGaps=new Map<string,{id:string;version:number;title:string;status:string}>();
-  private memory:MemoryStore;private live:LiveMemory;private semantic:SemanticQuery;private gaps:Gaps;private input:QaBegin;
-  constructor(memory:MemoryStore,live:LiveMemory,semantic:SemanticQuery,gaps:Gaps,view:QaView,input:QaBegin){this.memory=memory;this.live=live;this.semantic=semantic;this.gaps=gaps;this.view=view;this.input=input;}
+  private metricReader:MetricReader;private memory:MemoryStore;private live:LiveMemory;private semantic:SemanticQuery;private gaps:Gaps;private input:QaBegin;
+  constructor(memory:MemoryStore,live:LiveMemory,semantic:SemanticQuery,gaps:Gaps,view:QaView,input:QaBegin){this.memory=memory;this.live=live;this.semantic=semantic;this.gaps=gaps;this.view=view;this.input=input;this.metricReader=new MetricReader(live.sources,()=>this.active());}
   private active(){this.input.assertActive?.();try{this.view.assertValid();}catch(error){if(this.view.selection.kind==='consumer')throw new Error('接入授权已变化或获准来源不可读取');throw error;}}
   private directory(input:z.infer<typeof directory>){
     const semantic=this.view.layered.semantic;
     if(input.entityTypeId&&!semantic.entityTypes.some(item=>item.id===input.entityTypeId))throw new Error('实体不在当前授权范围');
     const entities=semantic.entityTypes.filter(item=>!input.entityTypeId||item.id===input.entityTypeId).map(item=>({...item,properties:semantic.properties.filter(property=>property.entityTypeId===item.id)}));
     const relations=semantic.relationTypes.filter(item=>!input.entityTypeId||item.from===input.entityTypeId||item.to===input.entityTypeId);
-    return jsonData({entities:entities.slice(input.offset,input.offset+input.limit),relations:relations.slice(input.offset,input.offset+input.limit),coverage:{offset:input.offset,entities:entities.length,relations:relations.length,complete:input.offset===0&&Math.max(entities.length,relations.length)<=input.limit}});
+    const metrics=semantic.metricReferences.filter(item=>!input.entityTypeId||item.entityTypeId===input.entityTypeId);
+    return jsonData({metrics:metrics.slice(input.offset,input.offset+input.limit).map(publicMetric),entities:entities.slice(input.offset,input.offset+input.limit),relations:relations.slice(input.offset,input.offset+input.limit),coverage:{offset:input.offset,entities:entities.length,relations:relations.length,metrics:metrics.length,complete:input.offset===0&&Math.max(entities.length,relations.length,metrics.length)<=input.limit}});
   }
   private sanitize(result:Data):Data {
     if(this.view.selection.kind!=='consumer')return result;
     return consumerResult(result,this.view.selection.connectionRef.id);
   }
   private unavailable(reason:string,message:string,result:Data={}){return{status:'unavailable',reason,message,result};}
+  private requestedTraversal(value:unknown){
+    const {relationName,toEntityTypeId,...args}=traversal.parse(value);
+    if(!relationName){if(toEntityTypeId)throw new Error('目标实体应与所需关系名称一同提供');return {query:semanticQuerySchema.parse(args)};}
+    if(args.traverse.length||args.aggregate)throw new Error('按名称核查关系时，不应同时提供路径或聚合');
+    const semantic=this.view.layered.semantic;
+    if(!semantic.entityTypes.some(item=>item.id===args.target.entityTypeId)||toEntityTypeId&&!semantic.entityTypes.some(item=>item.id===toEntityTypeId))throw new Error('实体不在当前授权范围');
+    const matches=semantic.relationTypes.filter(item=>item.from===args.target.entityTypeId&&(!toEntityTypeId||item.to===toEntityTypeId)&&[item.name,...item.aliases].includes(relationName));
+    if(matches.length>1)throw new Error('存在多个同名关系，请从当前目录选择具体关系编号');
+    const relationTypeId=matches[0]?.id??'requested_relation_'+createHash('sha256').update(JSON.stringify([args.target.entityTypeId,relationName,toEntityTypeId??null])).digest('hex').slice(0,32);
+    return {query:semanticQuerySchema.parse({...args,traverse:[{relationTypeId}]}),requestedRelation:matches.length?undefined:{id:relationTypeId,from:args.target.entityTypeId,...(toEntityTypeId?{to:toEntityTypeId}:{}),name:relationName}};
+  }
   private async objects(name:string,args:z.infer<typeof semanticQuerySchema>){
     const {layered,options}=this.view,scope=options.scope;
     // Check every expression before looking up hidden definitions or reading any source.
@@ -104,17 +120,19 @@ export class QaRun {
     if(name==='gap_report'){
       const args=gap.parse(value),read=this.reads.find(item=>item.id===args.readId);
       if(!read||!read.query||!gapReasons.has(read.reason??''))throw new Error('只能报告本轮实际读取发现的建模、绑定或身份缺口');
-      if(this.view.selection.kind==='consumer')throw new Error('接入方缺口回流默认关闭');
       this.active();const saved=this.gaps.report({question:this.input.question,dataView:this.view.selection,reading:read as GapReading,observation:args.observation,taskId:this.input.taskId,sessionId:this.input.sessionId});
-      this.reportedGaps.set(saved.id,{id:saved.id,version:saved.version,title:saved.title,status:saved.status});return jsonData({gap:saved});
+      const reference={id:saved.id,version:saved.version,title:saved.title,status:saved.status};
+      this.reportedGaps.set(saved.id,reference);return jsonData({gap:this.view.selection.kind==='consumer'?reference:saved});
     }
     if(++this.calls>24){this.limits.add('本轮24次读取预算已用尽，回答仅覆盖已取得结果');throw new Error('本轮读取预算已用尽');}
     let result:Data,semanticQuery:Data|undefined,status='available',reason:string|undefined,message:string|undefined;
     if(name==='ontology_describe')result=this.directory(directory.parse(value));
     else if(name==='ontology_search'){
       const args=search.parse(value),term=args.query.toLocaleLowerCase(),semantic=this.view.layered.semantic;
-      const all=[...semantic.entityTypes.map(item=>({...item,kind:'entity'})),...semantic.properties.map(item=>({...item,kind:'property'})),...semantic.relationTypes.map(item=>({...item,kind:'relation'}))].filter(item=>[item.name,item.description,...item.aliases].some(value=>value.toLocaleLowerCase().includes(term)));
+      const all=[...semantic.entityTypes.map(item=>({...item,kind:'entity'})),...semantic.properties.map(item=>({...item,kind:'property'})),...semantic.relationTypes.map(item=>({...item,kind:'relation'})),...semantic.metricReferences.map(item=>({...publicMetric(item),aliases:[],kind:'metric_reference'}))].filter(item=>[item.name,item.description,...item.aliases].some(value=>value.toLocaleLowerCase().includes(term)));
       result=jsonData({items:all.slice(args.offset,args.offset+args.limit),coverage:{offset:args.offset,total:all.length,complete:args.offset===0&&all.length<=args.limit}});
+    }else if(name==='metric_query'){
+      const answer=await readMetricReference(this.live,this.view.layered.semantic.metricReferences,value,()=>this.active(),this.metricReader);result=answer.result;status=answer.status;reason=answer.reason;message=answer.message;
     }else if(name==='knowledge_query'){
       const args=search.parse(value),foundation=this.view.foundation;
       if(this.view.selection.kind==='consumer')result={items:[],coverage:{complete:true,total:0},limit:'此接入方没有授权本体文档片段'};
@@ -122,7 +140,7 @@ export class QaRun {
         const ids=foundation?[...new Set([...(foundation.content.concepts??[]) as Data[],...(foundation.content.relations??[]) as Data[],...(foundation.content.properties??[]) as Data[]].flatMap(item=>(item.evidenceRefs??[]) as string[]))]:[];
         const records=foundation?this.memory.foundationEvidenceFor(foundation.id,foundation.version,ids,args.offset,args.limit):{items:[],total:0};
         const items=records.items.filter(item=>['document','knowledge','web'].includes(String(item.kind))&&[item.title,item.quote].some(value=>String(value??'').toLocaleLowerCase().includes(args.query.toLocaleLowerCase()))).map(({id,kind,title,quote,url})=>({id,kind,title,quote,url}));
-        result=jsonData({items,coverage:{offset:args.offset,scanned:records.items.length,total:records.total,complete:args.offset===0&&records.total<=args.limit},limits:['只检索已采用本体引用的片段；不是企业全文检索']});
+        result=jsonData({items,coverage:{offset:args.offset,scanned:records.items.length,total:records.total,complete:args.offset===0&&records.total<=args.limit},limits:['只检索已采用本体引用的片段；不是企业全文检索','标题或原文按query连续子串匹配；多个词拼接不代表分别检索',...(!items.length?['当前检索词未匹配本页片段，不证明资料不存在；可用单个较短关键词或仅文件名重试，并继续尚未扫描的分页。']:[])]});
       }
     }else if(name==='evidence_read'){
       const args=evidence.parse(value),reading=this.reads.find(item=>item.id===args.readId);if(!reading)throw new Error('依据引用不属于本轮实际读取');
@@ -138,8 +156,14 @@ export class QaRun {
       result=jsonData({kind:'authorized_evidence',readId:reading.id,evidence:records});
       if(this.view.selection.kind==='consumer')result=jsonData({kind:'authorized_evidence',readId:reading.id,evidence:records.map(item=>({objectId:item.objectId,properties:Object.fromEntries(Object.entries(item.properties).map(([id,cell])=>{const data=cell as Data;return[id,{status:data.status,value:data.value,evidence:((data.evidence??[]) as Data[]).map(value=>({value:value.value,recordId:value.recordId,readAt:value.readAt}))}];}))}))});
     }else{
-      const parsed=(name==='objects_aggregate'?semanticQuerySchema:query).parse(value);semanticQuery=jsonData(parsed);
+      const traversalRequest=name==='relations_traverse'?this.requestedTraversal(value):undefined;
+      const parsed=traversalRequest?.query??(name==='objects_aggregate'?semanticQuerySchema:query).parse(value);semanticQuery=jsonData(parsed);
       const answer=await this.objects(name,parsed);result=answer.result;status=answer.status;reason=answer.reason;message=answer.message;
+      if(reason==='missing_relation'&&traversalRequest?.requestedRelation){
+        // This intent is derived from the frozen directory and is never accepted from model-supplied result metadata.
+        result={...result,requestedRelation:traversalRequest.requestedRelation};
+        message=`当前获准本体尚无“${traversalRequest.requestedRelation.name}”关系，未读取或推断该关系的目标。`;
+      }
     }
     this.active();const read:Reading={id:randomUUID(),tool:name,...(semanticQuery?{query:semanticQuery}:{}),status,...(reason?{reason}:{}),...(message?{message}:{}),result,readAt:new Date().toISOString()};
     const output=jsonData({readId:read.id,status,...(reason?{reason}:{}),...(message?{message}:{}),result:this.sanitize(result),receipt:{...this.view.receipt,readAt:read.readAt}});
@@ -149,12 +173,13 @@ export class QaRun {
   answer(conclusion:string):Data{
     this.active();if(typeof conclusion!=='string')throw new Error('回答结论必须是文本');
     if(!this.reads.length)this.limits.add('本轮尚无实际读取依据，不能视为已验证结论');
-    const values=this.reads.filter(read=>read.query||['knowledge_query','evidence_read'].includes(read.tool));
+    const values=this.reads.filter(read=>read.query||['knowledge_query','evidence_read','metric_query'].includes(read.tool));
     const semantic=this.view.layered.semantic;
     const projection=(read:Reading)=>{
+      const metric=read.tool==='metric_query'?(read.result.metricReference as Data|undefined):undefined;
       const expression=read.query as z.infer<typeof semanticQuerySchema>|undefined,relations=semantic.relationTypes.filter(item=>expression?.traverse?.some(step=>step.relationTypeId===item.id));
-      const propertyIds=new Set([...((read.result.items??[]) as Data[]).flatMap(item=>Object.keys((item.values??{}) as Data)),...((read.result.evidence??[]) as Data[]).flatMap(item=>Object.keys((item.properties??{}) as Data)),...((read.result.groupMembers??[]) as Data[]).flatMap(group=>(group.items as Data[]).flatMap(item=>Object.keys((item.values??{}) as Data))),...(expression?.filters??[]).map(item=>item.propertyId),...(expression?.sort??[]).map(item=>item.propertyId)]);
-      const entityIds=new Set([expression?.target?.entityTypeId,...relations.flatMap(item=>[item.from,item.to])]),entities=semantic.entityTypes.filter(item=>entityIds.has(item.id));
+      const propertyIds=new Set([...((metric?.dimensions??[]) as Data[]).map(item=>String(item.propertyId)),...((read.result.items??[]) as Data[]).flatMap(item=>Object.keys((item.values??{}) as Data)),...((read.result.evidence??[]) as Data[]).flatMap(item=>Object.keys((item.properties??{}) as Data)),...((read.result.groupMembers??[]) as Data[]).flatMap(group=>(group.items as Data[]).flatMap(item=>Object.keys((item.values??{}) as Data))),...(expression?.filters??[]).map(item=>item.propertyId),...(expression?.sort??[]).map(item=>item.propertyId)]);
+      const entityIds=new Set([metric?.entityTypeId,expression?.target?.entityTypeId,...relations.flatMap(item=>[item.from,item.to])]),entities=semantic.entityTypes.filter(item=>entityIds.has(item.id));
       return {labels:Object.fromEntries([...entities,...relations,...semantic.properties.filter(item=>propertyIds.has(item.id))].map(item=>[item.id,item.name])),entities:entities.map(({id,name})=>({id,name})),relations:relations.map(({id,name,from,to})=>({id,name,from,to}))};
     };
     return jsonData({conclusion:conclusion.slice(0,24000),evidence:values.map(read=>({readId:read.id,query:read.query,labels:projection(read).labels,status:read.status,reason:read.reason??null,result:this.sanitize(read.result)})),gaps:[...this.reportedGaps.values()],

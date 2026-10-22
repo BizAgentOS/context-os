@@ -1,3 +1,4 @@
+import {currentActor,assertRole} from '../security/actors.ts';
 import { objectIdLimit } from "../semantic/values.ts";
 import { freezeLegacyConsumption } from "./legacy-consumption.ts";
 import { snapshotPinsForRelease, correctionPinsForRelease, identityDecisionPinsForRelease, propertyCorrectionPinsForRelease } from "./release-pins.ts";
@@ -106,7 +107,7 @@ export class ConsumerViews {
   }
   private proposeInternal(input: unknown, context?: WriteContext, options: { fixedSemantic?: boolean; snapshotPins?: SnapshotPins; correctionPins?: string[]; identityDecisionPins?: string[]; propertyCorrectionPins?: string[]; releaseRef?: { id: string; version: number }; modelDefinition?: Data } = {}) {
     const a = proposal.parse(input),
-      actor = context ? `agent:${context.taskId}` : "local-admin";
+      actor = context ? `agent:${context.taskId}` : currentActor().id;
     if (context) this.memory.assertWritable(context);
     const signature = digest(canonical({ ...a, ...(options.releaseRef ? { releaseRef: options.releaseRef } : {}) }));
     return this.memory.atomic(() => {

@@ -1,3 +1,4 @@
+import {publishedDefinition,publishWorking,connectPublished,ref} from "./published-consumers-fixture.ts";
 import { restoreHistoricalAccess } from "./historical-consumers-fixture.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -13,7 +14,7 @@ import {
   fusionDefinition,
 } from "./fusion-fixture.ts";
 
-test("v3 views expose only allowed fusion values and status, isolate credentials, and stop an in-flight revoked response", async () => {
+test("published v4 views expose only allowed fusion values and status, isolate credentials, and stop an in-flight revoked response", async () => {
   const source = await createFusionSources(),
     directory = mkdtempSync(join(tmpdir(), "de-view-"));
   const service = await createServer({ automaticApi: false,
@@ -66,7 +67,7 @@ test("v3 views expose only allowed fusion values and status, isolate credentials
       })
     ).saved;
     const model = (
-      await admin("/api/live/propose", fusionDefinition(primary.id, extra.id))
+      await admin("/api/live/propose", publishedDefinition(service.app,fusionDefinition(primary.id, extra.id)))
     ).saved;
     const adopted = (
       await admin("/api/live/adopt", { id: model.id, version: model.version })
@@ -80,25 +81,17 @@ test("v3 views expose only allowed fusion values and status, isolate credentials
         { type: "投诉", fields: ["$id", "实际反馈", "状态"], relations: [] },
       ],
     };
-    const draft = (await restoreHistoricalAccess(service.app, "/api/live/views/propose", input)).saved;
-    assert.equal(draft.status, "draft");
-    assert.equal(
-      (await restoreHistoricalAccess(service.app, "/api/live/views/propose", input)).saved.id,
-      draft.id,
-    );
-
-    const activation = (
-      await restoreHistoricalAccess(service.app, "/api/live/views/activate", {
-        id: draft.id,
-        version: draft.version,
-      })
-    ).saved;
-    const key = activation.key;
-    const catalog = await read("/v3/catalog", key);
+    const publication=await publishWorking(service.app);
+    const activation=connectPublished(service.app,publication,input);
+    const replay=connectPublished(service.app,publication,input);
+    assert.equal(replay.connection.id,activation.connection.id);
+    assert.equal(replay.key,null);
+    const key=activation.key!;
+    const catalog = await read("/v4/dataset", key);
     assert.equal(catalog.status, 200);
-    assert.deepEqual(catalog.body.types, [{ name: "投诉" }]);
+    assert.deepEqual(catalog.body.businessTypes, [{ name: "投诉" }]);
     const description = await read(
-      "/v3/types?type=" + encodeURIComponent("投诉"),
+      "/v4/types?type=" + encodeURIComponent("投诉"),
       key,
     );
     assert.equal(description.status, 200);
@@ -108,7 +101,7 @@ test("v3 views expose only allowed fusion values and status, isolate credentials
     );
     source.state.mode = "conflict";
     const objects = await read(
-      "/v3/objects?type=" + encodeURIComponent("投诉"),
+      "/v4/objects?type=" + encodeURIComponent("投诉"),
       key,
     );
     assert.equal(objects.status, 200);
@@ -124,7 +117,7 @@ test("v3 views expose only allowed fusion values and status, isolate credentials
     assert.equal(
       (
         await read(
-          "/v3/objects?type=" +
+          "/v4/objects?type=" +
             encodeURIComponent("投诉") +
             "&fields=$id,phone",
           key,
@@ -135,7 +128,7 @@ test("v3 views expose only allowed fusion values and status, isolate credentials
     assert.equal(
       (
         await read(
-          "/v3/objects?type=" + encodeURIComponent("投诉") + "&limit=21",
+          "/v4/objects?type=" + encodeURIComponent("投诉") + "&limit=21",
           key,
         )
       ).status,
@@ -144,13 +137,13 @@ test("v3 views expose only allowed fusion values and status, isolate credentials
     assert.equal(
       (
         await read(
-          "/v3/objects?type=" + encodeURIComponent("投诉") + "&type=secret",
+          "/v4/objects?type=" + encodeURIComponent("投诉") + "&type=secret",
           key,
         )
       ).status,
       400,
     );
-    assert.equal((await read("/v2/schema", key)).status, 403);
+    assert.equal((await read("/v2/schema", key)).status, 410);
     const legacy = (
       await restoreHistoricalAccess(service.app, "/api/live/prepare", {
         name: "old",
@@ -165,23 +158,21 @@ test("v3 views expose only allowed fusion values and status, isolate credentials
         version: legacy.version,
       })
     ).saved;
-    assert.equal((await read("/v2/schema", legacyActivation.key)).status, 200);
-    assert.equal((await read("/v3/catalog", legacyActivation.key)).status, 403);
-    await assert.rejects(admin("/api/live/views/activate", { id: draft.id, version: draft.version }), /已冻结/);
+    assert.equal((await read("/v2/schema", legacyActivation.key)).status, 410);
+    assert.equal((await read("/v4/dataset", legacyActivation.key)).status, 403);
+    await assert.rejects(admin("/api/live/views/activate", { id: activation.connection.id, version: activation.connection.version }), /已冻结/);
     const calls = source.state.calls;
     source.state.delay = new Promise((r) => (release = r));
-    const pending = read("/v3/objects?type=" + encodeURIComponent("投诉"), key);
-    while (source.state.calls === calls)
-      await new Promise((r) => setTimeout(r, 5));
-    await admin("/api/live/views/revoke", {
-      id: draft.id,
-      version: activation.view.version,
-    });
+    const pending = read("/v4/objects?type=" + encodeURIComponent("投诉"), key);
+    const deadline=Date.now()+5000;
+    while (source.state.calls === calls && Date.now()<deadline) await new Promise((r) => setTimeout(r, 5));
+    assert(source.state.calls>calls);
+    await admin("/api/releases/revoke", {operationId:"revoke",connectionRef:ref(activation.connection)});
     release!();
     const denied = await pending;
     assert.equal(denied.status, 403);
     assert(!JSON.stringify(denied.body).includes("未改善"));
-    assert.equal((await read("/v3/catalog", key)).status, 403);
+    assert.equal((await read("/v4/dataset", key)).status, 403);
   } finally {
     release?.();
     await service.close();
@@ -239,7 +230,7 @@ test("relation permits require both endpoints, survive restart, and expose no da
         source,
       ),
       c = await service.app.live.propose(
-        heatingDefinition(connections.api.id, connections.mcp.id),
+        publishedDefinition(service.app,heatingDefinition(connections.api.id, connections.mcp.id)),
       ),
       m = await service.app.live.adopt(c.id, c.version);
     const input = {
@@ -253,45 +244,30 @@ test("relation permits require both endpoints, survive restart, and expose no da
       ],
     };
 
-    const narrow = (
-      await restoreHistoricalAccess(service.app, "/api/live/views/propose", {
-        ...input,
-        operationId: "narrow",
-        grants: [{ type: "投诉", fields: ["$id"], relations: [] }],
-      })
-    ).saved;
-    const narrowKey = (
-      await restoreHistoricalAccess(service.app, "/api/live/views/activate", {
-        id: narrow.id,
-        version: narrow.version,
-      })
-    ).saved.key;
-    agentView = restoreHistoricalAccess(service.app, "/api/live/views/propose", input).saved;
-    const active = (
-      await restoreHistoricalAccess(service.app, "/api/live/views/activate", {
-        id: agentView.id,
-        version: agentView.version,
-      })
-    ).saved;
+    const publication=await publishWorking(service.app);
+    assert.throws(()=>connectPublished(service.app,publication,{...input,operationId:"missing-endpoint",grants:[input.grants[0]]}),/两端|目标|许可|范围/);
+    const narrow=connectPublished(service.app,publication,{...input,operationId:"narrow",grants:[{type:"投诉",fields:["$id"],relations:[]}]});
+    const narrowKey=narrow.key!;
+    const active=connectPublished(service.app,publication,input);
     const path =
-      "/v3/objects?type=" +
+      "/v4/objects?type=" +
       encodeURIComponent("投诉") +
       "&id=TS002&relation=" +
       encodeURIComponent("回访记录");
-    const related = await read(path, active.key);
+    const related = await read(path, active.key!);
     assert.equal(related.status, 200);
     assert.equal(related.body.items[0].objectRef.id, "HF002");
     assert.equal(related.body.items[0].properties.结果.value, "未改善");
-    const evidencePath='/v3/evidence?ref='+related.body.relationEvidenceRef;
-    const relationEvidence=await read(evidencePath,active.key);
+    const evidencePath='/v4/evidence?ref='+related.body.relationEvidenceRef;
+    const relationEvidence=await read(evidencePath,active.key!);
     assert.deepEqual(relationEvidence.body.evidence.from,{type:'投诉',id:'TS002'});
     assert.deepEqual(relationEvidence.body.evidence.targetIds,['HF002']);
-    const propertyEvidencePath='/v3/evidence?ref='+related.body.items[0].properties.结果.evidenceRef;
-    assert.equal((await read(propertyEvidencePath,active.key)).body.evidence.value,'未改善');
+    const propertyEvidencePath='/v4/evidence?ref='+related.body.items[0].properties.结果.evidenceRef;
+    assert.equal((await read(propertyEvidencePath,active.key!)).body.evidence.value,'未改善');
     assert.equal((await read(evidencePath,narrowKey)).status,403);
     assert.equal((await read(path, narrowKey)).status, 403);
     assert.equal(
-      (await read("/v3/types?type=" + encodeURIComponent("回访"), narrowKey))
+      (await read("/v4/types?type=" + encodeURIComponent("回访"), narrowKey))
         .status,
       403,
     );
@@ -299,11 +275,11 @@ test("relation permits require both endpoints, survive restart, and expose no da
     service = await createServer({ automaticApi: false, directory, driver });
     await listen();
     source.setOutcome("已改善");
-    const fresh = await read(path, active.key);
+    const fresh = await read(path, active.key!);
     assert.equal(fresh.status, 200);
     assert.equal(fresh.body.items[0].properties.结果.value, "已改善");
-    assert.equal((await read(propertyEvidencePath,active.key)).body.evidence.value,'未改善');
-    assert.equal((await read(evidencePath,active.key)).status,200);
+    assert.equal((await read(propertyEvidencePath,active.key!)).body.evidence.value,'未改善');
+    assert.equal((await read(evidencePath,active.key!)).status,200);
     let incompatible = (await admin("/api/live/changes/propose", {
       operationId: "ungranted-join", baseRef: {id:m.id,version:m.version},
       patch: {kind:"relation",type:"投诉",relation:"回访记录",fromField:"小区",toField:"投诉编号"},
@@ -312,14 +288,14 @@ test("relation permits require both endpoints, survive restart, and expose no da
     for (const action of ["check", "adopt"])
       incompatible = (await admin("/api/live/changes/"+action, {operationId:action+"-ungranted",id:incompatible.id,version:incompatible.version})).saved;
     await assert.rejects(admin("/api/live/migrations/preview", {
-      operationId: "blocked-join-preview", viewRef: { id: active.view.id, version: active.view.version },
+      operationId: "blocked-join-preview", viewRef: ref(active.connection),
       changeRef: { id: incompatible.id, version: incompatible.version }, dropContextEvidence: false,
     }), /已冻结/);
-    assert.equal(service.app.memory.getArtifact(active.view.id).version, active.view.version);
-    assert.equal((await read(path, active.key)).body.items[0].objectRef.id, "HF002");
-    assert.equal((await read("/v3/catalog", active.key)).body.viewRef.version, active.view.version);
+    assert.equal(service.app.memory.getArtifact(active.connection.id).version, active.connection.version);
+    assert.equal((await read(path, active.key!)).body.items[0].objectRef.id, "HF002");
+    assert.equal((await read("/v4/dataset", active.key!)).body.datasetRef.version, active.dataset.version);
     await admin("/api/live/disable", { id: connections.mcp.id, version: connections.mcp.version });
-    const disabled = await read(path, active.key);
+    const disabled = await read(path, active.key!);
     assert.equal(disabled.status, 502);
     assert.doesNotMatch(JSON.stringify(disabled.body), /已改善|HF002/);
 

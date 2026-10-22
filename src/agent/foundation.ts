@@ -491,6 +491,8 @@ export class FoundationService {
             : [{ id: item.id, before, after: item }];
         })
       : [];
+    const metricReferences = (adopted?.content.metricReferences ?? []) as Data[];
+    if (metricReferences.some(metric => !concepts.some(concept => concept.id === metric.entityTypeId))) throw new Error("实体仍有指标引用，请先显式处理指标引用");
     const draft = {
         ...(current
           ? { id: current.id, expectedVersion: current.version }
@@ -500,6 +502,8 @@ export class FoundationService {
         status: "candidate",
         content: asData({
           ...input,
+          metricReferences,
+          ...(adopted?.content.properties !== undefined ? { properties: (adopted.content.properties as Data[]).filter(property => concepts.some(concept => concept.id === property.entityTypeId)) } : {}),
           concepts,
           relations,
           evidence,

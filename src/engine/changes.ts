@@ -1,3 +1,4 @@
+import {currentActor,assertRole} from '../security/actors.ts';
 import { readFileSync } from "node:fs";
 import { ownerVerificationInputs } from "./owner-verification.ts";
 import { fileURLToPath } from "node:url";
@@ -46,7 +47,7 @@ const subjects = {
   description: z.object({ target: z.enum(["concept", "relation"]), id: name, description: z.string().trim().min(1).max(1500) }).strict(),
   relation: relationSubjectSchema,
 };
-const RESERVED = ["entity", "property", "binding", "identity_rule", "identity_decision", "local_correction", "deprecation", "restore", "data_issue", "adjudication", "gap"] as const;
+const RESERVED = ["entity", "property", "binding", "identity_rule", "identity_decision", "local_correction", "deprecation", "restore", "data_issue", "adjudication", "gap", "enterprise_profile", "metric_reference"] as const;
 const typeNames = ["naming", "description", "relation", ...RESERVED] as const;
 const proposeInput = z.object({
   operationId: name, origin, type: z.enum(typeNames), baseline, subject: z.record(z.string(), z.unknown()),
@@ -65,7 +66,7 @@ type Subjects = { [K in keyof typeof subjects]: z.infer<(typeof subjects)[K]> };
 type VerifiedType = keyof Subjects;
 interface Metrics { [key: string]: number | boolean | string | null }
 export interface Verification { ruleVersion: number; result: "passed" | "review" | "failed"; metrics: Metrics; notes: string[]; inputs: Data; checkedAt: string }
-export interface PreparedChange { verification: Omit<Verification, "ruleVersion" | "checkedAt">; previewDefinition?: Data; previewFoundation?: Artifact; previewCorrections?: { relations?: Artifact[]; properties?: Artifact[] }; apply: () => Data }
+export interface PreparedChange { verification: Omit<Verification, "ruleVersion" | "checkedAt">; previewDefinition?: Data; previewFoundation?: Artifact; previewImpact?: Data; previewCorrections?: { relations?: Artifact[]; properties?: Artifact[] }; assertCurrent?: () => void; apply: () => Data }
 export interface ChangeHandler {
   subject: z.ZodType;
   prepare: (change: Artifact, assertActive?: () => void) => Promise<PreparedChange>;
@@ -80,7 +81,7 @@ export const changeCategory=(type:string)=>["naming","description"].includes(typ
 const isVerifiedType = (type: string): type is VerifiedType => Object.hasOwn(subjects, type);
 const round = (value: number) => Math.round(value * 10000) / 10000;
 const ownerProposalHash = (owner: Artifact) => {
-  const keys = owner.kind === "mapping_change" ? ["draft"] : owner.kind === "relation_correction" ? ["target", "targetIds", "reason", "evidence"]
+  const keys = owner.kind === "naming_batch" ? ["items", "baseline", "dependencies", "documents"] : owner.kind === "mapping_change" ? ["draft"] : owner.kind === "relation_correction" ? ["target", "targetIds", "reason", "evidence"]
     : owner.kind === "foundation" ? ["enterprise", "concepts", "relations", "evidence", "unknowns", "conflicts", "profileRef", "documentVersions"]
       : ["purpose", "types", "relations", "foundationRef", "base", "layered"];
   return fingerprint(Object.fromEntries(keys.map(key => [key, owner.content[key] ?? null])));
@@ -178,8 +179,9 @@ export class OntologyChanges {
   }
 
   async propose(input: unknown) {
+    assertRole("change");
     const args = proposeInput.parse(input);
-    const actor = "local-admin", signature = fingerprint({ method: "propose", args });
+    const actor = currentActor().id, signature = fingerprint({ method: "propose", args });
     const replay = this.previous(actor, args.operationId, signature);
     if (replay) return { change: replay, suppressed: replay.status === "rejected" && replay.content.disposition === "rejected" };
     const type = args.type;
@@ -210,7 +212,7 @@ export class OntologyChanges {
       const again = this.previous(actor, args.operationId, signature);
       if (again) return { change: again, suppressed: false };
       this.assertBaseline(args.baseline);
-      const change = this.memory.putArtifact({ kind: "ontology_change", title: isVerifiedType(type) ? this.title(type, subject) : `变更 · ${type}`, status: "proposed", content: jsonData({
+      const change = this.memory.putArtifact({ kind: "ontology_change", title: isVerifiedType(type) ? this.title(type, subject) : type === "enterprise_profile" ? "企业资料修改" : type === "metric_reference" ? "指标引用修改" : `变更 · ${type}`, status: "proposed", content: jsonData({
         origin: args.origin, type, subject, baseline: args.baseline, fingerprint: fp, evidence: args.evidence ?? null,
         ...(args.observed ? { observed: args.observed } : {}), proposedBy: actor, operationId: args.operationId }) });
       this.receipt(actor, args.operationId, signature, change);
@@ -227,20 +229,31 @@ export class OntologyChanges {
     this.open(input);
     this.assertBaseline(change.content.baseline as z.infer<typeof baseline>);
     if (!prepared) throw new Error("该变更尚未接入预演服务");
+    prepared.assertCurrent?.();
     return { verification: prepared.verification, ...(prepared.previewDefinition ? { definition: prepared.previewDefinition } : {}),
       ...(prepared.previewFoundation ? { foundation: prepared.previewFoundation } : {}),
+      ...(prepared.previewImpact ? { impact: prepared.previewImpact } : {}),
       ...(prepared.previewCorrections ? { corrections: prepared.previewCorrections } : {}) };
   }
 
   async verify(input: unknown, assertActive: () => void = () => {}) {
+    assertRole("change");
     assertActive();
-    const args = act.parse(input), actor = "local-admin", signature = fingerprint({ method: "verify", args });
+    const args = act.parse(input), actor = currentActor().id, signature = fingerprint({ method: "verify", args });
     const replay = this.previous(actor, args.operationId, signature);
     if (replay) return replay;
     const change = this.open(args);
     this.assertBaseline(change.content.baseline as z.infer<typeof baseline>);
-    let verification: Verification;
-    try { verification = await this.check(change, assertActive); }
+    let verification: Verification, assertCurrent: () => void = () => {};
+    try {
+      const handler = this.handler(change);
+      if (handler) {
+        const prepared = await handler.prepare(change, assertActive);
+        assertCurrent = prepared.assertCurrent ?? assertCurrent;
+        assertCurrent();
+        verification = { ruleVersion: 1, checkedAt: new Date().toISOString(), ...prepared.verification };
+      } else verification = await this.check(change, assertActive);
+    }
     catch (error) {
       if (error instanceof ChangeConflict) throw error;
       verification = { ruleVersion: 1, result: "failed", metrics: {}, notes: [(error as Error).message], inputs: {}, checkedAt: new Date().toISOString() };
@@ -252,6 +265,7 @@ export class OntologyChanges {
       if (again) return again;
       if (this.read(change.id).version !== change.version) throw new ChangeConflict("version_conflict", "变更版本已变化，请重新读取");
       this.assertBaseline(change.content.baseline as z.infer<typeof baseline>);
+      assertCurrent();
       const saved = this.move(change, verification.result === "failed" ? "failed" : "verified", { ...change.content, verification: jsonData(verification) });
       this.receipt(actor, args.operationId, signature, saved);
       return saved;
@@ -259,8 +273,9 @@ export class OntologyChanges {
   }
 
   async adopt(input: unknown, assertActive: () => void = () => {}) {
+    assertRole("change");
     assertActive();
-    const args = adoptInput.parse(input), actor = "local-admin", signature = fingerprint({ method: "adopt", args });
+    const args = adoptInput.parse(input), actor = currentActor().id, signature = fingerprint({ method: "adopt", args });
     const replay = this.previous(actor, args.operationId, signature);
     if (replay) return replay;
     const change = this.open(args);
@@ -294,7 +309,7 @@ export class OntologyChanges {
   reject(input: unknown) { return this.close("reject", input, "rejected"); }
 
   private batchReplay(operationId:string,signature:string):BatchChangeResult|null {
-    const receipt=this.memory.listArtifacts("change_receipt").find(item=>item.content.actor==="local-admin"&&item.content.operationId===operationId);
+    const receipt=this.memory.listArtifacts("change_receipt").find(item=>item.content.actor===currentActor().id&&item.content.operationId===operationId);
     if(!receipt)return null;
     if(receipt.content.signature!==signature)throw new ChangeConflict("operation_conflict","幂等操作标识已绑定不同请求");
     return {changes:(receipt.content.changes as Data[]).map(item=>this.read(String(item.id),Number(item.version))),batchRef:{id:receipt.id,version:receipt.version}};
@@ -306,11 +321,12 @@ export class OntologyChanges {
     return changes;
   }
   private saveBatch(operationId:string,signature:string,changes:Artifact[]):BatchChangeResult{
-    const receipt=this.memory.putArtifact({kind:"change_receipt",title:"批量变更回执",status:"saved",content:{actor:"local-admin",operationId,signature,changes:changes.map(change=>({id:change.id,version:change.version}))}});
+    const receipt=this.memory.putArtifact({kind:"change_receipt",title:"批量变更回执",status:"saved",content:{actor:currentActor().id,operationId,signature,changes:changes.map(change=>({id:change.id,version:change.version}))}});
     return {changes,batchRef:{id:receipt.id,version:receipt.version}};
   }
 
   async batchAdopt(input:unknown):Promise<BatchChangeResult>{
+    assertRole("change");
     const args=batchAdoptInput.parse(input),signature=fingerprint({method:"batch-adopt",args}),replay=this.batchReplay(args.operationId,signature);
     if(replay)return replay;
     const selected=this.batchItems(args.items),prepared:PreparedChange[]=[];
@@ -336,12 +352,13 @@ export class OntologyChanges {
       const before=this.applying;this.applying=true;let effects:Data[];
       try{effects=apply();}finally{this.applying=before;}
       if(effects.length!==selected.length)throw new Error("批量采用回执数量不完整");
-      const changes=selected.map((change,i)=>this.move(change,"adopted",{...change.content,effect:effects[i],decision:{actor:"local-admin",at:new Date().toISOString(),verifiedVersion:change.version,acknowledgedReview:args.acknowledgeReview,batchOperation:args.operationId}}));
+      const changes=selected.map((change,i)=>this.move(change,"adopted",{...change.content,effect:effects[i],decision:{actor:currentActor().id,at:new Date().toISOString(),verifiedVersion:change.version,acknowledgedReview:args.acknowledgeReview,batchOperation:args.operationId}}));
       return this.saveBatch(args.operationId,signature,changes);
     });
   }
 
   batchReject(input:unknown):BatchChangeResult{
+    assertRole("change");
     const args=batchRejectInput.parse(input),signature=fingerprint({method:"batch-reject",args}),replay=this.batchReplay(args.operationId,signature);
     if(replay)return replay;
     return this.memory.atomic(()=>{
@@ -350,7 +367,7 @@ export class OntologyChanges {
       for(const change of selected)if(!TRANSITIONS[change.status as ChangeStatus]?.includes("rejected"))throw new ChangeConflict("invalid_transition","选中项包含已经处理的变更");
       const changes=selected.map(change=>{
         const metrics=((change.content.verification as Data|undefined)?.metrics??change.content.observed??null) as Data|null;
-        return this.move(change,"rejected",{...change.content,disposition:"rejected",closedReason:args.reason,closedBy:"local-admin",closedAt:new Date().toISOString(),batchOperation:args.operationId,
+        return this.move(change,"rejected",{...change.content,disposition:"rejected",closedReason:args.reason,closedBy:currentActor().id,closedAt:new Date().toISOString(),batchOperation:args.operationId,
           rejectedMetrics:metrics?{matchRate:metrics.matchRate??null,targetUnique:metrics.targetUnique??null}:null});
       });
       return this.saveBatch(args.operationId,signature,changes);
@@ -359,6 +376,7 @@ export class OntologyChanges {
 
   /** Legacy entry points call this only after their owning service has revalidated its inputs. */
   commitOwned<T>(owner: Artifact, save: () => T, readings: Data = {}): T {
+    assertRole("change");
     if (this.applying) return save();
     return this.memory.atomic(() => {
       const change = this.trackOwner(owner);
@@ -377,19 +395,19 @@ export class OntologyChanges {
       try { result = save(); } finally { this.applying = false; }
       const adopted = this.memory.getArtifact(owner.id);
       this.move(verified, "adopted", { ...verified.content, effect: { ownerRef: { id: adopted.id, version: adopted.version } },
-        decision: { actor: "local-admin", at: new Date().toISOString(), verifiedVersion: verified.version } });
+        decision: { actor: currentActor().id, at: new Date().toISOString(), verifiedVersion: verified.version } });
       return result;
     });
   }
 
   trackOwner(owner: Artifact): Artifact | null {
-    const types: Record<string, string> = { foundation: "entity", live_ontology: "entity", mapping_change: "binding", relation_correction: "local_correction" };
+    const types: Record<string, string> = { foundation: "entity", live_ontology: "entity", mapping_change: "binding", relation_correction: "local_correction", naming_batch: "naming" };
     const type = types[owner.kind];
     if (!type) return null;
     if (this.memory.getArtifact(owner.id).version !== owner.version) return null;
     let existing = this.memory.listArtifacts("ontology_change").find(change => (change.content.owner as Data | undefined)?.id === owner.id);
     if (owner.status === "cancelled" && existing && ["proposed", "verified", "failed"].includes(existing.status))
-      return this.move(existing, "rejected", { ...existing.content, disposition: "withdrawn", closedReason: "原入口撤回候选", closedBy: "local-admin", closedAt: new Date().toISOString() });
+      return this.move(existing, "rejected", { ...existing.content, disposition: "withdrawn", closedReason: "原入口撤回候选", closedBy: currentActor().id, closedAt: new Date().toISOString() });
     if (!["candidate", "checked"].includes(owner.status)) return null;
     if (existing && (existing.content.owner as Data).version === owner.version) return existing;
     if (existing && ["rejected", "deprecated"].includes(existing.status)) {
@@ -419,6 +437,7 @@ export class OntologyChanges {
   }
 
   commitProgram<T>(items: Artifact[], save: () => T): T {
+    assertRole("change");
     return this.memory.atomic(() => {
       for (const item of items) {
         const current = this.read(item.id);
@@ -431,7 +450,7 @@ export class OntologyChanges {
       for (const item of items) {
         const current = this.read(item.id);
         const verified = this.move(current, "verified", { ...current.content, verification: { ruleVersion: 1, result: "passed", metrics: { ownerValidated: true }, notes: ["程序按选中结构重新编译并验证"], inputs: { owner: current.content.owner }, checkedAt: new Date().toISOString() } });
-        this.move(verified, "adopted", { ...verified.content, effect: { baseline: this.currentBaseline() }, decision: { actor: "local-admin", at: new Date().toISOString(), verifiedVersion: verified.version } });
+        this.move(verified, "adopted", { ...verified.content, effect: { baseline: this.currentBaseline() }, decision: { actor: currentActor().id, at: new Date().toISOString(), verifiedVersion: verified.version } });
       }
       return result;
     });
@@ -446,7 +465,8 @@ export class OntologyChanges {
 
   withdraw(input: unknown) { return this.close("withdraw", input, "withdrawn"); }
   private close(method: string, input: unknown, disposition: "rejected" | "withdrawn") {
-    const args = reasonInput.parse(input), actor = "local-admin", signature = fingerprint({ method, args });
+    assertRole("change");
+    const args = reasonInput.parse(input), actor = currentActor().id, signature = fingerprint({ method, args });
     const replay = this.previous(actor, args.operationId, signature);
     if (replay) return replay;
     return this.memory.atomic(() => {

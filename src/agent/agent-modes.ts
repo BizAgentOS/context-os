@@ -9,11 +9,11 @@ export type AgentMode = "build" | "qa";
 const reference = z.object({ id: z.string().min(1), version: z.number().int().positive() }).strict();
 const binding = z.object({ mode: z.enum(["build", "qa"]).default("build"), dataView:qaDataViewSchema.default({kind:'working'}),pendingRef: reference.optional(), continuationRunId: z.string().min(1).optional() }).strict();
 const readonlyQuery = ["ontology_describe", "ontology_search", "objects_query", "relations_traverse", "objects_aggregate", "evidence_read", "knowledge_query"];
-const common = ["session_title", "task_checkpoint"];
+const common = ["session_title", "task_checkpoint", "mode_suggest"];
 const native = ["web_search", "web_fetch", "mcp_search", "mcp_describe", "mcp_call", "mcp_read_resource", "mcp_get_prompt"];
 const allowed: Record<AgentMode, ReadonlySet<string>> = {
   build: new Set([...common, ...readonlyQuery, ...native, "workspace_overview", "memory_read", "context_read", "canvas_history_read", "ontology_outline", "data_overview", "engine_overview", "engine_build", "discovery_explain", "source_catalog", "snapshot_query", "data_sync", "foundation_read", "foundation_document_read", "foundation_web_read", "knowledge_read", "live_overview", "live_read", "live_query", "object_execute", "metric_describe", "metric_query", "evidence_list", "evidence_collect", "release_overview", "capability_search", "skill_use", "skill_read", "sdk_call", "change_propose", "change_verify", "change_preview_query", "change_withdraw", "pending_list", "pending_read", "decision_request"]),
-  qa: new Set([...common, ...readonlyQuery, "gap_report"]),
+  qa: new Set([...common, ...readonlyQuery, "metric_query", "gap_report"]),
 };
 export interface FrozenAgentTurn {
   readonly mode: AgentMode; readonly taskId: string; readonly sessionId: string | null; readonly executionId: string;

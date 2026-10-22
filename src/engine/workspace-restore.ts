@@ -1,3 +1,4 @@
+import { projectMetricReferences } from "../semantic/metric-projection.ts";
 import { z } from "zod";
 import type { Artifact, Data } from "../agent/contracts.ts";
 import type { MemoryStore } from "../agent/memory.ts";
@@ -46,7 +47,7 @@ export class WorkspaceRestore {
     if (semantic.kind !== "foundation" || semantic.status !== "adopted" || binding.kind !== "live_ontology" || binding.status !== "adopted")
       throw new Error("历史工作版引用的已采用定义或绑定不可用");
     if ((binding.content.foundationRef as Data | undefined)?.id !== semantic.id) throw new Error("历史语义定义与绑定不属于同一本体");
-    const layered = this.live.readLayered(binding.id, binding.version);
+    let layered = this.live.readLayered(binding.id, binding.version);
     for (const [items, definitions] of [[layered.semantic.entityTypes, semantic.content.concepts], [layered.semantic.relationTypes, semantic.content.relations], [layered.semantic.properties, semantic.content.properties ?? layered.semantic.properties]] as const) {
       for (const item of items) {
         const definition = (definitions as Data[]).find(entry => entry.id === item.id);
@@ -55,12 +56,17 @@ export class WorkspaceRestore {
         item.name = String(definition.name); item.description = String(definition.description);
       }
     }
+    layered = projectMetricReferences(layered, semantic.content);
     const definition = jsonData({ ...binding.content, ...projectLegacyModel(layered, { allowTransforms: true }), layered, foundationRef: composition.semantic });
     const historicalConnections = { ...(definition.connections as Data) };
     const bindings = (definition.types as Data[]).flatMap(type => [type, ...((type.supplements ?? []) as Data[])]);
     for (const relation of definition.relations as Data[]) if (relation.linkTable) bindings.push(relation.linkTable as Data);
     const tracked = new Map<string, Artifact>();
     const track = (artifact: Artifact) => { tracked.set(artifact.id, artifact); return artifact; };
+    for (const metric of layered.semantic.metricReferences) {
+      this.live.sources.capability(metric.sourceId, metric.capability, metric.connectionVersion);
+      track(this.memory.getArtifact(metric.sourceId));
+    }
     const currentFoundation = this.foundation.read().current;
     if (currentFoundation) track(currentFoundation);
     const datasets = this.snapshots.datasets().map(track);

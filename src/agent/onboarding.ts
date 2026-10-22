@@ -6,6 +6,8 @@ import type { FoundationService } from "./foundation.ts";
 import { Workspace } from "./workspace.ts";
 import { industryPacks } from "./industry-packs.ts";
 import { isUnknownEnterprise } from "./foundation-evidence.ts";
+import {FirstUse} from './first-use.ts';
+import type {LiveMemory} from '../live/memory.ts';
 
 const companySchema = z.object({
   name: z.string().trim().min(2).max(200), industry: z.string().max(100),
@@ -15,7 +17,8 @@ const companySchema = z.object({
 type Company = z.infer<typeof companySchema>;
 interface SetupState {
   flow?: "engine" | "legacy";
-  sourceKind?: "mcp" | "api" | "file" | "later";
+  sourceKind?: "mcp" | "api" | "database" | "file" | "later";
+  skipped?:string[];
   version: number; active: boolean; step: number; completedAt?: string;
   company: Company; packId?: string; foundationRef?: {id:string;version:number};
   packReference?: {id:string;version:number};
@@ -25,8 +28,10 @@ const data = (value: unknown): Data => JSON.parse(JSON.stringify(value));
 export class Onboarding {
   private memory: MemoryStore;
   private foundation: FoundationService;
-  constructor(memory: MemoryStore, foundation: FoundationService, _legacyTask?: () => string) {
+  private firstUse:FirstUse;
+  constructor(memory: MemoryStore, foundation: FoundationService, _legacyTask?: () => string, live?:LiveMemory) {
     this.memory = memory; this.foundation = foundation;
+    this.firstUse=new FirstUse(memory,foundation,live);
   }
   private state(): SetupState {
     const saved = this.memory.getOnboarding();
@@ -45,13 +50,14 @@ export class Onboarding {
       industry: industryPacks.find(pack => pack.id === industry || pack.name === industry)?.id ?? "",
       business: get("company.business", "business"), region: get("company.location"), website: get("company.website"), goal: get("company.goal") };
   }
-  view() {
+  view(configured=false) {
     const state = this.state(), current = this.foundation.read().current;
-    return { ...state, company: this.currentCompany(), currentProfileVersion: this.memory.listArtifacts("profile")[0]?.version ?? 0,
+    return { ...state, firstUse:{...this.firstUse.progress(configured),skipped:state.skipped??[]}, company: this.currentCompany(), currentProfileVersion: this.memory.listArtifacts("profile")[0]?.version ?? 0,
       packs: industryPacks, reference: state.packReference ? this.memory.getArtifact(state.packReference.id, state.packReference.version) : null,
       foundationStatus: current ? "available" : "waiting_data",
       foundationMessage: current ? "已有本体结构；行业参考仅用于核对名称和说明。" : "等待接入结构化数据并由程序构建本体；行业参考只提供名称和说明，不生成概念、关系或实例。" };
   }
+  examples(){return this.firstUse.examples();}
   private expected(body: Record<string, unknown>) {
     const state = this.state();
     if (body.expectedVersion !== state.version) throw new Error("初始化进度已变化，请刷新后继续；输入可重新核对");
@@ -67,8 +73,14 @@ export class Onboarding {
   suspend(body: Record<string, unknown>) { const state = this.expected(body); this.save({ ...state, active: false }); }
   step(body: Record<string, unknown>, configured: boolean) {
     const state = this.expected(body), step = Number(body.step);
-    if (!Number.isInteger(step) || step < 1 || step > (state.flow === "engine" ? 2 : 5)) throw new Error("无效的初始化步骤");
+    if (!Number.isInteger(step) || step < 1 || step > (state.flow === "engine" ? 6 : 5)) throw new Error("无效的初始化步骤");
     if (step > 1 && !configured) throw new Error("请先连接模型");
+    if(state.flow==='engine'){
+      const sourceKind=body.sourceKind===undefined?state.sourceKind:z.enum(['mcp','api','database','file','later']).parse(body.sourceKind);
+      if(step>3&&!this.firstUse.progress(configured).ontology.modelRef)throw new Error('请等待来源同步和本体构建完成，再查看命名与示例问题');
+      if(body.skipNaming!==undefined&&body.skipNaming!==true)throw new Error('跳过命名应明确选择');
+      this.save({...state,active:true,step,...(sourceKind?{sourceKind}:{}),skipped:[...new Set([...(state.skipped??[]),...(body.skipNaming===true?['naming']:[])])]});return;
+    }
     if (step > 2 && (!state.company.name || !industryPacks.some(pack => pack.id === state.company.industry))) throw new Error("请先保存企业名称和所属行业");
     if (step > 3 && !state.packReference && !this.foundation.read().adopted) throw new Error("请先选择行业命名参考，或继续使用已有本体；结构由接入的数据构建");
     this.save({ ...state, active: true, step });
@@ -141,8 +153,9 @@ export class Onboarding {
     const state = this.expected(body);
     if (state.flow === "engine") {
       if (!configured) throw new Error("请先连接模型；数据来源可以稍后接入");
-      const sourceKind = z.enum(["mcp", "api", "file", "later"]).parse(body.sourceKind ?? "later");
-      this.save({...state, sourceKind, active:false, step:2, completedAt:new Date().toISOString()});
+      const sourceKind = z.enum(["mcp", "api", "database", "file", "later"]).parse(body.sourceKind ?? state.sourceKind ?? "later");
+      if(sourceKind!=='later'&&state.step<6)throw new Error('请先查看构建结果与第一个问题，或明确选择稍后接入');
+      this.save({...state, sourceKind, active:false, step:sourceKind==='later'?2:6, completedAt:new Date().toISOString()});
       return;
     }
     if (!configured || !state.company.name || !industryPacks.some(p=>p.id===state.company.industry) || (!state.packReference && !this.foundation.read().adopted))

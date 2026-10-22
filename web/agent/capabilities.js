@@ -146,5 +146,5 @@ export function createCapabilitiesPanel(api, onConnectionsChanged) {
   dialog.addEventListener("close", () => {
     content.querySelectorAll("textarea").forEach((e) => (e.value = ""));
   });
-  return { button };
+  return { button, open };
 }

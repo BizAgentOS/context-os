@@ -20,6 +20,12 @@ const record = (value: unknown): Record<string, any> => {
 };
 const nodeToken = (value: unknown): value is string => typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(value);
 const pageToken = (value: unknown): value is string => typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_+/=-]{0,2047}$/.test(value);
+export const FEISHU_TABLE_SCOPES = ["base:table:read", "base:field:read", "base:record:read"];
+export function feishuBaseUrl(value: string) {
+  const u = new URL(value);
+  if (u.protocol !== "https:" || !(u.hostname === "feishu.cn" || u.hostname.endsWith(".feishu.cn")) || u.port || u.username || u.password || u.hash || !/^\/base\/[A-Za-z0-9_-]{1,128}$/.test(u.pathname) || [...u.searchParams.keys()].some(key => key !== "table") || u.searchParams.has("table") && !nodeToken(u.searchParams.get("table"))) throw new Error("请填写飞书多维表格 base 链接；接入范围为整张数据表，不接受筛选视图或分享参数");
+  return { url: u.origin + u.pathname, token: u.pathname.split("/").at(-1)! };
+}
 function documentUrl(url: string) {
   const u = new URL(url);
   if (u.protocol !== "https:" || !(u.hostname === "feishu.cn" || u.hostname.endsWith(".feishu.cn")) || u.port || u.username || u.password || u.search || u.hash || !/^\/(docx|wiki)\/[A-Za-z0-9_-]{1,128}$/.test(u.pathname)) throw new Error("请填写飞书 docx 文档或 wiki 知识库页面链接（不含查询参数）");
@@ -34,6 +40,7 @@ interface Account { profile: string; appId: string; openId: string; label: strin
 type Phase = "preparing" | "waiting_app" | "waiting_authorization" | "verifying" | "connected" | "cancelled" | "failed";
 interface Job { id: string; phase: Phase; authorizationUrl?: string; error?: string; }
 export class FeishuConnector {
+  onDisconnected?: () => void;
   private cli: FeishuCliPort;
   private file: string;
   private account?: Account;
@@ -56,7 +63,30 @@ export class FeishuConnector {
     renameSync(`${this.file}.tmp`, this.file);
   }
   status() {
-    return { provider: "feishu", version: FEISHU_VERSION, account: this.account ? { label: this.account.label, verifiedAt: this.account.verifiedAt } : null, job: this.job ? { ...this.job } : null };
+    return { provider: "feishu", version: FEISHU_VERSION, account: this.account ? { label: this.account.label, verifiedAt: this.account.verifiedAt, tablesAuthorized: FEISHU_TABLE_SCOPES.every(scope => this.account!.scopes?.includes(scope)) } : null, job: this.job ? { ...this.job } : null };
+  }
+  accountKey() { return this.account ? createHash("sha256").update(JSON.stringify([this.account.profile, this.account.appId, this.account.openId])).digest("hex") : null; }
+  assertAccount(key: string) { if (!key || this.accountKey() !== key) throw new Error("飞书连接已断开或账号已变化，请重新选择来源"); }
+  authorizeTables() {
+    if (!this.account) throw new Error("请先连接飞书账号");
+    if (this.running) throw new Error("已有飞书连接任务，请等待或取消");
+    const account = this.account, revision = ++this.revision, controller = new AbortController(), job: Job = { id: randomUUID(), phase: "preparing" };
+    this.controller = controller; this.job = job;
+    this.running = (async () => {
+      await this.cli.prepare(controller.signal); let authorized = false, shown = false;
+      await this.cli.run({ args: [`--profile=${account.profile}`, "auth", "login", "--json", "--scope", ["docx:document:readonly", ...FEISHU_TABLE_SCOPES].join(" ")], signal: controller.signal, timeoutMs: 630000, onLine: (stream, line) => {
+        if (stream !== "stdout" || !line.trim() || controller.signal.aborted) return;
+        const event = record(JSON.parse(line));
+        if (event.event === "device_authorization" && !shown && authorizationUrl(event.verification_uri_complete) && new URL(event.verification_uri_complete).hostname === "accounts.feishu.cn") { shown = true; job.phase = "waiting_authorization"; job.authorizationUrl = event.verification_uri_complete; }
+        else if (event.event === "authorization_complete" && shown && !authorized && Array.isArray(event.granted) && FEISHU_TABLE_SCOPES.every(scope => event.granted.includes(scope)) && Array.isArray(event.missing) && !event.missing.length) authorized = true;
+        else throw new Error("飞书表格授权回执无法验证");
+      } });
+      controller.signal.throwIfAborted(); if (!authorized) throw new Error("未取得表格只读授权");
+      const verified = await this.verify(account.profile, controller.signal); controller.signal.throwIfAborted();
+      if (this.revision !== revision || verified.appId !== account.appId || verified.openId !== account.openId || !FEISHU_TABLE_SCOPES.every(scope => verified.scopes?.includes(scope))) throw new Error("表格授权账号或权限不一致");
+      this.account = verified; this.save(); job.phase = "connected"; delete job.authorizationUrl;
+    })().catch(() => { if (revision === this.revision) { job.phase = controller.signal.aborted ? "cancelled" : "failed"; job.error = controller.signal.aborted ? undefined : "多维表格授权未完成，请检查管理员许可和账号后重试。"; delete job.authorizationUrl; } }).finally(() => { this.running = undefined; this.controller = undefined; });
+    return this.status();
   }
   start() {
     if (this.running) throw new Error("已有飞书连接任务，请等待或取消");
@@ -131,6 +161,7 @@ export class FeishuConnector {
     this.controller?.abort();
     await this.running;
     this.account = undefined; this.job = undefined; this.save();
+    this.onDisconnected?.();
     return this.status();
   }
   private async readSession() {
@@ -146,6 +177,48 @@ export class FeishuConnector {
     };
     authorized();
     return { account, signal, verified, authorized };
+  }
+  private async tableSession(expectedAccount?: string) {
+    const session = await this.readSession();
+    if (!FEISHU_TABLE_SCOPES.every(scope => session.verified.scopes?.includes(scope))) throw new Error("飞书账号缺少多维表格只读权限，请先完成表格授权");
+    if (expectedAccount) this.assertAccount(expectedAccount);
+    return session;
+  }
+  async tableDirectory(url: string, offset = 0, limit = 50) {
+    const base = feishuBaseUrl(url);
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > 10000 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("表格目录分页范围无效");
+    const session = await this.tableSession(), envelope = record(JSON.parse(await this.cli.run({ args: [`--profile=${session.account.profile}`, "base", "+table-list", "--base-token", base.token, "--offset", String(offset), "--limit", String(limit), "--as", "user", "--json"], signal: session.signal })));
+    session.authorized(); const data = record(envelope.data);
+    if (envelope.ok !== true || envelope.identity !== "user" || !Array.isArray(data.tables) || data.tables.length > limit || !Number.isSafeInteger(data.total) || data.total < offset + data.tables.length) throw new Error("表格目录分页回执无法验证");
+    const tables = data.tables.map((raw: unknown) => { const table = record(raw), id = table.id ?? table.table_id, name = table.name ?? table.table_name; if (!nodeToken(id) || typeof name !== "string" || !name.trim() || name.length > 200) throw new Error("飞书数据表标识无效"); return { id, name }; });
+    if (new Set(tables.map(item => item.id)).size !== tables.length || !tables.length && offset < data.total) throw new Error("表格目录没有前进或包含重复项");
+    return { base, tables, coverage: { offset, shown: tables.length, total: data.total as number, complete: offset === 0 && tables.length === data.total, nextOffset: offset + tables.length < data.total ? offset + tables.length : null } };
+  }
+  async tableFields(url: string, tableId: string) {
+    const base = feishuBaseUrl(url); if (!nodeToken(tableId)) throw new Error("飞书数据表标识无效");
+    const session = await this.tableSession(), fields: Record<string, any>[] = []; let total = Infinity;
+    while (fields.length < total) {
+      const envelope = record(JSON.parse(await this.cli.run({ args: [`--profile=${session.account.profile}`, "base", "+field-list", "--base-token", base.token, "--table-id", tableId, "--offset", String(fields.length), "--limit", "100", "--as", "user", "--json"], signal: session.signal })));
+      session.authorized(); const data = record(envelope.data);
+      if (envelope.ok !== true || envelope.identity !== "user" || !Array.isArray(data.fields) || data.fields.length > 100 || !Number.isSafeInteger(data.total) || data.total > 1000 || data.total < fields.length + data.fields.length || fields.length && total !== data.total || !data.fields.length && fields.length < data.total) throw new Error("飞书字段目录分页无效或超过 1000 列");
+      total = data.total; fields.push(...data.fields.map(record));
+    }
+    const parsed = fields.map(field => { const id = field.id ?? field.field_id, name = field.name ?? field.field_name; if (!nodeToken(id) || typeof name !== "string" || !name.trim() || name.length > 200 || typeof field.type !== "string") throw new Error("飞书字段定义无法验证"); return { id, name, type: field.type, multiple: field.multiple === true }; });
+    if (new Set(parsed.map(field => field.id)).size !== parsed.length || new Set(parsed.map(field => field.name)).size !== parsed.length || parsed.some(field => field.name === "record_id")) throw new Error("飞书字段名或标识重复，无法保留准确映射");
+    return parsed;
+  }
+  async tableRecords(input: { url: string; tableId: string; fieldIds: string[]; offset: number; limit: number; accountKey: string; recordId?: string }) {
+    const base = feishuBaseUrl(input.url);
+    if (!nodeToken(input.tableId) || input.fieldIds.length > 99 || !input.fieldIds.length || input.fieldIds.some(id => !nodeToken(id)) || !Number.isSafeInteger(input.offset) || input.offset < 0 || !Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 100 || input.recordId !== undefined && !nodeToken(input.recordId)) throw new Error("飞书记录范围无效");
+    const session = await this.tableSession(input.accountKey); if (!this.cli.exportRecords) throw new Error("连接组件缺少表格读取能力");
+    const args = [`--profile=${session.account.profile}`, "base", input.recordId ? "+record-get" : "+record-list", "--base-token", base.token, "--table-id", input.tableId,
+      ...input.fieldIds.flatMap(id => ["--field-id", id]), ...(input.recordId ? ["--record-id", input.recordId] : ["--offset", String(input.offset), "--limit", String(input.limit)]), "--as", "user", "--json"];
+    const result = await this.cli.exportRecords({ args, signal: session.signal }); session.authorized(); this.assertAccount(input.accountKey);
+    const m = result.manifest, count = result.records.length;
+    if (m.manifest_version !== "v1" || m.format !== "ndjson" || m.base_token !== base.token || m.table_id !== input.tableId || count > input.limit || m.records_count !== count || typeof m.has_more !== "boolean" || !Number.isSafeInteger(m.rev) || Number(m.rev) < 0 || !input.recordId && (m.offset ?? 0) !== input.offset || m.has_more && (!count || m.next_offset !== input.offset + count)) throw new Error("飞书记录页范围或版本回执无法验证");
+    const scope = record(m.query_context).record_scope;
+    if (scope !== (input.recordId ? "selected_record_ids" : "all_records")) throw new Error("飞书记录返回范围与请求不一致");
+    return result;
   }
   async browseDirectory(url: string, options: { parent?: boolean; pageToken?: string } = {}) {
     const u = documentUrl(url);

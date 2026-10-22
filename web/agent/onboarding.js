@@ -1,9 +1,10 @@
 import { element as el, action } from "./connection-ui.js";
 import { openConnections } from "./connections.js";
 import { openApiImport } from "./openapi-import.js";
+import {safeText} from './ui-display.js';
 
-const engineTitles = ["连接模型", "选择数据来源"];
-const engineDescriptions = ["先连接模型，让 ADE 助手帮助你整理数据、建立本体。", "选择一种接入方式，下一步打开对应配置。也可以稍后再添加。"];
+const engineTitles = ["连接模型", "添加第一个来源", "查看构建进度", "确认业务命名", "看看你的本体", "提出第一个问题"];
+const engineDescriptions = ["先连接模型，让 ADE 助手帮助你理解本体和回答问题。", "上传表格、连接数据库或接口。企业资料可以之后在设置中补充。", "按真实读取、发现和构建回执展示进度；关闭引导不会中止后台工作。", "核对助手提出的名称与说明，也可以稍后在待处理中完成。", "已采用的实体与关系可用于查询，待核对的发现继续保留在待处理中心。", "下面的问题来自当前可查询本体，点击后由问答助手读取实际数据并回答。"];
 const titles = ["连接模型", "认识你的企业", "选择行业本体", "连接资料与系统", "准备开始"];
 const descriptions = [
   "连接一个模型，让助手帮你理解企业、整理资料与建立本体。",
@@ -49,12 +50,13 @@ export function renderOnboarding(initial, actions) {
     finally { working=false;lock(); }
   }
   function lock() {
-    root.setAttribute("aria-busy",String(working||state.busy));
-    for(const button of root.querySelectorAll("button,input,select,textarea")) button.disabled=working||state.busy||button.dataset.unavailable==="true";
+    const blocked=working||(state.onboarding.flow!=="engine"&&state.busy);
+    root.setAttribute("aria-busy",String(blocked));
+    for(const button of root.querySelectorAll("button,input,select,textarea")) button.disabled=blocked||button.dataset.unavailable==="true";
     const stop=root.querySelector("[data-stop]");if(stop)stop.disabled=working;
   }
   async function save(path,body={}) {
-    const snapshot=await actions.api(`/api/onboarding/${path}`,{expectedVersion:state.onboarding.version,...body});
+    const snapshot=await actions.api(`/api/onboarding/${path}`,{expectedVersion:state.onboarding.version,page:actions.page?.()||'setup',...body});
     actions.apply(snapshot);state=snapshot;return snapshot;
   }
   const step=number=>run(()=>save("step",{step:number}));
@@ -112,15 +114,57 @@ export function renderOnboarding(initial, actions) {
   }
   function engineSources(body) {
     const list=el("div",null,"engine-source-choices");body.append(list);
-    let selected=draft.sourceKind||state.onboarding.sourceKind||"later";
-    for(const [id,title,description] of [["mcp","MCP 服务","连接已有工具服务，选择可读取的能力"],["api","HTTP API","导入接口文档、配置认证并测试数据"],["file","上传文件","CSV 数据或 Markdown / TXT 资料"],["later","稍后接入","先进入空工作区，随时添加来源"]]){
+    let selected=draft.sourceKind||state.onboarding.sourceKind||"file";
+    for(const [id,title,description] of [["file","上传表格","一次选择多份 CSV、TSV 或 Excel，整批完成后构建"],["database","连接数据库","只读接入 MySQL 或 PostgreSQL，选择业务表"],["api","HTTP API","导入接口文档、配置认证并测试数据"],["mcp","MCP 服务","连接已有工具服务，选择可读取的能力"]]){
       const choice=action(title,()=>{selected=id;draft.sourceKind=id;keep();for(const b of list.children)b.setAttribute("aria-pressed",String(b.dataset.kind===id));},"engine-choice");
       choice.dataset.kind=id;choice.setAttribute("aria-pressed",String(selected===id));choice.append(el("small",description));list.append(choice);
     }
-    footer(1,"进入数据工作区 →",async()=>{
-      const kind=selected;await save("complete",{sourceKind:kind});drafts.delete(draftKey);try{localStorage.removeItem(`de-onboarding:${draftKey}`);}catch{}
-      if(kind!=="later")actions.connect?.(kind);
-    });
+    footer(1,"接入并查看构建 →",async()=>{await save("step",{step:3,sourceKind:selected});actions.connect?.(selected);},action("稍后接入",()=>run(()=>save("complete",{sourceKind:"later"})),"quiet-button"));
+  }
+  function engineBuild(body){
+    const progress=el('div'),controls=el('div',null,'ob-inline-actions');body.append(progress,controls);
+    const next=action('查看命名建议 →',()=>step(4),'primary-button ob-next');
+    controls.append(action('重新选择来源',()=>step(2),'quiet-button'),next);
+    refreshStep=()=>{
+      const first=state.onboarding.firstUse,build=first?.build,ontology=first?.ontology;if(!build)return;
+      const labels={waiting_source:'等待添加结构化来源',waiting_build:'来源已接入，等待程序构建',running:'正在同步和构建',ready:'本体已生成',needs_attention:'有内容需要处理'};
+      progress.replaceChildren(el('h2',labels[build.status]||'等待构建'),el('p',`已读取 ${build.sourcesRead} 张表 → 已采用 ${ontology.entities} 个实体 → 已采用 ${ontology.relations} 条关系`,'ob-pack-summary'));
+      if(ontology.pendingRelations)progress.append(el('p',`另发现 ${ontology.pendingRelations} 项待核对关系，尚未采用。`,'ob-note'));
+      for(const item of build.steps||[])progress.append(el('p',`${item.label} · ${{queued:'等待中',running:'进行中',completed:'已完成',failed:'未完成'}[item.status]||item.status}`,'ob-muted'));
+      for(const issue of build.issues||[])progress.append(el('p',safeText(issue.message),'ob-note'));
+      for(const batch of first.uploads||[])progress.append(el('p',`有一批表格尚未提交，已接收 ${batch.received} 张表。`,'ob-note'),action('提交已接收表格',()=>run(async()=>{await actions.api('/api/canvas/upload/table-batch/finalize',{batchId:batch.ref.id});await fresh();}),'ob-outline'));
+      if(!build.hasStructuredSource)progress.append(el('p','文档可以补充说明和依据；生成本体结构需要接入表格、数据库或业务接口。','ob-muted'));
+      next.dataset.unavailable=String(!ontology.modelRef);lock();
+    };
+  }
+  function engineNaming(body){
+    const content=el('div');body.append(content);
+    refreshStep=()=>{
+      const naming=state.onboarding.firstUse?.naming;if(!naming)return;
+      content.replaceChildren();
+      if(naming.changeRef)content.append(el('p','业务名称建议已准备好，打开待处理项可逐项编辑、复验并采用。','ob-note'),action('核对整批命名',()=>actions.openPending?.(naming.changeRef),'ob-outline'));
+      else content.append(el('p',({waiting_model:'连接模型后可生成业务名称建议。',queued:'命名任务已排队，可继续查看本体。',running:'助手正在读取实际字段与样本，整理业务名称。',completed:'命名处理结果已保存。',failed:'本次命名未完成，之后可重试。',stopped:'命名已停止，已保存结果保留。',idle:'目前没有待核对的命名批次。'})[naming.status]||'命名状态已更新。','ob-note'));
+      if(naming.error)content.append(el('p',safeText(naming.error),'ob-note'));
+      if(['failed','stopped'].includes(naming.status))content.append(action('重试业务命名',()=>run(async()=>{const snapshot=await actions.api('/api/naming/retry',{page:actions.page?.()||'setup'});actions.apply(snapshot);state=snapshot;refreshStep();}),'ob-outline'));
+    };
+    footer(3,'查看本体 →',()=>save('step',{step:5}),action('跳过命名，之后处理',()=>run(()=>save('step',{step:5,skipNaming:true})),'quiet-button'));
+  }
+  function engineOntology(body){
+    const content=el('div');body.append(content);
+    refreshStep=()=>{const ontology=state.onboarding.firstUse?.ontology;if(!ontology)return;content.replaceChildren(el('h2',`${ontology.entities} 个实体 · ${ontology.relations} 条已采用关系`),el('p',ontology.pending?`有 ${ontology.pending} 项待处理。查看图谱时可打开待处理中心逐项核对。`:'当前没有未处理的变更。','ob-note'));};
+    footer(4,'进入本体并试问 →',async()=>{await save('step',{step:6});actions.showOntology?.();});
+  }
+  function engineQuestions(body){
+    const content=el('div'),receipt=el('div');body.append(content,receipt);let request=0,lastWorkspace='',loading=false;
+    const load=async()=>{const current=++request;loading=true;content.replaceChildren(el('p','正在根据当前本体准备示例问题…','ob-muted'));
+      try{const result=await actions.api('/api/onboarding/examples');if(current!==request||!body.isConnected)return;
+        content.replaceChildren(el('p',result.message||'点击一个问题，开始实际查询。','ob-muted'));
+        for(const item of result.questions||[])content.append(action(safeText(item.question),()=>run(async()=>{await save('complete');await actions.askExample?.(item.question);}),'engine-choice'));
+      }catch(error){if(current===request){content.replaceChildren(el('p',error.message,'ob-note'),action('重新准备示例',()=>void load(),'ob-outline'));}}
+      finally{loading=false;lock();}
+    };
+    refreshStep=()=>{const key=JSON.stringify(state.workspaceVersion??null);if(key!==lastWorkspace&&!loading){lastWorkspace=key;void load();}const answer=state.onboarding.firstUse?.firstAnswer;receipt.replaceChildren();if(answer)receipt.append(el('p','已完成一次有实际读取依据的问答。','ob-success'));};
+    footer(5,'稍后提问，完成引导',async()=>{await save('complete');actions.finish?.();});
   }
   function company(body) {
     const form=el("form",null,"ob-form");body.append(form);
@@ -284,7 +328,7 @@ export function renderOnboarding(initial, actions) {
       const heading=el("header",null,"ob-heading");const h1=el("h1",activeTitles[setup.step-1]);h1.tabIndex=-1;
       heading.append(h1,el("p",activeDescriptions[setup.step-1]));root.append(heading,status);
       const body=el("div",null,"ob-body");root.append(body);
-      (engine?[model,engineSources]:[model,company,packages,connections,summary])[setup.step-1](body);
+      (engine?[model,engineSources,engineBuild,engineNaming,engineOntology,engineQuestions]:[model,company,packages,connections,summary])[setup.step-1](body);
       if(previous)queueMicrotask(()=>{if(root.isConnected){h1.focus({preventScroll:true});root.closest(".onboarding-dialog")?.scrollTo({top:0});}});
     }
     live();lock();

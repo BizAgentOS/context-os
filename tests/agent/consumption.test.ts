@@ -1,3 +1,5 @@
+import {publishedDefinition,publishWorking,connectPublished,ref} from "./published-consumers-fixture.ts";
+import {Releases} from "../../src/engine/releases.ts";
 import { historicalConsumers } from "./historical-consumers-fixture.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -271,7 +273,7 @@ test("real HTTP separates admin capabilities from consumer keys, audits denied r
     async stop() {},
     async close() {},
   };
-  let service = await createServer({ directory, driver });
+  let service = await createServer({ directory, driver, automaticApi:false });
   const listen = async () => {
     await new Promise<void>((done) =>
       service.server.listen(0, "127.0.0.1", done),
@@ -299,17 +301,17 @@ test("real HTTP separates admin capabilities from consumer keys, audits denied r
       200,
     );
     const fixture = await model(service.app.memory);
-    const draft = historicalConsumers(service.app.consumption, service.app.memory, directory).propose({
-      name: "外部客服",
-      purpose: "获取投诉状态",
-      modelId: fixture.model.id,
-      modelVersion: fixture.model.version,
-      grants: [{ type: "Complaint", fields: ["$id", "status"], relations: [] }],
-    });
-    const { consumer, apiKey } = historicalConsumers(service.app.consumption, service.app.memory, directory).activate(
-      draft.id,
-      draft.version,
-    );
+    const primary=service.app.live.sources.connectUpload(fixture.tickets.id,fixture.tickets.version,"id");
+    const related=service.app.live.sources.connectUpload(fixture.callbacks.id,fixture.callbacks.version,"id");
+    await service.app.snapshots.sync({operationId:"current-consumer-snapshots"});
+    const definition=publishedDefinition(service.app,{purpose:"当前发布消费",rationale:"明确的虚构投诉与回访映射",types:[
+      {name:"Complaint",description:"投诉",sourceId:primary.id,capability:"records",fields:{status:"status",phone:"phone"}},
+      {name:"Callback",description:"回访",sourceId:related.id,capability:"records",fields:{complaintId:"complaint_id",result:"result",phone:"phone"}},
+    ],relations:[{name:"callbacks",from:"Complaint",to:"Callback",fromField:"$id",toField:"complaintId"}]});
+    const candidate=await service.app.live.propose(definition);await service.app.live.adopt(candidate.id,candidate.version);
+    const publication=await publishWorking(service.app);
+    const connected=connectPublished(service.app,publication,{name:"外部客服",purpose:"获取投诉状态",grants:[{type:"Complaint",fields:["$id","status"],relations:[]}]});
+    const consumer=connected.connection,apiKey=connected.key!;
     const authorization = `Bearer ${apiKey}`;
     for (const path of [
       "/api/bootstrap",
@@ -330,28 +332,25 @@ test("real HTTP separates admin capabilities from consumer keys, audits denied r
           403,
           path,
         );
-    const good = await fetch(`${origin}/v1/objects?type=Complaint`, {
+    const good = await fetch(`${origin}/v4/objects?type=Complaint`, {
       headers: { authorization },
     });
     assert.equal(good.status, 200);
-    assert.deepEqual((await good.json()).items, [
-      { type: "Complaint", id: "C1", fields: { status: "closed" } },
-      { type: "Complaint", id: "C2", fields: { status: "open" } },
-    ]);
+    assert.deepEqual((await good.json()).items.map((item:any)=>[item.objectRef.id,item.properties.status.value]),[["C1","closed"],["C2","open"]]);
     assert.equal(
       (
-        await fetch(`${origin}/v1/objects?type=Complaint`, {
+        await fetch(`${origin}/v4/objects?type=Complaint`, {
           headers: {
             "x-dataengine-token": service.adminToken,
             cookie: cookie.split(";")[0],
           },
         })
       ).status,
-      401,
+      403,
     );
     assert.equal(
       (
-        await fetch(`${origin}/v1/objects?type=Complaint&fields=phone`, {
+        await fetch(`${origin}/v4/objects?type=Complaint&fields=phone`, {
           headers: { authorization },
         })
       ).status,
@@ -359,15 +358,15 @@ test("real HTTP separates admin capabilities from consumer keys, audits denied r
     );
     assert.equal(
       (
-        await fetch(`${origin}/v1/evidence?type=Complaint`, {
+        await fetch(`${origin}/v4/evidence?type=Complaint`, {
           headers: { authorization },
         })
       ).status,
-      404,
+      400,
     );
     assert.equal(
       (
-        await fetch(`${origin}/v1/objects?type=Complaint`, {
+        await fetch(`${origin}/v4/objects?type=Complaint`, {
           method: "POST",
           headers: { authorization, "content-type": "application/json" },
           body: "{}",
@@ -386,41 +385,32 @@ test("real HTTP separates admin capabilities from consumer keys, audits denied r
     assert.equal(forbiddenActivation.status, 403);
     const oldToken = service.adminToken;
     await service.close();
-    service = await createServer({ directory, driver });
+    service = await createServer({ directory, driver, automaticApi:false });
     origin = await listen();
     assert.equal(service.adminToken, oldToken);
     assert.equal(
       (
-        await fetch(`${origin}/v1/objects?type=Complaint`, {
+        await fetch(`${origin}/v4/objects?type=Complaint`, {
           headers: { authorization },
         })
       ).status,
       200,
     );
-    service.app.consumption.revoke(consumer.id, consumer.version);
+    new Releases(service.app.memory,service.app.live).revoke({operationId:"revoke-http-consumer",connectionRef:ref(consumer)});
     assert.equal(
       (
-        await fetch(`${origin}/v1/objects?type=Complaint`, {
+        await fetch(`${origin}/v4/objects?type=Complaint`, {
           headers: { authorization },
         })
       ).status,
-      401,
+      403,
     );
-    const records = await fetch(`${origin}/api/consumers`, {
-      headers: { "x-dataengine-token": service.adminToken },
-    });
-    assert.equal(records.status, 200);
-    const audit = (await records.json()).audit;
-    assert.equal(
-      audit.some((log: { result: string }) => log.result === "allowed"),
-      true,
-    );
-    assert.equal(
-      audit.some((log: { result: string }) => log.result === "denied"),
-      true,
-    );
-    assert.equal(JSON.stringify(audit).includes(apiKey), false);
-    assert.equal(JSON.stringify(audit).includes("13800000001"), false);
+    const records=await fetch(`${origin}/api/releases/connection-detail?id=${consumer.id}&version=${consumer.version+1}`,{headers:{"x-dataengine-token":service.adminToken}});
+    assert.equal(records.status,200);
+    const audit=(await records.json()).usage;
+    assert(audit.succeeded>0);assert(audit.failed>0);
+    assert.equal(JSON.stringify(audit).includes(apiKey),false);
+    assert.equal(JSON.stringify(audit).includes("13800000001"),false);
   } finally {
     await service.close();
     rmSync(directory, { recursive: true, force: true });

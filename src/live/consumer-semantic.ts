@@ -15,6 +15,7 @@ export function consumerSemanticScope(memory:MemoryStore,live:LiveMemory,dataset
   const assertValid=()=>{
     const current=memory.getArtifact(dataset.id);
     if(current.kind!=='ontology_dataset'||current.status!=='active'||current.version!==dataset.version)throw new ConsumerScopeError('接入数据集已停用或变化');
+    for(const metric of layered.semantic.metricReferences.filter(item=>((dataset.content.metricIds??[]) as string[]).includes(item.id)))live.sources.capability(metric.sourceId,metric.capability,metric.connectionVersion);
     if(viewRef)new ConsumerViews(memory,live).assertLinkedReadable(viewRef);
   };
   assertValid();
@@ -32,8 +33,11 @@ export function consumerSemanticScope(memory:MemoryStore,live:LiveMemory,dataset
   }
   const grantedRelations=new Set(layered.semantic.relationTypes.filter(relation=>relationIds.has(relation.id)&&entityIds.has(relation.from)&&entityIds.has(relation.to)&&grants.some(grant=>grant.type===layered.semantic.entityTypes.find(entity=>entity.id===relation.from)?.name&&grant.relations.includes(relation.name))).map(relation=>relation.id));
   const projection=structuredClone(layered);
+  // An existing connection never acquires newly adopted metric permissions implicitly.
+  projection.semantic.metricReferences=projection.semantic.metricReferences.filter(item=>((dataset.content.metricIds??[]) as string[]).includes(item.id));
+  const metricProperties=new Set(projection.semantic.metricReferences.flatMap(item=>item.dimensions.map(mapping=>mapping.propertyId)));
   projection.semantic.entityTypes=projection.semantic.entityTypes.filter(item=>entityIds.has(item.id)).map(item=>({...item,identityKeys:item.identityKeys.filter(id=>propertyIds.has(id))}));
-  projection.semantic.properties=projection.semantic.properties.filter(item=>propertyIds.has(item.id));
+  projection.semantic.properties=projection.semantic.properties.filter(item=>propertyIds.has(item.id)||metricProperties.has(item.id));
   projection.semantic.relationTypes=projection.semantic.relationTypes.filter(item=>relationIds.has(item.id)&&entityIds.has(item.from)&&entityIds.has(item.to));
   return{layered:projection,options:{...options,scope:{entityTypeIds:businessEntityIds,propertyIds,relationTypeIds:grantedRelations}},evidencePropertyIds,businessEntityIds,assertValid};
 }

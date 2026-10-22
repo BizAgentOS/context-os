@@ -145,6 +145,12 @@ export class ConsumptionService {
     );
   }
 
+  /** Administrative export preserves all stored receipts, including denied reads. No credentials table is read. */
+  auditHistory(): AccessLog[] {
+    return this.db.prepare("SELECT id,body FROM access_logs ORDER BY id").all()
+      .map(row => ({ ...JSON.parse(String(row.body)), id: Number(row.id) }) as AccessLog);
+  }
+
   private adoptedModel(id: unknown, version: unknown): Artifact {
     const model = this.memory.getArtifact(
       text(id, "本体标识"),

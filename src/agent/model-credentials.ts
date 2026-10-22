@@ -1,25 +1,19 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { randomUUID } from "node:crypto";
+import { CredentialVault } from "../security/credential-vault.ts";
 import { modelKeyEnvironment, type ModelSettings } from "./runtime.ts";
 
 /** Private local credentials, kept outside model metadata and domain artifacts. */
 export class ModelCredentials {
-  private file: string;
+  private vault: CredentialVault;
   constructor(directory: string) {
-    const parent = join(directory, "credentials");
-    mkdirSync(parent, { recursive: true, mode: 0o700 });
-    chmodSync(parent, 0o700);
-    this.file = join(parent, "models.json");
-    if (existsSync(this.file)) chmodSync(this.file, 0o600);
+    this.vault = new CredentialVault(directory);
+    this.vault.migrateJson('models','credentials/models.json');
   }
   private read(): Record<string, string | null> {
-    if (!existsSync(this.file)) return {};
-    const data = JSON.parse(readFileSync(this.file, "utf8"));
+    const data = this.vault.get('models');
     if (!data || typeof data !== "object" || Array.isArray(data) ||
         Object.values(data).some(value => value !== null && typeof value !== "string"))
       throw new Error("模型凭据文件无效，请恢复本地凭据文件");
-    return data;
+    return data as Record<string,string|null>;
   }
   saved(settings: ModelSettings) { return !!this.read()[modelKeyEnvironment(settings)]; }
   restore(settings: ModelSettings) {
@@ -32,9 +26,7 @@ export class ModelCredentials {
   save(settings: ModelSettings, value: string | null) {
     const entries = this.read();
     entries[modelKeyEnvironment(settings)] = value;
-    const temporary = `${this.file}.${randomUUID()}.tmp`;
-    writeFileSync(temporary, JSON.stringify(entries), { mode: 0o600, flag: "wx" });
-    renameSync(temporary, this.file);
+    this.vault.set('models',entries);
     this.restore(settings);
   }
 }

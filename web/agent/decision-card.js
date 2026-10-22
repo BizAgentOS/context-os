@@ -1,7 +1,7 @@
 import { safeText } from "./ui-display.js";
 
 /** Decisions, gaps and mode suggestions share presentation; only their owning service supplies actions. */
-export function renderDecisionCard(decision, { openPending, highlightRefs, answerDecision, onLater } = {}) {
+export function renderDecisionCard(decision, { openPending, highlightRefs, answerDecision, switchMode, onLater } = {}) {
   const node = (tag, text) => { const value = document.createElement(tag); if (text) value.textContent = safeText(text); return value; };
   const card = node("section"); card.className = "agent-decision-card";
   card.setAttribute("aria-label", decision.kind === "gap" ? "数据缺口" : decision.kind === "mode_suggestion" ? "建议切换模式" : "需要你的决定");
@@ -19,11 +19,12 @@ export function renderDecisionCard(decision, { openPending, highlightRefs, answe
     }); controls.append(button);
   };
   const status = node("p"); status.className = "agent-card-status"; status.setAttribute("role", "status");
+  if(decision.kind==="mode_suggestion"&&["build","qa"].includes(decision.mode)&&switchMode)action(`切换到${decision.mode==="build"?"构建":"问答"}助手`,async()=>{await switchMode(decision.mode);status.textContent="下一条消息将使用所选模式。";});
   for (const [index, ref] of (decision.refs || []).entries()) if (openPending) {
     action(decision.refs.length > 1 ? `查看变更 ${index + 1} 并决定` : "查看影响并决定", () => openPending(ref));
     if (highlightRefs) action("在本体中查看", () => highlightRefs([ref]));
   }
   if (answerDecision) for (const option of decision.options || []) action(option.label, () => answerDecision({ question: decision.question, option }));
-  action("稍后", () => { card.dataset.deferred = "true"; status.textContent = "已暂缓显示，变更仍在待处理中。"; onLater?.(decision); });
+  action("稍后", () => { card.dataset.deferred = "true"; status.textContent = decision.kind==="mode_suggestion"?"已暂缓切换，当前模式保持不变。":"已暂缓显示，变更仍在待处理中。"; onLater?.(decision); });
   card.append(controls, status); return card;
 }

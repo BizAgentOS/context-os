@@ -2,6 +2,7 @@ import type { Artifact } from "../agent/contracts.ts";
 import type { DatasetContent, Snapshots } from "../data/snapshots.ts";
 import { suggestOntology, type Resource, type SourceInfo, type SuggestedOntology } from "./helix-discovery.ts";
 import { fingerprint } from "./release-diff.ts";
+import { discoveryQuery } from './discovery-query.ts';
 
 // Helix names merged columns and disambiguates entities by the source system (workos_name); in ADE that is the
 // connection's own name, not its protocol. Names Helix treats specially fall back to the protocol.
@@ -30,5 +31,6 @@ export function discoveryInput(datasets: Artifact[], sources: (id: string) => Ar
 
 export async function discoverFromSnapshots(snapshots: Snapshots, sources: (id: string) => Artifact | undefined, datasetIds?: string[]): Promise<SuggestedOntology> {
   const datasets = snapshots.datasets().filter(d => !datasetIds || datasetIds.includes(d.id));
-  return suggestOntology((ids, sql, options) => snapshots.query(ids, sql, options), discoveryInput(datasets, sources));
+  const input=discoveryInput(datasets,sources),pins=input.datasets.filter(dataset=>dataset.data.activeVersion).map(dataset=>({datasetId:dataset.id,snapshotId:dataset.data.activeVersion!}));
+  return suggestOntology(discoveryQuery(snapshots,pins), input);
 }
