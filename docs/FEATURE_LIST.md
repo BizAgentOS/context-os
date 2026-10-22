@@ -1,8 +1,8 @@
 # DataEngine Feature List
 
-Last Updated: 2026-10-21
+Last Updated: 2026-10-22
 
-**当前开发：v0.3.0。**该批次已开工，范围为 FEATURE_036—068，当前完成 13/33 项，041、042 已完成；具体状态见下方汇总与索引。最近发布版本为 v0.2.3，包版本与 Tag 按发布规则保留该值。下方带日期的记录描述当时进展，不代替当前状态。
+**当前本地发布：v0.3.0（2026-10-22）。**FEATURE_036—068 共 33 项全部完成并随 v0.3.0 发布；完整检查 645/645、两套真实样本整链与冷恢复通过。功能状态及首次发布版本见下方汇总和详情；下方较早日期的记录保留当时进展，不代替当前状态。
 
 **2026-10-19 v0.3.0 规划登记：**用户确认 Fabric IQ 对照与产品全面体检后的方向，将全部改进定义为开发版本 v0.3.0，登记 FEATURE_036—068（33 项，分 M0 清理与对齐、M1 核心闭环、M2 问答、M3 数据接入、M4 试点准入五个里程碑）。目标设计见 [v0.3.0 目标产品蓝图](features/v0.3.0-blueprint.md)，Feature、票与依赖见 [v0.3.0 设计与任务](features/v0.3.0.md)。本次只登记范围与拆票，全部为 Planned，未开工、未改代码、未改变既有 Feature 状态或版本号。
 
@@ -46,6 +46,8 @@ Last Updated: 2026-10-21
 
 ## Version Info
 
+**2026-10-22 v0.3.0 本地发布与验收：**真实 KodaX 首答计时为星桥 132.774 秒 / 13 条 Person、留出样本 444.866 秒 / 12 条 Building，均明确跳过命名后先完成问答；后续真实命名分别形成 84 / 88 项，两套样本均已界面采用。050 / 062、059、064 的独立桌面与 390px 浏览器及公共边界证据见[本轮验收](experiment/V030_ACCEPTANCE_2026_10_22.md)，已区分真实模型、本机 HTTP 协议与 synthetic driver。早前 check3 为 638/639，提示词合同失败定向修复 2/2；最终完整检查已为 645/645（0 失败 / 跳过 / 取消），随后知识检索说明定向 11/11 与类型检查通过。两套样本整链已完成。043 / 044 / 045 / 050 / 052 / 055 / 056 / 059 / 061 / 062 / 064 / 065 / 066 / 067 按独立完整证据结项，随后 046 / 048 / 053 / 054 真实星桥整链通过，两样本发布、双范围消费与冷恢复随后通过，063 / 068 结项，当前 33/33 完成，按用户既定授权本地发布 v0.3.0。星桥 5 份正文均已存储，4 份形成有效依据；legacy-template 初轮无有效依据，后续显式重试因来源依赖变化被拒绝且未采用，终态见[文档回执](../output/playwright/ade-real-v030/starbridge-chain/document-final-status.json)，不伪报 5/5。
+
 **2026-10-21 全量开发与发布授权：**用户明确选择完成 v0.3.0 原计划全部 33 项后发布。继续按依赖完成剩余 24 项及 FEATURE_068 整体验收，通过后直接按既定规则本地发布 v0.3.0；不需要再次确认发布授权。当前启动 043 文档证据与批次、044 待处理、046 Agent 面板及 057 表格接入的无阻塞票；完成状态只按实际验收更新。
 
 **2026-10-21 继续实施：**按用户授权先补齐 041 统一提议、复验、采用与拒绝闭环及浏览器验收，再完成 042 关系发现、身份对应与正负例回归。041 不仅剩界面验收：逐项结构记录、拒绝记忆、旧入口接入与事务一致性仍须收口。同步 042 索引为 InProgress；本轮完成状态以实际验收追加，版本保持 v0.2.3、未发布。
@@ -54,8 +56,8 @@ Last Updated: 2026-10-21
 
 **2026-10-21 042 收口：**唯一外键、责任字段与自引用关系进入明确采用流程；same_as / belongs_to、记录级 match / no_match、冗余边弃用和活动分类完成，身份决定进入工作版、固定发布与历史恢复。星桥六类目标关系及独立负例通过；399 项测试、类型检查、快照整链、桌面 / 390px 浏览器与重启通过。041、042 均 Completed，见[042 验收](experiment/V030_042_2026_10_21.md)。版本仍为 v0.2.3，未发布。
 
-- **Current Release:** v0.2.3（2026-10-16，本地 Tag `v0.2.3`）。v0.2.2 于 2026-10-15 发布（本地 Tag `v0.2.2`）。v0.2.0 于 2026-10-14 发布（提交 `930b10e`，Tag `v0.2.0`）。
-- **Current Development:** v0.3.0（2026-10-19 登记并开工，FEATURE_036—068；13 项完成、17 项 InProgress、3 项 Planned，尚未发布）。v0.1.0 保留历史功能与验收记录。
+- **Current Release:** v0.3.0（2026-10-22，本地发布，Tag `v0.3.0`）。上一版本 v0.2.3 于 2026-10-16 本地发布；v0.2.2 于 2026-10-15 发布，v0.2.0 于 2026-10-14 发布（提交 `930b10e`）。
+- **Current Development:** 本轮 v0.3.0 已收口（2026-10-19 登记并开工，FEATURE_036—068；33 项完成、0 项 InProgress、0 项 Planned）。后续新版本尚未登记；v0.1.0 保留历史未完成项与验收记录。
 - **版本状态:** 计划于 v0.2.0 的 11 项全部完成：025—030 随 v0.2.0 发布，031—035 随 v0.2.1 发布；v0.2.2 为这些能力的修复发布。v0.1.0 未单独发布，002、004、005、006、019 仍未完成，继续保留。
 - **状态规则:** `Planned → InProgress → Completed`；`Released` 仅填写实际发布版本。
 - **设计:** [v0.3.0 设计与任务](features/v0.3.0.md)及[目标产品蓝图](features/v0.3.0-blueprint.md)；[v0.2.0 设计与开发步骤](features/v0.2.0.md)；[v0.1.0 历史](features/v0.1.0.md)。
@@ -67,7 +69,7 @@ Last Updated: 2026-10-21
 |---|---|---:|---:|---:|---:|
 | v0.1.0 | InProgress | 2 | 3 | 19 | 19/24 |
 | v0.2.0 | Released | 0 | 0 | 11 | 11/11 |
-| v0.3.0 | InProgress | 3 | 17 | 13 | 13/33 |
+| v0.3.0 | Released | 0 | 0 | 33 | 33/33 |
 
 本表按计划批次统计。v0.2.2 为已发布能力的 PATCH 修复版本，不新增或重复计算 Feature。
 
@@ -121,32 +123,32 @@ Last Updated: 2026-10-21
 | 040 | 分层语义模型 | Refactor | High | Completed | v0.3.0 | 036 | [设计](features/v0.3.0.md#feature-040) |
 | 041 | 统一变更流程与自动采用规则 | Enhancement | High | Completed | v0.3.0 | 040 | [设计](features/v0.3.0.md#feature-041) |
 | 042 | 关系发现修复与身份对应 | Enhancement | High | Completed | v0.3.0 | 040、041 | [设计](features/v0.3.0.md#feature-042) |
-| 043 | 文档补充、证据库与待裁决 | Enhancement | High | InProgress | v0.3.0 | 041、044 | [设计](features/v0.3.0.md#feature-043) |
-| 044 | 待处理中心 | New | High | InProgress | v0.3.0 | 041；界面依赖 048 | [设计](features/v0.3.0.md#feature-044) |
-| 045 | 首次构建批量业务命名 | New | High | InProgress | v0.3.0 | 041、044、047 | [设计](features/v0.3.0.md#feature-045) |
-| 046 | Agent 面板与结构化消息 | Enhancement | High | InProgress | v0.3.0 | 036、041、049 | [设计](features/v0.3.0.md#feature-046) |
+| 043 | 文档补充、证据库与待裁决 | Enhancement | High | Completed | v0.3.0 | 041、044 | [设计](features/v0.3.0.md#feature-043) |
+| 044 | 待处理中心 | New | High | Completed | v0.3.0 | 041；界面依赖 048 | [设计](features/v0.3.0.md#feature-044) |
+| 045 | 首次构建批量业务命名 | New | High | Completed | v0.3.0 | 041、044、047 | [设计](features/v0.3.0.md#feature-045) |
+| 046 | Agent 面板与结构化消息 | Enhancement | High | Completed | v0.3.0 | 036、041、049 | [设计](features/v0.3.0.md#feature-046) |
 | 047 | 会话、上下文与执行分池 | Enhancement | High | Completed | v0.3.0 | 036、037 | [设计](features/v0.3.0.md#feature-047) |
-| 048 | 构建模式与工具收敛 | Refactor | High | InProgress | v0.3.0 | 041、046 | [设计](features/v0.3.0.md#feature-048) |
+| 048 | 构建模式与工具收敛 | Refactor | High | Completed | v0.3.0 | 041、046 | [设计](features/v0.3.0.md#feature-048) |
 | 049 | 事件推送与前端模块化 | Refactor | High | Completed | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-049) |
-| 050 | 本体页重构 | Enhancement | High | InProgress | v0.3.0 | 040、044、046 | [设计](features/v0.3.0.md#feature-050) |
+| 050 | 本体页重构 | Enhancement | High | Completed | v0.3.0 | 040、044、046 | [设计](features/v0.3.0.md#feature-050) |
 | 051 | 查询层扩展与执行资源 | Enhancement | High | Completed | v0.3.0 | 038、040 | [设计](features/v0.3.0.md#feature-051) |
-| 052 | 问答模式与回答卡 | New | High | InProgress | v0.3.0 | 046、047、051 | [设计](features/v0.3.0.md#feature-052) |
-| 053 | 答案联动可视化 | New | High | InProgress | v0.3.0 | 050、052 | [设计](features/v0.3.0.md#feature-053) |
-| 054 | 缺口单与问答到修复交接 | New | High | InProgress | v0.3.0 | 044、048、052 | [设计](features/v0.3.0.md#feature-054) |
-| 055 | 发布与接入页重构与对外接口扩展 | Enhancement | High | InProgress | v0.3.0 | 039、041、051、052 | [设计](features/v0.3.0.md#feature-055) |
-| 056 | 首次使用流程 | Enhancement | High | Planned | v0.3.0 | 045、052 | [设计](features/v0.3.0.md#feature-056) |
+| 052 | 问答模式与回答卡 | New | High | Completed | v0.3.0 | 046、047、051 | [设计](features/v0.3.0.md#feature-052) |
+| 053 | 答案联动可视化 | New | High | Completed | v0.3.0 | 050、052 | [设计](features/v0.3.0.md#feature-053) |
+| 054 | 缺口单与问答到修复交接 | New | High | Completed | v0.3.0 | 044、048、052 | [设计](features/v0.3.0.md#feature-054) |
+| 055 | 发布与接入页重构与对外接口扩展 | Enhancement | High | Completed | v0.3.0 | 039、041、051、052 | [设计](features/v0.3.0.md#feature-055) |
+| 056 | 首次使用流程 | Enhancement | High | Completed | v0.3.0 | 045、052 | [设计](features/v0.3.0.md#feature-056) |
 | 057 | 表格文件接入 | Enhancement | High | Completed | v0.3.0 | 037 | [设计](features/v0.3.0.md#feature-057) |
 | 058 | 只读数据库连接器 | New | High | Completed | v0.3.0 | 037 | [设计](features/v0.3.0.md#feature-058) |
-| 059 | API 连接器增强 | Enhancement | High | InProgress | v0.3.0 | 037 | [设计](features/v0.3.0.md#feature-059) |
+| 059 | API 连接器增强 | Enhancement | High | Completed | v0.3.0 | 037 | [设计](features/v0.3.0.md#feature-059) |
 | 060 | 定时与增量同步、质量熔断 | New | High | Completed | v0.3.0 | 041、044 | [设计](features/v0.3.0.md#feature-060) |
-| 061 | 数据页重构 | Enhancement | High | InProgress | v0.3.0 | 037、060 | [设计](features/v0.3.0.md#feature-061) |
-| 062 | 飞书多维表格与 PDF/DOCX | Enhancement | High | InProgress | v0.3.0 | 043、060 | [设计](features/v0.3.0.md#feature-062) |
-| 063 | 凭据加密、数据保留与备份恢复 | Enhancement | High | InProgress | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-063) |
-| 064 | 成本上限与角色权限 | New | High | InProgress | v0.3.0 | 041、046 | [设计](features/v0.3.0.md#feature-064) |
-| 065 | 指标引用 | New | High | InProgress | v0.3.0 | 040、041、052 | [设计](features/v0.3.0.md#feature-065) |
-| 066 | 持久层优化与规模验收集 | Internal | High | InProgress | v0.3.0 | 040、057—060 | [设计](features/v0.3.0.md#feature-066) |
-| 067 | 演示与分享走正式路径、旧接口下线 | Refactor | High | Planned | v0.3.0 | 039、049、050 | [设计](features/v0.3.0.md#feature-067) |
-| 068 | v0.3.0 整链验收 | Internal | High | Planned | v0.3.0 | 036—067 | [设计](features/v0.3.0.md#feature-068) |
+| 061 | 数据页重构 | Enhancement | High | Completed | v0.3.0 | 037、060 | [设计](features/v0.3.0.md#feature-061) |
+| 062 | 飞书多维表格与 PDF/DOCX | Enhancement | High | Completed | v0.3.0 | 043、060 | [设计](features/v0.3.0.md#feature-062) |
+| 063 | 凭据加密、数据保留与备份恢复 | Enhancement | High | Completed | v0.3.0 | 无 | [设计](features/v0.3.0.md#feature-063) |
+| 064 | 成本上限与角色权限 | New | High | Completed | v0.3.0 | 041、046 | [设计](features/v0.3.0.md#feature-064) |
+| 065 | 指标引用 | New | High | Completed | v0.3.0 | 040、041、052 | [设计](features/v0.3.0.md#feature-065) |
+| 066 | 持久层优化与规模验收集 | Internal | High | Completed | v0.3.0 | 040、057—060 | [设计](features/v0.3.0.md#feature-066) |
+| 067 | 演示与分享走正式路径、旧接口下线 | Refactor | High | Completed | v0.3.0 | 039、049、050 | [设计](features/v0.3.0.md#feature-067) |
+| 068 | v0.3.0 整链验收 | Internal | High | Completed | v0.3.0 | 036—067 | [设计](features/v0.3.0.md#feature-068) |
 
 此表保留已有能力与票的实际完成记录，计数不代表新 MVP 体验的完成比例。本轮按 [MVP 完成条件](MVP.md)及 FEATURE_012—016 的任务依赖验收。006、远程 MCP 服务和旧票中尚未覆盖的完整回归/恢复保留为后续工作，不因范围调整标为完成。
 
@@ -547,7 +549,7 @@ Last Updated: 2026-10-21
 
 - **Status:** Completed
 - **Category / Priority:** Internal / High
-- **Planned / Released:** v0.3.0 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
 - **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / 2026-10-19
 - **Description:** 主文档按蓝图同步，新增 ADR-005—008；提示词按身份/通用规则重写，清理冲突 Skill，增加提示词—工具—页面名称一致性检查。
 - **Blocked by:** 无。
@@ -558,7 +560,7 @@ Last Updated: 2026-10-21
 
 - **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.3.0 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
 - **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / 2026-10-19
 - **Description:** 开发者视图之外不显示 JSON、UUID 与内部字段；三页共用来源投影；删除口令采用；对话历史不再物理删除；修正发布页引导。
 - **Blocked by:** 无。
@@ -569,7 +571,7 @@ Last Updated: 2026-10-21
 
 - **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.3.0 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
 - **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / 2026-10-19
 - **Description:** 工作区默认读已采用快照，实时为显式选择；结果附读取模式、版本、数据截至与覆盖；工具说明由执行合同生成。
 - **Blocked by:** 无。
@@ -580,7 +582,7 @@ Last Updated: 2026-10-21
 
 - **Status:** Completed
 - **Category / Priority:** Refactor / High
-- **Planned / Released:** v0.3.0 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
 - **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / 2026-10-19
 - **Description:** v1/v2/v3 与旧数据集工作台冻结为只读，对外只保留发布 + 接入方 + v4/MCP；移除 Agent 旧接入工具。
 - **Blocked by:** 无。
@@ -591,7 +593,7 @@ Last Updated: 2026-10-21
 
 - **Status:** Completed
 - **Category / Priority:** Refactor / High
-- **Planned / Released:** v0.3.0 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
 - **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / 2026-10-19
 - **Description:** 语义层（实体、属性、关系类型）与绑定层分离，稳定 ID、复合身份、中间表；存量迁移，旧发布可读。
 - **Blocked by:** 036。
@@ -602,7 +604,7 @@ Last Updated: 2026-10-21
 
 - **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.3.0 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
 - **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / 2026-10-21
 - **Description:** 程序/人/Agent 变更统一提议、复验、采用；拒绝指纹；自动采用只限首次构建与同结构重绑；工作版组合；治理决定进入发布。
 - **Blocked by:** 040。
@@ -613,7 +615,7 @@ Last Updated: 2026-10-21
 
 - **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.3.0 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
 - **Created / Started / Completed:** 2026-10-19 / 2026-10-20 / 2026-10-21
 - **Description:** 修复唯一外键、责任字段、自引用发现；身份规则 same_as/belongs_to 与记录级决定；去冗余与活动流改为提议。
 - **Blocked by:** 040、041。
@@ -622,49 +624,57 @@ Last Updated: 2026-10-21
 
 ### 043: 文档补充、证据库与待裁决
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / 2026-10-22
 - **Description:** 文档按批次产生一个工作版；依据外置证据库；冲突与未知进入待裁决；取消整体拒绝上限。
 - **Blocked by:** 041、044。
 - **Design:** [FEATURE_043](features/v0.3.0.md#feature-043)。
+- **验收（2026-10-22）:** 公共边界、对应浏览器及真实 / 协议证据已按范围收口，见[本轮验收](experiment/V030_ACCEPTANCE_2026_10_22.md)。Completed 表示该功能已验收；首次随 v0.3.0 本地发布。
+
 
 ### 044: 待处理中心
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** New / High
-- **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / 2026-10-22
 - **Description:** 结构变更、命名、待裁决、缺口、数据问题集中为一个队列，服务端统一计数，取代分散采用入口。
 - **Blocked by:** 041；界面依赖 048。
 - **Design:** [FEATURE_044](features/v0.3.0.md#feature-044)。
+- **验收（2026-10-22）:** 公共边界、对应浏览器及真实 / 协议证据已按范围收口，见[本轮验收](experiment/V030_ACCEPTANCE_2026_10_22.md)。Completed 表示该功能已验收；首次随 v0.3.0 本地发布。
+
 
 ### 045: 首次构建批量业务命名
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** New / High
-- **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / 2026-10-22
 - **Description:** 首次构建后由 Agent 提出整套中文名称、别名与说明，作为一项命名变更由用户确认。
 - **Blocked by:** 041、044、047。
 - **Design:** [FEATURE_045](features/v0.3.0.md#feature-045)。
+- **验收（2026-10-22）:** 公共边界、对应浏览器及真实 / 协议证据已按范围收口，见[本轮验收](experiment/V030_ACCEPTANCE_2026_10_22.md)。Completed 表示该功能已验收；首次随 v0.3.0 本地发布。
+
 
 ### 046: Agent 面板与结构化消息
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / 2026-10-22
 - **Description:** 三页统一面板；执行卡、变更清单、决定卡、Markdown；停止与超时部分完成回执；成本显示。
 - **Blocked by:** 036、041、049。
 - **Design:** [FEATURE_046](features/v0.3.0.md#feature-046)。
+- **验收（2026-10-22）:** 星桥真实停止 / 继续、缺口修复与复问、三跳图和窄屏列表验收完成，具体范围见[本轮记录](experiment/V030_ACCEPTANCE_2026_10_22.md)。首次随 v0.3.0 本地发布。
+
 
 ### 047: 会话、上下文与执行分池
 
 - **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.3.0 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
 - **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / 2026-10-19
 - **Description:** 会话长期保存；模型上下文由摘要与近期窗口组成并设上限；交互与后台分池；页面状态前端化。
 - **Blocked by:** 036、037。
@@ -673,19 +683,21 @@ Last Updated: 2026-10-21
 
 ### 048: 构建模式与工具收敛
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** Refactor / High
-- **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / 2026-10-22
 - **Description:** 工具按模式选择；统一提议、复验、预览、待处理、决定工具；Agent 只提议不采用结构；下线旧工具。
 - **Blocked by:** 041、046。
 - **Design:** [FEATURE_048](features/v0.3.0.md#feature-048)。
+- **验收（2026-10-22）:** 星桥真实停止 / 继续、缺口修复与复问、三跳图和窄屏列表验收完成，具体范围见[本轮记录](experiment/V030_ACCEPTANCE_2026_10_22.md)。首次随 v0.3.0 本地发布。
+
 
 ### 049: 事件推送与前端模块化
 
 - **Status:** Completed
 - **Category / Priority:** Refactor / High
-- **Planned / Released:** v0.3.0 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
 - **Created / Started / Completed:** 2026-10-19 / 2026-10-19 / 2026-10-19
 - **Description:** SSE 事件替代全量轮询与整页重建；前端拆分模块；删除旧四页渲染路径。
 - **Blocked by:** 无。
@@ -694,201 +706,230 @@ Last Updated: 2026-10-21
 
 ### 050: 本体页重构
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / 2026-10-22
 - **Description:** 图 + 详情侧栏 + 待处理队列；首屏待处理与下一步；删除四个弹窗入口；图状态编码与业务化详情。
 - **Blocked by:** 040、044、046。
 - **Design:** [FEATURE_050](features/v0.3.0.md#feature-050)。
+- **验收（2026-10-22）:** 公共边界、对应浏览器及真实 / 协议证据已按范围收口，见[本轮验收](experiment/V030_ACCEPTANCE_2026_10_22.md)。Completed 表示该功能已验收；首次随 v0.3.0 本地发布。
+
 
 ### 051: 查询层扩展与执行资源
 
 - **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.3.0 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
 - **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / 2026-10-21
 - **Description:** 过滤、排序、多跳、自引用路径、聚合由语义层编译执行；快照读取接入执行器；补充来源批量匹配。
 - **Blocked by:** 038、040。
 - **Design:** [FEATURE_051](features/v0.3.0.md#feature-051)。
 
-- **验证:** 稳定语义 ID 查询、三跳 / 自引用、全量聚合、取消超时及批量补充读取通过；20 对象 × 3 补充实际执行器读取 4→1。10 万行四类查询在受控负载下 8057ms，原 15s 阈值不变。隔离全量 536/536、类型检查通过，见[精确验收](experiment/V030_DATA_QA_2026_10_21.md#精确验收补齐051057060)。未发布。
+- **验证:** 稳定语义 ID 查询、三跳 / 自引用、全量聚合、取消超时及批量补充读取通过；20 对象 × 3 补充实际执行器读取 4→1。10 万行四类查询在受控负载下 8057ms，原 15s 阈值不变。隔离全量 536/536、类型检查通过，见[精确验收](experiment/V030_DATA_QA_2026_10_21.md#精确验收补齐051057060)。首次随 v0.3.0 本地发布。
 
 
 ### 052: 问答模式与回答卡
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** New / High
-- **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / 2026-10-22
 - **Description:** 只读问答工具与三种数据视图；结构化回答卡与答不出原因；本体页默认问答；建议切换卡。
 - **Blocked by:** 046、047、051。
 - **Design:** [FEATURE_052](features/v0.3.0.md#feature-052)。
+- **验收（2026-10-22）:** 公共边界、对应浏览器及真实 / 协议证据已按范围收口，见[本轮验收](experiment/V030_ACCEPTANCE_2026_10_22.md)。Completed 表示该功能已验收；首次随 v0.3.0 本地发布。
+
 
 ### 053: 答案联动可视化
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** New / High
-- **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / 2026-10-22
 - **Description:** 回答驱动本体图与详情侧栏：路径高亮、结果集、聚合分组、缺失关系标记。
 - **Blocked by:** 050、052。
 - **Design:** [FEATURE_053](features/v0.3.0.md#feature-053)。
+- **验收（2026-10-22）:** 星桥真实停止 / 继续、缺口修复与复问、三跳图和窄屏列表验收完成，具体范围见[本轮记录](experiment/V030_ACCEPTANCE_2026_10_22.md)。首次随 v0.3.0 本地发布。
+
 
 ### 054: 缺口单与问答到修复交接
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** New / High
-- **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / 2026-10-22
 - **Description:** 问答答不出时创建缺口单，转构建模式修复，采用后问答复问确认。
 - **Blocked by:** 044、048、052。
 - **Design:** [FEATURE_054](features/v0.3.0.md#feature-054)。
+- **验收（2026-10-22）:** 星桥真实停止 / 继续、缺口修复与复问、三跳图和窄屏列表验收完成，具体范围见[本轮记录](experiment/V030_ACCEPTANCE_2026_10_22.md)。首次随 v0.3.0 本地发布。
+
 
 ### 055: 发布与接入页重构与对外接口扩展
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / 2026-10-22
 - **Description:** 差异按对象列出；检查规则；接入方流程与试问；对外 MCP 增加遍历、聚合、检索。
 - **Blocked by:** 039、041、051、052。
 - **Design:** [FEATURE_055](features/v0.3.0.md#feature-055)。
+- **验收（2026-10-22）:** 公共边界、对应浏览器及真实 / 协议证据已按范围收口，见[本轮验收](experiment/V030_ACCEPTANCE_2026_10_22.md)。Completed 表示该功能已验收；首次随 v0.3.0 本地发布。
+
 
 ### 056: 首次使用流程
 
-- **Status:** Planned
+- **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Planned / Released:** v0.3.0 / v0.3.0
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-22 / 2026-10-22
 - **Description:** 模型 → 来源 → 构建 → 命名 → 本体页 → 示例问题，10 分钟内得到第一个正确答案。
 - **Blocked by:** 045、052。
 - **Design:** [FEATURE_056](features/v0.3.0.md#feature-056)。
+- **验收（2026-10-22）:** 公共边界、对应浏览器及真实 / 协议证据已按范围收口，见[本轮验收](experiment/V030_ACCEPTANCE_2026_10_22.md)。Completed 表示该功能已验收；首次随 v0.3.0 本地发布。
+
 
 ### 057: 表格文件接入
 
 - **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.3.0 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
 - **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / 2026-10-21
 - **Description:** Excel 多 sheet、多编码与多分隔符 CSV，上传上限提高到 100MB。
 - **Blocked by:** 037。
 - **Design:** [FEATURE_057](features/v0.3.0.md#feature-057)。
 
-- **验证:** 多 sheet Excel、GBK CSV、GBK 制表符及 UTF-8 TSV 经实际上传→快照→构建→复验 / 采用→语义查询，编号、中文、日期、公式值与合并单元格通过；格式定向 5/5，隔离全量 536/536、类型检查通过。见[精确验收](experiment/V030_DATA_QA_2026_10_21.md#精确验收补齐051057060)。未发布。
+- **验证:** 多 sheet Excel、GBK CSV、GBK 制表符及 UTF-8 TSV 经实际上传→快照→构建→复验 / 采用→语义查询，编号、中文、日期、公式值与合并单元格通过；格式定向 5/5，隔离全量 536/536、类型检查通过。见[精确验收](experiment/V030_DATA_QA_2026_10_21.md#精确验收补齐051057060)。首次随 v0.3.0 本地发布。
 
 
 ### 058: 只读数据库连接器
 
 - **Status:** Completed
 - **Category / Priority:** New / High
-- **Planned / Released:** v0.3.0 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
 - **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / 2026-10-21
 - **Description:** MySQL、PostgreSQL 只读连接，选择表接入并形成快照。
 - **Blocked by:** 037。
 - **Design:** [FEATURE_058](features/v0.3.0.md#feature-058)。
 
-- **验证:** PostgreSQL 16 与 MySQL 8.4 真实 HTTP 选表、同步、构建/采用、对象查询、只读权限、容量和历史/撤权；浏览器向导与独立复核通过。本批次类型检查、528 项测试及快照整链通过，见[集成验收](experiment/V030_DATA_QA_2026_10_21.md)。未发布。
+- **验证:** PostgreSQL 16 与 MySQL 8.4 真实 HTTP 选表、同步、构建/采用、对象查询、只读权限、容量和历史/撤权；浏览器向导与独立复核通过。本批次类型检查、528 项测试及快照整链通过，见[集成验收](experiment/V030_DATA_QA_2026_10_21.md)。首次随 v0.3.0 本地发布。
 
 ### 059: API 连接器增强
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / 2026-10-22
 - **Description:** 分页策略、OAuth2 令牌刷新、嵌套展开、内网放行、有限重试、MCP 目录分页。
 - **Blocked by:** 037。
 - **Design:** [FEATURE_059](features/v0.3.0.md#feature-059)。
+- **验收（2026-10-22）:** 公共边界、对应浏览器及真实 / 协议证据已按范围收口，见[本轮验收](experiment/V030_ACCEPTANCE_2026_10_22.md)。Completed 表示该功能已验收；首次随 v0.3.0 本地发布。
+
 
 ### 060: 定时与增量同步、质量熔断
 
 - **Status:** Completed
 - **Category / Priority:** New / High
-- **Planned / Released:** v0.3.0 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
 - **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / 2026-10-21
 - **Description:** 按周期自动同步，增量、断点续传与重试；质量异常的新快照不生效并进入待处理。
 - **Blocked by:** 041、044。
 - **Design:** [FEATURE_060](features/v0.3.0.md#feature-060)。
 
-- **验证:** 小时 / 日 / 周调度边界、真实 MySQL / PostgreSQL 增量、断点与重启、最多 3 源并发及质量熔断通过；浏览器实际核对 0 行保留旧版、75% 骤降采用新版、理由校验与设置回显。隔离全量 536/536、类型检查通过，见[精确验收](experiment/V030_DATA_QA_2026_10_21.md#精确验收补齐051057060)。未发布。
+- **验证:** 小时 / 日 / 周调度边界、真实 MySQL / PostgreSQL 增量、断点与重启、最多 3 源并发及质量熔断通过；浏览器实际核对 0 行保留旧版、75% 骤降采用新版、理由校验与设置回显。隔离全量 536/536、类型检查通过，见[精确验收](experiment/V030_DATA_QA_2026_10_21.md#精确验收补齐051057060)。首次随 v0.3.0 本地发布。
 
 
 ### 061: 数据页重构
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / 2026-10-22
 - **Description:** 按表格/文档/指标分类，三档状态、一个主动作、数据截至；详情一步可见字段与样本。
 - **Blocked by:** 037、060。
 - **Design:** [FEATURE_061](features/v0.3.0.md#feature-061)。
+- **验收（2026-10-22）:** 公共边界、对应浏览器及真实 / 协议证据已按范围收口，见[本轮验收](experiment/V030_ACCEPTANCE_2026_10_22.md)。Completed 表示该功能已验收；首次随 v0.3.0 本地发布。
+
 
 ### 062: 飞书多维表格与 PDF/DOCX
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / 2026-10-22
 - **Description:** 飞书多维表格作为表格来源；PDF、DOCX 作为文档来源。
 - **Blocked by:** 043、060。
 - **Design:** [FEATURE_062](features/v0.3.0.md#feature-062)。
+- **验收（2026-10-22）:** 公共边界、对应浏览器及真实 / 协议证据已按范围收口，见[本轮验收](experiment/V030_ACCEPTANCE_2026_10_22.md)。Completed 表示该功能已验收；首次随 v0.3.0 本地发布。
+
 
 ### 063: 凭据加密、数据保留与备份恢复
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** Enhancement / High
-- **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / 2026-10-22
 - **Description:** 凭据统一加密保存；快照与原文保留策略；一键备份与恢复。
 - **Blocked by:** 无。
 - **Design:** [FEATURE_063](features/v0.3.0.md#feature-063)。
+- **验收（2026-10-22）:** 两套真实样本发布、独立HTTP/MCP范围、新快照升级/撤销、44/51文件冷备份恢复及645/645检查通过；基线与原失败/未覆盖项见[总验收](experiment/V030_ACCEPTANCE_2026_10_22.md)。首次随 v0.3.0 本地发布。
+
 
 ### 064: 成本上限与角色权限
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** New / High
-- **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / 2026-10-22
 - **Description:** 模型用量与上限；决定记录操作者；管理员、维护者、查看者三种角色。
 - **Blocked by:** 041、046。
 - **Design:** [FEATURE_064](features/v0.3.0.md#feature-064)。
+- **验收（2026-10-22）:** 公共边界、对应浏览器及真实 / 协议证据已按范围收口，见[本轮验收](experiment/V030_ACCEPTANCE_2026_10_22.md)。Completed 表示该功能已验收；首次随 v0.3.0 本地发布。
+
 
 ### 065: 指标引用
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** New / High
-- **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / 2026-10-22
 - **Description:** 指标挂到实体与属性，问答与对外可读指标并说明口径与版本。
 - **Blocked by:** 040、041、052。
 - **Design:** [FEATURE_065](features/v0.3.0.md#feature-065)。
+- **验收（2026-10-22）:** 公共边界、对应浏览器及真实 / 协议证据已按范围收口，见[本轮验收](experiment/V030_ACCEPTANCE_2026_10_22.md)。Completed 表示该功能已验收；首次随 v0.3.0 本地发布。
+
 
 ### 066: 持久层优化与规模验收集
 
-- **Status:** InProgress
+- **Status:** Completed
 - **Category / Priority:** Internal / High
-- **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / —
+- **Planned / Released:** v0.3.0 / v0.3.0
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-21 / 2026-10-22
 - **Description:** 成果索引与大内容外置；发现过程优化；企业真实形态规模验收集作为发布门槛。
 - **Blocked by:** 040、057—060。
 - **Design:** [FEATURE_066](features/v0.3.0.md#feature-066)。
+- **验收（2026-10-22）:** 公共边界、对应浏览器及真实 / 协议证据已按范围收口，见[本轮验收](experiment/V030_ACCEPTANCE_2026_10_22.md)。Completed 表示该功能已验收；首次随 v0.3.0 本地发布。
+
 
 ### 067: 演示与分享走正式路径、旧接口下线
 
-- **Status:** Planned
+- **Status:** Completed
 - **Category / Priority:** Refactor / High
-- **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Planned / Released:** v0.3.0 / v0.3.0
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-22 / 2026-10-22
 - **Description:** 演示与离线分享使用正式渲染；经用户确认后移除 v1/v2/v3 接口。
 - **Blocked by:** 039、049、050。
 - **Design:** [FEATURE_067](features/v0.3.0.md#feature-067)。
+- **验收（2026-10-22）:** 公共边界、对应浏览器及真实 / 协议证据已按范围收口，见[本轮验收](experiment/V030_ACCEPTANCE_2026_10_22.md)。Completed 表示该功能已验收；首次随 v0.3.0 本地发布。
+
 
 ### 068: v0.3.0 整链验收
 
-- **Status:** Planned
+- **Status:** Completed
 - **Category / Priority:** Internal / High
-- **Planned / Released:** v0.3.0 / —
-- **Created / Started / Completed:** 2026-10-19 / — / —
+- **Planned / Released:** v0.3.0 / v0.3.0
+- **Created / Started / Completed:** 2026-10-19 / 2026-10-22 / 2026-10-22
 - **Description:** 星桥与留出样本整链验收，记录成功指标基线与未覆盖项。
 - **Blocked by:** 036—067。
 - **Design:** [FEATURE_068](features/v0.3.0.md#feature-068)。
+- **验收（2026-10-22）:** 两套真实样本发布、独立HTTP/MCP范围、新快照升级/撤销、44/51文件冷备份恢复及645/645检查通过；基线与原失败/未覆盖项见[总验收](experiment/V030_ACCEPTANCE_2026_10_22.md)。首次随 v0.3.0 本地发布。
