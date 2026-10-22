@@ -16,7 +16,7 @@ test("onboarding saves selected industry naming references, waits for data and p
   let origin = "";
   const start = async () => { await new Promise<void>(resolve => service.server.listen(0,"127.0.0.1",resolve)); origin = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`; };
   const call = async (path: string, body?: unknown) => {
-    const response = await fetch(origin+path, { method: body ? "POST" : "GET", headers: { "x-dataengine-token": service.adminToken, "content-type":"application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    const response = await fetch(origin+path, { method: body ? "POST" : "GET", headers: { "x-contextos-token": service.adminToken, "content-type":"application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
     return { status: response.status, data: await response.json() };
   };
   try {
@@ -138,7 +138,7 @@ test("an Agent reads industry vocabulary by reference and refines only a rule-bu
   let origin = "";
   const start = async () => { await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve)); origin = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`; };
   const call = async (path: string, body?: unknown) => {
-    const response = await fetch(origin + path, { method: body ? "POST" : "GET", headers: { "x-dataengine-token": service.adminToken, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    const response = await fetch(origin + path, { method: body ? "POST" : "GET", headers: { "x-contextos-token": service.adminToken, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
     const result = await response.json();
     assert.equal(response.status, path === "/api/canvas/message" ? 202 : 200, result.error ?? path);
     return result;

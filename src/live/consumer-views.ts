@@ -234,7 +234,7 @@ export class ConsumerViews {
         v.content.grants as Data[],
         origin,
         fileURLToPath(
-          new URL("../../scripts/dataengine-mcp.ts", import.meta.url),
+          new URL("../../scripts/context-os-mcp.ts", import.meta.url),
         ),
         process.execPath,
         this.contextCatalog(v),
@@ -292,7 +292,7 @@ export class ConsumerViews {
           scope as unknown as ContextScope,
           a.id,
         );
-      const key = "de_view_" + randomBytes(32).toString("base64url");
+      const key = "cos_view_" + randomBytes(32).toString("base64url");
       const v = this.memory.putArtifact({
         ...a,
         expectedVersion: a.version,
@@ -331,7 +331,7 @@ export class ConsumerViews {
     const key = authorization?.startsWith("Bearer ")
       ? authorization.slice(7)
       : "";
-    const view = key.startsWith("de_view_")
+    const view = /^(?:cos|de)_view_/.test(key)
       ? this.memory
           .listArtifacts("consumer_view")
           .find(
@@ -435,7 +435,7 @@ export class ConsumerViews {
             grants,
             origin,
             fileURLToPath(
-              new URL("../../scripts/dataengine-mcp.ts", import.meta.url),
+              new URL("../../scripts/context-os-mcp.ts", import.meta.url),
             ),
             process.execPath,
             this.contextCatalog(view),

@@ -1,7 +1,8 @@
 // Single-file exports read an embedded demonstration snapshot. No request leaves
 // the document; page navigation and example dialogue live only in this tab.
 export function createShareMode(document) {
-  const embedded = document.getElementById("dataengine-share-data");
+  // Read previously exported single-file demonstrations as well as new exports.
+  const embedded = document.getElementById("context-os-share-data") || document.getElementById("dataengine-share-data");
   if (!embedded) return null;
   const data = JSON.parse(embedded.textContent);
   if (![1, 2].includes(data.formatVersion) || !data.pages || !data.routes)

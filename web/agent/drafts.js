@@ -1,11 +1,14 @@
 // Drafts are browser-local and scoped by a stable, non-secret workspace ID.
 // Never persist credentials or the rest of the application snapshot here.
+import { readBrowserValue } from "./browser-storage.js";
+
 export function createDraftStore(storage, workspaceId, onError) {
-  const prefix = `dataengine:drafts:v2:${workspaceId}:`;
+  const prefix = `context-os:drafts:v2:${workspaceId}:`;
+  const legacyPrefix = `dataengine:drafts:v2:${workspaceId}:`;
   return {
     read(page) {
       try {
-        return JSON.parse(storage.getItem(prefix + page) || "null");
+        return JSON.parse(readBrowserValue(storage, prefix + page, [legacyPrefix + page]) || "null");
       } catch {
         onError();
         return null;
@@ -24,7 +27,7 @@ export function createDraftStore(storage, workspaceId, onError) {
 export function parseLegacyDrafts(text) {
   const data = JSON.parse(text);
   if (
-    data.format !== "dataengine-legacy-drafts-v1" ||
+    !["context-os-legacy-drafts-v1", "dataengine-legacy-drafts-v1"].includes(data.format) ||
     !Array.isArray(data.drafts)
   )
     throw new Error("请选择旧版页面导出的草稿文件。");

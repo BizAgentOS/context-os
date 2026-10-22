@@ -25,7 +25,7 @@ function assertPromptContract(text: string, request: RunRequest, label: string) 
 }
 
 test("identity and shared rules refer only to tools offered by each actual run", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-prompt-contract-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-prompt-contract-"));
   const requests: RunRequest[] = [];
   const driver: AgentDriver = {
     async run(request) {
@@ -67,7 +67,7 @@ test("identity and shared rules refer only to tools offered by each actual run",
 });
 
 test("bundled methods remain compatible with interactive and document-only tool scopes", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-skill-contract-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-skill-contract-"));
   const requests: RunRequest[] = [];
   const driver: AgentDriver = {
     async run(request) {

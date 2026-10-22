@@ -35,7 +35,7 @@ export function shareRouteKey(path: string) {
 function assertShareable(value: Json): void {
   if (typeof value === "string") {
     if (
-      /de_(?:admin|consumer)_[A-Za-z0-9_-]+|\/Users\/|\/private\/var\/|\/tmp\//.test(
+      /(?:cos|de)_(?:admin|consumer|dataset|view|live)_[A-Za-z0-9_-]+|\/Users\/|\/private\/var\/|\/tmp\//.test(
         value,
       )
     )
@@ -59,7 +59,7 @@ function assertShareable(value: Json): void {
  * directory, a user's workspace, saved model settings or credential database.
  */
 export async function createHeatingShareSnapshot(): Promise<HeatingShareSnapshot> {
-  const directory = await mkdtemp(join(tmpdir(), "dataengine-share-"));
+  const directory = await mkdtemp(join(tmpdir(), "context-os-share-"));
   let service: Awaited<ReturnType<typeof createHeatingDemo>> | undefined;
   try {
     service = await createHeatingDemo(directory);

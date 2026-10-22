@@ -18,7 +18,7 @@ import { connectIdentityChanges } from "../../src/engine/identity-changes.ts";
 const ref = (a: { id: string; version: number }) => ({ id: a.id, version: a.version });
 
 function fixture() {
-  const directory = mkdtempSync(join(tmpdir(), "ade-release-snapshots-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-release-snapshots-"));
   const memory = new MemoryStore(directory);
   const live = new LiveMemory(directory, memory);
   const foundation = new FoundationService(memory, live);
@@ -197,8 +197,8 @@ test("creating and switching release consumers after a CSV update uses the locke
 });
 
 test("partial source snapshots keep their limited coverage through checks, publication and consumer reads", async () => {
-  const f = fixture(), previousLimit = process.env.ADE_SNAPSHOT_MAX_ROWS;
-  process.env.ADE_SNAPSHOT_MAX_ROWS = "3";
+  const f = fixture(), previousLimit = process.env.CONTEXT_OS_SNAPSHOT_MAX_ROWS;
+  process.env.CONTEXT_OS_SNAPSHOT_MAX_ROWS = "3";
   const rows = Array.from({ length: 5 }, (_, i) => ({ id: `C${i}`, name: `公司${i}` }));
   const server = createServer((req, res) => {
     const url = new URL(req.url!, "http://localhost");
@@ -237,8 +237,8 @@ test("partial source snapshots keep their limited coverage through checks, publi
     assert.deepEqual(missing.body.items, []);
     assert.equal((missing.body.coverage as any).complete, false, "not present in a partial snapshot does not prove absent at the source");
   } finally {
-    if (previousLimit === undefined) delete process.env.ADE_SNAPSHOT_MAX_ROWS;
-    else process.env.ADE_SNAPSHOT_MAX_ROWS = previousLimit;
+    if (previousLimit === undefined) delete process.env.CONTEXT_OS_SNAPSHOT_MAX_ROWS;
+    else process.env.CONTEXT_OS_SNAPSHOT_MAX_ROWS = previousLimit;
     await new Promise(resolve => server.close(resolve)); await f.close();
   }
 });

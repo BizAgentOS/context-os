@@ -8,11 +8,11 @@ import { createServer } from "../../src/agent/server.ts";
 import { Workspace } from "../../src/agent/workspace.ts";
 
 test("workspace events require admin access, replay object versions, and correct stale clients with snapshots", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-events-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-events-"));
   const service = await createServer({ directory, automaticApi: false });
   await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
-  const headers = { "X-DataEngine-Token": service.adminToken };
+  const headers = { "X-ContextOS-Token": service.adminToken };
   const abort = new AbortController();
   try {
     assert.equal((await fetch(`${base}/api/events`)).status, 403);

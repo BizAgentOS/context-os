@@ -7,7 +7,7 @@ import { KodaXDriver } from "../../src/agent/runtime.ts";
 
 for (const finalText of ["", "本轮读取到 6 条记录。"])
   test(`KodaX driver returns only post-tool output (${finalText ? "answer" : "tool-ending run"})`, async () => {
-    const directory = mkdtempSync(join(tmpdir(), "ade-runtime-output-"));
+    const directory = mkdtempSync(join(tmpdir(), "context-os-runtime-output-"));
     let listener: (event: any) => void = () => {};
     let toolCalls = 0;
     const preamble = "I have what I need. Let me record this as a verification.";
@@ -37,7 +37,7 @@ for (const finalText of ["", "本轮读取到 6 条记录。"])
   });
 
 test("timeout is reported to the host before abort and preserves the provider's usage receipt", async t => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-runtime-timeout-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-runtime-timeout-"));
   const events: string[] = [];
   let settle!: (value: unknown) => void, started!: () => void;
   const ready = new Promise<void>(resolve => { started = resolve; });
@@ -64,7 +64,7 @@ test("timeout is reported to the host before abort and preserves the provider's 
 });
 
 test("the SDK capability boundary refuses undeclared external tools and calls host authorization again", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-runtime-mode-")); let calls = 0, authorizations = 0;
+  const directory = mkdtempSync(join(tmpdir(), "context-os-runtime-mode-")); let calls = 0, authorizations = 0;
   const runtime = { sessions: { async create() { return { id: "s" }; } }, events: { subscribe() { return { close() {} }; } },
     runs: { async start(input: any) {
       const extension = input.options.extensionRuntime;

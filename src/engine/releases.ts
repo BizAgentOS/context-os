@@ -425,8 +425,8 @@ export class Releases {
     const spec = this.datasets.connection(connection.content.datasetRef, origin);
     const enabled = connection.content.agentEnabled === true;
     return { ...spec, connection, release: this.read(connection.content.releaseRef),
-      tools: enabled ? [...spec.tools, "submit_ade_task", "read_ade_task", "cancel_ade_task"] : spec.tools,
-      agent: { enabled, ...(enabled ? { submit: "/v4/agent/tasks", read: "/v4/agent/tasks/{id}", cancel: "/v4/agent/tasks/{id}/cancel", instructions: "委托 ADE 助手调查本接入方获准范围；通过任务标识查询状态和结果，可取消。委托不授予本体修改或发布权限。" } : {}) },
+      tools: enabled ? [...spec.tools, "submit_context_os_task", "read_context_os_task", "cancel_context_os_task"] : spec.tools,
+      agent: { enabled, ...(enabled ? { submit: "/v4/agent/tasks", read: "/v4/agent/tasks/{id}", cancel: "/v4/agent/tasks/{id}/cancel", instructions: "委托 Context OS 助手调查本接入方获准范围；通过任务标识查询状态和结果，可取消。委托不授予本体修改或发布权限。" } : {}) },
     };
   }
 }

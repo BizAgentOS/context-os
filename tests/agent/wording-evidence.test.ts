@@ -15,7 +15,7 @@ import { freezeAgentTurn } from "../../src/agent/agent-modes.ts";
 import { FoundationDocuments } from "../../src/agent/foundation-evidence.ts";
 
 test("unified Agent wording retains authenticated web and knowledge citations across restart without exposing their full snapshots", { timeout: 20000 }, async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-wording-evidence-")), upstream = await createKnowledgeSource();
+  const directory = mkdtempSync(join(tmpdir(), "context-os-wording-evidence-")), upstream = await createKnowledgeSource();
   const site = createHttpServer((_req, res) => { res.setHeader("content-type", "text/plain; charset=utf-8"); res.end("澄川热力的客服部门受理居民咨询。" + "官网补充资料。".repeat(300)); });
   await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${(site.address() as AddressInfo).port}/company`;
@@ -67,7 +67,7 @@ test("unified Agent wording retains authenticated web and knowledge citations ac
     await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));
     const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
     for (const evidenceId of ["website", "knowledge"]) {
-      const response = await fetch(`${base}/api/foundation/evidence?foundationId=${foundation.id}&version=${foundation.version}&evidenceId=${evidenceId}`, { headers: { "x-dataengine-token": service.adminToken } });
+      const response = await fetch(`${base}/api/foundation/evidence?foundationId=${foundation.id}&version=${foundation.version}&evidenceId=${evidenceId}`, { headers: { "x-contextos-token": service.adminToken } });
       assert.equal(response.status, 200);
       const citation = await response.json();
       assert(citation.text.includes(citation.quote));
@@ -77,7 +77,7 @@ test("unified Agent wording retains authenticated web and knowledge citations ac
 });
 
 test("an Agent wording citation cannot adopt after its document version changes or knowledge authorization is revoked", { timeout: 20000 }, async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-wording-stale-")), upstream = await createKnowledgeSource();
+  const directory = mkdtempSync(join(tmpdir(), "context-os-wording-stale-")), upstream = await createKnowledgeSource();
   let sourceId = "", connectionId = "", checked = false;
   const driver: AgentDriver = {
     async run(request) {
@@ -114,7 +114,7 @@ test("an Agent wording citation cannot adopt after its document version changes 
 });
 
 test("a document disagreement about a property is explicitly adjudicated without changing its type or owner", { timeout: 20000 }, async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-property-wording-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-property-wording-"));
   let sourceId = "", completed = false;
   const driver: AgentDriver = {
     async run(request) {

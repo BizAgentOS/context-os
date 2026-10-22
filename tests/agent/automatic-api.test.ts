@@ -25,7 +25,7 @@ async function fixture() {
     res.end(JSON.stringify({items: filtered.slice(offset, offset + limit), total: filtered.length}));
   });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
-  const directory = mkdtempSync(join(tmpdir(), "ade-auto-api-program-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-auto-api-program-"));
   const driver: AgentDriver = {async run(request) {if(JSON.parse(request.input).mode==='automatic-naming'){namingCalls++;return runNamingProtocol(request);}modelCalls++; throw new Error("程序构建不应调用模型");}, async stop() {}, async close() {}};
   const app = new AgentApplication(directory, driver);
   const config = {name: "门店 API", protocol: "http", url: `http://127.0.0.1:${(server.address() as {port:number}).port}`,
@@ -392,7 +392,7 @@ test("rebind coordination follows a narrowed adopted model and never completes a
 test("HTTP and CSV management endpoints construct without model credentials and preserve results across restart", async () => {
   const variables = Object.values(providers), saved = new Map(variables.map(key => [key, process.env[key]]));
   for (const key of variables) delete process.env[key];
-  const directory = mkdtempSync(join(tmpdir(), "ade-no-model-build-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-no-model-build-"));
   const upstream = createServer((_req, res) => {res.setHeader("content-type", "application/json"); res.end(JSON.stringify({items: [{id: "API1", name: "接口对象"}], total: 1}));});
   await new Promise<void>(resolve => upstream.listen(0, "127.0.0.1", resolve));
   let service = await createAppServer({directory});
@@ -400,7 +400,7 @@ test("HTTP and CSV management endpoints construct without model credentials and 
     await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));
     const url = `http://127.0.0.1:${(service.server.address() as {port:number}).port}`;
     return async (path: string, body: unknown) => {
-      const response = await fetch(url + path, {method: "POST", headers: {"content-type": "application/json", "x-dataengine-token": service.adminToken}, body: JSON.stringify(body)});
+      const response = await fetch(url + path, {method: "POST", headers: {"content-type": "application/json", "x-contextos-token": service.adminToken}, body: JSON.stringify(body)});
       const result = await response.json(); assert(response.ok, JSON.stringify(result)); return result;
     };
   };

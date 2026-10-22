@@ -8,7 +8,7 @@ import type { AddressInfo } from "node:net";
 import { createServer } from "../../src/agent/server.ts";
 
 test("custom API uses the actual configured gateway and isolates keys on endpoint changes", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-custom-model-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-custom-model-"));
   const originalEnv = { ...process.env };
   const requests: any[] = [];
   const leaked: unknown[] = [];
@@ -117,7 +117,7 @@ test("custom API uses the actual configured gateway and isolates keys on endpoin
     const r = await fetch(origin + path, {
       method: body ? "POST" : "GET",
       headers: {
-        "x-dataengine-token": service.adminToken,
+        "x-contextos-token": service.adminToken,
         "content-type": "application/json",
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
@@ -244,7 +244,7 @@ test("custom API uses the actual configured gateway and isolates keys on endpoin
     await new Promise<void>((resolve) => gateway.close(() => resolve()));
     await new Promise<void>((resolve) => other.close(() => resolve()));
     for (const key of Object.keys(process.env))
-      if (key.startsWith("DATAENGINE_CUSTOM_")) {
+      if (key.startsWith("CONTEXT_OS_CUSTOM_")) {
         if (originalEnv[key] === undefined) delete process.env[key];
         else process.env[key] = originalEnv[key];
       }

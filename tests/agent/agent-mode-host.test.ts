@@ -7,7 +7,7 @@ import {AgentApplication} from "../../src/agent/app.ts";
 import type {AgentDriver,RunRequest} from "../../src/agent/runtime.ts";
 
 test("the host freezes mode with each message, filters old mutation tools and rejects guessed write tools in QA",async()=>{
- const directory=mkdtempSync(join(tmpdir(),"ade-mode-host-"));const requests:RunRequest[]=[];
+ const directory=mkdtempSync(join(tmpdir(),"context-os-mode-host-"));const requests:RunRequest[]=[];
  const driver:AgentDriver={async run(request){requests.push(request);if(requests.length===2){await assert.rejects(request.onTool("change_propose",{}),/模式|能力/);assert.throws(()=>request.authorizeTool?.("mcp_call",{}),/模式|能力/);}return {text:"已核对当前范围。",sessionId:"mode",runId:"mode"};},async stop(){},async close(){}};
  const app=new AgentApplication(directory,driver,new Set(),false);
  try{
@@ -22,7 +22,7 @@ test("the host freezes mode with each message, filters old mutation tools and re
 });
 
 test("the generic message endpoint freezes QA mode and rejects a changed retry binding",async()=>{
- const directory=mkdtempSync(join(tmpdir(),"ade-generic-mode-"));let captured:RunRequest|undefined;
+ const directory=mkdtempSync(join(tmpdir(),"context-os-generic-mode-"));let captured:RunRequest|undefined;
  const driver:AgentDriver={async run(request){captured=request;await assert.rejects(request.onTool("change_propose",{}),/模式|能力/);return{text:"当前范围只读。",sessionId:"qa",runId:"qa"};},async stop(){},async close(){}};
  const app=new AgentApplication(directory,driver,new Set(),false);
  try{
@@ -34,7 +34,7 @@ test("the generic message endpoint freezes QA mode and rejects a changed retry b
 });
 
 test("a mode suggestion waits for the user without changing the frozen message or granting writes",async()=>{
- const directory=mkdtempSync(join(tmpdir(),"ade-mode-suggestion-"));
+ const directory=mkdtempSync(join(tmpdir(),"context-os-mode-suggestion-"));
  const driver:AgentDriver={async run(request){
   assert.ok(request.tools.some(tool=>tool.name==="mode_suggest"));
   await request.onTool("mode_suggest",{mode:"build",reason:"需要先修正对象关系才能回答。"});

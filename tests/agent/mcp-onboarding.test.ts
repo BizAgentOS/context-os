@@ -41,7 +41,7 @@ test("MCP directory is administrator-only and supports connect, grant, revoke an
   const service = await createServer({ directory });
   await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${(service.server.address() as { port: number }).port}`;
-  const headers = { "X-DataEngine-Token": service.adminToken, "Content-Type": "application/json" };
+  const headers = { "X-ContextOS-Token": service.adminToken, "Content-Type": "application/json" };
   const post = (path: string, body: unknown) => fetch(url + "/api/capabilities/mcp/" + path, { method: "POST", headers, body: JSON.stringify(body) });
   try {
     assert.equal((await fetch(url + "/api/capabilities/mcp")).status, 403);

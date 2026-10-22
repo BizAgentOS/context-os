@@ -13,14 +13,14 @@ import { seedFoundation } from "./program-foundation-fixture.ts";
 const ref = (artifact: { id: string; version: number }) => ({ id: artifact.id, version: artifact.version });
 
 async function fixture(uploadedCallbacks = false, initialSnapshots = true) {
-  const directory = mkdtempSync(join(tmpdir(), "ade-workspace-restore-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-workspace-restore-"));
   const upstream = await createHeatingSources();
   const service = await createServer({ directory, automaticApi: false });
   await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
   const request = async (path: string, body?: unknown) => {
     const response = await fetch(base + path, { method: body === undefined ? "GET" : "POST",
-      headers: { "Content-Type": "application/json", "X-DataEngine-Token": service.adminToken },
+      headers: { "Content-Type": "application/json", "X-ContextOS-Token": service.adminToken },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     return { status: response.status, body: await response.json() as any };
   };

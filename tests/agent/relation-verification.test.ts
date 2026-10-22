@@ -12,7 +12,7 @@ import { identityWorkspace } from "./identity-fixture.ts";
 
 const ref = (a: Artifact) => ({ id: a.id, version: a.version });
 async function setup(files: Record<string, string>) {
-  const directory = mkdtempSync(join(tmpdir(), "ade-relation-rules-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-relation-rules-"));
   const service = await createServer({ directory, automaticApi: false });
   await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
@@ -21,7 +21,7 @@ async function setup(files: Record<string, string>) {
   await service.app.snapshots.sync({ operationId: "initial-sync" });
   const dataset = (name: string) => service.app.snapshots.datasets().find(d => d.content.name === name)!;
   const call = async (path: string, body: unknown) => {
-    const response = await fetch(base + path, { method: "POST", headers: { "Content-Type": "application/json", "X-DataEngine-Token": service.adminToken }, body: JSON.stringify(body) });
+    const response = await fetch(base + path, { method: "POST", headers: { "Content-Type": "application/json", "X-ContextOS-Token": service.adminToken }, body: JSON.stringify(body) });
     return { status: response.status, body: await response.json() as any };
   };
   const verify = async (subject: Data, operationId = "relation") => {

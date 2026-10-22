@@ -8,7 +8,7 @@ import { seedFoundation } from "./program-foundation-fixture.ts";
 import type { Artifact, Data } from "../../src/agent/contracts.ts";
 export const ref = (a: { id:string;version:number }) => ({id:a.id,version:a.version});
 export async function identityWorkspace() {
-  const directory=mkdtempSync(join(tmpdir(),'ade-identities-'));
+  const directory=mkdtempSync(join(tmpdir(),'context-os-identities-'));
   const rows: Record<string,Data[]> = {
     people:[{id:'P1',email:'alice@example.test',name:'甲'},{id:'P2',email:'bob@example.test',name:'乙'}],
     accounts:[{id:'A1',email:'alice@example.test',username:'alice'},{id:'A2',email:'old@example.test',username:'bob'},{id:'ci-bot',email:'alice@example.test',username:'ci-bot'}],
@@ -38,7 +38,7 @@ export async function identityWorkspace() {
   ],relations:[]});
   let model=await service.app.live.adopt(candidate.id,candidate.version);
   const base=`http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
-  const call=async(path:string,body?:unknown)=>{const response=await fetch(base+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json','X-DataEngine-Token':service.adminToken},...(body===undefined?{}:{body:JSON.stringify(body)})});return{status:response.status,body:await response.json() as any};};
+  const call=async(path:string,body?:unknown)=>{const response=await fetch(base+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json','X-ContextOS-Token':service.adminToken},...(body===undefined?{}:{body:JSON.stringify(body)})});return{status:response.status,body:await response.json() as any};};
   let n=0;
   const adopt=async(type:string,subject:Data)=>{
     const id=String(++n),p=await call('/api/changes/propose',{operationId:'p'+id,origin:'human',type,baseline:service.app.changes.currentBaseline(),subject});

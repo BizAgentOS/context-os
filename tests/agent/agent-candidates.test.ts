@@ -9,7 +9,7 @@ import type { Artifact, Data } from "../../src/agent/contracts.ts";
 import type { AgentDriver } from "../../src/agent/runtime.ts";
 
 test("revised unified proposals preserve history and deliver the exact pending decision without adopting structure", { timeout: 20000 }, async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-candidates-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-candidates-"));
   const saved: Artifact[] = [], verified: Artifact[] = [];
   let subject: Data;
   const driver: AgentDriver = {

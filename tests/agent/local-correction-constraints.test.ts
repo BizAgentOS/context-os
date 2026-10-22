@@ -10,7 +10,7 @@ import type { Artifact, Data } from "../../src/agent/contracts.ts";
 const ref = (item: Artifact) => ({ id: item.id, version: item.version });
 
 test("a local hierarchy correction checks the complete effective graph for cycles and depth before adoption", { timeout: 120000 }, async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-local-hierarchy-")), app = new AgentApplication(directory, undefined, new Set(), false);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-local-hierarchy-")), app = new AgentApplication(directory, undefined, new Set(), false);
   try {
     new Workspace(app.memory).upload("nodes.csv", "id,parent\nA,B\nB,C\nC,\nD,\nE,\n");
     await app.snapshots.sync({ operationId: "hierarchy-source" });

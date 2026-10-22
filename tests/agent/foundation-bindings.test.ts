@@ -102,7 +102,7 @@ test("adopted foundation concepts bind a checked execution subset, retain unboun
       const res = await fetch(url + path, {
         method: body ? "POST" : "GET",
         headers: {
-          "x-dataengine-token": service.adminToken,
+          "x-contextos-token": service.adminToken,
           "content-type": "application/json",
         },
         ...(body ? { body: JSON.stringify(body) } : {}),

@@ -290,7 +290,7 @@ test("HTTP import endpoints require admin identity and preserve tested connectio
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(authorized ? { "X-DataEngine-Token": service.adminToken } : {}),
+        ...(authorized ? { "X-ContextOS-Token": service.adminToken } : {}),
       },
       body: JSON.stringify(body),
     });

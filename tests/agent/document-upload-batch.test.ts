@@ -8,11 +8,11 @@ import {createServer} from "../../src/agent/server.ts";
 import {textPdf} from './document-fixture.ts';
 
 test("document uploads keep a durable batch, partial errors and replay; only finalization queues the whole batch",async()=>{
-  const directory=mkdtempSync(join(tmpdir(),"ade-document-upload-"));
+  const directory=mkdtempSync(join(tmpdir(),"context-os-document-upload-"));
   let service=await createServer({directory,automaticApi:false});
   async function listen(){await new Promise<void>(resolve=>service.server.listen(0,"127.0.0.1",resolve));}
   async function post(path:string,body:unknown){
-    const response=await fetch(`http://127.0.0.1:${(service.server.address() as AddressInfo).port}${path}`,{method:"POST",headers:{"content-type":"application/json","X-DataEngine-Token":service.adminToken},body:JSON.stringify(body)});
+    const response=await fetch(`http://127.0.0.1:${(service.server.address() as AddressInfo).port}${path}`,{method:"POST",headers:{"content-type":"application/json","X-ContextOS-Token":service.adminToken},body:JSON.stringify(body)});
     return {status:response.status,body:await response.json() as any};
   }
   try{
@@ -39,23 +39,23 @@ test("document uploads keep a durable batch, partial errors and replay; only fin
 });
 
 test('binary document upload is an authenticated batch member and queues only after finalization',async()=>{
- const directory=mkdtempSync(join(tmpdir(),'ade-document-http-')),service=await createServer({directory,automaticApi:false});
+ const directory=mkdtempSync(join(tmpdir(),'context-os-document-http-')),service=await createServer({directory,automaticApi:false});
  await new Promise<void>(resolve=>service.server.listen(0,'127.0.0.1',resolve));
  const origin=`http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
- const post=async(path:string,body:unknown)=>{const response=await fetch(origin+path,{method:'POST',headers:{'X-DataEngine-Token':service.adminToken,'Content-Type':'application/json'},body:JSON.stringify(body)});assert.equal(response.status,200);return await response.json() as any;};
+ const post=async(path:string,body:unknown)=>{const response=await fetch(origin+path,{method:'POST',headers:{'X-ContextOS-Token':service.adminToken,'Content-Type':'application/json'},body:JSON.stringify(body)});assert.equal(response.status,200);return await response.json() as any;};
  try{
   const {batch}=await post('/api/canvas/upload/batch/start',{page:'setup',operationId:'binary-batch'});
   const path='/api/canvas/upload/document?'+new URLSearchParams({batchId:batch.id,operationId:'binary-pdf',name:'definition.pdf'}),bytes=textPdf(['Customer definition','A customer has an active contract.']);
   assert.equal((await fetch(origin+path,{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:bytes})).status,403);
-  const response=await fetch(origin+path,{method:'POST',headers:{'X-DataEngine-Token':service.adminToken,'Content-Type':'application/octet-stream'},body:bytes});
+  const response=await fetch(origin+path,{method:'POST',headers:{'X-ContextOS-Token':service.adminToken,'Content-Type':'application/octet-stream'},body:bytes});
   assert.equal(response.status,200,await response.clone().text());const uploaded=await response.json() as any;
   assert.equal(uploaded.batch.content.sources.length,1);assert.equal(service.app.memory.listArtifacts('document_build').length,0);
   const source=service.app.memory.getArtifact(uploaded.batch.content.sources[0].id);assert.match(String(source.content.raw),/active contract/);assert.equal(source.content.format,'text');
   const receiptPath=origin+'/api/canvas/upload/batch/read?id='+encodeURIComponent(batch.id);
   assert.equal((await fetch(receiptPath)).status,403);
-  const receipt=await fetch(receiptPath,{headers:{'X-DataEngine-Token':service.adminToken}});assert.equal(receipt.status,200);
+  const receipt=await fetch(receiptPath,{headers:{'X-ContextOS-Token':service.adminToken}});assert.equal(receipt.status,200);
   const recorded=await receipt.json() as any;assert.equal(recorded.batch.content.operations[0].operationId,'binary-pdf');assert.equal(recorded.batch.content.sources.length,1);
-  const replay=await fetch(origin+path,{method:'POST',headers:{'X-DataEngine-Token':service.adminToken,'Content-Type':'application/octet-stream'},body:bytes});assert.equal(replay.status,200);assert.equal(service.app.memory.listArtifacts('source').length,1);
+  const replay=await fetch(origin+path,{method:'POST',headers:{'X-ContextOS-Token':service.adminToken,'Content-Type':'application/octet-stream'},body:bytes});assert.equal(replay.status,200);assert.equal(service.app.memory.listArtifacts('source').length,1);
   await post('/api/canvas/upload/batch/finalize',{batchId:batch.id});assert.equal(service.app.memory.listArtifacts('document_build').length,1);assert.equal(service.app.memory.listArtifacts('foundation').length,0);
  }finally{await service.close();rmSync(directory,{recursive:true,force:true});}
 });

@@ -10,7 +10,7 @@ test('an independent release client aggregates and traverses the exact scope use
   try{
     const release=await w.publish('外部统计范围'),access=await w.manage('/api/releases/connect',{operationId:'limited-analysis',name:'账号统计',releaseRef:ref(release),conceptIds:['account','person'],relationIds:['account_owner'],business:{grants:[{type:'账号',fields:['$id','名称','邮箱'],relations:['所属人员']},{type:'人员',fields:['$id','邮箱'],relations:[]}]}});
     const spec=await w.manage('/api/releases/connection?id='+access.connection.id+'&version='+access.connection.version),config=Object.values(spec.mcp.mcpServers)[0] as any;
-    await client.connect(new StdioClientTransport({command:config.command,args:config.args,env:{...config.env,DATAENGINE_CONSUMER_KEY:access.key},stderr:'pipe'}));
+    await client.connect(new StdioClientTransport({command:config.command,args:config.args,env:{...config.env,CONTEXT_OS_CONSUMER_KEY:access.key},stderr:'pipe'}));
     const tools=(await client.listTools()).tools.map(tool=>tool.name);
     for(const name of ['traverse_relations','aggregate_objects','search_ontology'])assert.ok(tools.includes(name),`missing ${name}`);
     const call=async(name:string,args:Record<string,unknown>)=>{const result=await client.callTool({name,arguments:args});assert.notEqual(result.isError,true,JSON.stringify(result));return result.structuredContent as any;};

@@ -13,7 +13,7 @@ const records = Array.from({ length: 7 }, (_, id) => ({ id: String(id), name: `å
 async function fixture(handler: RequestListener, host = "127.0.0.1") {
   const upstream = createServer(handler);
   await new Promise<void>(resolve => upstream.listen(0, host, resolve));
-  const directory = mkdtempSync(join(tmpdir(), "ade-source-enhancement-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-source-enhancement-"));
   const memory = new MemoryStore(directory), live = new LiveMemory(directory, memory), snapshots = new Snapshots(memory, live, directory);
   return { directory, memory, live, snapshots, url: `http://127.0.0.1:${(upstream.address() as { port: number }).port}`,
     async close() { await snapshots.close(); memory.close(); upstream.closeAllConnections(); await new Promise<void>(resolve => upstream.close(() => resolve())); rmSync(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }); } };

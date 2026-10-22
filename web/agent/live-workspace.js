@@ -843,12 +843,12 @@ export function renderLiveWorkspace(
                 el(
                   "p",
                   "",
-                  "MCP：在本机运行项目的 scripts/dataengine-mcp.ts，设置以下环境变量。",
+                  "MCP：在本机运行项目的 scripts/context-os-mcp.ts，设置以下环境变量。",
                 ),
                 el(
                   "pre",
                   "",
-                  `DATAENGINE_URL=${location.origin}\nDATAENGINE_CONSUMER_KEY=<此应用密钥>`,
+                  `CONTEXT_OS_URL=${location.origin}\nCONTEXT_OS_CONSUMER_KEY=<此应用密钥>`,
                 ),
                 el(
                   "p",

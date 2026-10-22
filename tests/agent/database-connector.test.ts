@@ -7,7 +7,7 @@ import { MemoryStore } from "../../src/agent/memory.ts";
 import { SourceConnections } from "../../src/live/sources.ts";
 
 test("database connections expose selected tables through the shared read contract without exposing credentials", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "ade-database-")), memory = new MemoryStore(dir);
+  const dir = mkdtempSync(join(tmpdir(), "context-os-database-")), memory = new MemoryStore(dir);
   const rows = [{ id: "001", name: "南区门店" }, { id: "002", name: "北区门店" }];
   const scanner = {
     async tables() { return [{ schema: "public", table: "stores", estimatedRows: 2, columns: [{ name: "id", type: "VARCHAR" }, { name: "name", type: "VARCHAR" }], primaryKey: ["id"] }]; },
@@ -45,7 +45,7 @@ test("database connections expose selected tables through the shared read contra
 });
 
 test("revocation during table discovery cannot re-enable a database connection", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "ade-database-race-")), memory = new MemoryStore(dir);
+  const dir = mkdtempSync(join(tmpdir(), "context-os-database-race-")), memory = new MemoryStore(dir);
   let pause = false, unblock: () => void = () => {}, entered: () => void = () => {};
   const waiting = new Promise<void>(resolve => { entered = resolve; });
   const scanner = {
@@ -66,7 +66,7 @@ test("revocation during table discovery cannot re-enable a database connection",
 });
 
 test("schema confirmation rejects a concurrent type-only contract change and replays an identical accepted schema", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "ade-database-schema-race-")), memory = new MemoryStore(dir);
+  const dir = mkdtempSync(join(tmpdir(), "context-os-database-schema-race-")), memory = new MemoryStore(dir);
   let amountType = "INTEGER";
   const scanner = {
     async tables() { return [{ schema: "public", table: "orders", estimatedRows: 1, columns: [{ name: "id", type: "VARCHAR" }, { name: "amount", type: amountType }], primaryKey: ["id"] }]; },

@@ -11,7 +11,7 @@ import {withActor} from '../../src/security/actors.ts';
 
 const request=(onTool:RunRequest['onTool']=async()=>null):RunRequest=>({title:'预算边界',system:'协议回归，不调用真实模型',input:'核对数据',tools:[],onSession(){},onEvent(){},onTool});
 test('actual provider usage stops a run before further tools and blocks the shared daily budget until the next day',async()=>{
-  const directory=mkdtempSync(join(tmpdir(),'ade-usage-')),memory=new MemoryStore(directory);let now=new Date('2026-10-21T02:00:00Z'),calls=0,stops=0,writes=0;
+  const directory=mkdtempSync(join(tmpdir(),'context-os-usage-')),memory=new MemoryStore(directory);let now=new Date('2026-10-21T02:00:00Z'),calls=0,stops=0,writes=0;
   try{
     const usage=new UsageService(memory,{clock:()=>now});
     usage.configure({operationId:'budget',timeZone:'Asia/Shanghai',perRun:{tokens:140},daily:{tokens:150},rates:[{provider:'custom',model:'fixture',inputPer1M:1,outputPer1M:2}]});
@@ -29,7 +29,7 @@ test('actual provider usage stops a run before further tools and blocks the shar
 });
 
 test('revoking the caller while a model is in flight still accounts for its returned provider usage',async()=>{
-  const directory=mkdtempSync(join(tmpdir(),'ade-usage-revoked-')),memory=new MemoryStore(directory);let finish!:(outcome:any)=>void,active=true;
+  const directory=mkdtempSync(join(tmpdir(),'context-os-usage-revoked-')),memory=new MemoryStore(directory);let finish!:(outcome:any)=>void,active=true;
   try{
     const usage=new UsageService(memory),driver:AgentDriver={run:async()=>new Promise(resolve=>{finish=resolve;}),async stop(){},async close(){}};
     const running=withActor({kind:'human',id:'viewer-fixture',name:'查看同事',role:'viewer'},()=>usage.wrap(driver,()=>({provider:'custom',model:'unpriced'}),'revoked').run(request()),()=>{if(!active)throw new Error('登录授权已变化');});
@@ -40,7 +40,7 @@ test('revoking the caller while a model is in flight still accounts for its retu
 });
 
 test('concurrent runs reserve the daily allowance and release unused capacity; unknown usage never becomes a free run',async()=>{
-  const directory=mkdtempSync(join(tmpdir(),'ade-usage-shared-')),memory=new MemoryStore(directory);let finish!:(outcome:any)=>void;
+  const directory=mkdtempSync(join(tmpdir(),'context-os-usage-shared-')),memory=new MemoryStore(directory);let finish!:(outcome:any)=>void;
   try{
     const usage=new UsageService(memory);usage.configure({operationId:'shared',perRun:{tokens:100},daily:{tokens:100}});
     const driver:AgentDriver={run:async()=>new Promise(resolve=>{finish=resolve;}),async stop(){},async close(){}};
@@ -57,7 +57,7 @@ test('concurrent runs reserve the daily allowance and release unused capacity; u
 });
 
 test('the SDK boundary forwards each actual provider response once and does not bill estimated context size',async()=>{
-  const directory=mkdtempSync(join(tmpdir(),'ade-usage-sdk-')),memory=new MemoryStore(directory);let listener:(event:any)=>void=()=>{};
+  const directory=mkdtempSync(join(tmpdir(),'context-os-usage-sdk-')),memory=new MemoryStore(directory);let listener:(event:any)=>void=()=>{};
   const runtime={sessions:{async create(){return{id:'session'};}},events:{subscribe(_filter:unknown,callback:typeof listener){listener=callback;return{close(){}};}},runs:{async start(){
     const event={type:'run.progress',payload:{kind:'iteration_end',info:{iter:1,tokenSource:'api',tokenCount:9000,usage:{inputTokens:100,outputTokens:50,totalTokens:150}}}};
     listener(event);listener(event);
@@ -74,7 +74,7 @@ test('the SDK boundary forwards each actual provider response once and does not 
 });
 
 test('final cumulative telemetry includes unstreamed responses and interrupted accounting stays explicitly unknown',async()=>{
-  const directory=mkdtempSync(join(tmpdir(),'ade-usage-final-')),memory=new MemoryStore(directory);
+  const directory=mkdtempSync(join(tmpdir(),'context-os-usage-final-')),memory=new MemoryStore(directory);
   try{
     const usage=new UsageService(memory);usage.configure({operationId:'final-budget',perRun:{tokens:100},daily:{tokens:200},rates:[{provider:'custom',model:'fixture',inputPer1M:1,outputPer1M:2}]});
     const driver:AgentDriver={async run(req){req.onEvent('run.usage',{sampleId:'first',usage:{inputTokens:20,outputTokens:10,totalTokens:30}});return{sessionId:'final',runId:'final',text:'完整回执',usage:{inputTokens:80,outputTokens:30,totalTokens:110}};},async stop(){},async close(){}};
@@ -88,7 +88,7 @@ test('final cumulative telemetry includes unstreamed responses and interrupted a
 });
 
 test('daily reservations remain shared across midnight and restart does not turn a pending run into known usage',async()=>{
-  const directory=mkdtempSync(join(tmpdir(),'ade-usage-midnight-'));let memory=new MemoryStore(directory),now=new Date('2026-10-21T15:59:59Z'),finish!:(value:any)=>void;
+  const directory=mkdtempSync(join(tmpdir(),'context-os-usage-midnight-'));let memory=new MemoryStore(directory),now=new Date('2026-10-21T15:59:59Z'),finish!:(value:any)=>void;
   try{
     const usage=new UsageService(memory,{clock:()=>now});usage.configure({operationId:'midnight',perRun:{tokens:100},daily:{tokens:100}});
     let calls=0;const driver:AgentDriver={async run(){if(calls++)return{sessionId:'unexpected',runId:'unexpected',text:'预算不应允许此调用'};return new Promise(resolve=>{finish=resolve;});},async stop(){},async close(){}};
@@ -103,7 +103,7 @@ test('daily reservations remain shared across midnight and restart does not turn
 });
 
 test('a budget cannot save contradictory tariffs for the same provider and model',()=>{
-  const directory=mkdtempSync(join(tmpdir(),'ade-usage-tariff-')),memory=new MemoryStore(directory);
+  const directory=mkdtempSync(join(tmpdir(),'context-os-usage-tariff-')),memory=new MemoryStore(directory);
   try{
     const usage=new UsageService(memory),tariff={provider:'custom',model:'fixture',inputPer1M:1,outputPer1M:2};
     assert.throws(()=>usage.configure({operationId:'duplicate',rates:[tariff,{...tariff,inputPer1M:10}]}),/费率.*重复|重复.*费率/);

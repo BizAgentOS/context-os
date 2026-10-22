@@ -7,7 +7,7 @@ import type { AddressInfo } from "node:net";
 import { createServer } from "../../src/agent/server.ts";
 
 test("GLM providers keep distinct credentials and persist model selection across restart", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-glm-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-glm-"));
   const variants = [
     ["zhipu", "ZHIPU_API_KEY"],
     ["zhipu-coding", "ZHIPU_CODING_API_KEY"],
@@ -27,7 +27,7 @@ test("GLM providers keep distinct credentials and persist model selection across
     const response = await fetch(origin + path, {
       method: body ? "POST" : "GET",
       headers: {
-        "x-dataengine-token": service.adminToken,
+        "x-contextos-token": service.adminToken,
         "content-type": "application/json",
       },
       ...(body ? { body: JSON.stringify(body) } : {}),

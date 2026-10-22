@@ -76,7 +76,7 @@ export async function readPublicResponse(
           callback(null, address.address, address.family),
         headers: {
           accept: "text/html,text/plain;q=0.9",
-          "user-agent": "DataEngine/0.1 enterprise research",
+          "user-agent": "ContextOS/0.1 enterprise research",
           "accept-encoding": "identity",
         },
       },

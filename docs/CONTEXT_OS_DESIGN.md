@@ -1,4 +1,4 @@
-# ADE 总体架构（HLD）
+# Context OS 总体架构（HLD）
 
 更新：2026-10-19。本文负责模块、数据流与责任，产品价值见[PRD](PRODUCT.md)，模式见[Agent 设计](AGENT_DESIGN.md)，领域字段与不变量见[语义契约](SEMANTIC_CONTRACTS.md)。目标按[v0.3.0 Feature](features/v0.3.0.md)逐项交付，架构采纳不表示实现完成。
 

@@ -8,7 +8,7 @@ import { Workspace } from "../../src/agent/workspace.ts";
 import type { Artifact, Data } from "../../src/agent/contracts.ts";
 
 test("documents can ground a revisable conceptual outline without inventing adopted objects", () => {
-  const dir = mkdtempSync(join(tmpdir(), "dataengine-outline-"));
+  const dir = mkdtempSync(join(tmpdir(), "context-os-outline-"));
   let repo = new MemoryStore(dir);
   try {
     const workspace = new Workspace(repo);
@@ -150,7 +150,7 @@ test("documents can ground a revisable conceptual outline without inventing adop
 });
 
 test("business verification saves actual callback evidence and keeps old source snapshots after a source update", () => {
-  const dir = mkdtempSync(join(tmpdir(), "dataengine-verification-"));
+  const dir = mkdtempSync(join(tmpdir(), "context-os-verification-"));
   let repo = new MemoryStore(dir);
   try {
     const host = new Workspace(repo);
@@ -346,7 +346,7 @@ test("business verification saves actual callback evidence and keeps old source 
 });
 
 test("candidate verification stays a preview and an empty query retains its checked source scope", () => {
-  const dir = mkdtempSync(join(tmpdir(), "dataengine-preview-verification-"));
+  const dir = mkdtempSync(join(tmpdir(), "context-os-preview-verification-"));
   const repo = new MemoryStore(dir);
   try {
     const workspace = new Workspace(repo);
@@ -428,7 +428,7 @@ test("candidate verification stays a preview and an empty query retains its chec
 });
 
 test("empty documents and header-only tables cannot serve as conceptual evidence", () => {
-  const dir = mkdtempSync(join(tmpdir(), "dataengine-empty-outline-evidence-"));
+  const dir = mkdtempSync(join(tmpdir(), "context-os-empty-outline-evidence-"));
   const repo = new MemoryStore(dir);
   try {
     const workspace = new Workspace(repo);

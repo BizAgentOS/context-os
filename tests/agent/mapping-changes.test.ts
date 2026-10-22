@@ -34,7 +34,7 @@ test("global field revision retains shared impact, sample evidence and checked d
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-dataengine-token": service.adminToken,
+          "x-contextos-token": service.adminToken,
         },
         body: JSON.stringify(body),
       },
@@ -324,7 +324,7 @@ test("relation revision groups saved corrections, supports agent inspection and 
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-dataengine-token": service.adminToken,
+          "x-contextos-token": service.adminToken,
         },
         body: JSON.stringify(body),
       },
@@ -467,13 +467,13 @@ test("execution mapping and mapping revisions enter the shared proposal and adop
   await new Promise<void>((r) => service.server.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
   const post = async (path: string, body: unknown) => {
-    const r = await fetch(base + path, { method: "POST", headers: { "content-type": "application/json", "x-dataengine-token": service.adminToken }, body: JSON.stringify(body) });
+    const r = await fetch(base + path, { method: "POST", headers: { "content-type": "application/json", "x-contextos-token": service.adminToken }, body: JSON.stringify(body) });
     const result = await r.json() as any;
     if (!r.ok) throw new Error(result.error);
     return result;
   };
   const read = async (path: string) => {
-    const r = await fetch(base + path, { headers: { "x-dataengine-token": service.adminToken } });
+    const r = await fetch(base + path, { headers: { "x-contextos-token": service.adminToken } });
     const result = await r.json() as any;
     if (!r.ok) throw new Error(result.error);
     return result;

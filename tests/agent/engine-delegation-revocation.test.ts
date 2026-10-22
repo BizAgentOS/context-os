@@ -14,7 +14,7 @@ const ref = (a: { id: string; version: number }) => ({ id: a.id, version: a.vers
 
 for (const revoked of ["source", "business_view"] as const) {
   test(`delegated saved readings and idempotent replay respect current ${revoked} revocation`, async () => {
-    const directory = mkdtempSync(join(tmpdir(), "ade-delegation-revocation-"));
+    const directory = mkdtempSync(join(tmpdir(), "context-os-delegation-revocation-"));
     const source = await createFusionSources();
     const service = await createServer({ directory, automaticApi: false, driver: {
       async run(request) {
@@ -62,7 +62,7 @@ for (const revoked of ["source", "business_view"] as const) {
 }
 
 test("cancelling one delegated task starts the queued caller without a poll or another submission", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-delegation-queue-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-delegation-queue-"));
   let runs = 0, unblock: (() => void) | undefined, firstStarted!: () => void, secondStarted!: () => void;
   const first = new Promise<void>(resolve => { firstStarted = resolve; });
   const second = new Promise<void>(resolve => { secondStarted = resolve; });

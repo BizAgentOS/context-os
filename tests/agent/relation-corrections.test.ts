@@ -68,7 +68,7 @@ test("local relation correction preserves source baseline, requires checked deci
     const r = await fetch(base + path, {
       method: body ? "POST" : "GET",
       headers: {
-        "x-dataengine-token": service.adminToken,
+        "x-contextos-token": service.adminToken,
         "content-type": "application/json",
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
@@ -314,7 +314,7 @@ test("numeric source aliases cannot fork corrections or duplicate targets; corre
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-dataengine-token": service.adminToken,
+          "x-contextos-token": service.adminToken,
         },
         body: JSON.stringify(body),
       },

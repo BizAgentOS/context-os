@@ -12,28 +12,28 @@ import { sourceSummary } from "../../src/agent/source-summary.ts";
 import type { Data } from "../../src/agent/contracts.ts";
 
 const docker = (args: string[], input?: string) => execFileSync("docker", args, { input, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"], timeout: 180_000 }).trim();
-const suffix = randomUUID().slice(0, 8), directory = mkdtempSync(join(tmpdir(), "ade-database-chain-"));
+const suffix = randomUUID().slice(0, 8), directory = mkdtempSync(join(tmpdir(), "context-os-database-chain-"));
 const containers: string[] = [], service = await createServer({ directory, automaticApi: false }), app = service.app;
 service.server.listen(0, "127.0.0.1");
 await new Promise<void>(resolve => service.server.once("listening", resolve));
 const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
 async function api(path: string, body?: unknown) {
-  const response = await fetch(base + path, { method: body === undefined ? "GET" : "POST", headers: { "Content-Type": "application/json", "x-dataengine-token": service.adminToken },
+  const response = await fetch(base + path, { method: body === undefined ? "GET" : "POST", headers: { "Content-Type": "application/json", "x-contextos-token": service.adminToken },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   const value = await response.json();
   if (!response.ok) throw new Error(value.error ?? "请求失败");
   return value;
 }
-const originalCap = process.env.ADE_SNAPSHOT_MAX_ROWS;
-const adminPassword = "ade058-local-admin", password = "ade058-local-reader";
+const originalCap = process.env.CONTEXT_OS_SNAPSHOT_MAX_ROWS;
+const adminPassword = "context_os058-local-admin", password = "context_os058-local-reader";
 const selectedConnections: Array<{ id: string; capability: string }> = [];
 
 async function fixture(kind: "postgres" | "mysql") {
-  const name = `ade058-${kind}-${suffix}`, image = kind === "postgres" ? "pgvector/pgvector:pg16" : "mysql:8.4", port = kind === "postgres" ? 5432 : 3306;
+  const name = `context_os058-${kind}-${suffix}`, image = kind === "postgres" ? "pgvector/pgvector:pg16" : "mysql:8.4", port = kind === "postgres" ? 5432 : 3306;
   containers.push(name);
-  docker(["run", "-d", "--rm", "--name", name, "-p", `127.0.0.1::${port}`, ...(kind === "postgres" ? ["-e", `POSTGRES_PASSWORD=${adminPassword}`, "-e", "POSTGRES_DB=ade058"] : ["-e", `MYSQL_ROOT_PASSWORD=${adminPassword}`, "-e", "MYSQL_DATABASE=ade058"]), image]);
-  const admin = (sql: string) => docker(kind === "postgres" ? ["exec", "-i", name, "psql", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "ade058"]
-    : ["exec", "-i", "-e", `MYSQL_PWD=${adminPassword}`, name, "mysql", "--default-character-set=utf8mb4", "-uroot", "ade058"], sql);
+  docker(["run", "-d", "--rm", "--name", name, "-p", `127.0.0.1::${port}`, ...(kind === "postgres" ? ["-e", `POSTGRES_PASSWORD=${adminPassword}`, "-e", "POSTGRES_DB=context_os058"] : ["-e", `MYSQL_ROOT_PASSWORD=${adminPassword}`, "-e", "MYSQL_DATABASE=context_os058"]), image]);
+  const admin = (sql: string) => docker(kind === "postgres" ? ["exec", "-i", name, "psql", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "context_os058"]
+    : ["exec", "-i", "-e", `MYSQL_PWD=${adminPassword}`, name, "mysql", "--default-character-set=utf8mb4", "-uroot", "context_os058"], sql);
   let ready = false;
   for (let attempt = 0; attempt < 90; attempt++) {
     try { admin("SELECT 1;"); ready = true; break; } catch { await new Promise(resolve => setTimeout(resolve, 1000)); }
@@ -43,10 +43,10 @@ async function fixture(kind: "postgres" | "mysql") {
     INSERT INTO stores (id,name,amount) VALUES ('001','南区门店',12.50),('002','北区门店',20.25);
     CREATE TABLE shipments (id INTEGER PRIMARY KEY, store_id VARCHAR(20));
     INSERT INTO shipments VALUES (1,'001'),(2,'002'),(3,'001');`);
-  admin(kind === "postgres" ? `CREATE USER ade_reader WITH PASSWORD '${password}'; GRANT USAGE ON SCHEMA public TO ade_reader; GRANT SELECT ON ALL TABLES IN SCHEMA public TO ade_reader; ANALYZE;`
-    : `CREATE USER 'ade_reader'@'%' IDENTIFIED BY '${password}'; GRANT SELECT ON ade058.* TO 'ade_reader'@'%'; ANALYZE TABLE stores,shipments;`);
+  admin(kind === "postgres" ? `CREATE USER context_os_reader WITH PASSWORD '${password}'; GRANT USAGE ON SCHEMA public TO context_os_reader; GRANT SELECT ON ALL TABLES IN SCHEMA public TO context_os_reader; ANALYZE;`
+    : `CREATE USER 'context_os_reader'@'%' IDENTIFIED BY '${password}'; GRANT SELECT ON context_os058.* TO 'context_os_reader'@'%'; ANALYZE TABLE stores,shipments;`);
   const boundPort = Number(docker(["port", name, String(port)]).split(":").at(-1));
-  return { name, admin, config: { name: `${kind} 隔离验收库`, kind, host: "127.0.0.1", port: boundPort, database: "ade058", user: "ade_reader", password }, schema: kind === "postgres" ? "public" : "ade058" };
+  return { name, admin, config: { name: `${kind} 隔离验收库`, kind, host: "127.0.0.1", port: boundPort, database: "context_os058", user: "context_os_reader", password }, schema: kind === "postgres" ? "public" : "context_os058" };
 }
 
 try {
@@ -93,14 +93,14 @@ try {
     selected = app.memory.getArtifact(selected.id);
     assert.equal((await app.live.sources.readRecords(selected.id, cap)).items[0].region, "城区", "accepting the schema promotes the selected table contract too");
     f.admin("UPDATE stores SET name='新门店名称' WHERE id='001';");
-    process.env.ADE_SNAPSHOT_MAX_ROWS = "1";
+    process.env.CONTEXT_OS_SNAPSHOT_MAX_ROWS = "1";
     const limited = await app.snapshots.sync({ operationId: `limited-${kind}`, sourceIds: [selected.id], full: true });
     assert.ok((limited.content.issues as Data[]).some(issue => issue.code === "snapshot_capacity"));
     const limitedData = app.snapshots.dataset(data.id);
     assert.equal((limitedData.content.coverage as Data).complete, false);
     assert.equal((limitedData.content.coverage as Data).rows, 1);
     assert.equal((await app.snapshots.preview({ datasetId: data.id, snapshotId: historical })).rows[0].name, "南区门店");
-    delete process.env.ADE_SNAPSHOT_MAX_ROWS;
+    delete process.env.CONTEXT_OS_SNAPSHOT_MAX_ROWS;
     await app.snapshots.sync({ operationId: `full-${kind}`, sourceIds: [selected.id] });
     assert.equal((await app.snapshots.preview({ datasetId: data.id })).rows[0].name, "新门店名称");
     const build = await app.programBuilds.build({ operationId: `build-${kind}` });
@@ -116,8 +116,8 @@ try {
     const object = await api("/api/live/query", { modelId: adopted.model.id, type: type.name, id: "001" });
     assert.equal(object.items[0].name, "新门店名称");
     // Prove the source-side fixture account itself cannot write; this does not use an application SQL endpoint.
-    const write = spawnSync("docker", kind === "postgres" ? ["exec", "-e", `PGPASSWORD=${password}`, f.name, "psql", "-h", "127.0.0.1", "-U", "ade_reader", "-d", "ade058", "-v", "ON_ERROR_STOP=1", "-c", "DELETE FROM stores"]
-      : ["exec", "-e", `MYSQL_PWD=${password}`, f.name, "mysql", "-uade_reader", "ade058", "-e", "DELETE FROM stores"], { encoding: "utf8" });
+    const write = spawnSync("docker", kind === "postgres" ? ["exec", "-e", `PGPASSWORD=${password}`, f.name, "psql", "-h", "127.0.0.1", "-U", "context_os_reader", "-d", "context_os058", "-v", "ON_ERROR_STOP=1", "-c", "DELETE FROM stores"]
+      : ["exec", "-e", `MYSQL_PWD=${password}`, f.name, "mysql", "-ucontext_os_reader", "context_os058", "-e", "DELETE FROM stores"], { encoding: "utf8" });
     assert.notEqual(write.status, 0, "the database account is SELECT-only");
     selectedConnections.push({ id: selected.id, capability: cap });
     console.log(`${kind}: HTTP connection, read-only discovery, exact types, schema acceptance, ontology/query, row cap and history passed`);
@@ -130,7 +130,7 @@ try {
   console.log("Both source-side read-only permissions and immediate revocation passed.");
   console.log(`Database connector acceptance passed (${process.argv.includes("--postgres-only") ? "PostgreSQL focused run" : "real isolated PostgreSQL and MySQL"}; no model simulation).`);
 } finally {
-  if (originalCap === undefined) delete process.env.ADE_SNAPSHOT_MAX_ROWS; else process.env.ADE_SNAPSHOT_MAX_ROWS = originalCap;
+  if (originalCap === undefined) delete process.env.CONTEXT_OS_SNAPSHOT_MAX_ROWS; else process.env.CONTEXT_OS_SNAPSHOT_MAX_ROWS = originalCap;
   await service.close();
   for (const name of containers) { try { docker(["rm", "-f", name]); } catch { /* already removed */ } }
   rmSync(directory, { recursive: true, force: true });

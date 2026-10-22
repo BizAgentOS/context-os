@@ -135,7 +135,7 @@ test("HTTP and third-party MCP traverse two sources; changes remain visible afte
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-dataengine-token": service.adminToken,
+          "x-contextos-token": service.adminToken,
         },
         body: JSON.stringify(body),
       });
@@ -159,11 +159,11 @@ test("HTTP and third-party MCP traverse two sources; changes remain visible afte
     await client.connect(
       new StdioClientTransport({
         command: process.execPath,
-        args: [resolve("scripts/dataengine-mcp.ts")],
+        args: [resolve("scripts/context-os-mcp.ts")],
         env: {
           PATH: process.env.PATH!,
-          DATAENGINE_URL: origin,
-          DATAENGINE_CONSUMER_KEY: key,
+          CONTEXT_OS_URL: origin,
+          CONTEXT_OS_CONSUMER_KEY: key,
         },
       }),
     );

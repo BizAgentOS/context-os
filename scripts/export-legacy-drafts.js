@@ -35,7 +35,7 @@
     const blob = new Blob(
       [
         JSON.stringify(
-          { format: "dataengine-legacy-drafts-v1", drafts },
+          { format: "context-os-legacy-drafts-v1", drafts },
           null,
           2,
         ),
@@ -45,7 +45,7 @@
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "dataengine-drafts.json";
+    link.download = "context-os-drafts.json";
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   } finally {

@@ -17,7 +17,7 @@ import { validateDefinition } from "../../src/engine/validation.ts";
 import { dataOverviewForAgent, discoveryExplainForAgent, engineTools, ontologySnapshotCheckForAgent, snapshotQueryForAgent } from "../../src/engine/tools.ts";
 
 function fixture() {
-  const directory = mkdtempSync(join(tmpdir(), "ade-validation-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-validation-"));
   const memory = new MemoryStore(directory);
   const live = new LiveMemory(directory, memory);
   const foundation = new FoundationService(memory, live);

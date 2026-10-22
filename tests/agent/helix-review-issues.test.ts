@@ -17,7 +17,7 @@ import { seedFoundation } from "./program-foundation-fixture.ts";
 import { discoverFromSnapshots } from "../../src/engine/snapshot-discovery.ts";
 
 function fixture() {
-  const directory = mkdtempSync(join(tmpdir(), "ade-discovery-review-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-discovery-review-"));
   const memory = new MemoryStore(directory), live = new LiveMemory(directory, memory), foundation = new FoundationService(memory, live);
   const snapshots = new Snapshots(memory, live, directory), engine = new ProgramBuilds(memory, foundation, live, snapshots);
   return { memory, live, foundation, snapshots, engine, workspace: new Workspace(memory),

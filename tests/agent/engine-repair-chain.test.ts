@@ -13,7 +13,7 @@ import { proposeWording } from "./unified-wording-fixture.ts";
 const ref = (a: Artifact) => ({id: a.id, version: a.version});
 
 test("program construction, Agent wording repair and versioned publication preserve an existing consumer", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-repair-chain-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-repair-chain-"));
   let calls = 0,namingCalls=0;
   let repaired: Artifact | undefined;
   const driver: AgentDriver = {
@@ -31,7 +31,7 @@ test("program construction, Agent wording repair and versioned publication prese
   await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));
   const origin = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
   const api = async (path: string, body?: unknown) => {
-    const response = await fetch(origin + path, {method: body ? "POST" : "GET", headers: {"x-dataengine-token": service.adminToken, "content-type": "application/json"}, ...(body ? {body: JSON.stringify(body)} : {})});
+    const response = await fetch(origin + path, {method: body ? "POST" : "GET", headers: {"x-contextos-token": service.adminToken, "content-type": "application/json"}, ...(body ? {body: JSON.stringify(body)} : {})});
     const result = await response.json(); assert(response.ok, JSON.stringify(result)); return result;
   };
   const external = async (key: string, path: string) => {
@@ -100,7 +100,7 @@ test("renaming semantic types and relations preserves local corrections and stil
   const {createHeatingSources,connectHeatingSources,heatingDefinition}=await import('../../src/live/heating-sources.ts');
   const {seedFoundation}=await import('./program-foundation-fixture.ts');
   const {RelationCorrections}=await import('../../src/live/relation-corrections.ts');
-  const directory=mkdtempSync(join(tmpdir(),'ade-correction-wording-')),upstream=await createHeatingSources();
+  const directory=mkdtempSync(join(tmpdir(),'context-os-correction-wording-')),upstream=await createHeatingSources();
   const service=await createServer({directory,automaticApi:false});
   try {
     const connections=await connectHeatingSources(service.app.live.sources,upstream),definition=heatingDefinition(connections.api.id,connections.mcp.id);
@@ -180,7 +180,7 @@ test("renaming semantic types and relations preserves local corrections and stil
 test("correction capture retains generated stable relation identity without a foundation", async()=>{
   const {createHeatingSources,connectHeatingSources,heatingDefinition}=await import('../../src/live/heating-sources.ts');
   const {RelationCorrections}=await import('../../src/live/relation-corrections.ts');
-  const directory=mkdtempSync(join(tmpdir(),'ade-correction-generated-id-')),upstream=await createHeatingSources();
+  const directory=mkdtempSync(join(tmpdir(),'context-os-correction-generated-id-')),upstream=await createHeatingSources();
   const service=await createServer({directory,automaticApi:false});
   try {
     const connections=await connectHeatingSources(service.app.live.sources,upstream);

@@ -1,5 +1,5 @@
 // Adapted from Helix Foundry services/executor/src/engine.ts (Apache-2.0, commit 00d7927).
-// ADE changes are listed in third_party/helix-foundry/MODIFICATIONS.md.
+// Context OS changes are listed in third_party/helix-foundry/MODIFICATIONS.md.
 import { DuckDBInstance, type DuckDBConnection, type Json } from "@duckdb/node-api";
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
@@ -77,7 +77,7 @@ export async function execute(job: Execution, root: string, scratch?: string): P
       if (!job.file || !/^[-\w]+\.(csv|json|jsonl|parquet)$/.test(job.file)) throw new Error("Invalid input file");
       const file = resolve(root, "incoming", job.scope, job.file), info = await stat(file);
       const fn = job.file.endsWith(".csv") ? "read_csv_auto" : job.file.endsWith(".parquet") ? "read_parquet" : "read_json_auto";
-      if (info.size === 0) await c.run("CREATE TABLE result (__ade_empty VARCHAR)").then(() => c!.run("DELETE FROM result"));
+      if (info.size === 0) await c.run("CREATE TABLE result (__cos_empty VARCHAR)").then(() => c!.run("DELETE FROM result"));
       else {
         // Straight to Parquet, which the profile then reads; JSON columns come from every row.
         streamed = resolve(temp, "ingest.parquet");
@@ -89,7 +89,7 @@ export async function execute(job: Execution, root: string, scratch?: string): P
           // Stream native JSON text without parsing values in JS (including integers beyond JS precision).
           input = resolve(temp, "typed-input.jsonl");
           const keys = (await c.runAndReadAll(`SELECT json_keys(json_group_structure(json)) AS keys FROM read_json_objects(${lit(file)})`)).getRowObjectsJson()[0].keys as string[];
-          const fields = keys.map(key => `${lit("ade_" + Buffer.from(key).toString("hex"))}, json_extract(json, ${lit("/" + key.replaceAll("~", "~0").replaceAll("/", "~1"))})`);
+          const fields = keys.map(key => `${lit("cos_" + Buffer.from(key).toString("hex"))}, json_extract(json, ${lit("/" + key.replaceAll("~", "~0").replaceAll("/", "~1"))})`);
           const records = await c.stream(`SELECT json_object(${fields.join(", ")}) AS encoded FROM read_json_objects(${lit(file)})`);
           await pipeline(async function* () {
             for await (const rows of records.yieldRowObjectJson()) yield rows.map(row => String(row.encoded) + "\n").join("");
@@ -147,7 +147,7 @@ export async function execute(job: Execution, root: string, scratch?: string): P
         // One pass, no profile; the size cap stops a row-multiplying join long before the time limit.
         const limit = process.env.EXECUTOR_RESULT_LIMIT || "2GB", max = bytes(limit);
         if (!(max >= 0)) throw new Error("Invalid EXECUTOR_RESULT_LIMIT: " + limit);
-        const result = await c.stream(`SELECT * FROM (${sql}) AS ade_result`);
+        const result = await c.stream(`SELECT * FROM (${sql}) AS context_os_result`);
         const partial = resolve(temp, "result.jsonl"), file = resultFile(root, job.scope, job.version!);
         let count = 0, size = 0;
         await pipeline(async function* () {
@@ -163,11 +163,11 @@ export async function execute(job: Execution, root: string, scratch?: string): P
         await rename(partial, file).catch(e => e.code === "EXDEV" ? copyFile(partial, file) : Promise.reject(e));
         return { version: job.version!, count };
       }
-      await c.run(`CREATE TABLE result AS SELECT * FROM (${sql}) AS ade_result`);
+      await c.run(`CREATE TABLE result AS SELECT * FROM (${sql}) AS context_os_result`);
     }
     if ((job.mode === "ingest" && !streamed) || job.persist) await c.run(`COPY result TO ${lit(out)} (FORMAT PARQUET)`);
     const rows = Number((await c.runAndReadAll("SELECT count(*) n FROM result")).getRowObjectsJson()[0].n);
-    const schema = (await c.runAndReadAll("DESCRIBE result")).getRowObjectsJson().filter(col => !(rows === 0 && col.column_name === "__ade_empty"));
+    const schema = (await c.runAndReadAll("DESCRIBE result")).getRowObjectsJson().filter(col => !(rows === 0 && col.column_name === "__cos_empty"));
     const sample = (await c.runAndReadAll(`SELECT * FROM result LIMIT ${Math.min(job.limit || 50, 1000)} OFFSET ${Math.max(job.offset || 0, 0)}`)).getRowObjectsJson();
     const stored = compactSample(sample);
     const columns: ColumnProfile[] = [];

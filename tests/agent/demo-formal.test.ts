@@ -8,7 +8,7 @@ import {OntologyWorkspace} from '../../src/semantic/workspace.ts';
 import {sourceSummary} from '../../src/agent/source-summary.ts';
 
 test('fictional heating demo fills the formal source, semantic and release workspaces and preserves the known negative evidence',async()=>{
- const directory=mkdtempSync(join(tmpdir(),'ade-formal-demo-'));let service=await createHeatingDemo(directory);
+ const directory=mkdtempSync(join(tmpdir(),'context-os-formal-demo-'));let service=await createHeatingDemo(directory);
  try{
   const app=service.app,workspace=new OntologyWorkspace(app.memory,app.foundation,app.live,app.pendingCenter,app.workspaceVersions),view=workspace.overview();
   assert.equal(view.entities.length,6);assert.equal(view.relations.length,10);assert(view.modelRef);

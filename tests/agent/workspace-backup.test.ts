@@ -18,7 +18,7 @@ import {FeishuConnector} from '../../src/connectors/feishu.ts';
 import {TableCli,connected} from './feishu-tables-fixture.ts';
 
 test('online backup restores a queryable workspace in a new directory without credentials and rejects tampered files',{timeout:30000},async()=>{
- const root=mkdtempSync(join(tmpdir(),'ade-backup-')),dir=join(root,'workspace'),prior=process.env.ADE_VAULT_KEY_DIRECTORY;process.env.ADE_VAULT_KEY_DIRECTORY=join(root,'keys');
+ const root=mkdtempSync(join(tmpdir(),'context-os-backup-')),dir=join(root,'workspace'),prior=process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY;process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY=join(root,'keys');
  const memory=new MemoryStore(dir),live=new LiveMemory(dir,memory),snapshots=new Snapshots(memory,live,dir),foundation=new FoundationService(memory,live),engine=new ProgramBuilds(memory,foundation,live,snapshots);
  try{
   const sources=await new TableFiles(memory,dir).import({name:'产品.tsv',input:(async function*(){yield Buffer.from('编号\t名称\nP1\t原始产品\nP2\t另一个产品\n');})()});
@@ -41,11 +41,11 @@ test('online backup restores a queryable workspace in a new directory without cr
   const snapshot=saved.manifest.files.find(file=>file.path.endsWith('.parquet'))!;appendFileSync(join(saved.path,snapshot.path),'tampered');
   await assert.rejects(BackupService.restore({backup:saved.path,destination:join(root,'corrupt-restored')}),/校验|完整/);
   assert.equal(existsSync(join(root,'corrupt-restored')),false);
- }finally{await engine.close();await snapshots.close();memory.close();if(prior===undefined)delete process.env.ADE_VAULT_KEY_DIRECTORY;else process.env.ADE_VAULT_KEY_DIRECTORY=prior;rmSync(root,{recursive:true,force:true});}
+ }finally{await engine.close();await snapshots.close();memory.close();if(prior===undefined)delete process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY;else process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY=prior;rmSync(root,{recursive:true,force:true});}
 });
 
 test('a restored Feishu table serves its saved snapshot without a CLI account and still blocks all remote reads',{timeout:30000},async()=>{
- const root=mkdtempSync(join(tmpdir(),'ade-backup-feishu-')),dir=join(root,'workspace'),memory=new MemoryStore(dir),live=new LiveMemory(dir,memory),snapshots=new Snapshots(memory,live,dir),engine=new ProgramBuilds(memory,new FoundationService(memory,live),live,snapshots),cli=new TableCli(),connector=new FeishuConnector(dir,cli);
+ const root=mkdtempSync(join(tmpdir(),'context-os-backup-feishu-')),dir=join(root,'workspace'),memory=new MemoryStore(dir),live=new LiveMemory(dir,memory),snapshots=new Snapshots(memory,live,dir),engine=new ProgramBuilds(memory,new FoundationService(memory,live),live,snapshots),cli=new TableCli(),connector=new FeishuConnector(dir,cli);
  try{
   await connected(connector);const tables=live.sources.attachFeishu(connector),source=(await tables.select({operationId:'select',url:'https://team.feishu.cn/base/base_test',tableIds:['tbl_people']})).sources[0];
   const built=await engine.build({operationId:'build',autoAdopt:true});assert.equal(built.content.outcome,'adopted');
@@ -60,7 +60,7 @@ test('a restored Feishu table serves its saved snapshot without a CLI account an
 });
 
 test('restored authenticated sources require new credentials before any network read and config exports contain no secrets',async()=>{
- const root=mkdtempSync(join(tmpdir(),'ade-backup-auth-')),dir=join(root,'workspace'),prior=process.env.ADE_VAULT_KEY_DIRECTORY;process.env.ADE_VAULT_KEY_DIRECTORY=join(root,'keys');
+ const root=mkdtempSync(join(tmpdir(),'context-os-backup-auth-')),dir=join(root,'workspace'),prior=process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY;process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY=join(root,'keys');
  let calls=0;const upstream=createServer((_req,res)=>{calls++;res.setHeader('content-type','application/json');res.end(JSON.stringify({items:[{id:'P1'}]}));});await new Promise<void>(resolve=>upstream.listen(0,'127.0.0.1',resolve));
  const memory=new MemoryStore(dir);
  try{
@@ -68,5 +68,5 @@ test('restored authenticated sources require new credentials before any network 
   const backup=new BackupService(memory),config=await backup.exportConfig({destination:join(root,'configuration.json')});assert.doesNotMatch(readFileSync(config.path,'utf8'),/synthetic-source-secret|vault/);
   const saved=await backup.create({destination:join(root,'backups'),operationId:'auth'}),restored=await BackupService.restore({backup:saved.path,destination:join(root,'restored')}),copy=new MemoryStore(restored.directory);
   try{await assert.rejects(new SourceConnections(restored.directory,copy).readRecords(source.id,'products'),/凭据|授权/);assert.equal(calls,0,'restoring must not silently retry an authenticated connection as anonymous');}finally{copy.close();}
- }finally{memory.close();upstream.closeAllConnections();await new Promise<void>(resolve=>upstream.close(()=>resolve()));if(prior===undefined)delete process.env.ADE_VAULT_KEY_DIRECTORY;else process.env.ADE_VAULT_KEY_DIRECTORY=prior;rmSync(root,{recursive:true,force:true});}
+ }finally{memory.close();upstream.closeAllConnections();await new Promise<void>(resolve=>upstream.close(()=>resolve()));if(prior===undefined)delete process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY;else process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY=prior;rmSync(root,{recursive:true,force:true});}
 });

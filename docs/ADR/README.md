@@ -21,7 +21,7 @@ ADR 保存会影响后续功能设计的长期架构决定，并记录为什么�
 
 ## 与其他文档的关系
 
-- [DATA_ENGINE_DESIGN](../DATA_ENGINE_DESIGN.md) 是产品主设计与高层架构，不另建一份重复的 HLD。
+- [CONTEXT_OS_DESIGN](../CONTEXT_OS_DESIGN.md) 是产品主设计与高层架构，不另建一份重复的 HLD。
 - [AGENT_DESIGN](../AGENT_DESIGN.md) 细化内部 Agent 的运行与能力组织。
 - [AGENT_UI_DESIGN](../AGENT_UI_DESIGN.md) 定义人类工作区与 Agent 的协作方式。
 - [SEMANTIC_CONTRACTS](../SEMANTIC_CONTRACTS.md) 细化对象、证据、操作与版本契约；字段和签名不在 ADR 冻结。

@@ -6,7 +6,7 @@ import { showSyncIssue } from "./sync-issue.js";
 const categories = { structure: "结构变更", naming: "命名", adjudication: "待裁决", gap: "问题缺口", data_issue: "数据问题" };
 const origins = { program: "程序发现", human: "人工提议", agent: "助手提议", qa: "问答反馈" };
 const statuses = { proposed: "待复验", verified: "已复验", failed: "复验未通过" };
-export function requestPending(reference = {}) { window.dispatchEvent(new CustomEvent("dataengine:pending", { detail: reference })); }
+export function requestPending(reference = {}) { window.dispatchEvent(new CustomEvent("context-os:pending", { detail: reference })); }
 
 /** The shell and all legacy details navigate to this one decision surface. */
 export function createPendingCenter(actions) {

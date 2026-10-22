@@ -11,7 +11,7 @@ import type { AgentDriver } from "../../src/agent/runtime.ts";
 import { seedFoundation } from "./program-foundation-fixture.ts";
 
 test("one setup page saves company facts, reads a source and stays open after completion", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-setup-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-setup-"));
   let runs = 0, inspectedCompany = false;
   const driver: AgentDriver = {
     async run(request) {
@@ -56,7 +56,7 @@ test("one setup page saves company facts, reads a source and stays open after co
     );
     const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
     const headers = {
-      "x-dataengine-token": service.adminToken,
+      "x-contextos-token": service.adminToken,
       "content-type": "application/json",
     };
     const read = async () =>
@@ -122,7 +122,7 @@ test("one setup page saves company facts, reads a source and stays open after co
 });
 
 test("legacy pages migrate once without replaying work or rewriting history and artifacts", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-migration-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-migration-"));
   let continuation = false;
   let resumed = false;
   const driver: AgentDriver = {
@@ -215,7 +215,7 @@ test("legacy pages migrate once without replaying work or rewriting history and 
     );
     const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
     const headers = {
-      "x-dataengine-token": service.adminToken,
+      "x-contextos-token": service.adminToken,
       "content-type": "application/json",
     };
     const read = async (path: string) =>
@@ -306,7 +306,7 @@ test("legacy pages migrate once without replaying work or rewriting history and 
 
 test("reopening a legacy in-flight task invalidates its write identity before migration", async () => {
   const directory = mkdtempSync(
-    join(tmpdir(), "dataengine-interrupted-migration-"),
+    join(tmpdir(), "context-os-interrupted-migration-"),
   );
   const driver: AgentDriver = {
     async run() {

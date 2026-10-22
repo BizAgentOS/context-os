@@ -8,7 +8,7 @@ import {tmpdir} from 'node:os';
 import {MemoryStore} from '../../src/agent/memory.ts';
 
 test('artifact category pages contain only the newest visible versions and preserve their order after restart',()=>{
- const directory=mkdtempSync(join(tmpdir(),'ade-memory-scale-'));let memory=new MemoryStore(directory);
+ const directory=mkdtempSync(join(tmpdir(),'context-os-memory-scale-'));let memory=new MemoryStore(directory);
  try{
   const a=memory.putArtifact({kind:'note',title:'甲',status:'ready',content:{value:1}}),b=memory.putArtifact({kind:'note',title:'乙',status:'ready',content:{value:2}}),c=memory.putArtifact({kind:'note',title:'丙',status:'ready',content:{value:3}});
   memory.putArtifact({...a,expectedVersion:a.version,title:'甲更新',content:{value:4}});
@@ -24,7 +24,7 @@ test('artifact category pages contain only the newest visible versions and prese
 
 
 test('large source content migrates without semantic changes and compact lists stay bounded across backup restore',async()=>{
- const root=mkdtempSync(join(tmpdir(),'ade-memory-content-')),directory=join(root,'workspace');let memory=new MemoryStore(directory);
+ const root=mkdtempSync(join(tmpdir(),'context-os-memory-content-')),directory=join(root,'workspace');let memory=new MemoryStore(directory);
  try{
   const raw='历史说明，保留原始字符与换行。\n'.repeat(10000),rows=Array.from({length:1000},(_,i)=>({id:`P${i}`,description:'完整来源'.repeat(20)}));
   const original=memory.putArtifact({kind:'source',title:'历史资料',status:'ready',content:{format:'csv',raw,rows,hash:'original-hash'}},undefined,'old-upload');

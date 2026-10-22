@@ -8,12 +8,12 @@ import {createServer} from '../../src/agent/server.ts';
 import type {AgentDriver} from '../../src/agent/runtime.ts';
 
 test('model-first engine initialization persists a source choice without creating business data',async()=>{
- const directory=mkdtempSync(join(tmpdir(),'ade-engine-start-'));
+ const directory=mkdtempSync(join(tmpdir(),'context-os-engine-start-'));
  const driver:AgentDriver={async run(){return {text:'ok',sessionId:'test',runId:'test'};},async stop(){},async close(){}};
  let service=await createServer({directory,driver,automaticApi:false});
  const listen=async()=>{await new Promise<void>(r=>service.server.listen(0,'127.0.0.1',r));return `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;};
  let origin=await listen();
- const request=async(path:string,body?:unknown)=>{const r=await fetch(origin+path,{method:body?'POST':'GET',headers:{'x-dataengine-token':service.adminToken,'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,body:await r.json()};};
+ const request=async(path:string,body?:unknown)=>{const r=await fetch(origin+path,{method:body?'POST':'GET',headers:{'x-contextos-token':service.adminToken,'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,body:await r.json()};};
  try{
   let state=(await request('/api/onboarding')).body;
   assert.equal(state.flow,'engine');assert.equal(state.step,1);
@@ -35,7 +35,7 @@ test('model-first engine initialization persists a source choice without creatin
 });
 
 test('navigation preserves the running task and its original page until explicit stop',async()=>{
- const directory=mkdtempSync(join(tmpdir(),'ade-navigation-'));
+ const directory=mkdtempSync(join(tmpdir(),'context-os-navigation-'));
  let finish!:()=>void,entered!:()=>void;const started=new Promise<void>(r=>entered=r);let stops=0;
  const driver:AgentDriver={async run(){entered();await new Promise<void>(r=>finish=r);return {text:'原任务已结束',sessionId:'nav',runId:'nav'};},async stop(){stops++;finish();},async close(){}};
  const service=await createServer({directory,driver,automaticApi:false});

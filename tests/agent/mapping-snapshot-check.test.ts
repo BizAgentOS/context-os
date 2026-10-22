@@ -18,7 +18,7 @@ import { adoptDiscoveredRelations } from "./discovery-test-helpers.ts";
 const code = (i: number) => `A${String(i).padStart(3, "0")}`;
 
 test("a mapping revision reports its full-snapshot effect, and one that breaks a relation cannot pass its check", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-mapping-snapshot-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-mapping-snapshot-"));
   const memory = new MemoryStore(directory), live = new LiveMemory(directory, memory);
   const foundation = new FoundationService(memory, live), snapshots = new Snapshots(memory, live, directory);
   const engine = new ProgramBuilds(memory, foundation, live, snapshots), changes = new MappingChanges(memory, live);
@@ -63,7 +63,7 @@ test("a mapping revision reports its full-snapshot effect, and one that breaks a
 });
 
 test("a mapping with a relation that matches nothing in the full data is refused by the full-snapshot check when proposed", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-adopt-snapshot-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-adopt-snapshot-"));
   const memory = new MemoryStore(directory), live = new LiveMemory(directory, memory), snapshots = new Snapshots(memory, live, directory);
   live.snapshotCheck = definition => validateDefinition(snapshots, live, definition) as never;
   const companies = Array.from({ length: 10 }, (_, i) => ({ code: code(i), owner: `销售${i}` }));

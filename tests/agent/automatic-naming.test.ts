@@ -41,7 +41,7 @@ test('one background naming run reads bounded real context, submits one pending 
 });
 
 test('first-build enrollment never queues naming for a manually adopted model', async () => {
-  const directory = mkdtempSync(join(tmpdir(), 'ade-naming-enrollment-')), app = new AgentApplication(directory, undefined, undefined, false);
+  const directory = mkdtempSync(join(tmpdir(), 'context-os-naming-enrollment-')), app = new AgentApplication(directory, undefined, undefined, false);
   try {
     const batches = new NamingBatches(app.memory, app.foundation, app.live, app.snapshots, app.changes);
     batches.connectBuilds(app.programBuilds);
@@ -56,7 +56,7 @@ test('first-build enrollment never queues naming for a manually adopted model', 
 });
 
 test('the first program build queues once, wakes the shared pool and survives restart without another job', async () => {
-  const directory = mkdtempSync(join(tmpdir(), 'ade-naming-first-'));
+  const directory = mkdtempSync(join(tmpdir(), 'context-os-naming-first-'));
   let app = new AgentApplication(directory, undefined, undefined, false);
   try {
     const batches = app.namingBatches, onQueued = batches.onQueued;

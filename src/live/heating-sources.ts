@@ -4,7 +4,7 @@ import { z } from "zod";
 import { pathToFileURL } from "node:url";
 import type { SourceConnections } from "./sources.ts";
 
-// Independent fictional upstream systems. No dependency on DataEngine's memory database.
+// Independent fictional upstream systems. No dependency on Context OS's memory database.
 export async function createHeatingSources(apiPort = 0, mcpPort = 0) {
   let outcome = "未改善";
   const complaints = [

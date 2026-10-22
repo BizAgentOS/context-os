@@ -21,7 +21,7 @@ const changeTitle = change => {
 
 /** A concrete change record, shared by the history and build entry points. Full pending-center navigation belongs to 044. */
 export function showChange(reference, actions, onChanged = () => {}, container) {
-  if (!container) { window.dispatchEvent(new CustomEvent("dataengine:pending", { detail: reference })); return; }
+  if (!container) { window.dispatchEvent(new CustomEvent("context-os:pending", { detail: reference })); return; }
   const d = Object.assign(container, { body: container }), output = message(d.body), host = el("div", null, "change-detail");
   d.body.append(host);
   let current, scopeArtifact, scopeVersion, scopeSemantic, reviewImpact,impactError, datasets = [], request = 0;

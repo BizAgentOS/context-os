@@ -14,13 +14,13 @@ const ordersFull = "订单号,企业编号\n" + Array.from({ length: 10 }, (_, i
 const ordersHalf = "订单号,企业编号\n" + Array.from({ length: 10 }, (_, i) => `O${i},${i < 5 ? `C${i}` : `X${i}`}`).join("\n") + "\n";
 
 async function workspace(orders: string) {
-  const directory = mkdtempSync(join(tmpdir(), "ade-changes-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-changes-"));
   const service = await createServer({ directory, automaticApi: false });
   await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
   const call = async (path: string, body?: unknown) => {
     const response = await fetch(base + path, { method: body === undefined ? "GET" : "POST",
-      headers: { "Content-Type": "application/json", "X-DataEngine-Token": service.adminToken }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+      headers: { "Content-Type": "application/json", "X-ContextOS-Token": service.adminToken }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     return { status: response.status, body: await response.json() as any };
   };
   const files = new Workspace(service.app.memory);

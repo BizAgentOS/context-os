@@ -1,11 +1,11 @@
-# Data Engine 开发工作约定
+# Context OS 开发工作约定
 
-本目录是产品 Git 根目录；外层是调研工作区。Git 与产品命令在本目录执行。
+本目录是 Context OS 产品 Git 根目录（`Context OS/context-os/`）；外层是调研工作区。Git 与产品命令在本目录执行。产品显示名称统一使用 Context OS，包名与技术标识使用 `context-os`，新环境变量使用 `CONTEXT_OS_`；旧名称只在明确的兼容入口、历史证据路径与既有存储身份中保留，见[迁移说明](README.md#名称与已有配置迁移)。
 
 ## 先读什么
 
 1. [文档中心](docs/README.md)：按任务选择主文档，区分目标设计、当前接入事实与历史。
-2. 首次理解产品读[产品需求](docs/PRODUCT.md)和[总体架构](docs/DATA_ENGINE_DESIGN.md)；执行任务读[功能台账](docs/FEATURE_LIST.md)及当前 Feature 设计块。
+2. 首次理解产品读[产品需求](docs/PRODUCT.md)和[总体架构](docs/CONTEXT_OS_DESIGN.md)；执行任务读[功能台账](docs/FEATURE_LIST.md)及当前 Feature 设计块。
 3. Agent 工作读[Agent 设计](docs/AGENT_DESIGN.md)、[KodaX 能力记录](docs/KODAX_CAPABILITY_LEDGER.md)与[内置 Skill](docs/BUILTIN_SKILLS.md)；领域操作读[语义契约](docs/SEMANTIC_CONTRACTS.md)；界面读[协作契约](docs/AGENT_UI_DESIGN.md)和[画布](docs/CANVAS_DESIGN.md)；对外接口读[消费设计](docs/DATA_CONSUMPTION_DESIGN.md)。
 
 用户最新明确指示优先。各主文档只管理其职责，不必每次加载全部长文；旧调研和归档不能自动成为新需求。
@@ -43,10 +43,10 @@ v0.2.3（2026-10-16）是本轮开发的历史基线；[0.2.x 设计](docs/featu
 - **功能与版本**：台账中 `Planned` 是计划版本，`Released` 只填实际包含它的发布版本（如 031—035 计划于 v0.2.0、发布于 v0.2.1）。每次完成功能就在 `[Unreleased]` 追加一条，写清做了什么、怎么验证、有什么限制。
 - **发布只在用户确认版本号后进行**，步骤：
   1. 跑 `npm run check`；涉及快照、构建或发布链路时再跑 `npm run verify:snapshots`。
-  2. 同步版本号：`package.json`、`package-lock.json`（两处）、`scripts/dataengine-mcp.ts` 与 `src/live/sources.ts` 中对外报告的版本。
+  2. 同步版本号：`package.json`、`package-lock.json`（两处）、`scripts/context-os-mcp.ts` 与 `src/live/sources.ts` 中对外报告的版本。
   3. CHANGELOG：`[Unreleased]` 改为 `[x.y.z] - YYYY-MM-DD` 并写一段发布摘要，上方留空的 `[Unreleased]`，更新 `last-sync` 标记。
   4. 台账填写 `Released` 与版本状态；README“当前版本”表与 AGENTS“当前范围”更新。
-  5. 本地提交 `chore(release): vx.y.z`，再打附注 Tag：`git tag -a vx.y.z -m "ADE vx.y.z"`。
+  5. 本地提交 `chore(release): vx.y.z`，再打附注 Tag：`git tag -a vx.y.z -m "Context OS vx.y.z"`。
 - **Tag 一经发布不移动、不复用**。发布后发现问题，修复后发下一个 PATCH。打 Tag 前先用 `git tag` 确认版本号未被占用，包括在仓库外发出过的版本。
 - 仓库没有配置远程；推送、GitHub Release 或部署需用户另行明确同意。
 - 带日期的验收与设计记录保留当时原文；后续变化以追加段落或标注说明，不改写历史。

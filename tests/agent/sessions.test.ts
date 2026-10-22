@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { MemoryStore } from '../../src/agent/memory.ts';
 
 test('sessions preserve complete history, reject foreign cursors, and survive restart', () => {
-  const directory=mkdtempSync(join(tmpdir(),'ade-sessions-'));
+  const directory=mkdtempSync(join(tmpdir(),'context-os-sessions-'));
   let memory=new MemoryStore(directory);
   try {
     const first=memory.createSession();
@@ -31,7 +31,7 @@ test('sessions preserve complete history, reject foreign cursors, and survive re
 
 test('bounded conversation context summarizes older history without injecting the whole workspace', async () => {
   const {AgentApplication}=await import('../../src/agent/app.ts');
-  const directory=mkdtempSync(join(tmpdir(),'ade-context-budget-'));
+  const directory=mkdtempSync(join(tmpdir(),'context-os-context-budget-'));
   let request:any;
   const app=new AgentApplication(directory,{async run(input){request=input;await input.onTool('session_title',{title:'项目责任核查'});return {text:'已读取当前工作摘要。',sessionId:'bounded',runId:'bounded'};},async stop(){},async close(){}},new Set(),false);
   try {
@@ -56,7 +56,7 @@ test('bounded conversation context summarizes older history without injecting th
 test('independent sessions can run while a queued document runs in the background; stopping one leaves the others live', async () => {
   const {AgentApplication}=await import('../../src/agent/app.ts');
   const {seedFoundation}=await import('./program-foundation-fixture.ts');
-  const directory=mkdtempSync(join(tmpdir(),'ade-pools-'));
+  const directory=mkdtempSync(join(tmpdir(),'context-os-pools-'));
   const pending=new Map<string,()=>void>();
   const scopes:string[]=[];
   let markBackground!:()=>void;const backgroundStarted=new Promise<void>(resolve=>markBackground=resolve);
@@ -96,12 +96,12 @@ test('independent sessions can run while a queued document runs in the backgroun
 
 test('session HTTP APIs keep tabs separate and navigation never changes another tab or persisted page', async () => {
   const {createServer}=await import('../../src/agent/server.ts');
-  const directory=mkdtempSync(join(tmpdir(),'ade-session-http-'));
+  const directory=mkdtempSync(join(tmpdir(),'context-os-session-http-'));
   const service=await createServer({directory,automaticApi:false,driver:{async run(request){await request.onTool('session_title',{title:'模型生成的项目会话'});return {text:'当前会话已处理',sessionId:'http',runId:'http'};},async stop(){},async close(){}}});
   try {
     await new Promise<void>(resolve=>service.server.listen(0,'127.0.0.1',resolve));
     const address=service.server.address() as import('node:net').AddressInfo;
-    const base=`http://127.0.0.1:${address.port}`,headers={'x-dataengine-token':service.adminToken,'content-type':'application/json'};
+    const base=`http://127.0.0.1:${address.port}`,headers={'x-contextos-token':service.adminToken,'content-type':'application/json'};
     const call=async(path:string,body?:unknown,method=body?'POST':'GET')=>{const response=await fetch(base+path,{method,headers,...(body?{body:JSON.stringify(body)}:{})});assert(response.ok,await response.clone().text());return response.json() as any;};
     const first=(await call('/api/sessions',{})).session,second=(await call('/api/sessions',{title:'人工会话'})).session;
     await Promise.all([call('/api/canvas/message',{sessionId:first.id,page:'setup',text:'星桥项目',messageId:'http-first'}),call('/api/canvas/message',{sessionId:second.id,page:'ontology',text:'独立责任核查',messageId:'http-second'})]);
@@ -123,7 +123,7 @@ test('session HTTP APIs keep tabs separate and navigation never changes another 
 });
 
 test('concurrent session writes retain optimistic artifact versions and cannot overwrite the winner', () => {
-  const directory=mkdtempSync(join(tmpdir(),'ade-session-versions-')),memory=new MemoryStore(directory);
+  const directory=mkdtempSync(join(tmpdir(),'context-os-session-versions-')),memory=new MemoryStore(directory);
   try {
     const first=memory.createSession(),second=memory.createSession();
     const artifact=memory.putArtifact({kind:'report',title:'共同结果',status:'draft',content:{value:'原始'}});

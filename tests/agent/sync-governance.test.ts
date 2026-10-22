@@ -14,7 +14,7 @@ async function fixture() {
   let rows = Array.from({ length: 6 }, (_, index) => ({ id: String(index), value: `记录${index}` }));
   const server = createServer((request, response) => { const url = new URL(request.url!, "http://localhost"), offset = Number(url.searchParams.get("offset") ?? 0), limit = Number(url.searchParams.get("limit") ?? 100); response.setHeader("content-type", "application/json"); response.end(JSON.stringify({ items: rows.slice(offset, offset + limit), total: rows.length })); });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
-  const directory = mkdtempSync(join(tmpdir(), "ade-sync-governance-")), memory = new MemoryStore(directory), live = new LiveMemory(directory, memory), snapshots = new Snapshots(memory, live, directory);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-sync-governance-")), memory = new MemoryStore(directory), live = new LiveMemory(directory, memory), snapshots = new Snapshots(memory, live, directory);
   const governance = new SyncGovernance(memory, snapshots);
   const source = await live.sources.connect({ name: "记录目录", protocol: "http", url: `http://127.0.0.1:${(server.address() as { port: number }).port}`, capabilities: [{ name: "records", path: "/records", fields: ["id", "value"], totalPath: "total" }] });
   return { directory, memory, live, snapshots, governance, source, setRows(value: typeof rows) { rows = value; }, async close() { await snapshots.close(); memory.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); rmSync(directory, { recursive: true, force: true }); } };
@@ -124,7 +124,7 @@ test("interrupted page reads resume from the last durable page while the old act
     response.end(JSON.stringify({ items: rows.slice(offset, offset + limit), total: rows.length }));
   });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
-  const directory = mkdtempSync(join(tmpdir(), "ade-sync-resume-")), memory = new MemoryStore(directory), live = new LiveMemory(directory, memory);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-sync-resume-")), memory = new MemoryStore(directory), live = new LiveMemory(directory, memory);
   let snapshots = new Snapshots(memory, live, directory);
   try {
     const source = await live.sources.connect({ name: "分页恢复", protocol: "http", url: `http://127.0.0.1:${(server.address() as { port: number }).port}`, capabilities: [{ name: "records", path: "/records", fields: ["id", "value"], totalPath: "total" }] });
@@ -151,7 +151,7 @@ test("configured API increments upsert by identity, preserve untouched records a
     response.setHeader("content-type", "application/json"); response.end(JSON.stringify({ items: selected.slice(offset, offset + limit), total: selected.length }));
   });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
-  const directory = mkdtempSync(join(tmpdir(), "ade-sync-increment-")), memory = new MemoryStore(directory), live = new LiveMemory(directory, memory), snapshots = new Snapshots(memory, live, directory);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-sync-increment-")), memory = new MemoryStore(directory), live = new LiveMemory(directory, memory), snapshots = new Snapshots(memory, live, directory);
   try {
     const source = await live.sources.connect({ name: "更新时间目录", protocol: "http", url: `http://127.0.0.1:${(server.address() as { port: number }).port}`, capabilities: [{ name: "records", path: "/records", fields: ["id", "value", "updated"], totalPath: "total", incrementalParam: "updated_since" }] });
     new SyncGovernance(memory, snapshots).configure({ sourceId: source.id, schedule: { mode: "manual" }, incrementalField: "updated" });
@@ -187,7 +187,7 @@ test("different sources use at most three workers and one source cannot overlap 
     response.setHeader("content-type", "application/json"); response.end(JSON.stringify({ items: [{ id: "1" }], total: 1 }));
   });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
-  const directory = mkdtempSync(join(tmpdir(), "ade-sync-concurrency-")), memory = new MemoryStore(directory), live = new LiveMemory(directory, memory), snapshots = new Snapshots(memory, live, directory);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-sync-concurrency-")), memory = new MemoryStore(directory), live = new LiveMemory(directory, memory), snapshots = new Snapshots(memory, live, directory);
   try {
     const sources = [];
     for (let i = 0; i < 5; i++) sources.push(await live.sources.connect({ name: `目录${i}`, protocol: "http", url: `http://127.0.0.1:${(server.address() as { port: number }).port}`, capabilities: [{ name: "records", path: `/records${i}`, fields: ["id"], totalPath: "total" }] }));
@@ -282,7 +282,7 @@ test("HTTP field additions and removals become inspectable pending snapshots wit
       : [{ id: "1", name: "甲", ignored: "未选择" }, { id: "2", name: "乙", ignored: "未选择" }], total: 2 }));
   });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
-  const directory = mkdtempSync(join(tmpdir(), "ade-sync-schema-")), memory = new MemoryStore(directory), live = new LiveMemory(directory, memory), snapshots = new Snapshots(memory, live, directory);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-sync-schema-")), memory = new MemoryStore(directory), live = new LiveMemory(directory, memory), snapshots = new Snapshots(memory, live, directory);
   try {
     const source = await live.sources.connect({ name: "字段目录", protocol: "http", url: `http://127.0.0.1:${(server.address() as { port: number }).port}`, capabilities: [{ name: "records", path: "/records", fields: ["id", "name"], totalPath: "total" }] });
     await snapshots.sync({ operationId: "selected" }); const original = snapshots.datasets()[0];

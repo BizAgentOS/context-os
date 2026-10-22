@@ -13,7 +13,7 @@ import { ProgramBuilds } from "../../src/engine/program-builds.ts";
 import { Releases } from "../../src/engine/releases.ts";
 
 test("a published snapshot keeps serving its original values after five newer snapshots trigger retention", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-snapshot-retention-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-snapshot-retention-"));
   const memory = new MemoryStore(directory), live = new LiveMemory(directory, memory);
   const snapshots = new Snapshots(memory, live, directory), workspace = new Workspace(memory);
   const engine = new ProgramBuilds(memory, new FoundationService(memory, live), live, snapshots);
@@ -48,12 +48,12 @@ test("a published snapshot keeps serving its original values after five newer sn
 });
 
 test("a release retains its partial source coverage when a later snapshot of the same rows becomes complete", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-snapshot-coverage-")), priorLimit = process.env.ADE_SNAPSHOT_MAX_ROWS;
+  const directory = mkdtempSync(join(tmpdir(), "context-os-snapshot-coverage-")), priorLimit = process.env.CONTEXT_OS_SNAPSHOT_MAX_ROWS;
   const memory = new MemoryStore(directory), live = new LiveMemory(directory, memory);
   const snapshots = new Snapshots(memory, live, directory), workspace = new Workspace(memory);
   const engine = new ProgramBuilds(memory, new FoundationService(memory, live), live, snapshots);
   const releases = new Releases(memory, live), datasets = new OntologyDatasets(memory, live);
-  process.env.ADE_SNAPSHOT_MAX_ROWS = "2";
+  process.env.CONTEXT_OS_SNAPSHOT_MAX_ROWS = "2";
   try {
     workspace.upload("产品.csv", "产品编号,名称,价格\nP1,甲,10\nP2,乙,20\nP3,丙,30\n");
     await engine.build({ operationId: "partial" });
@@ -82,7 +82,7 @@ test("a release retains its partial source coverage when a later snapshot of the
     assert.equal(missing.status, 200, JSON.stringify(missing.body));
     assert.deepEqual(missing.body.coverage, { offset: 0, shown: 0, total: null, complete: false, sourceComplete: false, snapshotTotal: 0 });
   } finally {
-    if (priorLimit === undefined) delete process.env.ADE_SNAPSHOT_MAX_ROWS; else process.env.ADE_SNAPSHOT_MAX_ROWS = priorLimit;
+    if (priorLimit === undefined) delete process.env.CONTEXT_OS_SNAPSHOT_MAX_ROWS; else process.env.CONTEXT_OS_SNAPSHOT_MAX_ROWS = priorLimit;
     await engine.close(); await snapshots.close(); memory.close(); rmSync(directory, { recursive: true, force: true });
   }
 });

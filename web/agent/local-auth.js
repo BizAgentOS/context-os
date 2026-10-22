@@ -13,7 +13,7 @@ export function createLocalAuth({onLogin,onLogout}){
  let busy=false;
  function lock(value){busy=value;for(const control of [username,password,submit,close])control.disabled=value;}
  async function post(path,body,token){
-  const response=await fetch(path,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json',...(token?{'X-DataEngine-Token':token}:{})},body:JSON.stringify(body)});
+  const response=await fetch(path,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json',...(token?{'X-ContextOS-Token':token}:{})},body:JSON.stringify(body)});
   let result;try{result=await response.json();}catch{throw new Error('本地服务没有返回有效结果，请稍后重试。');}
   if(!response.ok)throw new Error(path.endsWith('/login')?'用户名或密码不正确，或登录暂不可用。':'退出未完成，请检查本地服务后重试。');
   return result;

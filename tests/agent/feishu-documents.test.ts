@@ -77,7 +77,7 @@ test("saved Feishu documents enter the shared ontology flow with pinned evidence
     await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));
     const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
     return async (path: string, body?: unknown, status = 200) => {
-      const response = await fetch(base + path, { method: body ? "POST" : "GET", headers: { "x-dataengine-token": service.adminToken, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
+      const response = await fetch(base + path, { method: body ? "POST" : "GET", headers: { "x-contextos-token": service.adminToken, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
       assert.equal(response.status, status, await response.clone().text()); return response.json();
     };
   };

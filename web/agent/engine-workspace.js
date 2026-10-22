@@ -75,8 +75,8 @@ export function renderEngineWorkspace(state, actions) {
       void actions.api(path).then(result=>{if(!d.isConnected)return;const records=result.rows||result.content?.rows||result.items||[];sampleOutput.textContent=`${sampleQuery?'当前已采用快照':'已保存文件'} · 显示 ${records.length} 条样本，共 ${result.total??result.content?.total??'未知'} 条`;sample.append(table(records,records.length?Object.keys(records[0]).map(key=>[key,row=>row[key]]):[]));}).catch(error=>{if(sampleOutput.isConnected)sampleOutput.textContent=error.message;});
     }else if(summary.category!=='table')sample.remove();else sampleOutput.textContent='尚无已同步快照；可在下方读取来源样本。';
     if(isFile && actions.fileDetails)d.body.append(action("查看内容与解析参数",()=>{d.close();actions.fileDetails(source);}));
-    if(isFile)d.body.append(el("p","文件内容保存在 ADE。上传新版本后重新检查结构；Markdown / TXT 的业务含义可由助手辅助提取。","engine-muted"));
-    else d.body.append(el("p","记录能力同步为 ADE 内的不可变快照，本体构建与发布基于已保存范围；来源覆盖不完整时会提示。知识片段和指标仍按需读取。","engine-muted"));
+    if(isFile)d.body.append(el("p","文件内容保存在 Context OS。上传新版本后重新检查结构；Markdown / TXT 的业务含义可由助手辅助提取。","engine-muted"));
+    else d.body.append(el("p","记录能力同步为 Context OS 内的不可变快照，本体构建与发布基于已保存范围；来源覆盖不完整时会提示。知识片段和指标仍按需读取。","engine-muted"));
     if(snapshots.length){d.body.append(el("h3","数据快照"));for(const set of snapshots){const c2=set.content;d.body.append(action(`${c2.name} · ${c2.materialization==="live"?"实时读取":`${rows(c2.profile?.rows)} 行 · ${when(c2.lastSync)}`}${c2.pendingVersion?" · 结构变化待确认":""}`,()=>{d.close();snapshotDetails(set,actions,()=>void load());},"engine-dataset-link"));}}
     if(c.adapter==="database")d.body.append(action("选择接入的表",()=>{d.close();showDatabaseConnection(actions,{id:source.id,onChanged:actions.refresh});}));
     for(const cap of (c.capabilities||[]).filter(cap=>!summary.capability||cap.name===summary.capability)){

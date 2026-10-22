@@ -12,7 +12,7 @@ import {createServer} from '../../src/agent/server.ts';
 import {Workspace} from '../../src/agent/workspace.ts';
 
 test('local users authenticate without exposing secrets and role changes immediately revoke old sessions',async()=>{
-  const root=mkdtempSync(join(tmpdir(),'ade-local-users-')),memory=new MemoryStore(join(root,'workspace'));
+  const root=mkdtempSync(join(tmpdir(),'context-os-local-users-')),memory=new MemoryStore(join(root,'workspace'));
   try{
     const users=new LocalUsers(memory,{vault:new CredentialVault(memory.directory,{keyDirectory:join(root,'keys'),keychain:null})});
     const created=users.create({operationId:'create',username:'reader',name:'只读同事',role:'viewer',password:'private-password-01'});
@@ -37,7 +37,7 @@ test('local users authenticate without exposing secrets and role changes immedia
 });
 
 test('adoption and rejection preserve the real maintainer actor across awaits and audit only committed decisions',async()=>{
-  const directory=mkdtempSync(join(tmpdir(),'ade-actor-audit-')),service=await createServer({directory,automaticApi:false}),app=service.app;
+  const directory=mkdtempSync(join(tmpdir(),'context-os-actor-audit-')),service=await createServer({directory,automaticApi:false}),app=service.app;
   try{
     const audit=new AuditTrail(app.memory),actor={kind:'human' as const,id:'maintainer-case',name:'维护同事',role:'maintainer' as const};
     await withActor(actor,async()=>{
@@ -63,7 +63,7 @@ test('adoption and rejection preserve the real maintainer actor across awaits an
 });
 
 test('uploaded sources have the same durable actor audit as source connections',()=>{
-  const directory=mkdtempSync(join(tmpdir(),'ade-source-actor-')),memory=new MemoryStore(directory),audit=new AuditTrail(memory);
+  const directory=mkdtempSync(join(tmpdir(),'context-os-source-actor-')),memory=new MemoryStore(directory),audit=new AuditTrail(memory);
   try{
     const actor={kind:'human' as const,id:'upload-maintainer',name:'接入同事',role:'maintainer' as const};
     const source=withActor(actor,()=>new Workspace(memory).upload('真实说明.md','上传资料的接入操作者必须可追溯。'));

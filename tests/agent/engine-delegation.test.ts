@@ -9,8 +9,8 @@ import type {AgentDriver} from '../../src/agent/runtime.ts';
 import {Client} from '@modelcontextprotocol/client';
 import {StdioClientTransport} from '@modelcontextprotocol/client/stdio';
 
-test('release consumer delegates only its granted dataset through the ADE runtime',async()=>{
- const directory=mkdtempSync(join(tmpdir(),'ade-delegation-'));let runs=0;
+test('release consumer delegates only its granted dataset through the Context OS runtime',async()=>{
+ const directory=mkdtempSync(join(tmpdir(),'context-os-delegation-'));let runs=0;
  const driver:AgentDriver={async run(req){runs++;assert.deepEqual(req.nativeTools,[]);assert(!req.tools.some(t=>t.mutates));
   await assert.rejects(req.onTool('foundation_propose',{}),/不可用|不允许/);
   const catalog=await req.onTool('describe_dataset',{}) as any;
@@ -21,7 +21,7 @@ test('release consumer delegates only its granted dataset through the ADE runtim
  },async stop(){},async close(){}};
  const service=await createServer({directory,driver,automaticApi:false});let client:Client|undefined;
  await new Promise<void>(r=>service.server.listen(0,'127.0.0.1',r));const origin=`http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
- const call=async(path:string,body?:unknown,key?:string)=>{const r=await fetch(origin+path,{method:body?'POST':'GET',headers:{...(key?{authorization:`Bearer ${key}`}:{'x-dataengine-token':service.adminToken}),'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,body:await r.json()};};
+ const call=async(path:string,body?:unknown,key?:string)=>{const r=await fetch(origin+path,{method:body?'POST':'GET',headers:{...(key?{authorization:`Bearer ${key}`}:{'x-contextos-token':service.adminToken}),'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,body:await r.json()};};
  try{
   service.app.memory.putArtifact({kind:'foundation',title:'隔离测试',status:'adopted',content:{enterprise:{name:'隔离测试'},concepts:[{id:'company',name:'公司',description:'组织'},{id:'secret',name:'私有',description:'不可开放'}],relations:[],evidence:[],unknowns:[],conflicts:[]}});
   const overview=(await call('/api/releases')).body;assert.equal(typeof overview.working.inputHash,'string');
@@ -37,10 +37,10 @@ test('release consumer delegates only its granted dataset through the ADE runtim
   const completed=await call('/v4/agent/tasks/'+jobId,undefined,connected.key);assert.equal(completed.status,200);assert.equal(completed.body.task.status,'completed');assert.match(completed.body.task.content.result,/公司/);assert.equal(runs,1);
   const config=(await call(`/api/releases/connection?id=${connected.connection.id}&version=${connected.connection.version}`)).body;
   const transport=Object.values(config.mcp.mcpServers)[0] as any;
-  client=new Client({name:'ADE delegation acceptance',version:'0.2.0'});
-  await client.connect(new StdioClientTransport({command:transport.command,args:transport.args,env:{...transport.env,DATAENGINE_CONSUMER_KEY:connected.key},stderr:'pipe'}));
-  assert((await client.listTools()).tools.some(t=>t.name==='submit_ade_task'));
-  const fetched=await client.callTool({name:'read_ade_task',arguments:{id:jobId}});
+  client=new Client({name:'Context OS delegation acceptance',version:'0.2.0'});
+  await client.connect(new StdioClientTransport({command:transport.command,args:transport.args,env:{...transport.env,CONTEXT_OS_CONSUMER_KEY:connected.key},stderr:'pipe'}));
+  assert((await client.listTools()).tools.some(t=>t.name==='submit_context_os_task'));
+  const fetched=await client.callTool({name:'read_context_os_task',arguments:{id:jobId}});
   assert.equal((fetched.structuredContent as any).task.status,'completed');
   assert.equal((await call('/v4/agent/tasks/'+jobId,undefined,disabled.key)).status,403);
   const replay=await call('/v4/agent/tasks',{operationId:'job1',prompt:'解释公司'},connected.key);assert.equal(replay.body.task.id,jobId);assert.equal(runs,1);
@@ -52,12 +52,12 @@ test('release consumer delegates only its granted dataset through the ADE runtim
 });
 
 test('delegated cancellation blocks late results and a restart reports queued tasks interrupted',async()=>{
- const directory=mkdtempSync(join(tmpdir(),'ade-delegation-stop-'));let unblock!:()=>void,entered!:()=>void;
+ const directory=mkdtempSync(join(tmpdir(),'context-os-delegation-stop-'));let unblock!:()=>void,entered!:()=>void;
  let started=new Promise<void>(r=>entered=r);let rejected=false;
  const driver:AgentDriver={async run(req){entered();await new Promise<void>(r=>unblock=r);try{await req.onTool('describe_dataset',{});}catch{rejected=true;}return {text:'不得发布的迟到结果',sessionId:'stop',runId:'stop'};},async stop(){unblock?.();},async close(){}};
  let service=await createServer({directory,driver,automaticApi:false});
  const listen=async()=>{await new Promise<void>(r=>service.server.listen(0,'127.0.0.1',r));return `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;};let origin=await listen();
- const call=async(path:string,body?:unknown,key?:string)=>{const r=await fetch(origin+path,{method:body?'POST':'GET',headers:{...(key?{authorization:`Bearer ${key}`}:{'x-dataengine-token':service.adminToken}),'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,body:await r.json()};};
+ const call=async(path:string,body?:unknown,key?:string)=>{const r=await fetch(origin+path,{method:body?'POST':'GET',headers:{...(key?{authorization:`Bearer ${key}`}:{'x-contextos-token':service.adminToken}),'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,body:await r.json()};};
  try{
   service.app.memory.putArtifact({kind:'foundation',title:'测试',status:'adopted',content:{enterprise:{name:'测试'},concepts:[{id:'company',name:'公司',description:'组织'}],relations:[],evidence:[],unknowns:[],conflicts:[]}});
   const overview=(await call('/api/releases')).body;
@@ -77,14 +77,14 @@ test('delegated cancellation blocks late results and a restart reports queued ta
 });
 
 test('delegated budget exhaustion, SDK stop and timeout never publish partial narration as a completed investigation',{timeout:15000},async()=>{
- const directory=mkdtempSync(join(tmpdir(),'ade-delegation-outcome-'));let mode:'budget'|'stopped'|'timed_out'='budget',stops=0;
+ const directory=mkdtempSync(join(tmpdir(),'context-os-delegation-outcome-'));let mode:'budget'|'stopped'|'timed_out'='budget',stops=0;
  const driver:AgentDriver={async run(request){await request.onTool('describe_dataset',{});
   if(mode==='budget')request.onEvent('run.usage',{sampleId:'actual-provider-response',usage:{inputTokens:20,outputTokens:10,totalTokens:30}});
   return {status:mode==='budget'?'completed':mode,text:'尚未核对的部分说明，不能当作完成结果',sessionId:'protocol-fixture',runId:'protocol-fixture',usage:{inputTokens:20,outputTokens:10,totalTokens:30}};
  },async stop(){stops++;},async close(){}};
  const service=await createServer({directory,driver,automaticApi:false});await new Promise<void>(resolve=>service.server.listen(0,'127.0.0.1',resolve));
  const origin=`http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
- const call=async(path:string,body?:unknown,key?:string)=>{const response=await fetch(origin+path,{method:body===undefined?'GET':'POST',headers:{...(key?{authorization:'Bearer '+key}:{'x-dataengine-token':service.adminToken}),'content-type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});assert(response.ok,`${path}: ${response.status}`);return await response.json() as any;};
+ const call=async(path:string,body?:unknown,key?:string)=>{const response=await fetch(origin+path,{method:body===undefined?'GET':'POST',headers:{...(key?{authorization:'Bearer '+key}:{'x-contextos-token':service.adminToken}),'content-type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});assert(response.ok,`${path}: ${response.status}`);return await response.json() as any;};
  try{
   service.app.memory.putArtifact({kind:'foundation',title:'委托停止测试',status:'adopted',content:{enterprise:{name:'虚构企业'},concepts:[{id:'company',name:'公司',description:'组织'}],relations:[],evidence:[],unknowns:[],conflicts:[]}});
   const overview=await call('/api/releases'),check=await call('/api/releases/check',{inputHash:overview.working.inputHash}),publication=await call('/api/releases/publish',{operationId:'publish',checkRef:{id:check.id,version:check.version},name:'停止边界'});

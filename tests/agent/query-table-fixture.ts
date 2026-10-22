@@ -8,7 +8,7 @@ import {Snapshots} from '../../src/data/snapshots.ts';
 import {TableFiles} from '../../src/data/table-files.ts';
 import {SemanticQuery} from '../../src/semantic/query.ts';
 export async function queryTableFixture(csv:string){
-  const directory=mkdtempSync(join(tmpdir(),'ade-semantic-query-')),memory=new MemoryStore(directory),live=new LiveMemory(directory,memory),snapshots=new Snapshots(memory,live,directory),files=new TableFiles(memory,directory);
+  const directory=mkdtempSync(join(tmpdir(),'context-os-semantic-query-')),memory=new MemoryStore(directory),live=new LiveMemory(directory,memory),snapshots=new Snapshots(memory,live,directory),files=new TableFiles(memory,directory);
   const close=async()=>{await snapshots.close();memory.close();rmSync(directory,{recursive:true,force:true});};
   try {
     const source=(await files.import({name:'objects.csv',input:Readable.from([Buffer.from(csv)])})).sources[0];

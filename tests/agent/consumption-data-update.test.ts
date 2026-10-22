@@ -109,7 +109,7 @@ const statuses = (service: ConsumptionService, key: string) =>
   );
 
 test("historical published records retain the same key and exact ontology; pinned reads distinguish persisted versions", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-data-publish-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-data-publish-"));
   let memory = new MemoryStore(directory);
   let service = new ConsumptionService(directory, memory);
   try {
@@ -230,7 +230,7 @@ test("historical published records retain the same key and exact ontology; pinne
 });
 
 test("legacy data publication is frozen and broken-source previews leave historical reads unchanged", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-data-conflict-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-data-conflict-"));
   const memory = new MemoryStore(directory);
   const service = new ConsumptionService(directory, memory);
   try {
@@ -289,7 +289,7 @@ test("legacy data publication is frozen and broken-source previews leave histori
 
 test("a frozen publication leaves the historical data and credential usable", async () => {
   const directory = mkdtempSync(
-    join(tmpdir(), "dataengine-data-write-failure-"),
+    join(tmpdir(), "context-os-data-write-failure-"),
   );
   const memory = new MemoryStore(directory);
   let fail = false;
@@ -325,7 +325,7 @@ test("a frozen publication leaves the historical data and credential usable", as
 });
 
 test("latest sensitivity rules still block historical keys and schema disclosure", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-data-policy-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-data-policy-"));
   const memory = new MemoryStore(directory);
   const service = new ConsumptionService(directory, memory);
   try {
@@ -363,7 +363,7 @@ test("latest sensitivity rules still block historical keys and schema disclosure
 });
 
 test("schema discovery is scoped and audited; carrying a credential anchor cannot widen its grants", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-schema-scope-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-schema-scope-"));
   const memory = new MemoryStore(directory);
   const service = new ConsumptionService(directory, memory);
   try {

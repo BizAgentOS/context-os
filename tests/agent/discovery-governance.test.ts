@@ -19,7 +19,7 @@ async function adopt(app: Awaited<ReturnType<typeof createServer>>["app"], propo
 }
 
 test("Starbridge sources keep eight independent entities and govern foreign keys, responsibilities and self links before query", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-discovery-governance-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-discovery-governance-"));
   const service = await createServer({ directory, automaticApi: false }), { app } = service;
   try {
     const workspace = new Workspace(app.memory);
@@ -92,7 +92,7 @@ test("Starbridge sources keep eight independent entities and govern foreign keys
 });
 
 test("two-hop deprecation waits for adopted hops and full agreement; rejection survives builds and restart", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-discovery-deprecation-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-discovery-deprecation-"));
   let service = await createServer({ directory, automaticApi: false });
   try {
     const { app } = service, workspace = new Workspace(app.memory);
@@ -134,7 +134,7 @@ test("two-hop deprecation waits for adopted hops and full agreement; rejection s
 });
 
 test("a large event table remains queryable record until activity classification is explicitly accepted", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-discovery-activity-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-discovery-activity-"));
   const service = await createServer({ directory, automaticApi: false }), { app } = service;
   try {
     const workspace = new Workspace(app.memory);
@@ -160,7 +160,7 @@ test("a large event table remains queryable record until activity classification
 });
 
 test("95 percent two-hop agreement cannot remove the one direct route that differs", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-discovery-partial-path-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-discovery-partial-path-"));
   const service = await createServer({ directory, automaticApi: false }), { app } = service;
   try {
     const workspace = new Workspace(app.memory);
@@ -187,7 +187,7 @@ test("95 percent two-hop agreement cannot remove the one direct route that diffe
 });
 
 test("a corrected alternate path cannot justify removing a useful direct relationship", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-discovery-corrected-path-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-discovery-corrected-path-"));
   const service = await createServer({ directory, automaticApi: false }), { app } = service;
   try {
     const workspace = new Workspace(app.memory);
@@ -222,7 +222,7 @@ test("a corrected alternate path cannot justify removing a useful direct relatio
 
 test("a scoped or identity-governed alternate path cannot use raw joins to remove the direct route", async () => {
   for (const mode of ["rowFilter", "identity"] as const) {
-    const directory = mkdtempSync(join(tmpdir(), `ade-discovery-${mode}-path-`));
+    const directory = mkdtempSync(join(tmpdir(), `context-os-discovery-${mode}-path-`));
     const service = await createServer({ directory, automaticApi: false }), { app } = service;
     try {
       const workspace = new Workspace(app.memory);
@@ -271,7 +271,7 @@ test("a scoped or identity-governed alternate path cannot use raw joins to remov
 });
 
 test("a same-structure rebuild rechecks adopted hierarchy constraints against the new snapshot", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-discovery-hierarchy-rebuild-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-discovery-hierarchy-rebuild-"));
   const service = await createServer({ directory, automaticApi: false }), { app } = service;
   try {
     const workspace = new Workspace(app.memory);

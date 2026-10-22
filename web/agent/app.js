@@ -29,6 +29,7 @@ import {
 } from "./ontology-workspace.js";
 import { renderLiveWorkspace } from "./live-workspace.js";
 import { createDraftStore } from "./drafts.js";
+import { readBrowserValue } from "./browser-storage.js";
 import { createShareMode } from "./share-mode.js";
 
 const shareMode = createShareMode(document);
@@ -244,7 +245,7 @@ async function switchSession(id) {
   state.currentSessionId = id; state.messages = []; state.messagePage = { nextBefore: null }; state.streaming = "";
   ui.dialogueKey = "";
   restoreDraft(ui.drafts.get(draftKey()) ?? ui.draftStore?.read(draftKey()));
-  try { sessionStorage.setItem(`dataengine:session:${state.workspaceId}`, id); } catch {}
+  try { sessionStorage.setItem(`context-os:session:${state.workspaceId}`, id); } catch {}
   sessions?.render(); renderDialogue(); updateComposer();
   const snapshot = await api(snapshotPath("agent"));
   if (generation === ui.sessionGeneration) { applySnapshot(snapshot, "agent"); sessions?.render(); }
@@ -321,7 +322,7 @@ async function api(path, body, method) {
   const response = await fetch(path, {
     method: method || (body === undefined ? "GET" : "POST"),
     headers: {
-      ...(state.token ? { "X-DataEngine-Token": state.token } : {}),
+      ...(state.token ? { "X-ContextOS-Token": state.token } : {}),
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -389,9 +390,9 @@ function applySnapshot(snapshot, scope) {
     try {
       ui.draftStore = createDraftStore(localStorage, snapshot.workspaceId, () => errorMessage("浏览器无法保存草稿，请复制内容后再关闭页面。"));
       ui.importedDrafts = ui.draftStore.read("legacy") || [];
-      const savedPage = sessionStorage.getItem(`dataengine:page:${snapshot.workspaceId}`);
+      const savedPage = readBrowserValue(sessionStorage, `context-os:page:${snapshot.workspaceId}`, [`dataengine:page:${snapshot.workspaceId}`]);
       ui.page = pageLabels[savedPage] ? savedPage : "setup";
-      const savedSession = sessionStorage.getItem(`dataengine:session:${snapshot.workspaceId}`);
+      const savedSession = readBrowserValue(sessionStorage, `context-os:session:${snapshot.workspaceId}`, [`dataengine:session:${snapshot.workspaceId}`]);
       state.currentSessionId = savedSession || snapshot.currentSessionId || null;
     } catch { errorMessage("浏览器无法保存草稿，请复制内容后再关闭页面。"); }
   }
@@ -487,7 +488,7 @@ async function navigate(page) {
   if (page === ui.page) return;
   changePage(page);
   if (shareMode) { applySnapshot(await api("/api/canvas/navigate", { page })); return; }
-  try { sessionStorage.setItem(`dataengine:page:${state.workspaceId}`, page); } catch {}
+  try { sessionStorage.setItem(`context-os:page:${state.workspaceId}`, page); } catch {}
   render(); await refresh();
 }
 const capabilityPanel = createCapabilitiesPanel(api, () => renderCanvas(true));
@@ -502,7 +503,7 @@ const pendingCenter = createPendingCenter({ api, refresh,
   ui.agentMode = "build";
   askAssistant(`请分析待处理事项「${item.title}」，核对依据并说明可选处理方式。`);
 } });
-window.addEventListener("dataengine:pending", event => {
+window.addEventListener("context-os:pending", event => {
   if (shareMode) return;
   for (const dialog of document.querySelectorAll("dialog[open]")) dialog.close();
   pendingCenter.open(event.detail || {});
@@ -554,7 +555,7 @@ function render() {
     if (page === ui.page) control.setAttribute("aria-current", "page");
     else control.removeAttribute("aria-current");
   }
-  document.title = `${state.profile ? companyName() : "DataEngine"} · ${pageLabels[ui.page]}`;
+  document.title = `${state.profile ? companyName() : "Context OS"} · ${pageLabels[ui.page]}`;
   renderCanvas();
   syncOnboarding();
   renderDialogue();
@@ -620,7 +621,7 @@ function updateOntologyComposer({stage, stats}) {
     metrics = node("div", "os-chat-metrics");
     $("#chat-surface .composer-wrap").prepend(metrics);
     const footer = node("div", "os-chat-footer");
-    footer.append(node("span", "", "DataEngine Agent"),
+    footer.append(node("span", "", "Context OS 助手"),
       button("对话记录", "", () => setChatMode(ui.chatMode === "history" ? "composer" : "history")));
     $("#chat-surface").append(footer);
   }
@@ -665,7 +666,7 @@ let onboardingDismissed = null;
 function setOnboardingDismissed(dismissed) {
   onboardingDismissed = dismissed ? state.workspaceId : null;
   try {
-    const key = `de-onboarding-dismissed:${state.workspaceId}`;
+    const key = `context-os:onboarding-dismissed:${state.workspaceId}`;
     if (dismissed) sessionStorage.setItem(key, "true");
     else sessionStorage.removeItem(key);
   } catch { /* A blocked browser store still allows dismissal in this tab. */ }
@@ -706,7 +707,7 @@ async function dismissOnboarding() {
 }
 function syncOnboarding() {
   if (onboardingWorkspace !== state.workspaceId) {
-    try { onboardingDismissed = sessionStorage.getItem(`de-onboarding-dismissed:${state.workspaceId}`) ? state.workspaceId : null; } catch { onboardingDismissed = null; }
+    try { onboardingDismissed = readBrowserValue(sessionStorage, `context-os:onboarding-dismissed:${state.workspaceId}`, [`de-onboarding-dismissed:${state.workspaceId}`]) ? state.workspaceId : null; } catch { onboardingDismissed = null; }
   }
   const ontologyGuide=ui.page==='ontology'&&state.onboarding?.flow==='engine'&&state.onboarding?.step===6;
   const active = (ui.page === "setup"||ontologyGuide) && state.onboarding?.active && onboardingDismissed !== state.workspaceId && !shareMode && !state.demo;
@@ -2425,7 +2426,7 @@ async function uploadFiles(fileList) {
           const payload={batchId:batch.id,operationId:crypto.randomUUID(),name:file.name};let received=false,lastError;
           for(let attempt=0;attempt<2&&!received;attempt++){
             try{
-              const response=await fetch(`/api/canvas/upload/table?${new URLSearchParams(payload)}`,{method:'POST',headers:{'X-DataEngine-Token':state.token,'Content-Type':'application/octet-stream'},body:file});
+              const response=await fetch(`/api/canvas/upload/table?${new URLSearchParams(payload)}`,{method:'POST',headers:{'X-ContextOS-Token':state.token,'Content-Type':'application/octet-stream'},body:file});
               const result=await response.json();if(!response.ok)throw new Error(result.error||'表格上传失败');received=true;
               if(result.error)errors.push(`${file.name}：${result.error}`);
               for(const warning of result.tableImport?.warnings||[])errors.push(`${file.name}：${warning}`);
@@ -2446,7 +2447,7 @@ async function uploadFiles(fileList) {
           let received=false,lastError;
           for(let attempt=0;attempt<2&&!received;attempt++){
             try{
-              const response=await fetch(`/api/canvas/upload/document?${new URLSearchParams(payload)}`,{method:"POST",headers:{"X-DataEngine-Token":state.token,"Content-Type":"application/octet-stream"},body:file});
+              const response=await fetch(`/api/canvas/upload/document?${new URLSearchParams(payload)}`,{method:"POST",headers:{"X-ContextOS-Token":state.token,"Content-Type":"application/octet-stream"},body:file});
               const result=await response.json();if(!response.ok)throw new Error(result.error||"文档上传失败");received=true;
             }catch(error){
               lastError=error;

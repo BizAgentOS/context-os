@@ -9,7 +9,7 @@ import { createServer } from "../../src/agent/server.ts";
 import { Workspace } from "../../src/agent/workspace.ts";
 
 test("management records business review and source policy without changing data; stale and unauthenticated edits fail", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-maintenance-http-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-maintenance-http-"));
   let service = await createServer({ directory });
   const start = async () => {
     await new Promise<void>((resolve) =>
@@ -23,7 +23,7 @@ test("management records business review and source policy without changing data
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(authorized ? { "X-DataEngine-Token": service.adminToken } : {}),
+        ...(authorized ? { "X-ContextOS-Token": service.adminToken } : {}),
       },
       body: JSON.stringify(body),
     });
@@ -106,7 +106,7 @@ test("management records business review and source policy without changing data
     service = await createServer({ directory });
     base = await start();
     const state = await fetch(base + "/api/canvas?page=ontology", {
-      headers: { "X-DataEngine-Token": service.adminToken },
+      headers: { "X-ContextOS-Token": service.adminToken },
     }).then((r) => r.json());
     assert.equal(state.verifications[0].status, "matches_expectation");
     assert.deepEqual(state.sourcePolicies[0].content.sensitiveFields, [

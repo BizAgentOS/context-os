@@ -35,7 +35,7 @@ test('question answering freezes working and release views, derives answer recei
 });
 
 test('a published definition without a model remains describable and reports an unbound entity',async()=>{
-  const directory=mkdtempSync(join(tmpdir(),'ade-qa-definitions-')),server=await createServer({directory,automaticApi:false}),app=server.app;
+  const directory=mkdtempSync(join(tmpdir(),'context-os-qa-definitions-')),server=await createServer({directory,automaticApi:false}),app=server.app;
   try{
     seedFoundation(app.memory,app.foundation,{enterprise:'定义先行',concepts:[{id:'company',name:'公司',description:'已确认的业务公司'}]});
     const releases=new Releases(app.memory,app.live),checked=await releases.check({inputHash:releases.overview().working.inputHash});assert.equal(checked.status,'ready');
@@ -118,7 +118,7 @@ test('stopping an in-flight read discards its late evidence',async()=>{
 });
 
 test('the shared evidence byte budget rejects oversized deliveries without retaining them in the answer',async()=>{
-  const directory=mkdtempSync(join(tmpdir(),'ade-qa-budget-')),server=await createServer({directory,automaticApi:false}),app=server.app;
+  const directory=mkdtempSync(join(tmpdir(),'context-os-qa-budget-')),server=await createServer({directory,automaticApi:false}),app=server.app;
   try{
     seedFoundation(app.memory,app.foundation,{enterprise:'大目录',concepts:Array.from({length:20},(_,i)=>({id:`entity-${i}`,name:`业务${i}`,description:'业务定义'.repeat(300)}))});
     const run=service(app).begin({question:'解释目录'});let delivered=0;

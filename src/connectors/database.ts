@@ -55,7 +55,7 @@ export class DatabaseConnections {
     const names = tables.map(table => `${table.schema}.${table.table}`);
     if (new Set(names).size !== names.length) throw new Error("表选择重复或名称冲突");
     const capabilities = tables.map((table, index) => ({ name: names[index], contentKind: "records", fields: table.columns.map(c => c.name), idField: table.idField, idType: "string",
-      itemsPath: "items", totalPath: "total", limitParam: "__ade_limit", offsetParam: "__ade_offset", filters: Object.fromEntries(table.columns.map((c, i) => [c.name, `__ade_filter_${i}`])) }));
+      itemsPath: "items", totalPath: "total", limitParam: "__cos_limit", offsetParam: "__cos_offset", filters: Object.fromEntries(table.columns.map((c, i) => [c.name, `__cos_filter_${i}`])) }));
     this.source(source.id, source.version);
     const saved = this.repo.putArtifact({ ...source, expectedVersion: source.version, content: data({ ...source.content, capabilities, databaseTables: tables }) });
     this.saved(saved); return saved;
@@ -72,7 +72,7 @@ export class DatabaseConnections {
     if (signature(table) !== signature(previous) && signature(table) !== signature(next)) throw new Error("数据库表的读取范围已变化，请重新同步后确认");
     if (signature(table) === signature(next)) return source;
     const capabilities = (source.content.capabilities as Data[]).map(cap => cap.name !== capability ? cap : { ...cap,
-      fields: columns.map(column => column.name), filters: Object.fromEntries(columns.map((column, index) => [column.name, `__ade_filter_${index}`])) });
+      fields: columns.map(column => column.name), filters: Object.fromEntries(columns.map((column, index) => [column.name, `__cos_filter_${index}`])) });
     return this.repo.putArtifact({ ...source, expectedVersion: source.version, content: data({ ...source.content, capabilities,
       databaseTables: tables.map(item => item === table ? next : item) }) });
   }

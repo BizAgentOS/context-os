@@ -139,7 +139,7 @@ export class SourceConnections {
     fn: (client: Client) => Promise<T>,
   ): Promise<T> {
     const client = new Client({
-      name: "dataengine-source",
+      name: "context-os-source",
       version: "0.3.1",
     });
     const transport = new StreamableHTTPClientTransport(new URL(config.url), {
@@ -371,7 +371,7 @@ export class SourceConnections {
     const fields = source.content.columns as string[], rows = tableRowsSync(source,this.repo);
     if (!Array.isArray(fields) || !fields.includes(idField)) throw new Error("CSV 身份字段不存在");
     const cap = capabilitySchema.parse({name: "records", fields, idField, idType: "string", totalPath: "total",
-      limitParam: "__ade_limit", offsetParam: "__ade_offset", filters: Object.fromEntries(fields.map((field, index) => [field, `__ade_filter_${index}`]))});
+      limitParam: "__cos_limit", offsetParam: "__cos_offset", filters: Object.fromEntries(fields.map((field, index) => [field, `__cos_filter_${index}`]))});
     const ids = new Set<string>();
     for (const row of rows) {
       const value = row[idField];

@@ -12,8 +12,8 @@ import {createHeatingSources} from '../../src/live/heating-sources.ts';
 import {SourceAuthorization,oauthSchema} from '../../src/live/source-auth.ts';
 import {createServer} from 'node:http';
 
-test('ADE credentials migrate to an encrypted vault and a missing local key fails closed without replacing the vault',()=>{
- const root=mkdtempSync(join(tmpdir(),'ade-vault-')),workspace=join(root,'workspace'),keys=join(root,'machine-keys');
+test('Context OS credentials migrate to an encrypted vault and a missing local key fails closed without replacing the vault',()=>{
+ const root=mkdtempSync(join(tmpdir(),'context-os-vault-')),workspace=join(root,'workspace'),keys=join(root,'machine-keys');
  try{
   mkdirSync(join(workspace,'credentials'),{recursive:true});
   const legacy=join(workspace,'credentials','models.json'),secret='synthetic-model-key-for-vault-test';
@@ -40,7 +40,7 @@ test('ADE credentials migrate to an encrypted vault and a missing local key fail
 });
 
 test('vault migration preserves legacy data on a locked keychain and never writes keys through a workspace symlink',()=>{
- const root=mkdtempSync(join(tmpdir(),'ade-vault-boundary-')),workspace=join(root,'workspace');let locked=false;const key=Buffer.alloc(32,7),keychain={create:()=>key,read:()=>{if(locked)throw new Error('locked');return key;}};
+ const root=mkdtempSync(join(tmpdir(),'context-os-vault-boundary-')),workspace=join(root,'workspace');let locked=false;const key=Buffer.alloc(32,7),keychain={create:()=>key,read:()=>{if(locked)throw new Error('locked');return key;}};
  try{
   const vault=new CredentialVault(workspace,{keychain});vault.set('models',{fake:'synthetic-keychain-secret'});assert.equal(vault.status().provider,'keychain');
   const legacy=join(workspace,'source-credentials.json');writeFileSync(legacy,JSON.stringify({source:'synthetic-legacy-secret'}));const encrypted=readFileSync(join(workspace,'credentials','vault.json'),'utf8');
@@ -53,8 +53,8 @@ test('vault migration preserves legacy data on a locked keychain and never write
 });
 
 test('MCP headers survive restart only through the vault and a locked vault blocks an already connected manager',{timeout:20000},async()=>{
- const root=mkdtempSync(join(tmpdir(),'ade-vault-mcp-')),workspace=join(root,'workspace'),keys=join(root,'keys'),prior=process.env.ADE_VAULT_KEY_DIRECTORY;
- process.env.ADE_VAULT_KEY_DIRECTORY=keys;const source=await createHeatingSources();let mcp=new AgentMcp(workspace);
+ const root=mkdtempSync(join(tmpdir(),'context-os-vault-mcp-')),workspace=join(root,'workspace'),keys=join(root,'keys'),prior=process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY;
+ process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY=keys;const source=await createHeatingSources();let mcp=new AgentMcp(workspace);
  try{
   await mcp.connect({name:'callbacks',url:source.mcpUrl,headers:{'X-Example':'synthetic-mcp-header'}});
   const id=mcp.list()[0].capabilities[0].id;mcp.grant('callbacks',[id]);
@@ -65,11 +65,11 @@ test('MCP headers survive restart only through the vault and a locked vault bloc
   for(const key of readdirSync(keys))rmSync(join(keys,key));
   await assert.rejects(mcp.call(id,{limit:20,offset:0}),/凭据.*锁定|密钥/);
   assert.equal(readFileSync(join(workspace,'credentials','vault.json'),'utf8'),encrypted);
- }finally{await mcp.close();await source.close();if(prior===undefined)delete process.env.ADE_VAULT_KEY_DIRECTORY;else process.env.ADE_VAULT_KEY_DIRECTORY=prior;rmSync(root,{recursive:true,force:true});}
+ }finally{await mcp.close();await source.close();if(prior===undefined)delete process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY;else process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY=prior;rmSync(root,{recursive:true,force:true});}
 });
 
 test('an OAuth response from before revocation cannot restore the same re-registered credentials',{timeout:10000},async()=>{
- const root=mkdtempSync(join(tmpdir(),'ade-vault-oauth-')),prior=process.env.ADE_VAULT_KEY_DIRECTORY;process.env.ADE_VAULT_KEY_DIRECTORY=join(root,'keys');
+ const root=mkdtempSync(join(tmpdir(),'context-os-vault-oauth-')),prior=process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY;process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY=join(root,'keys');
  let release:()=>void=()=>{},entered:()=>void=()=>{};const waiting=new Promise<void>(resolve=>{entered=resolve;});
  const server=createServer(async(_req,res)=>{entered();await new Promise<void>(resolve=>{release=resolve;});res.setHeader('content-type','application/json');res.end(JSON.stringify({access_token:'synthetic-late-token',token_type:'Bearer',expires_in:300}));});
  await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -78,12 +78,12 @@ test('an OAuth response from before revocation cannot restore the same re-regist
   auth.register('source',config);const pending=auth.token(config,false,'source');const rejected=assert.rejects(pending,/OAuth 认证失败/);
   await waiting;auth.forget('source');auth.register('source',config);release();await rejected;
   assert.equal(new CredentialVault(join(root,'workspace')).get('oauth').source&&JSON.stringify(new CredentialVault(join(root,'workspace')).get('oauth')).includes('synthetic-late-token'),false);
- }finally{release();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));if(prior===undefined)delete process.env.ADE_VAULT_KEY_DIRECTORY;else process.env.ADE_VAULT_KEY_DIRECTORY=prior;rmSync(root,{recursive:true,force:true});}
+ }finally{release();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));if(prior===undefined)delete process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY;else process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY=prior;rmSync(root,{recursive:true,force:true});}
 });
 
-test('opening ADE model and source services migrates all four own plaintext credential stores without touching unrelated files',()=>{
- const root=mkdtempSync(join(tmpdir(),'ade-vault-services-')),workspace=join(root,'workspace'),prior=process.env.ADE_VAULT_KEY_DIRECTORY;
- process.env.ADE_VAULT_KEY_DIRECTORY=join(root,'keys');
+test('opening Context OS model and source services migrates all four own plaintext credential stores without touching unrelated files',()=>{
+ const root=mkdtempSync(join(tmpdir(),'context-os-vault-services-')),workspace=join(root,'workspace'),prior=process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY;
+ process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY=join(root,'keys');
  const memory=new MemoryStore(workspace);
  try{
   mkdirSync(join(workspace,'credentials'),{recursive:true});
@@ -96,16 +96,16 @@ test('opening ADE model and source services migrates all four own plaintext cred
   assert.deepEqual(vault.get('models'),fixtures['credentials/models.json']);assert.deepEqual(vault.get('sources'),fixtures['source-credentials.json']);
   assert.deepEqual(vault.get('oauth'),fixtures['source-oauth.json']);assert.deepEqual(vault.get('database'),fixtures['database-credentials.json']);
   assert.equal(readFileSync(join(root,'unrelated-account.json'),'utf8'),'unrelated synthetic content');
- }finally{memory.close();if(prior===undefined)delete process.env.ADE_VAULT_KEY_DIRECTORY;else process.env.ADE_VAULT_KEY_DIRECTORY=prior;rmSync(root,{recursive:true,force:true});}
+ }finally{memory.close();if(prior===undefined)delete process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY;else process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY=prior;rmSync(root,{recursive:true,force:true});}
 });
 
 test('a migrated legacy source cannot become anonymous when the entire credential directory is lost',async()=>{
- const root=mkdtempSync(join(tmpdir(),'ade-vault-legacy-source-')),workspace=join(root,'workspace'),prior=process.env.ADE_VAULT_KEY_DIRECTORY;process.env.ADE_VAULT_KEY_DIRECTORY=join(root,'keys');const memory=new MemoryStore(workspace);
+ const root=mkdtempSync(join(tmpdir(),'context-os-vault-legacy-source-')),workspace=join(root,'workspace'),prior=process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY;process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY=join(root,'keys');const memory=new MemoryStore(workspace);
  let calls=0;const server=createServer((_req,res)=>{calls++;res.setHeader('content-type','application/json');res.end(JSON.stringify({items:[{id:'1'}]}));});await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
  try{
   const original=await new SourceConnections(workspace,memory).connect({name:'旧来源',protocol:'http',url:`http://127.0.0.1:${(server.address() as {port:number}).port}`,capabilities:[{name:'records',path:'/records',fields:['id']}]});
   writeFileSync(join(workspace,'source-credentials.json'),JSON.stringify({[original.id]:'synthetic-legacy-bearer'}));new SourceConnections(workspace,memory);
   rmSync(join(workspace,'credentials'),{recursive:true});const reopened=new SourceConnections(workspace,memory);
   await assert.rejects(reopened.readRecords(original.id,'records'),/凭据|授权/);assert.equal(calls,0);
- }finally{memory.close();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));if(prior===undefined)delete process.env.ADE_VAULT_KEY_DIRECTORY;else process.env.ADE_VAULT_KEY_DIRECTORY=prior;rmSync(root,{recursive:true,force:true});}
+ }finally{memory.close();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));if(prior===undefined)delete process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY;else process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY=prior;rmSync(root,{recursive:true,force:true});}
 });

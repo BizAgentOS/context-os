@@ -11,7 +11,7 @@ import { Snapshots } from "../../src/data/snapshots.ts";
 import type { Capability } from "../../src/live/sources.ts";
 
 function fixture() {
-  const directory = mkdtempSync(join(tmpdir(), "ade-snapshot-values-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-snapshot-values-"));
   const memory = new MemoryStore(directory), live = new LiveMemory(directory, memory);
   const snapshots = new Snapshots(memory, live, directory);
   return { live, snapshots, workspace: new Workspace(memory),

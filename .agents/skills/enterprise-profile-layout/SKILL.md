@@ -1,6 +1,6 @@
 ---
 name: enterprise-profile-layout
-description: 设计或维护 DataEngine 企业与数据页的中间内容区，按企业档案结构组织真实陈述、业务关系和来源入口；适用于企业页面布局与内容扩展。
+description: 设计或维护 Context OS 企业与数据页的中间内容区，按企业档案结构组织真实陈述、业务关系和来源入口；适用于企业页面布局与内容扩展。
 ---
 
 # 企业档案内容区

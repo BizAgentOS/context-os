@@ -12,7 +12,7 @@ import { seedFoundation } from "./program-foundation-fixture.ts";
 import { QuestionAnswering } from "../../src/agent/qa-tools.ts";
 
 test("a streamed PDF joins one document batch and retains exact page references across replacement", { timeout: 15000 }, async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-document-files-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-document-files-"));
   const service = await createServer({ directory, automaticApi: false });
   try {
     const begun = service.app.canvasDocumentBatchStart({ operationId: "pdf-batch", page: "setup" });
@@ -40,7 +40,7 @@ test("a streamed PDF joins one document batch and retains exact page references 
 });
 
 test("unreadable and oversized documents stay individual batch failures while a valid DOCX can proceed", { timeout: 15000 }, async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-document-partial-")), service = await createServer({ directory, automaticApi: false });
+  const directory = mkdtempSync(join(tmpdir(), "context-os-document-partial-")), service = await createServer({ directory, automaticApi: false });
   try {
     const begun = service.app.canvasDocumentBatchStart({ operationId: "partial-batch", page: "setup" });
     await service.app.documentUploads.addFile({ batchId: begun.batch.id, operationId: "scan", name: "扫描.pdf" }, fileChunks(textPdf([""])));
@@ -61,7 +61,7 @@ test("unreadable and oversized documents stay individual batch failures while a 
 });
 
 test("DOCX headings, paragraphs and tables retain their order and business quotation section", { timeout: 15000 }, async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-document-docx-")), service = await createServer({ directory, automaticApi: false });
+  const directory = mkdtempSync(join(tmpdir(), "context-os-document-docx-")), service = await createServer({ directory, automaticApi: false });
   try {
     const begun = service.app.canvasDocumentBatchStart({ operationId: "docx-batch", page: "setup" });
     const batch = await service.app.documentUploads.addFile({ batchId: begun.batch.id, operationId: "docx-file", name: "客户说明.docx" }, fileChunks(textDocx()));
@@ -77,7 +77,7 @@ test("DOCX headings, paragraphs and tables retain their order and business quota
 });
 
 test("Strict OOXML DOCX preserves the same readable body and heading locations", { timeout: 15000 }, async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-document-strict-")), service = await createServer({ directory, automaticApi: false });
+  const directory = mkdtempSync(join(tmpdir(), "context-os-document-strict-")), service = await createServer({ directory, automaticApi: false });
   try {
     const begun = service.app.canvasDocumentBatchStart({ operationId: "strict-docx", page: "setup" });
     const batch = await service.app.documentUploads.addFile({ batchId: begun.batch.id, operationId: "strict-file", name: "严格文档.docx" }, fileChunks(textDocx(true)));
@@ -89,7 +89,7 @@ test("Strict OOXML DOCX preserves the same readable body and heading locations",
 });
 
 test("reading all extracted PDF text retains the missing-page warning on its citation", { timeout: 15000 }, async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-document-coverage-")), service = await createServer({ directory, automaticApi: false });
+  const directory = mkdtempSync(join(tmpdir(), "context-os-document-coverage-")), service = await createServer({ directory, automaticApi: false });
   try {
     const begun = service.app.canvasDocumentBatchStart({ operationId: "partial-pdf", page: "setup" });
     const batch = await service.app.documentUploads.addFile({ batchId: begun.batch.id, operationId: "partial-pdf-file", name: "Mixed.pdf" }, fileChunks(textPdf(["The visible policy.", ""])));
@@ -103,7 +103,7 @@ test("reading all extracted PDF text retains the missing-page warning on its cit
 });
 
 test("PDF bookmarks retain section names without claiming within-page heading precision", { timeout: 15000 }, async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-document-outline-")), service = await createServer({ directory, automaticApi: false });
+  const directory = mkdtempSync(join(tmpdir(), "context-os-document-outline-")), service = await createServer({ directory, automaticApi: false });
   try {
     const begun = service.app.canvasDocumentBatchStart({ operationId: "outline-pdf", page: "setup" });
     const batch = await service.app.documentUploads.addFile({ batchId: begun.batch.id, operationId: "outline-file", name: "Chapters.pdf" }, fileChunks(textPdf(["Company overview.", "A customer holds a contract."], [{title:"Overview",page:1},{title:"Customers",page:2}])));
@@ -115,7 +115,7 @@ test("PDF bookmarks retain section names without claiming within-page heading pr
 });
 
 test("HTTP PDF and DOCX uploads supply authenticated Agent descriptions and queryable document quotes", { timeout: 20000 }, async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-document-agent-")), sourceIds: string[] = [];
+  const directory = mkdtempSync(join(tmpdir(), "context-os-document-agent-")), sourceIds: string[] = [];
   const definitions = [
     { id: "policy", quote: "A customer is an active contracted company.", description: "An active contracted company", query: "active contracted" },
     { id: "customer", quote: "客户指签订有效合同的企业。", description: "签订有效合同的企业", query: "有效合同" },
@@ -138,7 +138,7 @@ test("HTTP PDF and DOCX uploads supply authenticated Agent descriptions and quer
     await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));
     const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`, begun = app.canvasDocumentBatchStart({ operationId: "agent-files", page: "setup" });
     for (const [index, [name, bytes]] of ([ ["Policy.pdf", textPdf(["A customer is an active contracted company."])], ["客户定义.docx", textDocx()] ] as const).entries()) {
-      const response = await fetch(`${base}/api/canvas/upload/document?${new URLSearchParams({ batchId: begun.batch.id, operationId: `agent-file-${index}`, name })}`, { method: "POST", headers: { "x-dataengine-token": service.adminToken, "content-type": "application/octet-stream" }, body: bytes });
+      const response = await fetch(`${base}/api/canvas/upload/document?${new URLSearchParams({ batchId: begun.batch.id, operationId: `agent-file-${index}`, name })}`, { method: "POST", headers: { "x-contextos-token": service.adminToken, "content-type": "application/octet-stream" }, body: bytes });
       assert.equal(response.status, 200);
       const result = await response.json(); assert.deepEqual(result.batch.content.errors, []);
       sourceIds.push(result.batch.content.sources[index].id);
@@ -150,7 +150,7 @@ test("HTTP PDF and DOCX uploads supply authenticated Agent descriptions and quer
       assert.equal((foundation.content.concepts as any[]).find(item => item.id === definition.id).description, definition.description);
       const evidence = (foundation.content.evidence as any[]).find(item => item.id === "file-" + definition.id);
       assert(evidence.documentLocation);
-      const response = await fetch(`${base}/api/foundation/evidence?${new URLSearchParams({ foundationId: foundation.id, version: String(foundation.version), evidenceId: evidence.id })}`, { headers: { "x-dataengine-token": service.adminToken } });
+      const response = await fetch(`${base}/api/foundation/evidence?${new URLSearchParams({ foundationId: foundation.id, version: String(foundation.version), evidenceId: evidence.id })}`, { headers: { "x-contextos-token": service.adminToken } });
       assert.equal(response.status, 200); assert.equal((await response.json()).quote, definition.quote);
       const result = await new QuestionAnswering(app.memory, app.foundation, app.live, app.snapshots, app.workspaceVersions, app.changes).begin({ question: "实体含义的文档依据" }).execute("knowledge_query", { query: definition.query });
       assert.equal((result.result as any).items[0]?.quote, definition.quote);

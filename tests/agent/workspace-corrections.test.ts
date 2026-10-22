@@ -12,14 +12,14 @@ const ref = (a: { id: string; version: number }) => ({ id: a.id, version: a.vers
 
 /** Heating complaints with a callback relation, mapped onto an adopted foundation so a release can be published. */
 async function workspace() {
-  const directory = mkdtempSync(join(tmpdir(), "ade-ws-corrections-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-ws-corrections-"));
   const upstream = await createHeatingSources();
   const service = await createServer({ directory, automaticApi: false });
   await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
   const manage = async (path: string, body?: unknown) => {
     const response = await fetch(base + path, { method: body === undefined ? "GET" : "POST",
-      headers: { "Content-Type": "application/json", "X-DataEngine-Token": service.adminToken }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+      headers: { "Content-Type": "application/json", "X-ContextOS-Token": service.adminToken }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     const value = await response.json() as any;
     if (!response.ok) throw new Error(value.error);
     return value;

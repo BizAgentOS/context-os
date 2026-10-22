@@ -6,9 +6,9 @@ import {join} from 'node:path';
 import {createServer} from '../../src/agent/server.ts';
 
 test('workspace settings expose retention and create a verified backup restored into a fresh directory through admin routes',async()=>{
- const root=mkdtempSync(join(tmpdir(),'ade-settings-http-')),service=await createServer({directory:join(root,'workspace'),automaticApi:false});
+ const root=mkdtempSync(join(tmpdir(),'context-os-settings-http-')),service=await createServer({directory:join(root,'workspace'),automaticApi:false});
  await new Promise<void>(resolve=>service.server.listen(0,'127.0.0.1',resolve));const origin=`http://127.0.0.1:${(service.server.address() as {port:number}).port}`;
- const request=async(path:string,body?:unknown)=>{const r=await fetch(origin+path,{headers:{'X-DataEngine-Token':service.adminToken,...(body?{'Content-Type':'application/json'}:{})},...(body?{method:'POST',body:JSON.stringify(body)}:{})});return{status:r.status,body:await r.json() as any};};
+ const request=async(path:string,body?:unknown)=>{const r=await fetch(origin+path,{headers:{'X-ContextOS-Token':service.adminToken,...(body?{'Content-Type':'application/json'}:{})},...(body?{method:'POST',body:JSON.stringify(body)}:{})});return{status:r.status,body:await r.json() as any};};
  try{
   assert.equal((await fetch(origin+'/api/settings/retention')).status,403);
   const settings=await request('/api/settings/retention');assert.equal(settings.status,200);assert.equal(settings.body.settings.rawDays,90);assert.equal(settings.body.settings.snapshotVersions,5);

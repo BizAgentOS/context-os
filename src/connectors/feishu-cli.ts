@@ -5,7 +5,7 @@ import { join, resolve, relative } from "node:path";
 import { gunzipSync } from "node:zlib";
 
 // Command protocol and pinned release checked against KodaX Space's Feishu adapter.
-// This adapter is implemented for DataEngine's local Node host, without Electron.
+// This adapter is implemented for Context OS's local Node host, without Electron.
 export const FEISHU_VERSION = "1.0.92";
 const releases: Record<string, { name: string; sha256: string }> = {
   "darwin-arm64": { name: "darwin-arm64.tar.gz", sha256: "abb1b96eee5ad32da4e12f434e44d48a9e01ebb0e81772419ac0347f91c34265" },

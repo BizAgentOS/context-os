@@ -66,6 +66,6 @@ export function snapshotReport(parent,report) {
 }
 export function downloadConfig(parent,config,key="") {
   const area=el("textarea",null,"engine-config");area.classList.add("technical-information");area.readOnly=true;area.spellcheck=false;area.setAttribute("aria-label","接入配置");area.value=typeof config==="string"?config:JSON.stringify(config,null,2);parent.append(area);
-  parent.append(action("下载配置",()=>{const url=URL.createObjectURL(new Blob([area.value],{type:"application/json"}));const link=document.createElement("a");link.href=url;link.download="ade-connection.json";link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}));
+  parent.append(action("下载配置",()=>{const url=URL.createObjectURL(new Blob([area.value],{type:"application/json"}));const link=document.createElement("a");link.href=url;link.download="context-os-connection.json";link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}));
   const notice=message(parent);parent.append(action("复制配置",async()=>{try{await navigator.clipboard.writeText(area.value);notice.textContent="已复制配置。";}catch{area.focus();area.select();notice.textContent="请复制已选中的配置。";}}));return area;
 }

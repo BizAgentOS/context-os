@@ -9,7 +9,7 @@ import type { AgentDriver } from "../../src/agent/runtime.ts";
 import { createServer } from "../../src/agent/server.ts";
 
 test("fixture CSV crosses public upload, program build, release, scoped external read, and revocation without structural model calls; one naming batch remains pending", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-engine-chain-fixture-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-engine-chain-fixture-"));
   let modelCalls = 0,namingCalls=0;
   const driver: AgentDriver = {
     async run(request) { if(request.tools.some(tool=>tool.name==="naming_context_read")){namingCalls++;return runNamingProtocol(request);}modelCalls++; throw new Error("Fixture program build must not call a model"); },
@@ -24,7 +24,7 @@ test("fixture CSV crosses public upload, program build, release, scoped external
     const manage = async (path: string, body?: unknown) => {
       const response = await fetch(origin + path, {
         method: body === undefined ? "GET" : "POST",
-        headers: { "x-dataengine-token": service.adminToken, "content-type": "application/json" },
+        headers: { "x-contextos-token": service.adminToken, "content-type": "application/json" },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
       const result = await response.json() as any;
@@ -67,7 +67,7 @@ test("fixture CSV crosses public upload, program build, release, scoped external
       business: { grants: [{ type: type.name, fields: ["$id", "name"], relations: [], evidence: { fields: ["name"], relations: [] } }] },
     });
     assert.equal(connected.connection.status, "active");
-    assert.match(connected.key, /^de_dataset_/);
+    assert.match(connected.key, /^cos_dataset_/);
 
     // This independent caller has only the issued consumer credential, never the management token.
     const external = async (path: string) => {

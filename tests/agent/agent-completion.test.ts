@@ -8,7 +8,7 @@ import { seedHeatingDemo } from "../../src/demo/heating-seed.ts";
 import type { AgentDriver, RunRequest } from "../../src/agent/runtime.ts";
 
 async function runConversation(text: string, run: (request: RunRequest) => Promise<string>) {
-  const directory = mkdtempSync(join(tmpdir(), "ade-completion-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-completion-"));
   const driver: AgentDriver = {
     async run(request) { return { text: await run(request), sessionId: "fixture", runId: "fixture" }; },
     async stop() {}, async close() {},

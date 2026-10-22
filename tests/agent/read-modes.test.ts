@@ -15,7 +15,7 @@ import { seedFoundation } from "./program-foundation-fixture.ts";
 import { createFusionSources, primaryCapability, supplementCapability, fusionDefinition } from "./fusion-fixture.ts";
 
 test("workspace HTTP, live_query and context_read default to the adopted snapshot while explicit live and release reads keep their own versions", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-read-modes-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-read-modes-"));
   let query: Record<string, unknown>, context: any, toolRead: any, contextRead: any;
   const service = await createServer({ directory, automaticApi: false, driver: {
     async run(request) {
@@ -56,7 +56,7 @@ test("workspace HTTP, live_query and context_read default to the adopted snapsho
     await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));
     const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
     const post = async (path: string, body: unknown) => {
-      const response = await fetch(base + path, { method: "POST", headers: { "content-type": "application/json", "x-dataengine-token": service.adminToken }, body: JSON.stringify(body) });
+      const response = await fetch(base + path, { method: "POST", headers: { "content-type": "application/json", "x-contextos-token": service.adminToken }, body: JSON.stringify(body) });
       assert.ok(response.ok, await response.clone().text());
       return response.json() as Promise<any>;
     };
@@ -88,7 +88,7 @@ test("workspace HTTP, live_query and context_read default to the adopted snapsho
 });
 
 test("mixed snapshot and live readings agree across discovery, HTTP and MCP tool descriptions", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-mixed-readings-")), upstream = await createFusionSources();
+  const directory = mkdtempSync(join(tmpdir(), "context-os-mixed-readings-")), upstream = await createFusionSources();
   const service = await createServer({ directory, automaticApi: false });
   const client = new Client({ name: "reading-contract-consumer", version: "1" });
   let connected = false;
@@ -128,7 +128,7 @@ test("mixed snapshot and live readings agree across discovery, HTTP and MCP tool
     assert.ok((read.body.sources as any[]).every(s => typeof s.dataAsOf === "string"));
     assert.match(String(read.body.multiSourceTime), /数据截至时间可能不同/);
     await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));
-    await client.connect(new StdioClientTransport({ command: process.execPath, args: [fileURLToPath(new URL("../../scripts/dataengine-mcp.ts", import.meta.url))], env: { PATH: process.env.PATH!, DATAENGINE_URL: `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`, DATAENGINE_CONSUMER_KEY: connection.key! }, stderr: "pipe" }));
+    await client.connect(new StdioClientTransport({ command: process.execPath, args: [fileURLToPath(new URL("../../scripts/context-os-mcp.ts", import.meta.url))], env: { PATH: process.env.PATH!, CONTEXT_OS_URL: `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`, CONTEXT_OS_CONSUMER_KEY: connection.key! }, stderr: "pipe" }));
     connected = true;
     const tools = (await client.listTools()).tools;
     assert.match(tools.find(t => t.name === "query_objects")!.description!, /release_pinned/);

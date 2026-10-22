@@ -1,3 +1,4 @@
+import { environment } from "../config/brand.ts";
 import { retrySourceRead } from "./source-retry.ts";
 import {pruneDatasetSnapshots} from '../security/workspace-retention.ts';
 import { snapshotWatermark, validateIncrement, type Watermark } from "./snapshot-increment.ts";
@@ -38,7 +39,7 @@ export interface DatasetContent {
 const SCOPE = "workspace";
 const PAGE = 100;
 const now = () => new Date().toISOString();
-const maxRows = () => Math.max(1, Number(process.env.ADE_SNAPSHOT_MAX_ROWS) || 1_000_000);
+const maxRows = () => Math.max(1, Number(environment("SNAPSHOT_MAX_ROWS")) || 1_000_000);
 const shape = (p: SnapshotProfile | null) => JSON.stringify((p?.columns ?? []).map(c => [c.name, c.type]));
 const columnChanges = (before: SnapshotProfile, after: SnapshotProfile) => {
   const a = new Map(before.columns.map(c => [c.name, c.type])), b = new Map(after.columns.map(c => [c.name, c.type]));
@@ -330,7 +331,7 @@ export class Snapshots {
       } else if (!rows && !database) {
         const fields = cap?.fields ?? source.content.columns as string[];
         const projection = fields.map(field => `CAST(NULL AS ${cap?.idField === field && cap.idType === "number" ? "DOUBLE" : "VARCHAR"}) AS ${quote(field)}`).join(", ");
-        result = await this.executor.run({ mode: "query", scope: SCOPE, inputs: [], sql: `SELECT ${projection || "NULL AS __ade_empty"} WHERE false`, persist: true, version: snapshotId });
+        result = await this.executor.run({ mode: "query", scope: SCOPE, inputs: [], sql: `SELECT ${projection || "NULL AS __cos_empty"} WHERE false`, persist: true, version: snapshotId });
       } else result = await this.executor.run({ mode: "ingest", scope: SCOPE, version: snapshotId, file: filename });
       if (incremental && rows) {
         await validateIncrement(this.executor, snapshotId, previous!.watermark!);

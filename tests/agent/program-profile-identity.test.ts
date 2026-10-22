@@ -13,7 +13,7 @@ import { Snapshots } from "../../src/data/snapshots.ts";
 import { ProgramBuilds } from "../../src/engine/program-builds.ts";
 
 function fixture(snapshot = true) {
-  const directory = mkdtempSync(join(tmpdir(), "ade-profile-build-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-profile-build-"));
   const memory = new MemoryStore(directory), live = new LiveMemory(directory, memory);
   const foundation = new FoundationService(memory, live), workspace = new Workspace(memory);
   const snapshots = snapshot ? new Snapshots(memory, live, directory) : undefined;

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { Executor } from "../../src/data/executor/jobs.ts";
 
 test("bounded reads page a 100,000-row query without computing a data profile", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-query-executor-")), executor = new Executor(directory);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-query-executor-")), executor = new Executor(directory);
   try {
     const result = await executor.run({ mode: "read", scope: "workspace", inputs: [], sql: "SELECT range AS id, range * 2 AS score FROM range(100000) WHERE range >= 99900 ORDER BY range DESC", offset: 10, limit: 3 });
     assert.equal(result.total, 100);
@@ -17,7 +17,7 @@ test("bounded reads page a 100,000-row query without computing a data profile", 
 });
 
 test("a cancelled read releases its execution slot and a read deadline interrupts expensive work", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-query-cancel-")), executor = new Executor(directory);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-query-cancel-")), executor = new Executor(directory);
   try {
     const controller = new AbortController(), started = Date.now();
     const reading = executor.run({ mode: "read", scope: "workspace", sql: "SELECT sum(sin(range)) FROM range(1000000000)" }, { signal: controller.signal });
@@ -30,7 +30,7 @@ test("a cancelled read releases its execution slot and a read deadline interrupt
 });
 
 test('cancelling a queued read removes it without consuming the next execution slot',async()=>{
-  const directory=mkdtempSync(join(tmpdir(),'ade-query-queue-')),executor=new Executor(directory);
+  const directory=mkdtempSync(join(tmpdir(),'context-os-query-queue-')),executor=new Executor(directory);
   const controllers=[new AbortController(),new AbortController(),new AbortController()];
   try{
     const running=controllers.slice(0,2).map(controller=>executor.run({mode:'read',scope:'workspace',sql:'SELECT sum(sin(range)) FROM range(1000000000)'},{signal:controller.signal}).catch(error=>error));

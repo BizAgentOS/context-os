@@ -10,14 +10,14 @@ import { Workspace } from "../../src/agent/workspace.ts";
 import type { Data } from "../../src/agent/contracts.ts";
 
 test("heating demo opens three populated pages, runs evidence checks locally and preserves edits on restart", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-heating-demo-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-heating-demo-"));
   let service = await createHeatingDemo(directory);
   try {
     await new Promise<void>((resolve) => service.server.listen(0, "127.0.0.1", resolve));
     const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
     assert.equal((await fetch(`${base}/api/canvas/bootstrap`)).status, 403);
     const bootstrap = await fetch(`${base}/api/canvas/bootstrap`, {
-      headers: {"X-DataEngine-Token": service.adminToken},
+      headers: {"X-ContextOS-Token": service.adminToken},
     }).then((response) => response.json());
     assert.equal(bootstrap.demo.name, "澄川热力");
     assert.equal(bootstrap.model.configured, true);

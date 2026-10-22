@@ -1,12 +1,12 @@
 # 单文件 HTML 演示
 
-用于给未安装 DataEngine 的同事查看产品效果。展示企业、数据、本体、连接四个页面，沿用当前热力公司演示的黑白画布和图谱交互。
+用于给未安装 Context OS 的同事查看产品效果。展示企业、数据、本体、连接四个页面，沿用当前热力公司演示的黑白画布和图谱交互。
 
 ## 生成与发送
 
-在项目目录执行 `npm run export:html`。默认生成 `output/share/DataEngine-热力公司-演示.html`；也可以执行 `npm run export:html -- /目标目录/演示.html` 指定路径。
+在项目目录执行 `npm run export:html`。默认生成 `output/share/Context-OS-热力公司-演示.html`；也可以执行 `npm run export:html -- /目标目录/演示.html` 指定路径。
 
-把这一份 HTML 作为文件附件发给对方，对方下载后用桌面浏览器打开。无需 Node.js、DataEngine 服务、模型 API Key 或联网。部分聊天软件的附件预览不运行 JavaScript，需保存文件后在浏览器打开。
+把这一份 HTML 作为文件附件发给对方，对方下载后用桌面浏览器打开。无需 Node.js、Context OS 服务、模型 API Key 或联网。部分聊天软件的附件预览不运行 JavaScript，需保存文件后在浏览器打开。
 
 ## 可查看的内容
 

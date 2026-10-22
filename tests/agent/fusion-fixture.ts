@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { McpServer, createMcpHandler } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
-/** Independent fictional service desk and work-order systems, never DataEngine memory. */
+/** Independent fictional service desk and work-order systems, never Context OS memory. */
 export async function createFusionSources() {
   const state = {
     mode: "normal",

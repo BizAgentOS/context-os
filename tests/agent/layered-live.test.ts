@@ -26,7 +26,7 @@ async function fixture() {
     res.end(JSON.stringify({ items: selected.slice(offset, offset + limit), total: selected.length }));
   });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
-  const directory = mkdtempSync(join(tmpdir(), "ade-layered-")), memory = new MemoryStore(directory), live = new LiveMemory(directory, memory);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-layered-")), memory = new MemoryStore(directory), live = new LiveMemory(directory, memory);
   const source = await live.sources.connect({ name: "独立业务系统", protocol: "http", url: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
     capabilities: Object.entries(rows).map(([name, records]) => ({ name, path: `/${name}`, fields: Object.keys(records[0]), idField: "id", totalPath: "total", filters: Object.fromEntries(Object.keys(records[0]).map(key => [key, key])) })) });
   return { directory, memory, live, source, rows, async close() { memory.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); rmSync(directory, { recursive: true, force: true }); } };

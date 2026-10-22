@@ -39,7 +39,7 @@ async function modelFor(app: AgentApplication) {
 }
 
 test("the release assistant exposes only the current release path and refuses legacy creation tools", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-release-tools-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-release-tools-"));
   let runs = 0;
   const driver: AgentDriver = {
     async run(request) {

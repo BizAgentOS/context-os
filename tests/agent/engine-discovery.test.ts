@@ -13,7 +13,7 @@ import { profileColumns } from "../../src/engine/discovery.ts";
 import { confirmOntology, ontologyBundle } from "../../src/engine/helix-discovery.ts";
 
 function fixture() {
-  const directory = mkdtempSync(join(tmpdir(), "ade-discovery-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-discovery-"));
   const memory = new MemoryStore(directory);
   const live = new LiveMemory(directory, memory);
   const snapshots = new Snapshots(memory, live, directory);

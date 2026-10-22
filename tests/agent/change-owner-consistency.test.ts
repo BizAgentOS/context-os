@@ -9,13 +9,13 @@ import { createFusionSources, primaryCapability, supplementCapability, fusionDef
 const ref = (a: any) => ({ id: a.id, version: a.version });
 
 for (const syncAgain of [true, false]) test(`adoption refuses changed owner verification inputs (${syncAgain ? 'new snapshot' : 'live facts'})`, async () => {
-  const directory = mkdtempSync(join(tmpdir(), 'ade-owner-consistency-'));
+  const directory = mkdtempSync(join(tmpdir(), 'context-os-owner-consistency-'));
   const upstream = await createFusionSources();
   const service = await createServer({directory, automaticApi:false});
   await new Promise<void>(resolve => service.server.listen(0,'127.0.0.1',resolve));
   const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
   const call = async (path:string, body?:unknown) => {
-    const response = await fetch(base+path,{method:body === undefined?'GET':'POST',headers:{'Content-Type':'application/json','X-DataEngine-Token':service.adminToken},...(body === undefined?{}:{body:JSON.stringify(body)})});
+    const response = await fetch(base+path,{method:body === undefined?'GET':'POST',headers:{'Content-Type':'application/json','X-ContextOS-Token':service.adminToken},...(body === undefined?{}:{body:JSON.stringify(body)})});
     return {status:response.status,body:await response.json() as any};
   };
   try {
@@ -44,7 +44,7 @@ for (const syncAgain of [true, false]) test(`adoption refuses changed owner veri
 });
 
 test('rejecting a foundation candidate preserves its decision while allowing genuinely changed content on the same foundation', async () => {
-  const directory=mkdtempSync(join(tmpdir(),'ade-owner-content-'));
+  const directory=mkdtempSync(join(tmpdir(),'context-os-owner-content-'));
   const service=await createServer({directory,automaticApi:false});
   try {
     const {memory,foundation,changes}=service.app;

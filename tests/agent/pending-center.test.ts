@@ -8,13 +8,13 @@ import { createServer } from "../../src/agent/server.ts";
 import { seedFoundation } from "./program-foundation-fixture.ts";
 
 async function fixture() {
-  const directory = mkdtempSync(join(tmpdir(), "ade-pending-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-pending-"));
   const service = await createServer({ directory, automaticApi: false });
   await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));
   const origin = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
   const call = async (path: string, body?: unknown) => {
     const response = await fetch(origin + path, { method: body === undefined ? "GET" : "POST",
-      headers: { "content-type": "application/json", "X-DataEngine-Token": service.adminToken },
+      headers: { "content-type": "application/json", "X-ContextOS-Token": service.adminToken },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     return { status: response.status, body: await response.json() as any };
   };

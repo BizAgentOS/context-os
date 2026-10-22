@@ -1,6 +1,6 @@
-# ADE 语义与操作契约
+# Context OS 语义与操作契约
 
-更新：2026-10-19。本文细化[产品](PRODUCT.md)和[架构](DATA_ENGINE_DESIGN.md)中的共同业务边界，是 v0.3.0 目标合同；具体字段与接口在[对应 Feature](features/v0.3.0.md)落地。历史 API 与当时限制保留在文末，不将设计示意当成已开放接口。
+更新：2026-10-19。本文细化[产品](PRODUCT.md)和[架构](CONTEXT_OS_DESIGN.md)中的共同业务边界，是 v0.3.0 目标合同；具体字段与接口在[对应 Feature](features/v0.3.0.md)落地。历史 API 与当时限制保留在文末，不将设计示意当成已开放接口。
 
 ## 分层本体
 

@@ -1,5 +1,5 @@
 // Check order and pipeline handling follow Helix Foundry apps/api/src/assistant.ts validateBundle
-// (Apache-2.0, commit 00d7927); the checks run against ADE mapping definitions over snapshots.
+// (Apache-2.0, commit 00d7927); the checks run against Context OS mapping definitions over snapshots.
 import { randomUUID } from "node:crypto";
 import type { Data } from "../agent/contracts.ts";
 import type { DatasetContent, Snapshots } from "../data/snapshots.ts";

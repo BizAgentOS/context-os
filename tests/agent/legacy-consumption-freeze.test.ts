@@ -12,7 +12,7 @@ import { OntologyDatasets } from "../../src/live/ontology-datasets.ts";
 const frozen = /已冻结.*发布.*接入方/;
 
 test("legacy writes are frozen at HTTP and public domain boundaries without creating records", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-legacy-freeze-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-legacy-freeze-"));
   const service = await createServer({ directory, automaticApi: false, driver: {
     async run() { return { text: "idle", sessionId: "s", runId: "r" }; }, async stop() {}, async close() {},
   } });
@@ -20,7 +20,7 @@ test("legacy writes are frozen at HTTP and public domain boundaries without crea
   const origin = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
   try {
     for (const path of ["/api/consumers/prepare", "/api/consumers/activate", "/api/consumers/data-publish", "/api/live/prepare", "/api/live/activate", "/api/live/views/propose", "/api/live/views/activate", "/api/live/migrations/preview", "/api/live/migrations/commit", "/api/datasets/publish"]) {
-      const response = await fetch(origin + path, { method: "POST", headers: { "content-type": "application/json", "x-dataengine-token": service.adminToken }, body: "{}" });
+      const response = await fetch(origin + path, { method: "POST", headers: { "content-type": "application/json", "x-contextos-token": service.adminToken }, body: "{}" });
       assert.equal(response.status, 409, path);
       const body = await response.json() as { error: string; code: string };
       assert.equal(body.code, "legacy_consumption_frozen"); assert.match(body.error, frozen);
@@ -32,7 +32,7 @@ test("legacy writes are frozen at HTTP and public domain boundaries without crea
 });
 
 test("historical access is paged independently of more than forty v4 business views and remains revocable", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-legacy-history-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-legacy-history-"));
   const service = await createServer({ directory, automaticApi: false, driver: {
     async run() { return { text: "idle", sessionId: "s", runId: "r" }; }, async stop() {}, async close() {},
   } });
@@ -40,7 +40,7 @@ test("historical access is paged independently of more than forty v4 business vi
   const origin = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
   const memory = service.app.memory;
   const read = async (query = "") => {
-    const response = await fetch(origin + "/api/consumers/history" + query, { headers: { "x-dataengine-token": service.adminToken } });
+    const response = await fetch(origin + "/api/consumers/history" + query, { headers: { "x-contextos-token": service.adminToken } });
     assert.equal(response.status, 200); return await response.json() as any;
   };
   try {
@@ -61,7 +61,7 @@ test("historical access is paged independently of more than forty v4 business vi
     assert.equal(all.filter(item => item.kind === "ontology_dataset").length, 1);
     assert.doesNotMatch(JSON.stringify(all), /keyHash|private-|v4 内嵌/);
     const historical = all.find(item => item.kind === "consumer_view");
-    const revoked = await fetch(origin + "/api/live/views/revoke", { method: "POST", headers: { "content-type": "application/json", "x-dataengine-token": service.adminToken }, body: JSON.stringify({ id: historical.id, version: historical.version }) });
+    const revoked = await fetch(origin + "/api/live/views/revoke", { method: "POST", headers: { "content-type": "application/json", "x-contextos-token": service.adminToken }, body: JSON.stringify({ id: historical.id, version: historical.version }) });
     assert.equal(revoked.status, 200);
     const updated = [...(await read()).items, ...(await read("?offset=40")).items].find(item => item.id === historical.id);
     assert.equal(updated.status, "revoked");

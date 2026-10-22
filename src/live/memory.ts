@@ -1345,7 +1345,7 @@ export class LiveMemory {
     const consumer = this.repo
       .listArtifacts("live_consumer")
       .find((a) => a.status === "active" && a.content.keyHash === digest(key));
-    if (!consumer || !key.startsWith("de_live_"))
+    if (!consumer || !/^(?:cos|de)_live_/.test(key))
       return { status: 403, body: { error: "凭据无效或访问已停用" } };
     let status = 200,
       body: Data;
@@ -1360,7 +1360,7 @@ export class LiveMemory {
         body = jsonData({
           model: { id: model.id, version: model.version },
           mode: "on_demand",
-          consistency: "不保证跨系统原子快照；记录不在 DataEngine 留存",
+          consistency: "不保证跨系统原子快照；记录不在 Context OS 留存",
           types: grants.map((g) => ({
             name: g.type,
             fields: g.fields,

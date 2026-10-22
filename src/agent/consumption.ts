@@ -376,7 +376,7 @@ export class ConsumptionService {
     let response: ConsumerResponse;
     let reason = "ok";
     try {
-      const match = /^Bearer (de_consumer_[A-Za-z0-9_-]{43})$/.exec(
+      const match = /^Bearer ((?:cos|de)_consumer_[A-Za-z0-9_-]{43})$/.exec(
         request.authorization ?? "",
       );
       const credential = match

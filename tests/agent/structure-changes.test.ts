@@ -34,7 +34,7 @@ test("a new property stays pending, previews its actual source values, then beco
 });
 
 test("an empty workspace can save explicit unbound semantics without inventing executable data", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-empty-structure-")), app = new AgentApplication(directory, undefined, new Set(), false);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-empty-structure-")), app = new AgentApplication(directory, undefined, new Set(), false);
   try {
     connectStructureChanges(app.memory, app.foundation, app.live, app.snapshots, app.changes);
     for (const [type, subject] of [["entity", { action: "add", entity: { id: "contract", name: "合同", description: "待接入的业务合同" } }], ["property", { action: "add", property: { id: "contract_code", entityTypeId: "contract", name: "合同编号", valueType: "string", isIdentity: true } }]] as const) {

@@ -63,7 +63,7 @@ export class QuerySql {
     this.decisions=decisions;this.corrections=corrections;this.propertyCorrections=propertyCorrections;
     this.layered=layered;this.datasets=datasets;
     const sourceFields=new Set([...datasets.values()].flatMap(dataset=>dataset.cap.fields.map(field=>field.toLowerCase())));
-    let recordIdColumn='__ade_object_id';while(sourceFields.has(recordIdColumn.toLowerCase()))recordIdColumn+='_';this.recordIdColumn=recordIdColumn;
+    let recordIdColumn='__cos_object_id';while(sourceFields.has(recordIdColumn.toLowerCase()))recordIdColumn+='_';this.recordIdColumn=recordIdColumn;
     for(const [id,dataset] of datasets){
       const binding=layered.bindings.entities.find(b=>b.id===id)!;
       const table='raw'+this.inputs.length;this.inputs.push({table,version:dataset.version});

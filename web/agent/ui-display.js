@@ -1,6 +1,7 @@
-const key = "ade.developer-view";
+import { readBrowserValue } from "./browser-storage.js";
+const key = "context-os.developer-view";
 export function developerView() {
-  try { return localStorage.getItem(key) === "true"; } catch { return false; }
+  try { return readBrowserValue(localStorage, key, ["ade.developer-view"]) === "true"; } catch { return false; }
 }
 export function setDeveloperView(enabled) {
   try { localStorage.setItem(key, String(enabled)); } catch {}

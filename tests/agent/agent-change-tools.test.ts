@@ -15,7 +15,7 @@ import { z } from "zod";
 import { identityWorkspace } from "./identity-fixture.ts";
 
 test("unified Agent proposals enforce provenance, evidence and withdrawal ownership", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-agent-changes-")), app = new AgentApplication(directory, undefined, new Set(), false);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-agent-changes-")), app = new AgentApplication(directory, undefined, new Set(), false);
   try {
     seedFoundation(app.memory, app.foundation, { enterprise: "测试企业", concepts: [{ id: "task", name: "任务", description: "任务记录" }] });
     const session = app.memory.createSession(), context = app.memory.beginExecution(session.taskId);
@@ -36,7 +36,7 @@ test("unified Agent proposals enforce provenance, evidence and withdrawal owners
 });
 
 test("stopping during verification revokes the late write while preserving the proposal", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-agent-stop-check-")), app = new AgentApplication(directory, undefined, new Set(), false);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-agent-stop-check-")), app = new AgentApplication(directory, undefined, new Set(), false);
   try {
     let release!: () => void, entered!: () => void;
     const gate = new Promise<void>(resolve => { release = resolve; }), started = new Promise<void>(resolve => { entered = resolve; });
@@ -57,7 +57,7 @@ test("stopping during verification revokes the late write while preserving the p
 });
 
 test("provider-owned pending items bind a decision without pretending they are ontology changes", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-agent-provider-")), app = new AgentApplication(directory, undefined, new Set(), false);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-agent-provider-")), app = new AgentApplication(directory, undefined, new Set(), false);
   try {
     let active = true;
     const item = () => ({ id: "provider-choice", version: active ? 1 : 2, category: "adjudication" as const, title: "名称冲突", origin: "agent", source: "文档", sources: [], objects: [], evidence: "两个文档名称不同", verification: null, impact: "选择要保留的名称", status: active ? "awaiting_choice" : "resolved", createdAt: new Date().toISOString(), stale: false, actions: { verify: false, adopt: false, reject: false, analyze: active } });
@@ -78,7 +78,7 @@ test("provider-owned pending items bind a decision without pretending they are o
 });
 
 test("a relationship follows propose, verify, readonly query preview and a real decision card", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-agent-preview-")), app = new AgentApplication(directory, undefined, new Set(), false);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-agent-preview-")), app = new AgentApplication(directory, undefined, new Set(), false);
   try {
     const workspace = new Workspace(app.memory);
     workspace.upload("projects.csv", "project_id,title\nP1,客户项目\nP2,内部项目\n");

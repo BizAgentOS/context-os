@@ -10,7 +10,7 @@ import {tableDirectory} from '../../src/data/table-rows.ts';
 import ExcelJS from 'exceljs';
 
 test('one eight-table upload builds all first entities together and queues exactly one naming batch',{timeout:30000},async()=>{
-  const directory=mkdtempSync(join(tmpdir(),'ade-table-batch-')),service=await createServer({directory}),app=service.app;
+  const directory=mkdtempSync(join(tmpdir(),'context-os-table-batch-')),service=await createServer({directory}),app=service.app;
   const batches=new TableUploadBatches(app.memory,app.tableFiles,app.automaticApiBuild),task=app.memory.createTask('八表同批接入');
   try{
     const batch=batches.start({operationId:'eight-tables',taskId:task.id,page:'setup'});
@@ -31,7 +31,7 @@ test('one eight-table upload builds all first entities together and queues exact
 });
 
 test('table batches retain per-file failures, replay lost receipts, and reject parsed files after finalization',{timeout:15000},async()=>{
-  const directory=mkdtempSync(join(tmpdir(),'ade-table-batch-boundaries-')),service=await createServer({directory,automaticApi:false}),app=service.app;
+  const directory=mkdtempSync(join(tmpdir(),'context-os-table-batch-boundaries-')),service=await createServer({directory,automaticApi:false}),app=service.app;
   const batches=new TableUploadBatches(app.memory,app.tableFiles,app.automaticApiBuild),task=app.memory.createTask('可恢复上传');let release!:()=>void;
   try{
     const batch=batches.start({operationId:'retry-files',taskId:task.id,page:'setup'}),args={batchId:batch.id,operationId:'good',name:'good.csv'};
@@ -52,7 +52,7 @@ test('table batches retain per-file failures, replay lost receipts, and reject p
 });
 
 test('replaying an Excel upload preserves skipped-sheet warnings and parser parameters after restart',async()=>{
-  const directory=mkdtempSync(join(tmpdir(),'ade-table-batch-receipt-'));let service=await createServer({directory,automaticApi:false});
+  const directory=mkdtempSync(join(tmpdir(),'context-os-table-batch-receipt-'));let service=await createServer({directory,automaticApi:false});
   try{
     const workbook=new ExcelJS.Workbook();workbook.addWorksheet('数据').addRows([['id','name'],['A','实际数据']]);workbook.addWorksheet('空表');
     const bytes=Buffer.from(await workbook.xlsx.writeBuffer()),task=service.app.memory.createTask('重放上传回执');

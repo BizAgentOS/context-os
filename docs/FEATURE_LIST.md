@@ -1,4 +1,6 @@
-# DataEngine Feature List
+# Context OS Feature List
+
+**2026-10-22 名称维护：**产品统一更名为 Context OS，包与技术标识改为 `context-os`，文档路径与运行身份同步，旧配置保留兼容。此项为既有产品维护，不新增 Feature，不改变完成数或 Released 版本；当前版本仍为 v0.3.1。详见[迁移说明](../README.md#名称与已有配置迁移)。
 
 Last Updated: 2026-10-22
 
@@ -16,7 +18,7 @@ Last Updated: 2026-10-22
 
 **2026-10-14 开发交付：**v0.2.0 的 FEATURE_025—030 已完成整体前后端、199 项测试和浏览器验收。吸收 Helix 程序构建方法，统一数据、本体、发布与接入；未连接用户业务数据、未正式发布，真实场景验证另行进行。证据见[工作台验收](experiment/ENGINE_WORKBENCH.md)。
 
-**2026-09-10 文档整理：**新增[产品与架构](DATA_ENGINE_DESIGN.md)、[语义契约](SEMANTIC_CONTRACTS.md)、[Agent 与前端协作](AGENT_UI_DESIGN.md)，并更新 `AGENTS.md` 阅读入口。只沉淀设计与纠正历史描述，未新增实现票、改变功能状态或运行产品验收。
+**2026-09-10 文档整理：**新增[产品与架构](CONTEXT_OS_DESIGN.md)、[语义契约](SEMANTIC_CONTRACTS.md)、[Agent 与前端协作](AGENT_UI_DESIGN.md)，并更新 `AGENTS.md` 阅读入口。只沉淀设计与纠正历史描述，未新增实现票、改变功能状态或运行产品验收。
 
 **2026-09-15 当前计划：**产品核心明确为本体驱动多源数据融合，目标调整为企业与数据、本体工作区、消费与治理三页。FEATURE_012—016 的十八张任务已完成；计划见[三页设计](THREE_PAGE_PLAN.md)，实际证据见[整链验收](experiment/FUSION_CHAIN.md)。保持本地实验，尚未发布。
 
@@ -481,7 +483,7 @@ Last Updated: 2026-10-22
 - **Category / Priority:** Enhancement / High
 - **Planned / Released:** v0.2.0 / v0.2.0
 - **Created / Started / Completed:** 2026-10-14 / 2026-10-14 / 2026-10-14
-- **Description:** 第三方除了直接查询，还能委托 ADE Agent 调查、解释获准数据，获取进度、结果与依据。
+- **Description:** 第三方除了直接查询，还能委托 Context OS Agent 调查、解释获准数据，获取进度、结果与依据。
 - **Blocked by:** 028
 - **Design:** [FEATURE_029](features/v0.2.0.md#feature-029)。
 

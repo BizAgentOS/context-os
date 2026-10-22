@@ -48,7 +48,7 @@ export async function showGap(reference,actions,onChanged,container){
   }
   if(gap.status==='in_fix')controls.append(action('继续构建修复',()=>actions.continueGap?.(gap)));
   if(gap.status==='fixed')controls.append(action('复问原查询并确认',()=>transact(container,output,()=>decide('reask')),'engine-primary'));
-  for(const change of gap.content.changes||[])controls.append(action('查看修复变更',()=>window.dispatchEvent(new CustomEvent('dataengine:pending',{detail:change}))));
+  for(const change of gap.content.changes||[])controls.append(action('查看修复变更',()=>window.dispatchEvent(new CustomEvent('context-os:pending',{detail:change}))));
   controls.append(action('重新读取',()=>transact(container,output,load)));host.append(controls);
   if(gap.content.reaskReceipt)replayResult(gap.content.reaskReceipt);
   host.append(technicalDetails(gap));

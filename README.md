@@ -1,4 +1,4 @@
-# ADE · Agent Data Engine
+# Context OS
 
 本体驱动的通用多源数据底座。把散落在不同系统的数据接进来，构建可溯源、有依据的本体，按版本发布给人和外部 Agent 使用。程序负责构建结构，KodaX Agent 协助接入、解释与修订。投研作为后续验证场景。
 
@@ -25,7 +25,7 @@ v0.3.0 的 FEATURE_036—068 已完成 **33/33**：分层本体、统一变更�
 
 - **数据**：接入文件、HTTP API 与 MCP 来源；把结构化记录同步为不可变快照，查看行数、字段画像与样本；来源字段结构变化时列出逐字段差异，确认后才生效；可把单个数据集改为实时读取。
 - **本体**：程序基于快照生成独立实体初稿与关系、身份等提议；结构变化经统一流程提议、复验并明确采用或拒绝，保留记录级身份决定和历史工作版。首次独立实体与同结构重绑适用有界自动采用规则。
-- **发布与接入**：发布固定工作版、本体、映射、来源快照与已采用的治理决定；发布与升级前显示定义差异和行级数据差异；为接入方选择范围、签发密钥、显式升级或撤销；可单独开启受限的 ADE Agent 委托。
+- **发布与接入**：发布固定工作版、本体、映射、来源快照与已采用的治理决定；发布与升级前显示定义差异和行级数据差异；为接入方选择范围、签发密钥、显式升级或撤销；可单独开启受限的 Context OS Agent 委托。
 
 本体构建方法移植自 Helix Foundry（Apache-2.0），许可与逐文件修改记录见[第三方说明](third_party/helix-foundry/MODIFICATIONS.md)，设计决定见 [ADR-004](docs/ADR/ADR-004-managed-snapshots-and-pinned-releases.md)。
 
@@ -44,6 +44,14 @@ npm start
 
 **凭据分开**：管理凭据只用于本机管理；接入方使用第三页签发的独立密钥，只能访问其授权范围，升级会撤销旧密钥。
 
+## 名称与已有配置迁移
+
+产品名称统一为 **Context OS**，包名和技术标识为 `context-os`。产品 Git 目录为 `Context OS/context-os/`，在该目录执行产品命令；已有企业状态、来源、发布、接入密钥和模型凭据继续使用。此次仅更名，包版本保持 `0.3.1`，已有发布 Tag 不移动。
+
+新配置统一使用 `CONTEXT_OS_` 环境变量，例如 `CONTEXT_OS_PORT`、`CONTEXT_OS_STATE_DIR`、`CONTEXT_OS_URL`、`CONTEXT_OS_CONSUMER_KEY` 与 `CONTEXT_OS_SNAPSHOT_MAX_ROWS`；本机管理请求使用 `X-ContextOS-Token`。MCP 入口为 `scripts/context-os-mcp.ts`，服务标识为 `context-os-memory`；受限委托工具为 `submit_context_os_task`、`read_context_os_task`、`cancel_context_os_task`。
+
+为保持已有接入可用，旧 `DATAENGINE_` / `ADE_` 环境变量、`X-DataEngine-Token`、`scripts/dataengine-mcp.ts` 和 `submit_ade_task` / `read_ade_task` / `cancel_ade_task` 保留为兼容入口；新环境变量优先。旧目录通过兼容软链接继续定位到新目录。历史验收的 `output/ade-*`、`/tmp/ade-*` 和运行编号保留真实名称；既有凭据库、业务记录与存储格式中的旧标识只为兼容读取保留，不作为产品显示名称。
+
 ## 验证
 
 | 命令 | 内容 | 是否调用模型 |
@@ -57,7 +65,7 @@ npm start
 
 ## 数据存储与边界
 
-- 结构化记录默认复制为快照，保存在本机状态目录下的 `data/`（Parquet，未加密）。每个数据集保留最近 5 个版本，被发布引用的版本不清理；单次快照默认上限 100 万行（`ADE_SNAPSHOT_MAX_ROWS`），超限明确标注不完整。
+- 结构化记录默认复制为快照，保存在本机状态目录下的 `data/`（Parquet，未加密）。每个数据集保留最近 5 个版本，被发布引用的版本不清理；单次快照默认上限 100 万行（`CONTEXT_OS_SNAPSHOT_MAX_ROWS`），超限明确标注不完整。
 - 内容和来源覆盖都不变时复用快照；覆盖变化生成新版本。覆盖不完整时检查与发布会提醒，消费结果保持 `complete:false`、`total:null`，不能把保存范围当作全量。间接合并及忽略大小写关联仍可能只形成候选，是否可查询以执行映射为准。
 - 文档与知识片段、指标观测，以及用户设为实时读取的数据集仍按需回源读取；发布时标注为非锁定，接入方能看到。
 - 程序检查证明的是结构与数据一致性（身份、匹配率、合并），不证明业务含义；业务含义由人或 Agent 核对。
@@ -74,7 +82,7 @@ npm start
 ## 文档入口
 
 - [文档中心](docs/README.md)：按 Agent 产品职责组织的完整入口，区分当前设计、接入事实与历史。
-- [产品需求](docs/PRODUCT.md)与[总体架构](docs/DATA_ENGINE_DESIGN.md)：本体融合价值、用户与系统分工。
+- [产品需求](docs/PRODUCT.md)与[总体架构](docs/CONTEXT_OS_DESIGN.md)：本体融合价值、用户与系统分工。
 - [内部 Agent](docs/AGENT_DESIGN.md)、[KodaX 接入记录](docs/KODAX_CAPABILITY_LEDGER.md)和[运行 Skill](docs/BUILTIN_SKILLS.md)：方法、能力与运行边界。
 - [语义契约](docs/SEMANTIC_CONTRACTS.md)、[人机协作](docs/AGENT_UI_DESIGN.md)、[画布](docs/CANVAS_DESIGN.md)、[消费](docs/DATA_CONSUMPTION_DESIGN.md)：同一对象与操作如何服务人和其他 Agent。
 - [v0.3.0 设计与任务](docs/features/v0.3.0.md)、[功能台账](docs/FEATURE_LIST.md)、[开发流程](docs/DEVELOPMENT.md)、[Agent 工作约定](AGENTS.md)：当前开发入口、实际状态与开发规则；[0.2.x 设计](docs/features/v0.2.0.md)保留历史。
@@ -92,7 +100,7 @@ npm run demo
 
 打开终端给出的管理链接（默认端口 8794）。三页使用正式渲染，填入澄川热力的企业信息、业务资料、本体与对象，右上角标记“演示数据”。输入框提供固定问题；对象与依据由正式只读服务实际查询，不调用模型。演示写入明确返回模拟结果，不保存变更或签发密钥；离线 HTML 同样不包含外部授权。演示状态单独保存在 `local-state/heating-demo`。详见[热力公司演示](docs/experiment/HEATING_DEMO.md)。
 
-**单文件 HTML 演示**：`npm run export:html` 生成 `output/share/DataEngine-热力公司-演示.html`，下载后用浏览器离线打开；使用隔离的虚构样本，不包含当前空间凭据或用户资料。详见[分享说明](docs/experiment/SHARE_HTML.md)。
+**单文件 HTML 演示**：`npm run export:html` 生成 `output/share/Context-OS-热力公司-演示.html`，下载后用浏览器离线打开；使用隔离的虚构样本，不包含当前空间凭据或用户资料。详见[分享说明](docs/experiment/SHARE_HTML.md)。
 
 **在线读取体验**：`npm run live:demo` 启动 8796 端口，两个独立热力源（投诉 API、回访 MCP）按需读取，聊天使用真实 KodaX，见[运行说明](docs/experiment/LIVE_MEMORY.md)。这是 0.1.x 时期的在线读取方式；0.2.1 起结构化来源默认同步为快照。
 

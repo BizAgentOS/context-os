@@ -18,7 +18,7 @@ import {ProgramBuilds} from "../../src/engine/program-builds.ts";
 import type {Data} from "../../src/agent/contracts.ts";
 
 function fixture(){
-  const directory=mkdtempSync(join(tmpdir(),"ade-table-files-")),memory=new MemoryStore(directory),live=new LiveMemory(directory,memory),snapshots=new Snapshots(memory,live,directory);
+  const directory=mkdtempSync(join(tmpdir(),"context-os-table-files-")),memory=new MemoryStore(directory),live=new LiveMemory(directory,memory),snapshots=new Snapshots(memory,live,directory);
   return {directory,memory,live,snapshots,files:new TableFiles(memory,directory),async close(){await snapshots.close();memory.close();rmSync(directory,{recursive:true,force:true});}};
 }
 

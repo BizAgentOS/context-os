@@ -23,7 +23,7 @@ export function assertRole(action:RoleAction){
 }
 export function agentActor(executionId:string):Actor{
   const caller=currentActor(),principal=caller.kind==='human'?{id:caller.id,name:caller.name,role:caller.role,version:caller.version}:caller.initiatedBy;
-  return {kind:'agent',id:`agent:${executionId}`,name:'ADE 助手',role:caller.role??'admin',...(principal?{initiatedBy:principal}:{})};
+  return {kind:'agent',id:`agent:${executionId}`,name:'Context OS 助手',role:caller.role??'admin',...(principal?{initiatedBy:principal}:{})};
 }
-export const programActor=(id:string):Actor=>({kind:'program',id:`program:${id}`,name:'ADE 程序'});
+export const programActor=(id:string):Actor=>({kind:'program',id:`program:${id}`,name:'Context OS 程序'});
 export const externalActor=(id:string,name='外部接入方'):Actor=>({kind:'external',id:`external:${id}`,name,role:'viewer'});

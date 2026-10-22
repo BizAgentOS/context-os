@@ -67,7 +67,7 @@ export function restoreHistoricalAccess(app: Pick<AgentApplication, "memory" | "
       const view = restoreHistoricalAccess(app, "/api/live/views/activate", draft).saved.view;
       business = { ...input.business, viewRef: { id: view.id, version: view.version } };
     }
-    const key = "de_dataset_" + randomBytes(32).toString("base64url");
+    const key = "cos_dataset_" + randomBytes(32).toString("base64url");
     const dataset = memory.putArtifact({ kind: "ontology_dataset", title: input.name, status: "active", content: plain({ foundationRef: input.foundationRef, enterprise: (foundation.content.enterprise as Data).name, concepts: (foundation.content.concepts as Data[]).filter(c => input.conceptIds.includes(c.id)).map(c => ({ id: c.id, name: c.name, description: c.description, origin: "adopted_interpretation" })), relations: (foundation.content.relations as Data[]).filter(r => input.relationIds.includes(r.id)).map(r => ({ id: r.id, name: r.name, description: r.description, from: r.from, to: r.to, origin: "adopted_interpretation" })), business, keyHash: hash(key), fixtureOperation: input.operationId, publishedAt: new Date().toISOString() }) });
     return { dataset, key, keyAvailable: true };
   }

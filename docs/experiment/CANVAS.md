@@ -13,7 +13,7 @@ npm start
 
 打开 <http://127.0.0.1:8788>。右上角设置模型，或沿用宿主环境变量。API Key 只留在服务进程，数据库仅保存服务商和模型名。当前真实验证使用 DeepSeek 和已固定的 KodaX SDK。
 
-默认企业记忆保存在 `local-state/agent/`。`DATAENGINE_PORT` 和 `DATAENGINE_STATE_DIR` 可指定独立实验空间；同一个空间只运行一个服务。旧的 8787 浏览实验室不是主产品入口。
+默认企业记忆保存在 `local-state/agent/`。`CONTEXT_OS_PORT` 和 `CONTEXT_OS_STATE_DIR` 可指定独立实验空间；同一个空间只运行一个服务。旧的 8787 浏览实验室不是主产品入口。
 
 ## 从空白开始
 

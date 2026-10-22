@@ -57,7 +57,7 @@ test("authorized HTTP and MCP metric queries keep definition, dimensions, period
     const res = await fetch(base + path, {
       method: "POST",
       headers: {
-        "x-dataengine-token": service.adminToken,
+        "x-contextos-token": service.adminToken,
         "content-type": "application/json",
       },
       body: JSON.stringify(body),

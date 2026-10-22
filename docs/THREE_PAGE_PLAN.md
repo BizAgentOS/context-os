@@ -16,7 +16,7 @@
 |---|---|---|
 | 为什么做、给人和 AI 什么价值 | [产品需求](PRODUCT.md) | 全部 |
 | 第一页合并企业基础和来源、三路径起步 | [画布](CANVAS_DESIGN.md)、[基础本体 Skill](COMPANY_FOUNDATION_SKILL.md) | 012、013 |
-| 知识库、BI、业务数据按本体融合 | [HLD 的融合机制](DATA_ENGINE_DESIGN.md#5-数据融合机制)、[语义契约](SEMANTIC_CONTRACTS.md) | 014 |
+| 知识库、BI、业务数据按本体融合 | [HLD 的融合机制](CONTEXT_OS_DESIGN.md#5-数据融合机制)、[语义契约](SEMANTIC_CONTRACTS.md) | 014 |
 | Agent 用 NOOA 对象方式构建与治理 | [Agent 设计](AGENT_DESIGN.md)、[能力记录](KODAX_CAPABILITY_LEDGER.md)、[Skill 目录](BUILTIN_SKILLS.md) | 012—015 |
 | 第二页可视化、容易修正且与 Agent 同步 | [画布](CANVAS_DESIGN.md)、[人机协作契约](AGENT_UI_DESIGN.md) | 012、015 |
 | 第三页生成接口及管理消费、治理与安全 | [消费契约](DATA_CONSUMPTION_DESIGN.md) | 016 |
@@ -58,7 +58,7 @@
 
 ## 4. 可复用能力与实现缺口
 
-当前代码基线、SDK 版本和已接入范围见[能力接入记录](KODAX_CAPABILITY_LEDGER.md)，模块接点见 [HLD](DATA_ENGINE_DESIGN.md#3-当前部署与代码接点)。本轮不升级 SDK，也不采用 Space 的 daemon 或桌面结构。
+当前代码基线、SDK 版本和已接入范围见[能力接入记录](KODAX_CAPABILITY_LEDGER.md)，模块接点见 [HLD](CONTEXT_OS_DESIGN.md#3-当前部署与代码接点)。本轮不升级 SDK，也不采用 Space 的 daemon 或桌面结构。
 
 基础定义已支持文档/网页片段依据；主要缺口是：远程文档/BI 内容契约；同实体多源属性与细粒度证据；真实修订差异；新消费版本、契约说明与迁移。已有跨源关系、文件快照、MCP 发现和四页验收不能替代这些能力。
 

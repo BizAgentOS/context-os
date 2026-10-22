@@ -1,4 +1,4 @@
-# DataEngine 内置 Skill 目录与生命周期
+# Context OS 内置 Skill 目录与生命周期
 
 更新：2026-10-19。本文维护产品运行 Skill 的职责、发现方式、内容变更与验证要求。
 早期 T013-01/02 的真实 KodaX 记录保留在[历史验收](experiment/COMPANY_FOUNDATION.md)，不代表本次方法重写已完成真实模型验收。当前方法服从程序生成初稿、Agent 提议、人决定结构；当前结构提议尚未开放，运行只修正已有定义。

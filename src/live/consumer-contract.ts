@@ -263,7 +263,7 @@ export function consumerConnection(
     contextEvidence,
     openapi: {
       openapi: "3.1.0",
-      info: { title: "Data Engine permitted view", version: "v3" },
+      info: { title: "Context OS permitted view", version: "v3" },
       servers: [{ url: origin }],
       security: [{ consumerKey: [] }],
       components: {
@@ -276,18 +276,18 @@ export function consumerConnection(
     http: {
       catalog: `${origin}/v3/catalog`,
       objects: `${origin}/v3/objects?type=${encodeURIComponent(types[0])}${viewVersion?"&viewVersion="+viewVersion:""}`,
-      authorization: "Bearer <DATAENGINE_CONSUMER_KEY>",
+      authorization: "Bearer <CONTEXT_OS_CONSUMER_KEY>",
       evidence: `${origin}/v3/evidence?ref=<evidenceRef>${viewVersion?"&viewVersion="+viewVersion:""}`,
-      example: `const response = await fetch(${JSON.stringify(origin + "/v3/objects?type=" + encodeURIComponent(types[0])+(viewVersion?"&viewVersion="+viewVersion:""))}, {headers: {Authorization: 'Bearer ' + process.env.DATAENGINE_CONSUMER_KEY}});\nif (!response.ok) throw new Error('Data Engine status ' + response.status);\nconsole.log(await response.json());`,
+      example: `const response = await fetch(${JSON.stringify(origin + "/v3/objects?type=" + encodeURIComponent(types[0])+(viewVersion?"&viewVersion="+viewVersion:""))}, {headers: {Authorization: 'Bearer ' + process.env.CONTEXT_OS_CONSUMER_KEY}});\nif (!response.ok) throw new Error('Context OS status ' + response.status);\nconsole.log(await response.json());`,
     },
     mcp: {
       mcpServers: {
-        dataengine: {
+        "context-os": {
           command: nodePath,
           args: [bridgePath],
           env: {
-            DATAENGINE_URL: origin,
-            DATAENGINE_CONSUMER_KEY: "<本视图 API Key>",
+            CONTEXT_OS_URL: origin,
+            CONTEXT_OS_CONSUMER_KEY: "<本视图 API Key>",
           },
         },
       },

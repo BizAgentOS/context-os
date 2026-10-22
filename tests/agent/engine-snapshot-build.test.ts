@@ -16,7 +16,7 @@ import { connectIdentityChanges } from "../../src/engine/identity-changes.ts";
 import type { Data } from "../../src/agent/contracts.ts";
 
 function fixture() {
-  const directory = mkdtempSync(join(tmpdir(), "ade-snapshot-build-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-snapshot-build-"));
   const memory = new MemoryStore(directory);
   const live = new LiveMemory(directory, memory);
   const foundation = new FoundationService(memory, live);

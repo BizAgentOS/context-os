@@ -9,7 +9,7 @@ import {Workspace} from '../../src/agent/workspace.ts';
 import type {AgentDriver} from '../../src/agent/runtime.ts';
 
 test('the first program build queues one naming review in the existing background pool',async()=>{
- const directory=mkdtempSync(join(tmpdir(),'ade-naming-host-'));let calls=0;
+ const directory=mkdtempSync(join(tmpdir(),'context-os-naming-host-'));let calls=0;
  const driver:AgentDriver={async run(request){
   assert.ok(request.tools.some(tool=>tool.name==='naming_context_read'));
   assert.equal(request.tools.some(tool=>/adopt|change_propose/.test(tool.name)),false);calls++;
@@ -32,9 +32,9 @@ test('the first program build queues one naming review in the existing backgroun
   const pending=app.pendingCenter.list({category:'naming'});assert.equal(pending.filteredTotal,1);assert.equal(pending.items[0].actions.adopt,false);
   assert.equal(app.pools().background.active,null);
   await app.programBuilds.idle();await app.idle();assert.equal(calls,1);
-  const response=await fetch(`http://127.0.0.1:${(service.server.address() as AddressInfo).port}/api/naming/batches/read?`+new URLSearchParams({id:candidate.id,version:String(candidate.version)}),{headers:{'X-DataEngine-Token':service.adminToken}});
+  const response=await fetch(`http://127.0.0.1:${(service.server.address() as AddressInfo).port}/api/naming/batches/read?`+new URLSearchParams({id:candidate.id,version:String(candidate.version)}),{headers:{'X-ContextOS-Token':service.adminToken}});
   assert.equal(response.status,200);const detail=await response.json() as any;assert.equal(detail.candidate.id,candidate.id);assert.ok(detail.items.length>0);
-  const edit=await fetch(`http://127.0.0.1:${(service.server.address() as AddressInfo).port}/api/naming/batches/edit`,{method:'POST',headers:{'X-DataEngine-Token':service.adminToken,'Content-Type':'application/json'},body:JSON.stringify({id:candidate.id,version:candidate.version,items:[{key:detail.items[0].key,description:'人工核对的业务记录含义'}]})});
+  const edit=await fetch(`http://127.0.0.1:${(service.server.address() as AddressInfo).port}/api/naming/batches/edit`,{method:'POST',headers:{'X-ContextOS-Token':service.adminToken,'Content-Type':'application/json'},body:JSON.stringify({id:candidate.id,version:candidate.version,items:[{key:detail.items[0].key,description:'人工核对的业务记录含义'}]})});
   assert.equal(edit.status,200);const edited=await edit.json() as any;assert.equal(edited.candidate.version,candidate.version+1);assert.equal(edited.change.status,'proposed');
  }finally{await service.close();rmSync(directory,{recursive:true,force:true});}
 });

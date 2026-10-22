@@ -8,7 +8,7 @@ import {FeishuConnector} from "../../src/connectors/feishu.ts";
 import {TableCli,connected} from "./feishu-tables-fixture.ts";
 
 test("selected Feishu tables synchronize every page with mapped values and build executable objects",{timeout:25000},async()=>{
-  const directory=mkdtempSync(join(tmpdir(),"ade-feishu-tables-")),service=await createServer({directory,automaticApi:false}),cli=new TableCli(),connector=new FeishuConnector(directory,cli),app=service.app;
+  const directory=mkdtempSync(join(tmpdir(),"context-os-feishu-tables-")),service=await createServer({directory,automaticApi:false}),cli=new TableCli(),connector=new FeishuConnector(directory,cli),app=service.app;
   try{
     await connected(connector);const tables=app.live.sources.attachFeishu(connector),url="https://team.feishu.cn/base/base_test";
     const listing=await tables.browse({url});assert.deepEqual(listing.tables.map(item=>item.name),["人员"]);assert.equal(listing.coverage.complete,true);
@@ -27,12 +27,12 @@ test("selected Feishu tables synchronize every page with mapped values and build
 });
 
 test("table access requires its own readonly scopes and disconnect revokes saved table reads",{timeout:15000},async()=>{
-  const directory=mkdtempSync(join(tmpdir(),"ade-feishu-permissions-")),service=await createServer({directory,automaticApi:false}),cli=new TableCli(),connector=new FeishuConnector(directory,cli),app=service.app;
+  const directory=mkdtempSync(join(tmpdir(),"context-os-feishu-permissions-")),service=await createServer({directory,automaticApi:false}),cli=new TableCli(),connector=new FeishuConnector(directory,cli),app=service.app;
   try{
     cli.scopes="docx:document:readonly";await connected(connector);const tables=app.live.sources.attachFeishu(connector),url="https://team.feishu.cn/base/base_test";
     await assert.rejects(tables.browse({url}),/表格只读权限/);assert.equal(connector.status().account?.tablesAuthorized,false);
     const profile=cli.profile;connector.authorizeTables();for(let i=0;i<100&&connector.status().job?.phase!=="connected";i++)await new Promise(resolve=>setImmediate(resolve));
-    assert.equal(connector.status().account?.tablesAuthorized,true);assert.equal(cli.profile,profile);assert.equal(cli.calls.filter(args=>args[0]==="config").length,1,"scope upgrade retains the same ADE-owned account");
+    assert.equal(connector.status().account?.tablesAuthorized,true);assert.equal(cli.profile,profile);assert.equal(cli.calls.filter(args=>args[0]==="config").length,1,"scope upgrade retains the same Context OS-owned account");
     const source=(await tables.select({operationId:"select",url,tableIds:["tbl_people"]})).sources[0];
     const item=await app.live.sources.readRecords(source.id,"records",{record_id:"rec_204"},0,1);assert.equal(item.items[0].record_id,"rec_204");
     await app.snapshots.sync({operationId:"baseline",sourceIds:[source.id]});
@@ -45,7 +45,7 @@ test("table access requires its own readonly scopes and disconnect revokes saved
 });
 
 test("table links cannot silently widen a view and changed identities cannot reuse another account's selection",{timeout:15000},async()=>{
-  const directory=mkdtempSync(join(tmpdir(),"ade-feishu-scope-")),service=await createServer({directory,automaticApi:false}),cli=new TableCli(),connector=new FeishuConnector(directory,cli),app=service.app;
+  const directory=mkdtempSync(join(tmpdir(),"context-os-feishu-scope-")),service=await createServer({directory,automaticApi:false}),cli=new TableCli(),connector=new FeishuConnector(directory,cli),app=service.app;
   try{
     await connected(connector);const tables=app.live.sources.attachFeishu(connector),url="https://team.feishu.cn/base/base_test";
     for(const rejected of [url+"?view=vew_private",url+"?token=secret","https://evil.example/base/base_test"])await assert.rejects(tables.browse({url:rejected}),/链接|视图|参数/);
@@ -56,7 +56,7 @@ test("table links cannot silently widen a view and changed identities cannot reu
 });
 
 test("a changing remote revision cannot become a mixed snapshot and a later sync restarts cleanly",{timeout:20000},async()=>{
-  const directory=mkdtempSync(join(tmpdir(),"ade-feishu-revision-")),service=await createServer({directory,automaticApi:false}),cli=new TableCli(),connector=new FeishuConnector(directory,cli),app=service.app;
+  const directory=mkdtempSync(join(tmpdir(),"context-os-feishu-revision-")),service=await createServer({directory,automaticApi:false}),cli=new TableCli(),connector=new FeishuConnector(directory,cli),app=service.app;
   try{
     await connected(connector);const tables=app.live.sources.attachFeishu(connector),source=(await tables.select({operationId:"select",url:"https://team.feishu.cn/base/base_test",tableIds:["tbl_people"]})).sources[0];
     await app.snapshots.sync({operationId:"baseline",sourceIds:[source.id]});const old=app.snapshots.datasets()[0].content.activeVersion;

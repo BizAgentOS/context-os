@@ -21,7 +21,7 @@
 |---|---|
 | `package.json` 顶层 `version` | `0.2.3` → `0.3.0`。保留本轮已加入的脚本与依赖。 |
 | `package-lock.json` 顶层 `version` 与 `packages[""].version` | 两处均改为 `0.3.0`；不要替换依赖包自身的版本号。 |
-| `scripts/dataengine-mcp.ts` MCP server info | 对外报告的产品版本改为 `0.3.0`。 |
+| `scripts/context-os-mcp.ts` MCP server info | 对外报告的产品版本改为 `0.3.0`。 |
 | `src/live/sources.ts` MCP client info | 对外报告的产品版本改为 `0.3.0`。 |
 | `docs/CHANGELOG.md` | 这是实际 CHANGELOG 路径。归集本轮实际交付和限制，将 Unreleased 内容整理为 `[0.3.0] - 实际发布日期`，前置空 Unreleased；更新文末 `last-sync` 为已纳入的真实提交边界。初读 marker 为 `737afe9a2120676299e45e4fa61128a95591ef31`。保留历史发布当时的失败/跳过事实。 |
 | `docs/FEATURE_LIST.md` | 统一负责人逐项依据验收结项；全部通过后才填 33/33、版本 Released 与各项实际 Released=v0.3.0，更新当前发布、日期与索引。历史 v0.1.x 未完成项不能顺带改为完成。 |
@@ -64,7 +64,7 @@
 | 052 问答与回答卡 | `qa-tools`、`qa-host`、范围公共测试；真实首次回答和真实留出业务回答；[10-21 真实模型](V030_DATA_QA_2026_10_21.md#真实模型)。 | 把最终视图冻结、接入方范围与外部同结果、回答版本/截至/限制证据归总；真实样本尚未完成的问答不以合成 driver 代替。 |
 | 053 答案联动 | `answer-paths` 公共测试；10-21 浏览器联动/退出新增读取 0 次，缺失关系展示。 | 设计指定 `FP-TASK-3203 → 需求 → 版本 → 产品` 的真实最终答案、图高亮、逐跳侧栏与缺失虚线须记录；当前不能仅凭普通首答结项。 |
 | 054 缺口到修复 | `gaps`、`qa-relation-intent`、`external-gap-feedback`；10-21 合成服务界面曾完成 fixed→confirmed。最新端点约束及 `$proposed` 16 项定向通过。 | 当前真实星桥/留出缺口应完成提出→预演→人采用→主动复问→confirmed 并保存回执；自动 confirmed 禁止与接入方范围不扩大继续依赖公共门禁。 |
-| 055 发布与接入 | `release-checks`、`release-connections`、`release-host`、`release-semantic-tools`；`v030-release-{scope,upgrade}-390.png`；065 指标范围独立授权及口径差异。 | 068 中两个独立客户端与 ADE 内同范围试问、一次调用聚合、新旧版本/升级/撤销须有整链对照记录。公共测试已通过的事实与真实整链待补分开。 |
+| 055 发布与接入 | `release-checks`、`release-connections`、`release-host`、`release-semantic-tools`；`v030-release-{scope,upgrade}-390.png`；065 指标范围独立授权及口径差异。 | 068 中两个独立客户端与 Context OS 内同范围试问、一次调用聚合、新旧版本/升级/撤销须有整链对照记录。公共测试已通过的事实与真实整链待补分开。 |
 | 056 首次使用 | `first-use`、`first-use-host`、`table-upload-batch`；星桥首答 132.774 秒 / Person 13，留出 444.866 秒 / Building 12，两组真实模型回执与宽窄屏截图。 | 总记录保留“首答跳过命名”的实际边界；将完成命名/关系确认与首答计时分开，核对无需手配导入与设计 10 分钟门槛，不伪称全部后续治理在该时间内完成。 |
 | 059 API 连接器 | [059 浏览器](../../output/playwright/ade059/ACCEPTANCE.md)、`service-receipt.json`；实际 loopback OAuth/OpenAPI、两组 205/205、70+70+65 分页、503 重试、401 同页刷新、HTTP 放行、写请求 0。 | 证据已齐到本轮指定边界，等待最终检查与统一结项。明确是合成 HTTP 协议服务，未使用商业账号或真实模型。 |
 | 061 数据页 | `source-summary`、`source-lifecycle`；[043/044/061 浏览器](../../output/playwright/ade043044061/ACCEPTANCE.md)实际字段/样本/截至、引用影响、发布引用只能停用、未确认按钮禁用。 | 归档来源三态/主按钮和各接入类型入口的最终范围；相同操作重试、不确认/过期不得停用已由公共门禁覆盖，不需为文档再次重复全部测试。 |
@@ -102,6 +102,6 @@
 2. 已完成：`npm run check` 645/645、最终类型检查与规模 79/79；已有 snapshot/chain 绿测保留。本任务未重复既有绿链，也没有为提速放宽阈值或删除业务断言。
 3. 确认准备发布的源码、测试、必要文本验收已纳入提交；不将整个 `output/`、private.json、临时密钥、数据库、巨大原始样本或生成 HTML 一并加入。保留本地证据索引或脱敏必要摘要。
 4. 按上表同步 5 处版本值和文档；再检查包版本、CHANGELOG 最新发布段、当前台账与预定 Tag 一致。确认 v0.3.0 Tag 仍未占用。
-5. 本地提交 `chore(release): v0.3.0`，打附注 Tag `git tag -a v0.3.0 -m "ADE v0.3.0"`。记录实际 release commit、Tag、日期和最终验收路径；不移动已有 Tag，不自行推送远程。
+5. 本地提交 `chore(release): v0.3.0`，打附注 Tag `git tag -a v0.3.0 -m "Context OS v0.3.0"`。记录实际 release commit、Tag、日期和最终验收路径；不移动已有 Tag，不自行推送远程。
 
 首次准备只新增本文并运行隔离规模命令；随后按根线程授权修正 README 验证命令、迁移 3 个旧文档夹具与方法中的负面旧工具名，并执行上述集中检查。发布阶段同步 README、AGENTS、文档中心及开发说明；本代理未修改功能台账、包版本、CHANGELOG 或发布 Tag。

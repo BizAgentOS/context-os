@@ -20,7 +20,7 @@ test("the final offline HTML contains an executable bundle, not replacement-expa
       "the emitted browser script must parse",
     );
     const data = html.match(
-      /<script type="application\/json" id="dataengine-share-data">([\s\S]*?)<\/script>/,
+      /<script type="application\/json" id="context-os-share-data">([\s\S]*?)<\/script>/,
     );
     assert(data);
     assert.equal(JSON.parse(data[1]).formatVersion, 2);

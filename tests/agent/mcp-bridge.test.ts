@@ -6,23 +6,23 @@ import { spawn } from "node:child_process";
 import { createServer, type RequestListener } from "node:http";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { readBridgeConfig } from "../../scripts/dataengine-mcp.ts";
+import { readBridgeConfig } from "../../scripts/context-os-mcp.ts";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHeatingDemo } from "../../src/demo/server.ts";
 import { Workspace } from "../../src/agent/workspace.ts";
 
-const script = fileURLToPath(new URL("../../scripts/dataengine-mcp.ts", import.meta.url));
-const key = "de_dataset_mcp_test_only";
+const script = fileURLToPath(new URL("../../scripts/context-os-mcp.ts", import.meta.url));
+const key = "cos_dataset_mcp_test_only";
 
 test("MCP configuration requires a consumer key and a service origin", () => {
-  assert.deepEqual(readBridgeConfig({ DATAENGINE_URL: "http://localhost:8788", DATAENGINE_CONSUMER_KEY: key }), {
+  assert.deepEqual(readBridgeConfig({ CONTEXT_OS_URL: "http://localhost:8788", CONTEXT_OS_CONSUMER_KEY: key }), {
     origin: "http://localhost:8788", key,
   });
-  assert.throws(() => readBridgeConfig({ DATAENGINE_URL: "file:///tmp/memory.db", DATAENGINE_CONSUMER_KEY: key }));
-  assert.throws(() => readBridgeConfig({ DATAENGINE_URL: "http://localhost:8788/api", DATAENGINE_CONSUMER_KEY: key }));
-  for(const prefix of ['consumer','live','view'])assert.throws(()=>readBridgeConfig({DATAENGINE_URL:'http://localhost:8788',DATAENGINE_CONSUMER_KEY:`de_${prefix}_retired`}),/发布|retired|release/i);
+  assert.throws(() => readBridgeConfig({ CONTEXT_OS_URL: "file:///tmp/memory.db", CONTEXT_OS_CONSUMER_KEY: key }));
+  assert.throws(() => readBridgeConfig({ CONTEXT_OS_URL: "http://localhost:8788/api", CONTEXT_OS_CONSUMER_KEY: key }));
+  for(const prefix of ['consumer','live','view'])assert.throws(()=>readBridgeConfig({CONTEXT_OS_URL:'http://localhost:8788',CONTEXT_OS_CONSUMER_KEY:`de_${prefix}_retired`}),/发布|retired|release/i);
 });
 
 async function httpFixture(handler: RequestListener) {
@@ -39,9 +39,9 @@ async function httpFixture(handler: RequestListener) {
   };
 }
 
-function stdioBridge(url: string, apiKey = key) {
-  const child = spawn(process.execPath, [script], {
-    env: { PATH: process.env.PATH, DATAENGINE_URL: url, DATAENGINE_CONSUMER_KEY: apiKey },
+function stdioBridge(url: string, apiKey = key, legacy = false) {
+  const child = spawn(process.execPath, [legacy ? fileURLToPath(new URL("../../scripts/dataengine-mcp.ts", import.meta.url)) : script], {
+    env: legacy ? { PATH: process.env.PATH, DATAENGINE_URL: url, DATAENGINE_CONSUMER_KEY: apiKey } : { PATH: process.env.PATH, CONTEXT_OS_URL: url, CONTEXT_OS_CONSUMER_KEY: apiKey },
     stdio: ["pipe", "pipe", "pipe"],
   });
   const pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
@@ -101,9 +101,9 @@ async function initialize(bridge: ReturnType<typeof stdioBridge>) {
   const response = await bridge.request("initialize", {
     protocolVersion: "2025-11-25",
     capabilities: {},
-    clientInfo: { name: "dataengine-stdio-test", version: "1.0.0" },
+    clientInfo: { name: "context-os-stdio-test", version: "1.0.0" },
   });
-  assert.equal(response.result.serverInfo.name, "dataengine-memory");
+  assert.equal(response.result.serverInfo.name, "context-os-memory");
   assert.equal(response.result.protocolVersion, "2025-11-25");
   bridge.notify("notifications/initialized");
 }
@@ -123,7 +123,7 @@ test("MCP stdio discovers tools and reads only the consumer HTTP surface", async
     await initialize(bridge);
     const listed = await bridge.request("tools/list");
     assert(listed.result.tools.some((tool:any)=>tool.name==="describe_dataset"));assert(listed.result.tools.some((tool:any)=>tool.name==="query_objects"));assert(!listed.result.tools.some((tool:any)=>tool.name==="describe_memory"||tool.name==="describe_catalog"));
-    assert.ok(listed.result.tools.filter((tool:any)=>!["submit_ade_task","cancel_ade_task"].includes(tool.name)).every((tool: any) => tool.annotations.readOnlyHint));
+    assert.ok(listed.result.tools.filter((tool:any)=>!["submit_context_os_task","cancel_context_os_task","submit_ade_task","cancel_ade_task"].includes(tool.name)).every((tool: any) => tool.annotations.readOnlyHint));
     const described = await bridge.request("tools/call", { name: "describe_dataset", arguments: {} });
     assert.deepEqual(JSON.parse(described.result.content[0].text), schema);
     const queried = await bridge.request("tools/call", {
@@ -201,7 +201,7 @@ test("MCP also serves current protocol discovery and tool calls over stdio", asy
 });
 
 test("MCP reads fixed heating evidence, observes an explicit release upgrade and enforces key rotation and revocation", async () => {
-  const directory=mkdtempSync(join(tmpdir(),"dataengine-mcp-heating-")),service=await createHeatingDemo(directory);let bridge:ReturnType<typeof stdioBridge>|undefined;
+  const directory=mkdtempSync(join(tmpdir(),"context-os-mcp-heating-")),service=await createHeatingDemo(directory);let bridge:ReturnType<typeof stdioBridge>|undefined;
   try{
     await new Promise<void>(resolve=>service.server.listen(0,"127.0.0.1",resolve));const origin=`http://127.0.0.1:${(service.server.address() as {port:number}).port}`;
     const app=service.app,releases=new Releases(app.memory,app.live),release=app.memory.listArtifacts('data_release')[0],definition=release.content.definition as Data;
@@ -278,11 +278,40 @@ test("MCP startup refuses a management key and URL credentials without echoing e
     try {
       await bridge.ended;
       assert.equal(bridge.output().stdout, "");
-      assert.match(bridge.output().stderr, /DataEngine MCP configuration/);
+      assert.match(bridge.output().stderr, /Context OS MCP configuration/);
       assert.equal(JSON.stringify(bridge.output()).includes(key), false);
       assert.equal(JSON.stringify(bridge.output()).includes("admin_secret_value"), false);
     } finally {
       await bridge.close();
     }
   }
+});
+
+// Saved consumer configs keep their exact entry point, variables, token and tool names.
+test("renamed MCP retains saved configs and gives explicit new variables precedence", async () => {
+  const legacyKey = "de_dataset_saved_config";
+  const fixture = await httpFixture((request, response) => {
+    assert.equal(request.headers.authorization, `Bearer ${legacyKey}`);
+    assert.equal(request.url, "/v4/agent/tasks/previous-task");
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ id: "previous-task", status: "complete" }));
+  });
+  const bridge = stdioBridge(fixture.url, legacyKey, true);
+  try {
+    const old = { DATAENGINE_URL: fixture.url, DATAENGINE_CONSUMER_KEY: legacyKey };
+    assert.deepEqual(readBridgeConfig(old), { origin: fixture.url, key: legacyKey });
+    assert.deepEqual(readBridgeConfig({ ...old, CONTEXT_OS_CONSUMER_KEY: key }), { origin: fixture.url, key });
+    assert.throws(() => readBridgeConfig({ ...old, CONTEXT_OS_URL: "" }));
+    assert.throws(() => readBridgeConfig({ ...old, CONTEXT_OS_CONSUMER_KEY: "" }));
+    await initialize(bridge);
+    const tools = (await bridge.request("tools/list")).result.tools;
+    for (const name of ["submit_context_os_task", "read_context_os_task", "cancel_context_os_task"]) assert(tools.some((tool:any) => tool.name === name));
+    for (const name of ["read_context_os_task", "read_ade_task"]) {
+      const value = await bridge.request("tools/call", { name, arguments: { id: "previous-task" } });
+      assert.equal(value.result.isError, undefined);
+      assert.equal(JSON.parse(value.result.content[0].text).id, "previous-task");
+    }
+    assert(!bridge.output().stdout.includes(legacyKey));
+    assert(!bridge.output().stderr.includes(legacyKey));
+  } finally { await bridge.close(); await fixture.close(); }
 });

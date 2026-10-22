@@ -34,7 +34,7 @@ test("published v4 views expose only allowed fusion values and status, isolate c
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-dataengine-token": service.adminToken,
+        "x-contextos-token": service.adminToken,
       },
       body: JSON.stringify(body),
     });
@@ -210,7 +210,7 @@ test("relation permits require both endpoints, survive restart, and expose no da
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-dataengine-token": service.adminToken,
+        "x-contextos-token": service.adminToken,
       },
       body: JSON.stringify(body),
     });

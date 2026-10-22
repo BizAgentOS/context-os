@@ -479,10 +479,10 @@ export function renderConsumerViews(live, { api, onSaved, showCredential }) {
                   a.href = url;
                   a.download =
                     label === "OpenAPI 3.1"
-                      ? "dataengine-openapi.json"
+                      ? "context-os-openapi.json"
                       : label === "MCP 配置"
-                        ? "dataengine-mcp.json"
-                        : "dataengine-http.json";
+                        ? "context-os-mcp.json"
+                        : "context-os-http.json";
                   a.click();
                   setTimeout(() => URL.revokeObjectURL(url), 1000);
                 }),

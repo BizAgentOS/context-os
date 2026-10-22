@@ -1,4 +1,4 @@
-/* ADE 0.2 workspace: existing ontology palette and a shared assistant. */
+/* Context OS 0.2 workspace: existing ontology palette and a shared assistant. */
 body:has(.engine-workspace),body:has(.ontology-space){--engine-ink:#e2e5ec;--engine-muted:#acb4c1;--engine-line:#798aae44;--engine-accent:#a3b8e1;--engine-surface:#0f182d;}
 .canvas-app:has(.engine-workspace){color:#e2e5ec;color-scheme:dark;background:radial-gradient(ellipse at 46% 37%,#1a253f 0%,#0b1328 42%,#04060e 85%);}
 .canvas-app:has(.engine-workspace)::before{opacity:.22;}

@@ -9,7 +9,7 @@ import { RunPresentation } from "../../src/agent/run-presentation.ts";
 import { agentModePrompt } from "../../src/agent/agent-prompts.ts";
 
 test("a frozen mode denies guessed old tools and stays fixed when the caller changes its input", () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-mode-")), memory = new MemoryStore(directory);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-mode-")), memory = new MemoryStore(directory);
   try {
     const session = memory.createSession(), context = memory.beginExecution(session.taskId);
     const input = { mode: "qa" as "build" | "qa" }, turn = freezeAgentTurn(memory, context, input);
@@ -39,7 +39,7 @@ test("interactive prompts and skills describe the unified tools, without retired
 });
 
 test("continuation freezes the real saved run and rejects another session's receipt", () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-mode-continue-")), memory = new MemoryStore(directory);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-mode-continue-")), memory = new MemoryStore(directory);
   try {
     const session = memory.createSession(), context = memory.beginExecution(session.taskId);
     new RunPresentation(memory, context, { goal: "核对真实业务目标" }).finish({ status: "stopped" });

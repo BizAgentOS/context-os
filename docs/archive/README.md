@@ -5,7 +5,7 @@
 | 文档 | 原有用途 | 当前替代 |
 |---|---|---|
 | [Agent 行为与技术研究](AGENT_DESIGN_2026-09-07.md) | FEATURE_003 首轮行为、状态、SDK/NOOA 研究及后续日期说明 | [当前 Agent 设计](../AGENT_DESIGN.md)、[能力接入记录](../KODAX_CAPABILITY_LEDGER.md) |
-| [Agent 组成与应用接口](AGENT_BLUEPRINT_2026-09-07.md) | 首轮身份、方法、上下文、工作区和应用契约 | [当前 Agent 设计](../AGENT_DESIGN.md)、[HLD](../DATA_ENGINE_DESIGN.md)、[人机协作](../AGENT_UI_DESIGN.md) |
+| [Agent 组成与应用接口](AGENT_BLUEPRINT_2026-09-07.md) | 首轮身份、方法、上下文、工作区和应用契约 | [当前 Agent 设计](../AGENT_DESIGN.md)、[HLD](../CONTEXT_OS_DESIGN.md)、[人机协作](../AGENT_UI_DESIGN.md) |
 | [四页画布规格](CANVAS_DESIGN_2026-09-08.md) | T003-04/T005-04 及原四页的交互依据 | [当前三页画布](../CANVAS_DESIGN.md) |
 | [第四页消费设计](DATA_CONSUMPTION_DESIGN_2026-09-08.md) | FEATURE_007 的调用方、凭据与访问治理依据 | [当前消费与治理](../DATA_CONSUMPTION_DESIGN.md) |
 

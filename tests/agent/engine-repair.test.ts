@@ -10,7 +10,7 @@ import { Releases } from "../../src/engine/releases.ts";
 import { proposeWording } from "./unified-wording-fixture.ts";
 
 test("Agent repairs a program-built concept without inventing an enterprise identity or publishing it", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-engine-repair-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-engine-repair-"));
   let candidate: Artifact | undefined;
   const driver: AgentDriver = {
     async run(request) {
@@ -61,7 +61,7 @@ test("Agent repairs a program-built concept without inventing an enterprise iden
 });
 
 test("release comparisons use both selected versions, including skipped upgrades and rollback", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-release-compare-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-release-compare-"));
   const app = new AgentApplication(directory, undefined, new Set(), false);
   try {
     const releases = new Releases(app.memory, app.live);

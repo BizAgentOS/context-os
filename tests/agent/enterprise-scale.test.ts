@@ -11,7 +11,7 @@ import {Snapshots} from '../../src/data/snapshots.ts';
 import {SyncGovernance} from '../../src/data/sync-governance.ts';
 
 test('category pages keep a bounded response and latency as unrelated artifact history grows',async(t)=>{
- const directory=mkdtempSync(join(tmpdir(),'ade-enterprise-list-')),memory=new MemoryStore(directory);
+ const directory=mkdtempSync(join(tmpdir(),'context-os-enterprise-list-')),memory=new MemoryStore(directory);
  try{
   memory.atomic(()=>{for(let i=0;i<20;i++)memory.putArtifact({kind:'source',title:`原文${i}`,status:'ready',content:{format:'text',raw:'正文保持完整。'.repeat(20000)}});});
   const measure=()=>{const times:number[]=[];for(let n=0;n<100;n++){const start=performance.now(),page=memory.listArtifacts('source',{content:'compact',limit:20});assert.equal(page.length,20);assert(Buffer.byteLength(JSON.stringify(page))<20000);times.push(performance.now()-start);}return times.sort((a,b)=>a-b)[94];};
@@ -23,7 +23,7 @@ test('category pages keep a bounded response and latency as unrelated artifact h
 });
 
 test('permanently expired credentials become a visible data issue while the last complete snapshot remains queryable',{timeout:20000},async()=>{
- const directory=mkdtempSync(join(tmpdir(),'ade-enterprise-expired-')),prior=process.env.ADE_VAULT_KEY_DIRECTORY;process.env.ADE_VAULT_KEY_DIRECTORY=join(directory,'external-keys');
+ const directory=mkdtempSync(join(tmpdir(),'context-os-enterprise-expired-')),prior=process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY;process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY=join(directory,'external-keys');
  // A credential key must be outside the actual workspace.
  const memory=new MemoryStore(join(directory,'workspace')),live=new LiveMemory(memory.directory,memory),snapshots=new Snapshots(memory,live,memory.directory);let expired=false;
  const server=createServer((_request,response)=>{response.setHeader('content-type','application/json');if(expired){response.statusCode=401;response.end('{"error":"expired"}');}else response.end(JSON.stringify({items:[{id:'A1',name:'保留客户'}],total:1}));});
@@ -34,5 +34,5 @@ test('permanently expired credentials become a visible data issue while the last
   const result=await snapshots.sync({operationId:'expired'});assert.equal(result.content.outcome,'needs_attention');assert.equal(snapshots.dataset(initial.id).content.activeVersion,initial.content.activeVersion);
   const issues=new SyncGovernance(memory,snapshots).list();assert.equal(issues.length,1);assert.match(issues[0].evidence,/401|授权|凭据/);
   assert.equal((await snapshots.preview({datasetId:initial.id})).rows[0].name,'保留客户');await assert.rejects(live.sources.readRecords(source.id,'records'),/401|授权|凭据/);
- }finally{await snapshots.close();memory.close();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));if(prior===undefined)delete process.env.ADE_VAULT_KEY_DIRECTORY;else process.env.ADE_VAULT_KEY_DIRECTORY=prior;rmSync(directory,{recursive:true,force:true});}
+ }finally{await snapshots.close();memory.close();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));if(prior===undefined)delete process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY;else process.env.CONTEXT_OS_VAULT_KEY_DIRECTORY=prior;rmSync(directory,{recursive:true,force:true});}
 });

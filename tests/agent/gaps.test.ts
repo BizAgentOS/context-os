@@ -101,7 +101,7 @@ test('stopping a gap preview after its first actual read prevents subsequent sou
 });
 
 test('the first data binding can preview an unbound-entity gap without persisting a pretend model',async()=>{
-  const directory=mkdtempSync(join(tmpdir(),'ade-first-binding-preview-')),server=await createServer({directory,automaticApi:false}),app=server.app;
+  const directory=mkdtempSync(join(tmpdir(),'context-os-first-binding-preview-')),server=await createServer({directory,automaticApi:false}),app=server.app;
   try{
     seedFoundation(app.memory,app.foundation,{enterprise:'公司目录',concepts:[{id:'company',name:'公司',description:'业务公司'}]});
     const identity=await app.changes.propose({operationId:'company-identity',type:'property',origin:'human',baseline:app.changes.currentBaseline(),subject:{action:'add',property:{id:'company-id',entityTypeId:'company',name:'公司编号',description:'目录唯一编号',isIdentity:true,valueType:'string'}}}),identityCheck=await app.changes.verify({...ref(identity.change),operationId:'company-identity-check'});await app.changes.adopt({...ref(identityCheck),operationId:'company-identity-adopt'});

@@ -56,12 +56,12 @@ export function renderDatasetWorkspace(state, { api, ontology, legacy, onChanged
       const result = await api(`/api/datasets/connection?id=${encodeURIComponent(dataset.id)}&version=${dataset.version}`);
       if (!d.isConnected) return;
       config = result.mcp;
-      d.content.append(el("p", "在支持 stdio MCP 的本机 Agent 中添加以下配置，保持 DataEngine 服务运行。", "ds-description"));
+      d.content.append(el("p", "在支持 stdio MCP 的本机 Agent 中添加以下配置，保持 Context OS 服务运行。", "ds-description"));
       const configLabel = el("label", "", "ds-field"); configLabel.append(el("span", "MCP 配置"));
       configText = el("textarea", "", "ds-config"); configText.readOnly = true; configText.spellcheck = false;
       const materialize = () => {
         const value = structuredClone(config);
-        for (const entry of Object.values(value.mcpServers)) entry.env.DATAENGINE_CONSUMER_KEY = keyInput.value.trim() || "<本数据集接入密钥>";
+        for (const entry of Object.values(value.mcpServers)) entry.env.CONTEXT_OS_CONSUMER_KEY = keyInput.value.trim() || "<本数据集接入密钥>";
         return JSON.stringify(value, null, 2);
       };
       // The visible config uses a placeholder until the user explicitly reveals or copies the credential.
@@ -225,7 +225,7 @@ export function renderDatasetWorkspace(state, { api, ontology, legacy, onChanged
       card.append(actions); datasets.append(card);
     }
     workspace.append(source, datasets); root.append(workspace);
-    const footer = el("footer", "", "ds-footer"); footer.append(el("span", "本机 MCP · 浏览器关闭后，DataEngine 服务需继续运行"), action("刷新状态", () => void load()));
+    const footer = el("footer", "", "ds-footer"); footer.append(el("span", "本机 MCP · 浏览器关闭后，Context OS 服务需继续运行"), action("刷新状态", () => void load()));
     const owned = new Set(data.datasets.map(d => d.content.business?.viewRef.id));
     if (legacy && (state.consumers?.length || state.live?.consumers?.length || state.live?.views?.some(v => !owned.has(v.id)))) footer.append(action("管理已有访问范围", legacy));
     root.append(footer);

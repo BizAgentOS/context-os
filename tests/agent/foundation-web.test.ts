@@ -159,7 +159,7 @@ test("confirmed company web evidence comes from actual HTTP body and survives pa
     const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
     const response = await fetch(
       `${base}/api/foundation/evidence?foundationId=${current.id}&version=${current.version + 1}&evidenceId=web`,
-      { headers: { "x-dataengine-token": service.adminToken } },
+      { headers: { "x-contextos-token": service.adminToken } },
     );
     assert.equal(response.status, 200);
     const evidence = await response.json();

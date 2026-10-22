@@ -2177,7 +2177,7 @@ export class AgentApplication {
 
   safeError(error: unknown): string {
     let text = error instanceof Error ? error.message : "操作失败";
-    for (const env of [...Object.values(providers), ...Object.keys(process.env).filter((name) => name.startsWith("DATAENGINE_CUSTOM_"))]) {
+    for (const env of [...Object.values(providers), ...Object.keys(process.env).filter((name) => /^(?:CONTEXT_OS|DATAENGINE|ADE)_CUSTOM_/.test(name))]) {
       const key = process.env[env];
       if (key) text = text.split(key).join("[凭据已隐藏]");
     }

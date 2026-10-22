@@ -11,7 +11,7 @@ import { Snapshots } from "../../src/data/snapshots.ts";
 import { snapshotFile } from "../../src/data/executor/paths.ts";
 
 function fixture() {
-  const directory = mkdtempSync(join(tmpdir(), "ade-snapshots-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-snapshots-"));
   const memory = new MemoryStore(directory);
   const live = new LiveMemory(directory, memory);
   const snapshots = new Snapshots(memory, live, directory);
@@ -111,11 +111,11 @@ test("an HTTP source is synced across all pages with explicit coverage, and uniq
 });
 
 test("identical saved rows with changed source coverage create a new version, while identical coverage reuses it", async () => {
-  const f = fixture(), priorLimit = process.env.ADE_SNAPSHOT_MAX_ROWS;
+  const f = fixture(), priorLimit = process.env.CONTEXT_OS_SNAPSHOT_MAX_ROWS;
   const original = Array.from({ length: 10 }, (_, i) => ({ id: `C${i}`, name: `公司${i}` }));
   let rows = original;
   const api = await records(() => rows);
-  process.env.ADE_SNAPSHOT_MAX_ROWS = "10";
+  process.env.CONTEXT_OS_SNAPSHOT_MAX_ROWS = "10";
   try {
     const source = await f.live.sources.connect({ name: "企业目录", protocol: "http", url: api.url,
       capabilities: [{ name: "companies", path: "/companies", fields: ["id", "name"], idField: "id", totalPath: "total" }] });
@@ -139,7 +139,7 @@ test("identical saved rows with changed source coverage create a new version, wh
     assert.notEqual(restored.content.activeVersion, partial.content.activeVersion);
     assert.deepEqual((await f.snapshots.preview({ datasetId: restored.id, snapshotId: partial.content.activeVersion })).rows, original);
   } finally {
-    if (priorLimit === undefined) delete process.env.ADE_SNAPSHOT_MAX_ROWS; else process.env.ADE_SNAPSHOT_MAX_ROWS = priorLimit;
+    if (priorLimit === undefined) delete process.env.CONTEXT_OS_SNAPSHOT_MAX_ROWS; else process.env.CONTEXT_OS_SNAPSHOT_MAX_ROWS = priorLimit;
     await api.close(); await f.close();
   }
 });

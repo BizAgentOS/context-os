@@ -1,5 +1,5 @@
 // Copyright 2026 HelixDB. Licensed under the Apache License, Version 2.0.
-// Modified for ADE, 2026-10-14. Adapted from Helix Foundry discovery.ts at
+// Modified for Context OS, 2026-10-14. Adapted from Helix Foundry discovery.ts at
 // 00d7927d7c08e16c58316e006959f052427e7fa1. See third_party/helix-foundry/.
 import { createHash } from "node:crypto";
 import type { Data } from "../agent/contracts.ts";
@@ -49,7 +49,7 @@ export function profileColumns(fields: string[], rows: Data[]): ColumnProfile[] 
       unique: populated.length > 0 && distinct === populated.length && values.every(scalar) };
   });
 }
-/** Helix's own-key ordering, with ADE's conservative rejection of unnamed keys. */
+/** Helix's own-key ordering, with Context OS's conservative rejection of unnamed keys. */
 export function ownKey(table: string, columns: ColumnProfile[]) {
   const unique = columns.filter(column => column.unique && /^(VARCHAR|INTEGER)$/.test(column.type));
   const nouns = words(tableName(table)).map(singular);

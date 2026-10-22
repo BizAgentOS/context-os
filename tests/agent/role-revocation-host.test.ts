@@ -7,7 +7,7 @@ import {createServer} from '../../src/agent/server.ts';
 import type {AgentDriver} from '../../src/agent/runtime.ts';
 
 for(const action of ['logout','disable'] as const)test(`HTTP ${action} prevents a late model tool and durably finalizes its run card`,{timeout:10000},async()=>{
-  const directory=mkdtempSync(join(tmpdir(),'ade-revoked-host-'));let release!:()=>void,started!:()=>void,lateRead=false,stops=0;
+  const directory=mkdtempSync(join(tmpdir(),'context-os-revoked-host-'));let release!:()=>void,started!:()=>void,lateRead=false,stops=0;
   const gate=new Promise<void>(resolve=>{release=resolve;}),entered=new Promise<void>(resolve=>{started=resolve;});
   const driver:AgentDriver={async run(request){started();await gate;
     request.onEvent('run.usage',{sampleId:'late-provider-response',usage:{inputTokens:5,outputTokens:3,totalTokens:8}});
@@ -16,7 +16,7 @@ for(const action of ['logout','disable'] as const)test(`HTTP ${action} prevents 
   },async stop(){stops++;},async close(){release();}};
   const service=await createServer({directory,driver,automaticApi:false});await new Promise<void>(resolve=>service.server.listen(0,'127.0.0.1',resolve));
   const origin=`http://127.0.0.1:${(service.server.address() as {port:number}).port}`;
-  const call=async(path:string,token:string|undefined,body?:unknown)=>{const response=await fetch(origin+path,{method:body===undefined?'GET':'POST',headers:{...(token?{'X-DataEngine-Token':token}:{}),'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});return{status:response.status,body:await response.json() as any};};
+  const call=async(path:string,token:string|undefined,body?:unknown)=>{const response=await fetch(origin+path,{method:body===undefined?'GET':'POST',headers:{...(token?{'X-ContextOS-Token':token}:{}),'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});return{status:response.status,body:await response.json() as any};};
   try{
     const account=await call('/api/users/create',service.adminToken,{operationId:'create',username:'reviewer',name:'只读审阅同事',role:'viewer',password:'synthetic-role-password'});assert.equal(account.status,200);
     const login=await call('/api/auth/login',undefined,{username:'reviewer',password:'synthetic-role-password'});assert.equal(login.status,200);const token=login.body.token;
@@ -34,15 +34,15 @@ for(const action of ['logout','disable'] as const)test(`HTTP ${action} prevents 
 });
 
 test('an authenticated event stream stops exposing later assistant text after logout',{timeout:10000},async()=>{
-  const directory=mkdtempSync(join(tmpdir(),'ade-revoked-events-')),marker='仅退出之后产生的回答';
+  const directory=mkdtempSync(join(tmpdir(),'context-os-revoked-events-')),marker='仅退出之后产生的回答';
   const driver:AgentDriver={async run(request){request.onEvent('assistant.delta',{text:marker});return{text:marker,sessionId:'events',runId:'events',usage:{inputTokens:2,outputTokens:2,totalTokens:4}};},async stop(){},async close(){}};
   const service=await createServer({directory,driver,automaticApi:false});await new Promise<void>(resolve=>service.server.listen(0,'127.0.0.1',resolve));
   const origin=`http://127.0.0.1:${(service.server.address() as {port:number}).port}`,controller=new AbortController();
-  const post=async(path:string,token:string|undefined,body:unknown)=>{const response=await fetch(origin+path,{method:'POST',headers:{...(token?{'X-DataEngine-Token':token}:{}),'Content-Type':'application/json'},body:JSON.stringify(body)});assert(response.ok,`${path}: ${response.status}`);return await response.json() as any;};
+  const post=async(path:string,token:string|undefined,body:unknown)=>{const response=await fetch(origin+path,{method:'POST',headers:{...(token?{'X-ContextOS-Token':token}:{}),'Content-Type':'application/json'},body:JSON.stringify(body)});assert(response.ok,`${path}: ${response.status}`);return await response.json() as any;};
   try{
     await post('/api/users/create',service.adminToken,{operationId:'viewer',username:'stream-reader',name:'只读',role:'viewer',password:'synthetic-role-password'});
     const login=await post('/api/auth/login',undefined,{username:'stream-reader',password:'synthetic-role-password'});
-    const response=await fetch(origin+'/api/events',{headers:{'X-DataEngine-Token':login.token},signal:controller.signal});assert.equal(response.status,200);const reader=response.body!.getReader();await reader.read();
+    const response=await fetch(origin+'/api/events',{headers:{'X-ContextOS-Token':login.token},signal:controller.signal});assert.equal(response.status,200);const reader=response.body!.getReader();await reader.read();
     await post('/api/auth/logout',login.token,{});
     const session=await post('/api/sessions',service.adminToken,{title:'退出后新回答'});
     await post('/api/canvas/message',service.adminToken,{page:'ontology',sessionId:session.session.id,messageId:'after-logout',text:'只读查看',mode:'qa'});await service.app.idle();
@@ -53,10 +53,10 @@ test('an authenticated event stream stops exposing later assistant text after lo
 });
 
 test('viewer snapshots and event replay hide administrator objects while preserving business updates',{timeout:10000},async()=>{
-  const directory=mkdtempSync(join(tmpdir(),'ade-role-projection-')),service=await createServer({directory,automaticApi:false});
+  const directory=mkdtempSync(join(tmpdir(),'context-os-role-projection-')),service=await createServer({directory,automaticApi:false});
   await new Promise<void>(resolve=>service.server.listen(0,'127.0.0.1',resolve));
   const origin=`http://127.0.0.1:${(service.server.address() as {port:number}).port}`,controller=new AbortController();
-  const call=async(path:string,token:string|undefined,body?:unknown)=>{const response=await fetch(origin+path,{method:body===undefined?'GET':'POST',headers:{...(token?{'X-DataEngine-Token':token}:{}),'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});assert(response.ok,`${path}: ${response.status}`);return await response.json() as any;};
+  const call=async(path:string,token:string|undefined,body?:unknown)=>{const response=await fetch(origin+path,{method:body===undefined?'GET':'POST',headers:{...(token?{'X-ContextOS-Token':token}:{}),'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});assert(response.ok,`${path}: ${response.status}`);return await response.json() as any;};
   const account=(username:string)=>call('/api/users/create',service.adminToken,{operationId:username,username,name:username,role:'viewer',password:'synthetic-role-password'});
   try{
     await account('view-events');const login=await call('/api/auth/login',undefined,{username:'view-events',password:'synthetic-role-password'});
@@ -69,7 +69,7 @@ test('viewer snapshots and event replay hide administrator objects while preserv
       assert.equal(snapshot.artifacts.some((item:any)=>['local_user','audit_record'].includes(item.kind)),false);
       if(path==='/api/bootstrap')assert.equal(snapshot.token,login.token);
     }
-    const response=await fetch(`${origin}/api/events?after=${encodeURIComponent(initial.eventCursor)}`,{headers:{'X-DataEngine-Token':login.token},signal:controller.signal});
+    const response=await fetch(`${origin}/api/events?after=${encodeURIComponent(initial.eventCursor)}`,{headers:{'X-ContextOS-Token':login.token},signal:controller.signal});
     const reader=response.body!.getReader();let replay='';
     while(!replay.includes('event: ready'))replay+=new TextDecoder().decode((await reader.read()).value);
     assert(replay.includes(source.id));assert(!replay.includes(hidden.id));assert.doesNotMatch(replay,/"kind":"(?:local_user|audit_record)"/);

@@ -7,7 +7,7 @@ import type { AddressInfo } from "node:net";
 import { createServer } from "../../src/agent/server.ts";
 
 test("ontology browser assets resolve locally at root and the legacy agent prefix", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "dataengine-space-assets-"));
+  const directory = await mkdtemp(join(tmpdir(), "context-os-space-assets-"));
   const service = await createServer({directory});
   try {
     await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));

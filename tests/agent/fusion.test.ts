@@ -49,7 +49,7 @@ test("one object resolves complementary values and preserves conflict, absent, a
     const r = await fetch(origin + path, {
       method: body ? "POST" : "GET",
       headers: {
-        "x-dataengine-token": service.adminToken,
+        "x-contextos-token": service.adminToken,
         "content-type": "application/json",
       },
       ...(body ? { body: JSON.stringify(body) } : {}),

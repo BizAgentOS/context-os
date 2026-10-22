@@ -15,7 +15,7 @@ import type { AddressInfo } from "node:net";
 const ref = (value: Artifact) => ({ id: value.id, version: value.version });
 
 test("enterprise profile proposals preview authenticated facts and require explicit human adoption", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-profile-change-")), app = new AgentApplication(directory, undefined, new Set(), false);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-profile-change-")), app = new AgentApplication(directory, undefined, new Set(), false);
   try {
     const workspace = new Workspace(app.memory);
     workspace.editProfile("company.name", "澄川热力");
@@ -62,7 +62,7 @@ test("enterprise profile proposals preview authenticated facts and require expli
 });
 
 test("a concurrent profile edit invalidates verification and impact preview without changing the proposal", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-profile-race-")), app = new AgentApplication(directory, undefined, new Set(), false);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-profile-race-")), app = new AgentApplication(directory, undefined, new Set(), false);
   try {
     const workspace = new Workspace(app.memory), original = workspace.editProfile("company.business", "居民供热");
     const proposed = await app.changes.propose({ operationId: "suggest", origin: "human", type: "enterprise_profile", baseline: app.changes.currentBaseline(),
@@ -81,7 +81,7 @@ test("a concurrent profile edit invalidates verification and impact preview with
 });
 
 test("unbacked claims remain suggestions, conflicting facts retain both accounts, and changed documents cannot be adopted", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-profile-evidence-")), app = new AgentApplication(directory, undefined, new Set(), false);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-profile-evidence-")), app = new AgentApplication(directory, undefined, new Set(), false);
   try {
     const workspace = new Workspace(app.memory), original = workspace.editProfile("company.business", "居民供热");
     const source = workspace.upload("业务范围.md", "企业提供设备维护服务。");
@@ -120,7 +120,7 @@ test("unbacked claims remain suggestions, conflicting facts retain both accounts
 });
 
 test("company name correction requires the same subject and a fresh user statement while preserving historical meaning", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-profile-identity-")), app = new AgentApplication(directory, undefined, new Set(), false);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-profile-identity-")), app = new AgentApplication(directory, undefined, new Set(), false);
   try {
     const workspace = new Workspace(app.memory), profile = workspace.editProfile("company.name", "澄川热力");
     const foundation = seedFoundation(app.memory, app.foundation, { enterprise: "澄川热力", concepts: [{ id: "customer", name: "客户", description: "供热客户" }] });
@@ -155,11 +155,11 @@ test("company name correction requires the same subject and a fresh user stateme
 });
 
 test("public profile changes enforce administrator review and return 409 when the profile baseline expires", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-profile-http-")), service = await createServer({ directory, automaticApi: false });
+  const directory = mkdtempSync(join(tmpdir(), "context-os-profile-http-")), service = await createServer({ directory, automaticApi: false });
   await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
   const post = async (path: string, body: unknown, authorized = true) => {
-    const response = await fetch(base + path, { method: "POST", headers: { "Content-Type": "application/json", ...(authorized ? { "X-DataEngine-Token": service.adminToken } : {}) }, body: JSON.stringify(body) });
+    const response = await fetch(base + path, { method: "POST", headers: { "Content-Type": "application/json", ...(authorized ? { "X-ContextOS-Token": service.adminToken } : {}) }, body: JSON.stringify(body) });
     return { status: response.status, body: await response.json() as any };
   };
   try {
@@ -172,7 +172,7 @@ test("public profile changes enforce administrator review and return 409 when th
     const checked = await post("/api/changes/verify", { ...ref(proposed.body.change), operationId: "check" });
     assert.equal(checked.status, 200);
     assert.equal(checked.body.change.content.verification.result, "review");
-    const impact=await fetch(base+'/api/changes/impact?'+new URLSearchParams({id:checked.body.change.id,version:String(checked.body.change.version)}),{headers:{'X-DataEngine-Token':service.adminToken}});
+    const impact=await fetch(base+'/api/changes/impact?'+new URLSearchParams({id:checked.body.change.id,version:String(checked.body.change.version)}),{headers:{'X-ContextOS-Token':service.adminToken}});
     assert.equal(impact.status,200);assert.equal(((await impact.json()) as any).impact.updates[0].proposed.text,'考虑维护服务');
     assert.equal((await post("/api/changes/adopt", { ...ref(checked.body.change), operationId: "not-confirmed" })).status, 409);
     workspace.editProfile("company.business", "工业供热");
@@ -184,7 +184,7 @@ test("public profile changes enforce administrator review and return 409 when th
 });
 
 test("QA cannot propose profile facts and stopping a build prevents late verification", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-profile-mode-")), app = new AgentApplication(directory, undefined, new Set(), false);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-profile-mode-")), app = new AgentApplication(directory, undefined, new Set(), false);
   try {
     const session = app.memory.createSession(), context = app.memory.beginExecution(session.taskId);
     const qa = freezeAgentTurn(app.memory, context, { mode: "qa" }), build = freezeAgentTurn(app.memory, context, { mode: "build" });

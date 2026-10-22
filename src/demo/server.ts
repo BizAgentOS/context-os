@@ -1,3 +1,4 @@
+import { environment } from "../config/brand.ts";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { createServer } from "../agent/server.ts";
@@ -24,8 +25,8 @@ export async function createHeatingDemo(directory = fileURLToPath(new URL("../..
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const port = Number(process.env.DATAENGINE_DEMO_PORT ?? 8794);
-  const service = await createHeatingDemo(process.env.DATAENGINE_DEMO_DIR);
+  const port = Number(environment("DEMO_PORT") ?? 8794);
+  const service = await createHeatingDemo(environment("DEMO_DIR"));
   service.server.listen(port, "127.0.0.1", () => {
     console.log(`澄川热力演示：http://127.0.0.1:${port}/#access=${service.adminToken}`);
     console.log("虚构企业与数据，演示问答在本地执行，无需 API Key。写操作仅模拟，不保存变更或签发接入密钥。");

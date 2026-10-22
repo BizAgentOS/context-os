@@ -9,7 +9,7 @@ import { requestDecision } from "../../src/agent/decision-requests.ts";
 import { jsonData } from "../../src/live/sources.ts";
 
 test("a stopped run keeps saved changes and completed steps across restart without inventing usage", () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-run-cards-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-run-cards-"));
   let memory = new MemoryStore(directory);
   try {
     const task = memory.createTask("核对任务负责人"), context = memory.beginExecution(task.id);
@@ -42,7 +42,7 @@ test("a stopped run keeps saved changes and completed steps across restart witho
 });
 
 test("a timeout keeps a committed receipt that returns late and records actual provider usage", () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-run-late-receipt-")), memory = new MemoryStore(directory);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-run-late-receipt-")), memory = new MemoryStore(directory);
   try {
     const task = memory.createTask("准备关系提议"), context = memory.beginExecution(task.id);
     const run = new RunPresentation(memory, context, { goal: task.goal });
@@ -60,7 +60,7 @@ test("a timeout keeps a committed receipt that returns late and records actual p
 });
 
 test("a decision card binds an existing change version and never adopts it through a question", () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-run-decision-")), memory = new MemoryStore(directory);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-run-decision-")), memory = new MemoryStore(directory);
   try {
     const task = memory.createTask("决定任务负责人关系"), context = memory.beginExecution(task.id);
     const run = new RunPresentation(memory, context, { goal: task.goal });
@@ -77,7 +77,7 @@ test("a decision card binds an existing change version and never adopts it throu
 });
 
 test("restart projects unfinished execution as stopped and preserves its saved receipt", () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-run-restart-")); let memory = new MemoryStore(directory);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-run-restart-")); let memory = new MemoryStore(directory);
   try {
     const task = memory.createTask("复验关系"), context = memory.beginExecution(task.id);
     const run = new RunPresentation(memory, context, { goal: task.goal });
@@ -92,7 +92,7 @@ test("restart projects unfinished execution as stopped and preserves its saved r
 });
 
 test("saved decision cards follow a handled change and do not offer a second decision", () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-run-decided-")), memory = new MemoryStore(directory);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-run-decided-")), memory = new MemoryStore(directory);
   try {
     const task = memory.createTask("决定关系"), context = memory.beginExecution(task.id);
     const run = new RunPresentation(memory, context, { goal: task.goal });
@@ -107,7 +107,7 @@ test("saved decision cards follow a handled change and do not offer a second dec
 });
 
 test("concurrent calls to the same tool retain exactly their own step receipts", () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-run-concurrent-")), memory = new MemoryStore(directory);
+  const directory = mkdtempSync(join(tmpdir(), "context-os-run-concurrent-")), memory = new MemoryStore(directory);
   try {
     const task = memory.createTask("同时查看两类对象"), context = memory.beginExecution(task.id), run = new RunPresentation(memory, context, { goal: task.goal });
     run.event("operation.started", { id: "q1", name: "live_query" }); run.event("operation.started", { id: "q2", name: "live_query" });

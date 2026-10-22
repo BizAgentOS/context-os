@@ -26,11 +26,11 @@ npm start
 
 ## 最小客户端
 
-以下以授权中确实存在的中文类型“投诉”为例。把启用时保存的调用方密钥放到客户端环境变量 `DATAENGINE_CONSUMER_KEY`；不要使用管理或模型凭据代替。
+以下以授权中确实存在的中文类型“投诉”为例。把启用时保存的调用方密钥放到客户端环境变量 `CONTEXT_OS_CONSUMER_KEY`；不要使用管理或模型凭据代替。
 
 ```sh
 curl --get 'http://127.0.0.1:8788/v1/objects' \
-  --header "Authorization: Bearer $DATAENGINE_CONSUMER_KEY" \
+  --header "Authorization: Bearer $CONTEXT_OS_CONSUMER_KEY" \
   --data-urlencode 'type=投诉' \
   --data-urlencode 'fields=$id,状态'
 ```

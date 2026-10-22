@@ -1,4 +1,4 @@
-# KodaX 能力与 DataEngine 接入台账
+# KodaX 能力与 Context OS 接入台账
 
 更新：2026-10-19。用途：说明本产品实际使用哪些 KodaX 契约、由谁补齐产品职责，以及哪些能力尚未验证。
 本地核对基线为 `0b264fa6eb34668b9741af2208098d07334f61c0`；[package.json](../package.json)固定 `@kodax-ai/kodax@0.7.96-beta.2`。
@@ -15,7 +15,7 @@
 - **已接入**：产品代码存在实际调用或 adapter；具体运行验证仍看有日期的验收记录。
 - **限制使用**：底座入口已用，但本产品明确缩小模式、范围或支持的内容。
 - **未接入 / 未验证**：不能向用户承诺可用；未验证也不等于 SDK 没有该能力。
-- SDK 有能力不等于本产品已接入；KodaX Space 的宿主或产品能力也不等于 DataEngine 支持。
+- SDK 有能力不等于本产品已接入；KodaX Space 的宿主或产品能力也不等于 Context OS 支持。
 
 行为与生命周期以[Agent 契约](AGENT_DESIGN.md)为准；此处集中维护 SDK 接法，避免在产品页规格中复制 API 细节。
 
@@ -24,12 +24,12 @@
 | SDK 契约 | 本产品接入 | 代码证据 | 限制与缺口 |
 |---|---|---|---|
 | `createKodaXRuntime` | 已接入 `embedded/inline`，独立 homeDir、sessionsDir、profile | [runtime.ts](../src/agent/runtime.ts) `initialize` | 本地 Node 宿主；未建立独立进程沙箱 |
-| `sessions.create/load/delete` | 每轮使用 SDK 临时会话；ADE 独立持久化长期会话与完整消息 | [runtime.ts](../src/agent/runtime.ts) `run`；[app.ts](../src/agent/app.ts) `run`；[memory.ts](../src/agent/memory.ts) | FEATURE_047 已接入新建、改名、归档与消息分页；SDK 会话不作为产品历史库 |
+| `sessions.create/load/delete` | 每轮使用 SDK 临时会话；Context OS 独立持久化长期会话与完整消息 | [runtime.ts](../src/agent/runtime.ts) `run`；[app.ts](../src/agent/app.ts) `run`；[memory.ts](../src/agent/memory.ts) | FEATURE_047 已接入新建、改名、归档与消息分页；SDK 会话不作为产品历史库 |
 | `runs.start` 与运行 handle | 已接入 `sa`、模型参数、result、usage 与失败结果 | [runtime.ts](../src/agent/runtime.ts) `run` | 只用单循环；多 Agent 模式未接入 |
 | `runs.abort`、`runtime.close` | 停止和关闭 SDK 运行 | [runtime.ts](../src/agent/runtime.ts) `stop/close` | 迟到写入拒绝、已保存成果保留由宿主实现 |
 | `events.subscribe` | 读取 assistant.delta、run.progress、工具和权限事件，结束关闭订阅 | [runtime.ts](../src/agent/runtime.ts) `subscription` | 只转换本产品需要的事件；未审查全部 SDK 事件语义 |
 | `permissions.respond` | 对本轮 allowed 工具 allow_once，否则 reject | [runtime.ts](../src/agent/runtime.ts) 权限事件处理 | 不是企业授权系统；上游能力授权和领域校验另行执行 |
-| `context.agentProfile/systemPromptOverride` | 注入 DataEngine 身份和当前系统说明 | [runtime.ts](../src/agent/runtime.ts) `runs.start` | 身份/说明由宿主提供，不自动生成业务规则 |
+| `context.agentProfile/systemPromptOverride` | 注入 Context OS 身份和当前系统说明 | [runtime.ts](../src/agent/runtime.ts) `runs.start` | 身份/说明由宿主提供，不自动生成业务规则 |
 | `toolVisibilityPolicy/assertReadablePath` | 限定本轮工具，直接文件读取要求改走来源对象 | [runtime.ts](../src/agent/runtime.ts) `context` | 可见性不是授权；不是通用安全隔离证明 |
 | `extensionRuntime.listRunTools/executeCapability` | 注册领域工具的描述、输入 schema、副作用和实际执行 | [runtime.ts](../src/agent/runtime.ts) `extension` | 本轮 adapter，经 `mcp` 分发通道；不要求领域工具使用网络 MCP |
 | capability search/describe/read/prompt adapter | 接到宿主管理的 MCP 目录和调用 | [runtime.ts](../src/agent/runtime.ts) `extension` | 目录、授权、刷新与在途结果检查由产品 MCP 服务处理 |
@@ -43,16 +43,16 @@
 | `createMcpManager`、能力 ID 解析、`startServer` | 管理外部 MCP 目录、调用及连接生命周期；接入/刷新要求实时发现成功 | [mcp.ts](../src/capabilities/mcp.ts) | URL 自动命名、HTTP/SSE 检测及按能力授权；未接入 stdio 配置或通用 OAuth，见 [验收](experiment/MCP_ONBOARDING.md) |
 | 原生 `web_search/web_fetch` 工具 | 加入画布本轮原生工具 allowlist | [service.ts](../src/capabilities/service.ts)、[app.ts](../src/agent/app.ts) | 搜索用于发现；基础网页证据经宿主 foundation_web_read 重新读取，不解析 SDK 展示字符串作为结构化事实 |
 | 原生 MCP search/describe/call/resource/prompt 工具 | 接宿主的发现与获准能力 | [service.ts](../src/capabilities/service.ts)、[runtime.ts](../src/agent/runtime.ts) | 通用工具调用不等于登记企业来源或允许对外消费 |
-| `capability_search/skill_use/skill_read/sdk_call` | DataEngine 定义的领域工具，借 SDK 分发 | [service.ts](../src/capabilities/service.ts) | 名称不是 KodaX 通用 API；其行为由产品实现 |
+| `capability_search/skill_use/skill_read/sdk_call` | Context OS 定义的领域工具，借 SDK 分发 | [service.ts](../src/capabilities/service.ts) | 名称不是 KodaX 通用 API；其行为由产品实现 |
 
 Skill 的包目录、已安装方法与变更流程只在[内置 Skill](BUILTIN_SKILLS.md)维护。
 本产品能力工具的 `mutates: false` 不证明任意外部 MCP 调用只读；具体能力仍受独立授权和执行检查约束。
 
 ### 2026-10-19 会话与执行池（FEATURE_047，未发布）
 
-宿主以 `KodaXDriver.fork(scope)` 为每个交互会话及共享后台池创建独立 embedded runtime 和停止句柄，沿现有 KodaX 工具循环执行；企业领域服务与版本校验共用。会话和历史由 ADE 持久化，SDK 会话每轮临时使用。宿主使用已安装 SDK 的 `countTokens` 估算初始系统文本与输入的 8000 token 上限；工具定义和后续工具结果不在此初始预算内。真实标题与上下文比较见[047 验收](experiment/V030_047_2026_10_19.md)，没有升级 SDK。
+宿主以 `KodaXDriver.fork(scope)` 为每个交互会话及共享后台池创建独立 embedded runtime 和停止句柄，沿现有 KodaX 工具循环执行；企业领域服务与版本校验共用。会话和历史由 Context OS 持久化，SDK 会话每轮临时使用。宿主使用已安装 SDK 的 `countTokens` 估算初始系统文本与输入的 8000 token 上限；工具定义和后续工具结果不在此初始预算内。真实标题与上下文比较见[047 验收](experiment/V030_047_2026_10_19.md)，没有升级 SDK。
 
-## 4. 属于 DataEngine 的职责
+## 4. 属于 Context OS 的职责
 
 | 产品能力 | 当前归属与证据 | 不应归给 SDK 的含义 |
 |---|---|---|
@@ -61,7 +61,7 @@ Skill 的包目录、已安装方法与变更流程只在[内置 Skill](BUILTIN_
 | 本体与对象执行 | [workspace.ts](../src/agent/workspace.ts)、[domain-objects.ts](../src/agent/domain-objects.ts) | NOOA 式受限组合是产品实现；未集成完整 NOOA runtime |
 | 来源、映射与在线读取 | [sources.ts](../src/live/sources.ts)、[memory.ts](../src/live/memory.ts) | MCP 工具目录不能自动产生语义映射、身份和证据 |
 | 注册式业务 SDK | [sdk.ts](../src/capabilities/sdk.ts)，当前为 Octokit 公开仓库方法 | 不是 KodaX 的业务本体 SDK 生成器，也不支持任意包执行 |
-| 对外 HTTP/MCP 消费 | [consumption.ts](../src/agent/consumption.ts)、[MCP bridge](../scripts/dataengine-mcp.ts) | 独立消费许可与数据执行，不经内部模型循环 |
+| 对外 HTTP/MCP 消费 | [consumption.ts](../src/agent/consumption.ts)、[MCP bridge](../scripts/context-os-mcp.ts) | 独立消费许可与数据执行，不经内部模型循环 |
 | Web 宿主与用户交互 | [server.ts](../src/agent/server.ts)、[app.js](../web/agent/app.js) | 没有采用 Space 的 Electron、daemon、Partner 组件 |
 
 在线 v2 目前为按需非原子跨源读取，未提供完整断言解释/证据回执；这些是领域交付缺口，不是换一个 SDK 模式即可解决。
@@ -102,7 +102,7 @@ Skill 的包目录、已安装方法与变更流程只在[内置 Skill](BUILTIN_
 
 ## 公开研究接入（T013-03）
 
-仍使用固定版本的同一 KodaX 循环和原生 `web_search`。新宿主工具 `foundation_web_read` 从实际 HTTP 响应保存结构化证据，复用 SDK 公共导出的 `stripHtmlToText/extractHtmlTitle`；没有解析原生工具面向模型的展示文本，也没有增加模型循环。网络、读取回执、企业身份、快照与采用检查由 DataEngine 实施。字段与界限见[方法契约第 12 节](COMPANY_FOUNDATION_SKILL.md#12-t013-03-公开网页证据)，真实调用见[验收](experiment/FOUNDATION_WEB.md)。
+仍使用固定版本的同一 KodaX 循环和原生 `web_search`。新宿主工具 `foundation_web_read` 从实际 HTTP 响应保存结构化证据，复用 SDK 公共导出的 `stripHtmlToText/extractHtmlTitle`；没有解析原生工具面向模型的展示文本，也没有增加模型循环。网络、读取回执、企业身份、快照与采用检查由 Context OS 实施。字段与界限见[方法契约第 12 节](COMPANY_FOUNDATION_SKILL.md#12-t013-03-公开网页证据)，真实调用见[验收](experiment/FOUNDATION_WEB.md)。
 
 ## 知识来源接入（T014-01）
 

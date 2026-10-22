@@ -1,4 +1,4 @@
-# Helix Foundry attribution and ADE modifications
+# Helix Foundry attribution and Context OS modifications
 
 Upstream: https://github.com/HelixDB/helix-foundry
 Pinned commit: `00d7927d7c08e16c58316e006959f052427e7fa1` (Apache-2.0).
@@ -8,39 +8,39 @@ Copyright and license are retained in this directory; each adapted file names it
 
 Original files: `services/executor/src/engine.ts`, `jobs.ts`, `limits.ts`, `paths.ts`, `runner.ts`;
 `packages/shared/src/index.ts` (`compactValue`, `compactSample`, profile types).
-ADE files: `src/data/executor/*.ts`.
+Context OS files: `src/data/executor/*.ts`.
 
-ADE changes:
+Context OS changes:
 - No Fastify server or internal key: the host calls `Executor.run()` in-process, which still runs every
   job in a disposable child process. The queue is per `Executor` instance, not module-global.
-- The child runs ADE's TypeScript directly with Node type stripping; `tsx` is not used. The data root is
+- The child runs Context OS's TypeScript directly with Node type stripping; `tsx` is not used. The data root is
   passed with the job instead of `DATA_DIR`.
 - The `export` mode, query order profiling and the legacy untagged fingerprint are removed. Empty
   ingest files create an empty table without a declared schema.
 - Sensitive-column detection also matches common Chinese field names.
 - Error messages returned to users are Chinese.
 
-`src/data/snapshots.ts` is new ADE code that re-implements the decision logic of upstream
+`src/data/snapshots.ts` is new Context OS code that re-implements the decision logic of upstream
 `apps/api/src/datasets.ts` `ingestFile` (unchanged fingerprint short-circuit, schema drift kept pending,
-uniqueness-lost and null-rate issues) on ADE's `MemoryStore`. CSV cells are ingested as text so
-identities keep their form; HTTP/MCP records are read through ADE source contracts.
+uniqueness-lost and null-rate issues) on Context OS's `MemoryStore`. CSV cells are ingested as text so
+identities keep their form; HTTP/MCP records are read through Context OS source contracts.
 
 ## Snapshot validation (2026-10-15, FEATURE_033)
 
 Reference: `apps/api/src/assistant.ts` `validateBundle` (check order, persisted pipeline outputs, checks whose
-first row must be all true, key uniqueness, relationship match counts). ADE file: `src/engine/validation.ts`
-re-implements these checks against ADE mapping definitions (types, supplements, relations) over snapshots
+first row must be all true, key uniqueness, relationship match counts). Context OS file: `src/engine/validation.ts`
+re-implements these checks against Context OS mapping definitions (types, supplements, relations) over snapshots
 instead of a Helix bundle, adds supplement fan-out and low-match warnings, and fails a relationship with no
 matches. Dashboard and action checks are not ported.
 
 ## Full ontology discovery (2026-10-15, FEATURE_032)
 
 Original file: `apps/api/src/discovery.ts` (`suggestOntology`, `confirmOntology`, `ontologyBundle`,
-`entityColumns`, `entityColumn` and their helpers). ADE file: `src/engine/helix-discovery.ts`; the algorithm
+`entityColumns`, `entityColumn` and their helpers). Context OS file: `src/engine/helix-discovery.ts`; the algorithm
 and upstream formatting are kept so the file can be compared with upstream.
 
-ADE changes:
-- An injected `query(datasetIds, sql, options)` over ADE snapshots replaces the Helix store and
+Context OS changes:
+- An injected `query(datasetIds, sql, options)` over Context OS snapshots replaces the Helix store and
   `queryDatasets`; types are declared locally instead of importing `packages/shared`.
 - Names split on Unicode letters and digits; Chinese key suffixes (编号, 编码, 代码, 标识, 号 …) count as key
   and id names, and 邮箱 as e-mail. `tableName` accepts non-Latin table names.
@@ -48,14 +48,14 @@ ADE changes:
   dataset stays unplaced and is reported.
 - Descriptions, notes, summaries, link names, pipeline and check names, and confirmation errors are Chinese.
 - Pipelines are keyed by the entity's id (`pipelineId(entity.id)`) and carry `entityId`/`datasetId`;
-  object types and relationships carry `entityId`/`linkId` so ADE can map them back.
+  object types and relationships carry `entityId`/`linkId` so Context OS can map them back.
 - The 20 entity / 10 pipeline / 30 relationship caps are unchanged, but `ontologyBundle` returns the cut
-  entities and links in `capacity` so ADE reports them. `overviewDashboard` and `ontologyGoal` are not ported.
+  entities and links in `capacity` so Context OS reports them. `overviewDashboard` and `ontologyGoal` are not ported.
 
-`src/engine/snapshot-discovery.ts` builds the discovery input from ADE snapshot datasets (one system per
-connection or upload). `ProgramBuilds` maps entities to ADE concepts and mapping types under the existing
-source-based concept identity; direct merges become ADE supplements and anchor links become foundation
-and mapping relations when ADE's live mapping can express them, otherwise they are reported and kept in
+`src/engine/snapshot-discovery.ts` builds the discovery input from Context OS snapshot datasets (one system per
+connection or upload). `ProgramBuilds` maps entities to Context OS concepts and mapping types under the existing
+source-based concept identity; direct merges become Context OS supplements and anchor links become foundation
+and mapping relations when Context OS's live mapping can express them, otherwise they are reported and kept in
 the candidate.
 
 ## Discovery heuristics (2026-10-14, FEATURE_026)
@@ -65,7 +65,7 @@ Original file: `apps/api/src/discovery.ts`.
 `src/engine/discovery.ts` adapts the upstream deterministic naming, key selection,
 key-stem guard, and value-overlap thresholds.
 
-ADE changes (2026-10-14):
+Context OS changes (2026-10-14):
 - Work on authorized bounded API samples and complete uploaded CSV rows, without
   Helix Store, DuckDB SQL, or a model call. Coverage is explicit.
 - Unicode names are preserved. Dataset/concept identity is based on immutable
@@ -76,8 +76,8 @@ ADE changes (2026-10-14):
 - Value overlaps produce review issues with supporting counts. They do not merge
   business entities or assert relations automatically. Integer ID coincidences
   must pass the original key-stem guard.
-- Existing ADE concept IDs, descriptions, mapping fields, supplementary sources,
-  and relationships are preserved. ADE shared services validate and atomically
+- Existing Context OS concept IDs, descriptions, mapping fields, supplementary sources,
+  and relationships are preserved. Context OS shared services validate and atomically
   adopt the working definition; the build never publishes consumer access.
 - All capacity limits are reported, never silently slice entities/relationships.
 
@@ -85,7 +85,7 @@ The Helix provider loop, UI, connectors and HelixDB storage backend are not incl
 
 ## Snapshot correctness follow-up (2026-10-15, unreleased)
 
-ADE's JSON ingest streams native JSON with encoded top-level keys to a temporary JSONL file,
+Context OS's JSON ingest streams native JSON with encoded top-level keys to a temporary JSONL file,
 preventing case-sensitive source keys from colliding in DuckDB's explicit schema. It inspects
 the inferred schema and reads date/time/timestamp/UUID scalar and array columns explicitly as
 VARCHAR, then restores the original names and DuckDB's normal output-name deduplication. Source
@@ -93,7 +93,7 @@ strings retain their spelling without changing numeric or boolean inference. Nes
 still follow DuckDB inference. Snapshot reuse requires
 both content and source coverage to match; release retention reads the immutable definition's
 snapshot manifest. Snapshot checks and consumer reads carry incomplete coverage instead of
-claiming full-source completeness. New merge properties are named relative to the retained ADE
+claiming full-source completeness. New merge properties are named relative to the retained Context OS
 primary mapping and avoid existing property names. Unsupported candidates are reported as
 not included in object queries or release consumption.
 
@@ -108,14 +108,14 @@ and measured counts, not raw values. Email equality alone no longer creates a cr
 Existing non-email key discovery remains in place.
 
 `withoutImplied` preserves the exact direct link and two-hop path it actually removed, with the
-row-comparison counts. ADE reports these as review items rather than inferring a missing business
+row-comparison counts. Context OS reports these as review items rather than inferring a missing business
 relationship from a diagram. English table-derived names produce actionable naming reviews; confirmation
-can rename a concept without changing its source-based ADE identity. No AI naming step was imported.
+can rename a concept without changing its source-based Context OS identity. No AI naming step was imported.
 `ProgramBuilds` persists these reviews and `helix-projection.ts` attaches them to all involved concepts.
 
-During rule reconstruction, ADE creates a new candidate that replaces legacy interpretation-built
+During rule reconstruction, Context OS creates a new candidate that replaces legacy interpretation-built
 concepts, relations and their mappings. Existing program concepts keep later human/Agent wording edits.
 The candidate reports retired definitions and old version references; adoption does not rewrite historical
-artifacts or published consumer definitions. This migration is ADE integration behavior, not an upstream
+artifacts or published consumer definitions. This migration is Context OS integration behavior, not an upstream
 Helix store change. Regression tests exercise real snapshot queries, candidate/check/adopt boundaries,
 and historical release consumers without invoking a model.

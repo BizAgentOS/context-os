@@ -10,7 +10,7 @@ import {Workspace} from '../../src/agent/workspace.ts';
 import {identityWorkspace,ref} from './identity-fixture.ts';
 
 test('ontology workspace projects adopted entities, parallel relations, current pending and bounded evidence without raw artifacts',async()=>{
- const directory=mkdtempSync(join(tmpdir(),'ade-ontology-workspace-'));const app=new AgentApplication(directory,undefined,new Set(),false);
+ const directory=mkdtempSync(join(tmpdir(),'context-os-ontology-workspace-'));const app=new AgentApplication(directory,undefined,new Set(),false);
  try{
   seedFoundation(app.memory,app.foundation,{enterprise:'验收企业',concepts:[{id:'person',name:'人员',description:'实际工作人员'},{id:'task',name:'任务',description:'交付工作'}],relations:[{id:'owner',name:'负责人',from:'task',to:'person',description:'责任人员'},{id:'reviewer',name:'复核人',from:'task',to:'person',description:'复核人员'}]});
   const proposed=await app.changes.propose({operationId:'naming',origin:'human',type:'naming',baseline:app.changes.currentBaseline(),subject:{target:'concept',id:'person',name:'员工'}});
@@ -28,7 +28,7 @@ test('ontology workspace projects adopted entities, parallel relations, current 
 });
 
 test('an adopted unbound property remains visible in entity details and its identity key is explicit',async()=>{
- const directory=mkdtempSync(join(tmpdir(),'ade-unbound-workspace-'));const app=new AgentApplication(directory,undefined,new Set(),false);
+ const directory=mkdtempSync(join(tmpdir(),'context-os-unbound-workspace-'));const app=new AgentApplication(directory,undefined,new Set(),false);
  try{
   const adopt=async(type:string,subject:unknown,operationId:string)=>{
    const {change}=await app.changes.propose({type,subject,origin:'human',operationId,baseline:app.changes.currentBaseline()});
@@ -44,7 +44,7 @@ test('an adopted unbound property remains visible in entity details and its iden
 });
 
 test('a proposed new entity is visible as pending without becoming an adopted definition',async()=>{
- const directory=mkdtempSync(join(tmpdir(),'ade-pending-workspace-')),app=new AgentApplication(directory,undefined,new Set(),false);
+ const directory=mkdtempSync(join(tmpdir(),'context-os-pending-workspace-')),app=new AgentApplication(directory,undefined,new Set(),false);
  try{
   const proposed=await app.changes.propose({operationId:'new-pending-entity',origin:'human',type:'entity',baseline:app.changes.currentBaseline(),subject:{action:'add',entity:{id:'contract',name:'合同',description:'尚待确认的合同定义'}},evidence:'用户提出企业合同需要独立建模'});
   const workspace=new OntologyWorkspace(app.memory,app.foundation,app.live,app.pendingCenter,app.workspaceVersions),result=workspace.overview(),pending=result.entities.find(item=>item.id==='contract')!;

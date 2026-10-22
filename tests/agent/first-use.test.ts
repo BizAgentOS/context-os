@@ -8,7 +8,7 @@ import {Onboarding} from '../../src/agent/onboarding.ts';
 import {Workspace} from '../../src/agent/workspace.ts';
 
 test('first use resumes after sources and reaches adopted ontology without enterprise profile or naming approval',{timeout:20000},async()=>{
-  const directory=mkdtempSync(join(tmpdir(),'ade-first-use-'));
+  const directory=mkdtempSync(join(tmpdir(),'context-os-first-use-'));
   let service=await createServer({directory,automaticApi:false});
   const guide=()=>new Onboarding(service.app.memory,service.app.foundation,undefined,service.app.live);
   try{
@@ -35,7 +35,7 @@ test('first use resumes after sources and reaches adopted ontology without enter
 });
 
 test('three example questions use adopted bindings and execute against actual records without fabricating answers',{timeout:20000},async()=>{
-  const directory=mkdtempSync(join(tmpdir(),'ade-first-questions-')),service=await createServer({directory,automaticApi:false}),app=service.app;
+  const directory=mkdtempSync(join(tmpdir(),'context-os-first-questions-')),service=await createServer({directory,automaticApi:false}),app=service.app;
   const onboarding=new Onboarding(app.memory,app.foundation,undefined,app.live);
   try{
     assert.equal(onboarding.examples().questions.length,0);

@@ -6,8 +6,8 @@ import {join} from 'node:path';
 import {createServer} from '../../src/agent/server.ts';
 
 test('local accounts establish their own management sessions and every domain write obeys role permissions',async()=>{
- const root=mkdtempSync(join(tmpdir(),'ade-role-host-')),service=await createServer({directory:root,automaticApi:false,driver:{async run(){return{text:'已核对',runId:'role-fixture-run',sessionId:'role-fixture-session'};},async stop(){},async close(){}}});await new Promise<void>(resolve=>service.server.listen(0,'127.0.0.1',resolve));const origin=`http://127.0.0.1:${(service.server.address() as {port:number}).port}`;
- const request=async(path:string,token?:string,body?:unknown)=>{const response=await fetch(origin+path,{method:body===undefined?'GET':'POST',headers:{...(token?{'X-DataEngine-Token':token}:{}),...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});return{status:response.status,body:await response.json() as any};};
+ const root=mkdtempSync(join(tmpdir(),'context-os-role-host-')),service=await createServer({directory:root,automaticApi:false,driver:{async run(){return{text:'已核对',runId:'role-fixture-run',sessionId:'role-fixture-session'};},async stop(){},async close(){}}});await new Promise<void>(resolve=>service.server.listen(0,'127.0.0.1',resolve));const origin=`http://127.0.0.1:${(service.server.address() as {port:number}).port}`;
+ const request=async(path:string,token?:string,body?:unknown)=>{const response=await fetch(origin+path,{method:body===undefined?'GET':'POST',headers:{...(token?{'X-ContextOS-Token':token}:{}),...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});return{status:response.status,body:await response.json() as any};};
  try{
   const create=async(username:string,role:string)=>{const result=await request('/api/users/create',service.adminToken,{operationId:'create-'+username,username,name:username,password:'synthetic-local-password',role});assert.equal(result.status,200);return result.body.user;};
   const viewer=await create('viewer','viewer'),maintainer=await create('maintainer','maintainer');

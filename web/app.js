@@ -312,7 +312,7 @@ async function render() {
   const current = ++generation;
   page = location.hash.slice(1) in titles ? location.hash.slice(1) : "home";
   $("#breadcrumb").textContent = titles[page];
-  document.title = `${titles[page]} · DataEngine Lab`;
+  document.title = `${titles[page]} · Context OS`;
   document.querySelectorAll("nav a").forEach((a) => {
     a.classList.toggle("active", a.dataset.page === page);
     if (a.dataset.page === page) a.setAttribute("aria-current", "page");

@@ -67,7 +67,7 @@ test("historical context grants and one business investigation keeps document ex
     const res = await fetch(origin + path, {
       method: "POST",
       headers: {
-        "x-dataengine-token": service.adminToken,
+        "x-contextos-token": service.adminToken,
         "content-type": "application/json",
       },
       body: JSON.stringify(body),
@@ -227,7 +227,7 @@ test("historical context grants and one business investigation keeps document ex
       version: "1.0",
     });
     try {
-      await assert.rejects(client.connect(new StdioClientTransport({command:process.execPath,args:[fileURLToPath(new URL("../../scripts/dataengine-mcp.ts",import.meta.url))],env:{PATH:process.env.PATH!,DATAENGINE_URL:origin,DATAENGINE_CONSUMER_KEY:active.key},stderr:"pipe"})),/closed|密钥|connection/i);
+      await assert.rejects(client.connect(new StdioClientTransport({command:process.execPath,args:[fileURLToPath(new URL("../../scripts/context-os-mcp.ts",import.meta.url))],env:{PATH:process.env.PATH!,CONTEXT_OS_URL:origin,CONTEXT_OS_CONSUMER_KEY:active.key},stderr:"pipe"})),/closed|密钥|connection/i);
     } finally {
       await client.close();
     }

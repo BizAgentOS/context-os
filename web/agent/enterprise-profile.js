@@ -149,7 +149,7 @@ export function renderEnterpriseProfile(state, actions) {
     const isFeishu = serviceName.startsWith("飞书");
     const service = button(`ed-service${isFeishu ? " ed-service-featured" : ""}`, "", () => {
       if (isFeishu) openService({ service: "feishu" });
-      else popup(serviceName, dialog => dialog.append(el("p", "", "该服务尚未接入 DataEngine，当前仅列入服务目录。")));
+      else popup(serviceName, dialog => dialog.append(el("p", "", "该服务尚未接入 Context OS，当前仅列入服务目录。")));
     });
     const mark = el("span", "ed-service-icon"); mark.append(icon(isFeishu ? "book-open" : "cloud"));
     const copy = el("span", "ed-service-copy");

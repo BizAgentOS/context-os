@@ -11,7 +11,7 @@ import { seedFoundation } from "./program-foundation-fixture.ts";
 const ref = (a: { id: string; version: number }) => ({ id: a.id, version: a.version });
 
 async function workspace() {
-  const directory = mkdtempSync(join(tmpdir(), "ade-correction-migration-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-correction-migration-"));
   const upstream = await createHeatingSources();
   const service = await createServer({ directory, automaticApi: false });
   const app = service.app;

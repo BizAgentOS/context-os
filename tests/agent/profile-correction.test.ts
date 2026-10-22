@@ -8,7 +8,7 @@ import { Workspace } from "../../src/agent/workspace.ts";
 import type { Artifact, Data } from "../../src/agent/contracts.ts";
 
 test("a user's new quoted correction replaces their earlier statement and preserves both versions", () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-profile-correction-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-profile-correction-"));
   let repo = new MemoryStore(directory);
   try {
     const task = repo.createTask("建立企业信息");
@@ -66,7 +66,7 @@ test("a user's new quoted correction replaces their earlier statement and preser
 });
 
 test("source evidence and model suggestions remain conflicts after a user's quoted correction", () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-profile-protection-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-profile-protection-"));
   const repo = new MemoryStore(directory);
   try {
     const host = new Workspace(repo);
@@ -107,7 +107,7 @@ test("source evidence and model suggestions remain conflicts after a user's quot
 });
 
 test("unverified user corrections cannot change a saved statement or its provenance", () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-profile-invalid-quote-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-profile-invalid-quote-"));
   const repo = new MemoryStore(directory);
   try {
     const task = repo.createTask("检查用户纠正");
@@ -144,7 +144,7 @@ test("unverified user corrections cannot change a saved statement or its provena
 
 test("directly confirming a retained value resolves only that field's conflicts and preserves their evidence", () => {
   const directory = mkdtempSync(
-    join(tmpdir(), "dataengine-profile-resolution-"),
+    join(tmpdir(), "context-os-profile-resolution-"),
   );
   let repo = new MemoryStore(directory);
   try {

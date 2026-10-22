@@ -62,7 +62,7 @@ export function structuralDelta(diff: Data | undefined): StructuralDelta {
 }
 export const isStructural = (delta: StructuralDelta) => Object.values(delta).some(items => items.length > 0);
 
-/** Deterministic build jobs share ADE's ontology and mapping services, never a model loop. */
+/** Deterministic build jobs share Context OS's ontology and mapping services, never a model loop. */
 /** A mapping follows its adopted concept's wording: documents and repairs may have renamed or described it since the mapping was built. */
 function alignTypes(types: Data[], modelRelations: Data[], concepts: Data[]) {
   for (const [index, type] of types.entries()) {
@@ -282,7 +282,7 @@ export class ProgramBuilds {
     }) });
   }
 
-  /** Full-data path: sync snapshots, run Helix discovery over them, and compile entities into ADE concepts and mappings. */
+  /** Full-data path: sync snapshots, run Helix discovery over them, and compile entities into Context OS concepts and mappings. */
   private async executeSnapshots(id: string, sources: Artifact[], snapshots: Snapshots): Promise<Artifact> {
     let issues: BuildIssue[] | undefined;
     try {
@@ -419,7 +419,7 @@ export class ProgramBuilds {
     }
   }
 
-  /** ADE mapping from a Helix suggestion: entity -> concept + type, direct merges -> supplements, anchor links -> relations. */
+  /** Context OS mapping from a Helix suggestion: entity -> concept + type, direct merges -> supplements, anchor links -> relations. */
   private compileDiscovery(jobId: string, o: SuggestedOntology, datasets: Artifact[], issues: BuildIssue[]) {
     this.refreshUploads(datasets, issues);
     const job = this.memory.getArtifact(jobId), base = this.foundation.read(), active = this.activeModel();

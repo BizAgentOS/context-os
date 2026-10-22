@@ -38,7 +38,7 @@ test('the host freezes a consumer QA view, excludes build history and global cou
 });
 
 test('failed QA outcomes never save success-like text or reuse it as verified conversation history',async()=>{
- let count=0,nextInput='';const directory=mkdtempSync(join(tmpdir(),'ade-qa-failed-host-'));
+ let count=0,nextInput='';const directory=mkdtempSync(join(tmpdir(),'context-os-qa-failed-host-'));
  const driver:AgentDriver={async run(request){if(!count++)return{status:'failed',text:'所有数据均已验证完整。',error:'query failed',runId:'failed',sessionId:'qa-failure'};nextInput=request.input;return{text:'当前没有实际读取依据。',runId:'resumed',sessionId:'qa-failure'};},async stop(){},async close(){}};
  const app=new AgentApplication(directory,driver,new Set(),false);
  try{

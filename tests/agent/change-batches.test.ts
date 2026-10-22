@@ -11,7 +11,7 @@ import {identityWorkspace} from "./identity-fixture.ts";
 
 const ref=(a:Artifact)=>({id:a.id,version:a.version});
 async function fixture(seed=true){
-  const directory=mkdtempSync(join(tmpdir(),"ade-change-batch-")),app=new AgentApplication(directory,undefined,undefined,false);
+  const directory=mkdtempSync(join(tmpdir(),"context-os-change-batch-")),app=new AgentApplication(directory,undefined,undefined,false);
   if(seed)seedFoundation(app.memory,app.foundation,{enterprise:"批量治理",concepts:[{id:"person",name:"人员",description:"人员记录"},{id:"team",name:"团队",description:"团队记录"}]});
   let seq=0;
   const proposal=async(type:string,subject:Data)=>{const {change}=await app.changes.propose({operationId:`p-${++seq}`,origin:"human",type,subject,baseline:app.changes.currentBaseline()});return app.changes.verify({operationId:`v-${seq}`,...ref(change)});};

@@ -10,7 +10,7 @@ import { ProgramBuilds, isStructural, structuralDelta } from "../../src/engine/p
 import { Workspace } from "../../src/agent/workspace.ts";
 
 function fixture() {
-  const directory = mkdtempSync(join(tmpdir(), "ade-structure-approval-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-structure-approval-"));
   const memory = new MemoryStore(directory);
   const live = new LiveMemory(directory, memory);
   const foundation = new FoundationService(memory, live);

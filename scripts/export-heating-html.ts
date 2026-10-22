@@ -8,7 +8,7 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 
 /** A standalone, offline presentation of the fictional heating-company demo. */
 export async function exportHeatingHtml(
-  output = resolve(root, "output/share/DataEngine-热力公司-演示.html"),
+  output = resolve(root, "output/share/Context-OS-热力公司-演示.html"),
 ) {
   const snapshot = await createHeatingShareSnapshot();
   const template=await readFile(resolve(root,'web/agent/index.html'),'utf8');
@@ -42,7 +42,7 @@ export async function exportHeatingHtml(
   const html = template
     .replace(
       /<title>.*?<\/title>/s,
-      "<title>DataEngine · 热力公司企业记忆演示</title>",
+      "<title>Context OS · 热力公司企业记忆演示</title>",
     )
     .replace(/<link\s+rel="stylesheet"[^>]*>/g, "")
     .replace(/<script\s+src="\.\/app\.js"\s+type="module"><\/script>/, "")
@@ -56,7 +56,7 @@ export async function exportHeatingHtml(
     )
     .replace(
       "</body>",
-      () => `<script type="application/json" id="dataengine-share-data">${data}</script>\n<script>${script}</script>\n</body>`,
+      () => `<script type="application/json" id="context-os-share-data">${data}</script>\n<script>${script}</script>\n</body>`,
     );
   await mkdir(dirname(output), { recursive: true });
   await writeFile(output, html, "utf8");

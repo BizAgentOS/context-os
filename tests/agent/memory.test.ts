@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { MemoryStore } from "../../src/agent/memory.ts";
 
 test("saved enterprise understanding reopens with its task; a stopped run cannot overwrite it", () => {
-  const dir = mkdtempSync(join(tmpdir(), "dataengine-memory-"));
+  const dir = mkdtempSync(join(tmpdir(), "context-os-memory-"));
   try {
     let memory = new MemoryStore(dir);
     const task = memory.createTask("建立热力公司理解");

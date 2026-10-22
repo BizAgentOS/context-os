@@ -48,7 +48,7 @@ export const providers = {
   zhipu: "ZHIPU_API_KEY",
   "zhipu-coding": "ZHIPU_CODING_API_KEY",
   "zai-coding": "ZAI_CODING_API_KEY",
-  custom: "DATAENGINE_CUSTOM_API_KEY",
+  custom: "CONTEXT_OS_CUSTOM_API_KEY",
 } as const;
 export type Provider = keyof typeof providers;
 export interface ModelSettings {
@@ -65,7 +65,13 @@ export function modelKeyEnvironment(settings: ModelSettings): string {
     .digest("hex")
     .slice(0, 24)
     .toUpperCase();
-  return `DATAENGINE_CUSTOM_${identity}_API_KEY`;
+  return `CONTEXT_OS_CUSTOM_${identity}_API_KEY`;
+}
+
+/** The first entry is the current name; subsequent entries are read compatibility aliases. */
+export function modelKeyEnvironments(settings: ModelSettings): string[] {
+  const current = modelKeyEnvironment(settings);
+  return settings.provider === "custom" ? [current, current.replace("CONTEXT_OS_", "DATAENGINE_"), current.replace("CONTEXT_OS_", "ADE_")] : [current];
 }
 
 export function customEndpoint(body: Record<string, unknown>): {
@@ -127,7 +133,7 @@ export class KodaXDriver implements AgentDriver {
       isolation: "inline",
       homeDir: join(this.directory, "sdk-home"),
       sessionsDir: join(this.directory, "sessions"),
-      profile: "dataengine",
+      profile: "context-os",
       defaultProvider:
         this.settings.provider === "custom" ? "openai" : this.settings.provider,
       defaultModel: this.settings.model,
@@ -146,7 +152,11 @@ export class KodaXDriver implements AgentDriver {
         this.settings as unknown as Record<string, unknown>,
       );
       const apiKeyEnv = modelKeyEnvironment(this.settings);
-      provider = `dataengine-endpoint-${createHash("sha256")
+      if (process.env[apiKeyEnv] === undefined) {
+        const previous = modelKeyEnvironments(this.settings).map(key => process.env[key]).find(value => value !== undefined);
+        if (previous !== undefined) process.env[apiKeyEnv] = previous;
+      }
+      provider = `context-os-endpoint-${createHash("sha256")
         .update(this.directory + apiKeyEnv)
         .digest("hex")
         .slice(0, 20)}`;
@@ -171,7 +181,7 @@ export class KodaXDriver implements AgentDriver {
           title: request.title,
           projectPath: workspace,
           gitRoot: workspace,
-          surface: "dataengine",
+          surface: "context-os",
         });
     request.onSession(session.id);
     let usedTool = false;
@@ -339,9 +349,9 @@ export class KodaXDriver implements AgentDriver {
             executionCwd: workspace,
             systemPromptOverride: request.system,
             agentProfile: {
-              surface: "dataengine",
+              surface: "context-os",
               id: "enterprise-memory",
-              name: "DataEngine 企业记忆助手",
+              name: "Context OS 企业记忆助手",
               instructions: request.system,
             },
             toolVisibilityPolicy: (tool) => allowed.has(tool.name),

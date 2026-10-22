@@ -8,7 +8,7 @@ import type { AddressInfo } from "node:net";
 import { createServer } from "../../src/agent/server.ts";
 
 const keep = process.argv.includes("--keep");
-const directory = mkdtempSync(join(tmpdir(), "ade-snapshot-chain-"));
+const directory = mkdtempSync(join(tmpdir(), "context-os-snapshot-chain-"));
 const steps: { step: string; result: string }[] = [];
 const record = (step: string, result: string) => { steps.push({ step, result }); console.log(`✓ ${step}：${result}`); };
 
@@ -37,7 +37,7 @@ const sourceUrl = `http://127.0.0.1:${(sources.address() as AddressInfo).port}`;
 const service = await createServer({ directory, automaticApi: false });
 await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));
 const origin = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
-const call = async (path: string, body?: unknown, headers: Record<string, string> = { "x-dataengine-token": service.adminToken }) => {
+const call = async (path: string, body?: unknown, headers: Record<string, string> = { "x-contextos-token": service.adminToken }) => {
   const r = await fetch(origin + path, { method: body === undefined ? "GET" : "POST", headers: { ...headers, "content-type": "application/json" },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(120000) });
   return { status: r.status, body: await r.json() as any };

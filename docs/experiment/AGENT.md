@@ -1,4 +1,4 @@
-# DataEngine Agent：运行与验收
+# Context OS Agent：运行与验收
 
 > 历史验收（2026-09-07）：本文件记录此前工作台及底层能力。2026-09-08 起主界面改为三页企业记忆画布，当前操作见[画布运行说明](CANVAS.md)。
 
@@ -18,7 +18,7 @@ npm start
 
 设置里选择 provider 和模型名，可填写 API Key 并测试连接。默认 `deepseek / deepseek-v4-flash`；也提供 OpenAI、Anthropic 的 SDK 配置入口，本次真实运行只验证 DeepSeek。优先读取宿主 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY` 或 `ANTHROPIC_API_KEY`。界面输入的密钥仅留在服务进程内，重启后重新填写；配置只持久化服务商与模型名。
 
-数据保存在被 Git 忽略的 `local-state/agent/`；其中 `memory.sqlite` 保存企业成果和任务，`runtime/` 保存 SDK 会话。可以通过 `DATAENGINE_PORT`、`DATAENGINE_STATE_DIR` 设置独立端口和实验空间。不要同时用两个服务进程打开同一个空间。
+数据保存在被 Git 忽略的 `local-state/agent/`；其中 `memory.sqlite` 保存企业成果和任务，`runtime/` 保存 SDK 会话。可以通过 `CONTEXT_OS_PORT`、`CONTEXT_OS_STATE_DIR` 设置独立端口和实验空间。不要同时用两个服务进程打开同一个空间。
 
 ## 体验一条完整链路
 

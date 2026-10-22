@@ -4,7 +4,7 @@
 
 **2026-09-11 当前计划：**先读[三页产品计划](../THREE_PAGE_PLAN.md)。产品核心为本体驱动多源融合，新的 Skill、对象/证据/治理与消费范围按 FEATURE_012—016 开发。本文四页与首轮对象环境保留为历史行为依据；当前运行仍为四页。
 
-**2026-09-10 文档定位：**本文件保留内部 Agent 的行为与历史技术依据。最新统一设计从[产品与架构](../DATA_ENGINE_DESIGN.md)进入，再按任务读取[语义契约](../SEMANTIC_CONTRACTS.md)和[Agent 与前端协作](../AGENT_UI_DESIGN.md)。旧任务界面和固定文件快照不能覆盖当前四页与在线读取语义。
+**2026-09-10 文档定位：**本文件保留内部 Agent 的行为与历史技术依据。最新统一设计从[产品与架构](../CONTEXT_OS_DESIGN.md)进入，再按任务读取[语义契约](../SEMANTIC_CONTRACTS.md)和[Agent 与前端协作](../AGENT_UI_DESIGN.md)。旧任务界面和固定文件快照不能覆盖当前四页与在线读取语义。
 
 **2026-09-09 实现更新：**API/MCP 来源的实际 Agent 工具、字段映射、按需执行与第三方访问已接通，见[当前连接链路](../experiment/LIVE_MEMORY.md)。本文此前基于文件的流程作为历史设计保留。
 
@@ -18,7 +18,7 @@
 
 ## 1. 设计结论
 
-**DataEngine 是本体、KodaX 与 NOOA 式对象 harness 结合形成的整体产品。** 本体定义企业业务语义；对象 harness 将这些语义呈现为 Agent 可发现、可访问和可组合操作的对象；KodaX SDK 承接模型与运行循环。三者共同支撑企业记忆的建设、使用和维护。
+**Context OS 是本体、KodaX 与 NOOA 式对象 harness 结合形成的整体产品。** 本体定义企业业务语义；对象 harness 将这些语义呈现为 Agent 可发现、可访问和可组合操作的对象；KodaX SDK 承接模型与运行循环。三者共同支撑企业记忆的建设、使用和维护。
 
 产品中的连续体验是：对话明确一个目标，Agent 查看当前资料与记忆，调用工具完成可执行的工作，留下可检查的成果，再针对实际缺口提问。企业理解、数据接入、本体设计、报告和维护是同一 Agent 的不同工作方法，可以往返补充。
 
@@ -32,7 +32,7 @@
 
 ```mermaid
 flowchart TB
-  U[用户：对话、上传、纠正、查看成果] <--> A[DataEngine 主 Agent 工作台]
+  U[用户：对话、上传、纠正、查看成果] <--> A[Context OS 主 Agent 工作台]
   A <--> R[KodaX SDK：会话、运行、模型、工具调用、事件]
   R <--> M[NOOA 式对象 harness：发现类型、访问对象、组合方法]
   O[本体：概念、身份、关系、口径与约束] -->|决定对象接口| M
@@ -43,7 +43,7 @@ flowchart TB
 
 | 部分 | 产品职责 |
 |---|---|
-| KodaX SDK | 接管模型调用与运行循环、会话继续、执行事件和工具调用；DataEngine 直接消费实际 SDK 契约 |
+| KodaX SDK | 接管模型调用与运行循环、会话继续、执行事件和工具调用；Context OS 直接消费实际 SDK 契约 |
 | 本体与对象 harness | 从本体提供业务类型、实例、关系访问和语义方法；Agent 在这些对象上查证、计算并提出修订 |
 | 主 Agent 工作方法 | 根据目标和可用资料选择下一步，提出概念与映射、调查证据、解释结果和缺口 |
 | 企业空间与工具 | 保存资料、身份、定义和版本；执行解析、查询、计算、验证、受控保存；返回明确成功或失败 |
@@ -71,7 +71,7 @@ flowchart TB
 
 ### 本体如何成为可操作对象
 
-以下是 DataEngine 的设计映射，借鉴 NOOA 的对象接口；不是 NOOA 已提供的企业本体转换功能。
+以下是 Context OS 的设计映射，借鉴 NOOA 的对象接口；不是 NOOA 已提供的企业本体转换功能。
 
 | 本体中的内容 | harness 中的表达 |
 |---|---|
@@ -181,7 +181,7 @@ flowchart TB
 
 | 内容 | 处理方式 |
 |---|---|
-| 会话与临时工作状态 | KodaX 管理对话和执行，DataEngine 保存当前目标、成果引用与待处理事项；压缩会话不会删掉企业成果 |
+| 会话与临时工作状态 | KodaX 管理对话和执行，Context OS 保存当前目标、成果引用与待处理事项；压缩会话不会删掉企业成果 |
 | 原始资料与已登记的企业知识 | 产品持久化保存；区分用户陈述、来源记录、模型建议和已确认定义，保留时间与依据 |
 | 模型解释与假设 | 可存为报告或候选，不能仅因写进聊天就成为企业事实；被引用时保留其假设/待查状态 |
 
@@ -197,7 +197,7 @@ flowchart TB
 
 ## 6. 最小工具与保存边界
 
-下面是 DataEngine 的拟定领域契约，不是 KodaX 或 NOOA 的现成 API。工具名称在实现时可按 SDK 注册要求调整。
+下面是 Context OS 的拟定领域契约，不是 KodaX 或 NOOA 的现成 API。工具名称在实现时可按 SDK 注册要求调整。
 
 | 能力 | 输入 → 输出 | 本轮行为 |
 |---|---|---|
@@ -298,7 +298,7 @@ flowchart TB
 
 本次核对 NOOA 官方 `main` 提交 `e137e1b5eee3f36ad0bba08cea0931aa292563a4`。下表左列是官方机制，右列是本项目的设计推导。
 
-| 官方机制与依据 | DataEngine 的借鉴与限制 |
+| 官方机制与依据 | Context OS 的借鉴与限制 |
 |---|---|
 | 字段表达状态、方法表达能力、类型与说明约定输入输出；见[官方概览](https://github.com/NVIDIA-NeMo/labs-OO-Agents/blob/e137e1b5eee3f36ad0bba08cea0931aa292563a4/docs/tour.md) | 本体定义业务语义，对象类型与实例提供其运行时表达；工作成果和业务对象都可访问，不给每个对象分配一个 Agent |
 | 类型检查不能证明外部世界和业务约束成立；见[确定性编排](https://github.com/NVIDIA-NeMo/labs-OO-Agents/blob/e137e1b5eee3f36ad0bba08cea0931aa292563a4/docs/concepts/orchestration.md#types-validate-values-python-validates-the-world) | 保存方法内部强制引用、版本与状态检查；关键语义另留业务依据和决定，不让模型自行宣布全部检查通过 |
@@ -317,11 +317,11 @@ flowchart TB
 | 接入点 | 已核实接口与本项目使用方式 |
 |---|---|
 | 会话和运行 | `@kodax-ai/kodax/runtime` 的 `createKodaXRuntime`；选择 `mode: 'embedded', isolation: 'inline'`。用 `sessions.create/load`、`runs.start`、`events.subscribe` 与运行结果完成对话及实际进度展示。[Runtime 源码](https://github.com/icetomoyo/KodaX/blob/41a905c1da1f426404b6a1e8bc5a83eb5e697876/src/sdk-runtime.ts#L734) |
-| Agent 身份 | 在运行选项中提供 `context.agentProfile`，指定 DataEngine 身份与工作说明；`sa` 路径将其 instructions 映射为完整系统说明。只配置企业主 Agent 所需方法。[入口实现](https://github.com/icetomoyo/KodaX/blob/41a905c1da1f426404b6a1e8bc5a83eb5e697876/packages/coding/src/agent.ts#L47) |
-| DataEngine 工具 | `runs.start` 的 `options.extensionRuntime` 传入宿主 adapter；通过 `listRunTools('mcp')` 提供本轮工具定义，`executeCapability('mcp', capabilityId, input)` 调用固定业务方法。输入有 schema，读取标为 `readonly`，保存草稿标为 `mutates-state`。[扩展契约](https://github.com/icetomoyo/KodaX/blob/41a905c1da1f426404b6a1e8bc5a83eb5e697876/packages/coding/src/extensions/runtime-contract.ts#L60) |
+| Agent 身份 | 在运行选项中提供 `context.agentProfile`，指定 Context OS 身份与工作说明；`sa` 路径将其 instructions 映射为完整系统说明。只配置企业主 Agent 所需方法。[入口实现](https://github.com/icetomoyo/KodaX/blob/41a905c1da1f426404b6a1e8bc5a83eb5e697876/packages/coding/src/agent.ts#L47) |
+| Context OS 工具 | `runs.start` 的 `options.extensionRuntime` 传入宿主 adapter；通过 `listRunTools('mcp')` 提供本轮工具定义，`executeCapability('mcp', capabilityId, input)` 调用固定业务方法。输入有 schema，读取标为 `readonly`，保存草稿标为 `mutates-state`。[扩展契约](https://github.com/icetomoyo/KodaX/blob/41a905c1da1f426404b6a1e8bc5a83eb5e697876/packages/coding/src/extensions/runtime-contract.ts#L60) |
 | 无须外部 MCP | 上一行的 `'mcp'` 是 SDK 已有的分发通道；这里直接调用进程内 adapter，不要求启动外部 MCP 服务或 transport。采用按运行注册，避免全局工具注册影响其他会话。[分发实现](https://github.com/icetomoyo/KodaX/blob/41a905c1da1f426404b6a1e8bc5a83eb5e697876/packages/coding/src/agent-runtime/run-scoped-tools.ts#L115) |
 | 有效工具范围 | 使用 `toolVisibilityPolicy` 与排除列表，只保留本轮业务工具。源码把该范围用于模型可见表与执行检查，直接调用和 `tool_call` 间接调用都需检查；业务方法仍验证企业、引用、版本与来源范围。[范围构造](https://github.com/icetomoyo/KodaX/blob/41a905c1da1f426404b6a1e8bc5a83eb5e697876/packages/coding/src/agent-runtime/run-substrate.ts#L1033)、[执行检查](https://github.com/icetomoyo/KodaX/blob/41a905c1da1f426404b6a1e8bc5a83eb5e697876/packages/coding/src/agent-runtime/tool-dispatch.ts#L211) |
-| 配置和存储 | 用专属 `homeDir/profile/sessionsDir` 与干净执行目录，避免企业 Agent 自动载入产品代码仓库的资料或开发指令。SDK 会话存储沿用默认能力，业务成果由 DataEngine 保存。[宿主指南](https://github.com/icetomoyo/KodaX/blob/41a905c1da1f426404b6a1e8bc5a83eb5e697876/public_docs/sdk/embedder-guide.md#L2690) |
+| 配置和存储 | 用专属 `homeDir/profile/sessionsDir` 与干净执行目录，避免企业 Agent 自动载入产品代码仓库的资料或开发指令。SDK 会话存储沿用默认能力，业务成果由 Context OS 保存。[宿主指南](https://github.com/icetomoyo/KodaX/blob/41a905c1da1f426404b6a1e8bc5a83eb5e697876/public_docs/sdk/embedder-guide.md#L2690) |
 | 模型设置 | 复用 provider/model 配置；`/llm` 的 `verifyProviderCredential` 可支持“测试连接”。优先识别服务端环境凭据；首轮在界面输入的密钥只保留在宿主进程内，重启后重新填写，不进入模型消息、企业资料或 Git。[凭据检查](https://github.com/icetomoyo/KodaX/blob/41a905c1da1f426404b6a1e8bc5a83eb5e697876/public_docs/sdk/embedder-guide.md#L2185) |
 
 **历史接入备选（首轮已选择 Node 受限组合，不使用 Python Worker）：**前述 SDK 接口可承载宿主能力，但尚未证明能直接操作 NOOA 的 Python live objects。推荐先验证 KodaX → 会话内对象执行器 → 企业对象代理这一边界，实例/中间结果留在执行器内；Node 与 Python 之间传请求、稳定引用及有界结果。执行器只开放当前企业方法，代码执行需要实际隔离，原始数据库连接与凭据不能直接暴露；单靠提示词、类型或 AST 检查不能视为隔离完成。Python Worker 仍是未实现的备选；首轮实际接法见运行说明。
@@ -330,7 +330,7 @@ flowchart TB
 
 - inline 不能使用 `runtime.hostTools.register`，该接口属于 shared daemon client；选定的进程内 `extensionRuntime` 路径已存在，无须为首轮增加 daemon。
 - 不把 `beforeToolExecute` 回调作为唯一门禁：部分权限模式会提前返回。首轮测试直接伪造 `bash` 及借 `tool_call` 转发都不能越过有效工具范围，并检查没有读取评测与未来资料。
-- 工具 schema、SDK verifier 与本体语义验证各有边界；关键业务检查必须在 DataEngine 的保存方法内部执行。
+- 工具 schema、SDK verifier 与本体语义验证各有边界；关键业务检查必须在 Context OS 的保存方法内部执行。
 - 首次打开若凭据不可用，展示设置入口和真实错误；模型已可用则直接开始企业理解。API Key 不作为 Agent 的提问内容。
 
 ## 12. 技术参考：本体对象运行时的三层边界
@@ -373,7 +373,7 @@ ObjectSetRef<T>
   aggregate(metric) -> MetricResult + evidence
 ```
 
-这些是 DataEngine 的领域边界示意，不是 KodaX 或 NOOA 的现成接口。对模型显示的是命名类型、简短说明和可调用方法；完整数据留在运行时。`EntityRef` 可以在一次对象执行中作为惰性代理持有，跨会话或跨进程传递时使用稳定 ID、类型、版本和快照引用。
+这些是 Context OS 的领域边界示意，不是 KodaX 或 NOOA 的现成接口。对模型显示的是命名类型、简短说明和可调用方法；完整数据留在运行时。`EntityRef` 可以在一次对象执行中作为惰性代理持有，跨会话或跨进程传递时使用稳定 ID、类型、版本和快照引用。
 
 ### 热力案例的最小对象链
 
@@ -403,7 +403,7 @@ Enterprise("chengchuan-heating")
 按前述已核对的源码版本，KodaX 是 TypeScript/Node 运行时，NOOA 的 live-object CodeAct 是 Python 进程内语义；两者没有被核实为可以直接共享同一个 live object。行为设计评审后，接入验证需遵循以下边界：
 
 1. KodaX 继续作为唯一模型/会话运行底座。
-2. DataEngine 实现本体对象适配器，并通过 KodaX 的 run-scoped extension 接口暴露对象能力。
+2. Context OS 实现本体对象适配器，并通过 KodaX 的 run-scoped extension 接口暴露对象能力。
 3. 若采用独立对象执行器，由它持有代理和中间结果；跨 Node/Python 边界只传稳定引用、结构化参数和有界结果。
 4. 现有文件链采用受限对象组合；CodeAct 是后续可验证方向，在线链的能力也需按实际实现核对。扩展依据是能否完成第 8 节对象调查并保留状态和证据；若采用代码执行，需要真实隔离，调用范围仍为本体对象方法。
 

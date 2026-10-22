@@ -33,7 +33,7 @@ test('connection upgrade preserves exact property and relation grants across bus
   assert.equal((await read(upgraded.key!,'人员','$id,姓名')).status,403,'renaming cannot expand authorized properties');
   const detail=releases.connectionDetail(ref(upgraded.connection));assert.equal(detail.scope.properties.some(item=>item.name==='姓名'),false);
   assert.equal(detail.usage.calls,3);assert.equal(detail.usage.succeeded,2);assert.equal(detail.usage.failed,1);assert.equal((detail.usage.recentErrors as any[])[0].status,403);
-  assert.doesNotMatch(JSON.stringify(detail),/keyHash|de_dataset_/);
+  assert.doesNotMatch(JSON.stringify(detail),/keyHash|cos_dataset_/);
   w.service.app.live.sources.disable(w.accounts.id,w.accounts.version);
   const deniedPreview=releases.upgradePreview({connectionRef:ref(upgraded.connection),releaseRef:ref(first)});assert.equal(deniedPreview.compatible,false,'upgrade preview must respect current source authority');
  }finally{await w.close();}

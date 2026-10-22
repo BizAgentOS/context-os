@@ -18,7 +18,7 @@ const ref = (artifact: { id: string; version: number }) => ({ id: artifact.id, v
 const nameValue = (body: Data) => ((((body.items as Data[])[0].properties as Data).name) as Data).value;
 
 async function fixture(explicitLive = false) {
-  const directory = mkdtempSync(join(tmpdir(), "ade-release-factory-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-release-factory-"));
   const memory = new MemoryStore(directory), live = new LiveMemory(directory, memory);
   const snapshots = new Snapshots(memory, live, directory);
   const builds = new ProgramBuilds(memory, new FoundationService(memory, live), live, snapshots);

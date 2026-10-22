@@ -9,9 +9,9 @@ npm ci
 npm run demo
 ```
 
-打开终端输出的管理链接。默认 `http://127.0.0.1:8794/`；首次管理链接建立本机浏览器会话，随后移除凭据片段。无需配置模型 API Key，不调用外部模型。`DATAENGINE_DEMO_PORT` 可选择端口，`DATAENGINE_DEMO_DIR` 可选择独立状态目录。
+打开终端输出的管理链接。默认 `http://127.0.0.1:8794/`；首次管理链接建立本机浏览器会话，随后移除凭据片段。无需配置模型 API Key，不调用外部模型。`CONTEXT_OS_DEMO_PORT` 可选择端口，`CONTEXT_OS_DEMO_DIR` 可选择独立状态目录。
 
-演示保存到 `local-state/heating-demo`，不会覆盖 `npm start` 的空间；重启保留用户在演示里的编辑。首次仅向空空间写入样本，指定已有数据的目录时不覆盖它。需要一份全新演示，可设置新的 `DATAENGINE_DEMO_DIR`，不用删除现有空间。
+演示保存到 `local-state/heating-demo`，不会覆盖 `npm start` 的空间；重启保留用户在演示里的编辑。首次仅向空空间写入样本，指定已有数据的目录时不覆盖它。需要一份全新演示，可设置新的 `CONTEXT_OS_DEMO_DIR`，不用删除现有空间。
 
 ## 查看路径
 

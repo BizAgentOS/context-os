@@ -15,7 +15,7 @@ import {ProgramBuilds} from '../../src/engine/program-builds.ts';
 import {WorkspaceVersions} from '../../src/engine/workspace-versions.ts';
 
 test('retention expires original uploads including their old revisions while immutable snapshots remain queryable',{timeout:30000},async()=>{
- const dir=mkdtempSync(join(tmpdir(),'ade-retention-')),memory=new MemoryStore(dir),live=new LiveMemory(dir,memory),snapshots=new Snapshots(memory,live,dir),workspace=new Workspace(memory);
+ const dir=mkdtempSync(join(tmpdir(),'context-os-retention-')),memory=new MemoryStore(dir),live=new LiveMemory(dir,memory),snapshots=new Snapshots(memory,live,dir),workspace=new Workspace(memory);
  try{
   const original=workspace.upload('产品.csv','编号,名称\nP1,初始产品\n'),updated=workspace.upload('产品.csv','编号,名称\nP1,后续产品\n');
   const text=workspace.upload('产品说明.md','需要过期清理的原始说明。');
@@ -40,7 +40,7 @@ test('retention expires original uploads including their old revisions while imm
 });
 
 test('a historical working version pins its original snapshot even when the unpinned retention limit is one',{timeout:20000},async()=>{
- const dir=mkdtempSync(join(tmpdir(),'ade-retention-working-')),memory=new MemoryStore(dir),live=new LiveMemory(dir,memory),snapshots=new Snapshots(memory,live,dir),foundation=new FoundationService(memory,live),engine=new ProgramBuilds(memory,foundation,live,snapshots),workspace=new Workspace(memory);
+ const dir=mkdtempSync(join(tmpdir(),'context-os-retention-working-')),memory=new MemoryStore(dir),live=new LiveMemory(dir,memory),snapshots=new Snapshots(memory,live,dir),foundation=new FoundationService(memory,live),engine=new ProgramBuilds(memory,foundation,live,snapshots),workspace=new Workspace(memory);
  try{
   workspace.upload('产品.csv','编号,名称\nP1,原始产品\n');await engine.build({operationId:'first',autoAdopt:true});
   const history=new WorkspaceVersions(memory,foundation,live),first=history.latest()!,pin=(first.content.composition as any).snapshots[0];
@@ -54,7 +54,7 @@ test('a historical working version pins its original snapshot even when the unpi
 });
 
 test('retention preserves exact historical citation text and a document already read in the active session',async()=>{
- const dir=mkdtempSync(join(tmpdir(),'ade-retention-evidence-'));let memory=new MemoryStore(dir),live=new LiveMemory(dir,memory),snapshots=new Snapshots(memory,live,dir);
+ const dir=mkdtempSync(join(tmpdir(),'context-os-retention-evidence-'));let memory=new MemoryStore(dir),live=new LiveMemory(dir,memory),snapshots=new Snapshots(memory,live,dir);
  try{
   const workspace=new Workspace(memory),source=workspace.upload('职责.md','售后部门负责退款。上下文必须保留。'),docs=new FoundationDocuments(memory),read=docs.read({sourceId:source.id}),evidence=docs.cite({id:'origin',kind:'document',readId:read.readId,quote:'售后部门负责退款。'});
   memory.putArtifact({kind:'change_evidence_receipt',title:'已引用正文',status:'captured',content:{evidence:[evidence] as any}});

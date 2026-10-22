@@ -22,7 +22,7 @@ test("published ontology subsets are consumable by independent MCP clients, pinn
   const request = async (path: string, body?: unknown, key?: string) => {
     const response = await fetch(origin + path, {
       method: body === undefined ? "GET" : "POST",
-      headers: key ? { authorization: `Bearer ${key}`, "content-type": "application/json" } : { "x-dataengine-token": service.adminToken, "content-type": "application/json" },
+      headers: key ? { authorization: `Bearer ${key}`, "content-type": "application/json" } : { "x-contextos-token": service.adminToken, "content-type": "application/json" },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     return { status: response.status, body: await response.json() as any };
@@ -44,7 +44,7 @@ test("published ontology subsets are consumable by independent MCP clients, pinn
     assert.equal(published.status, 200);
     const { dataset, key } = published.body;
     assert.equal(dataset.status, "active");
-    assert.match(key, /^de_dataset_/);
+    assert.match(key, /^cos_dataset_/);
     const replay = await request("/api/releases/connect", input);
     assert.equal(replay.body.dataset.id, dataset.id);
     assert.equal(replay.body.key, null);
@@ -57,7 +57,7 @@ test("published ontology subsets are consumable by independent MCP clients, pinn
     const config = Object.values(spec.body.mcp.mcpServers)[0] as any;
     const connect = async (consumerKey: string) => {
       const client = new Client({ name: "external-agent", version: "1" });
-      await client.connect(new StdioClientTransport({ command: config.command, args: config.args, env: { ...config.env, DATAENGINE_CONSUMER_KEY: consumerKey }, stderr: "pipe" }));
+      await client.connect(new StdioClientTransport({ command: config.command, args: config.args, env: { ...config.env, CONTEXT_OS_CONSUMER_KEY: consumerKey }, stderr: "pipe" }));
       clients.push(client);
       return client;
     };
@@ -67,7 +67,7 @@ test("published ontology subsets are consumable by independent MCP clients, pinn
     assert.equal(checked.body.ok, true);
     assert.equal(checked.body.conceptCount, 2);
     assert.equal(checked.body.checkedConcepts, 1);
-    assert.doesNotMatch(JSON.stringify(checked.body), /de_dataset_/);
+    assert.doesNotMatch(JSON.stringify(checked.body), /cos_dataset_/);
     assert.equal((await request("/api/datasets/test", { id: second.dataset.id, key })).status, 400);
     assert.ok((await a.listTools()).tools.some(t => t.name === "describe_dataset"));
     const catalog = await a.callTool({ name: "describe_dataset", arguments: {} });
@@ -116,7 +116,7 @@ test("dataset business reads reuse explicit fusion grants and reject revoked in-
   await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));
   const origin = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
   const admin = async (path: string, body: unknown) => {
-    const r = await fetch(origin + path, { method: "POST", headers: { "x-dataengine-token": service.adminToken, "content-type": "application/json" }, body: JSON.stringify(body) });
+    const r = await fetch(origin + path, { method: "POST", headers: { "x-contextos-token": service.adminToken, "content-type": "application/json" }, body: JSON.stringify(body) });
     const value = await r.json() as any;
     if (!r.ok) throw new Error(value.error);
     return value;
@@ -136,9 +136,9 @@ test("dataset business reads reuse explicit fusion grants and reject revoked in-
     const input = { operationId: "business", name: "客户服务", releaseRef:ref(publication), conceptIds: ["complaint"], relationIds: [], business:{grants:business.grants} };
     const published = await admin("/api/releases/connect", input);
     await assert.rejects(admin("/api/releases/connect", { ...input, operationId: "bad", conceptIds: ["private"] }), /概念|所选/);
-    const specRes = await fetch(origin + `/api/releases/connection?id=${published.connection.id}&version=${published.connection.version}`, { headers: { "x-dataengine-token": service.adminToken } });
+    const specRes = await fetch(origin + `/api/releases/connection?id=${published.connection.id}&version=${published.connection.version}`, { headers: { "x-contextos-token": service.adminToken } });
     const config = Object.values((await specRes.json() as any).mcp.mcpServers)[0] as any;
-    await client.connect(new StdioClientTransport({ command: config.command, args: config.args, env: { ...config.env, DATAENGINE_CONSUMER_KEY: published.key }, stderr: "pipe" }));
+    await client.connect(new StdioClientTransport({ command: config.command, args: config.args, env: { ...config.env, CONTEXT_OS_CONSUMER_KEY: published.key }, stderr: "pipe" }));
     const catalog = (await client.callTool({ name: "describe_dataset", arguments: {} })).structuredContent as any;
     assert.deepEqual(catalog.businessTypes.map((t: any) => t.name), ["投诉"]);
     source.state.mode = "conflict";

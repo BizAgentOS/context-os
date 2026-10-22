@@ -9,10 +9,10 @@ import ExcelJS from "exceljs";
 import {createServer} from "../../src/agent/server.ts";
 
 test("management upload accepts real Excel and streamed tables, protects the boundary, and exposes editable parsing",async()=>{
-  const directory=mkdtempSync(join(tmpdir(),"ade-table-http-")),service=await createServer({directory,automaticApi:false});
+  const directory=mkdtempSync(join(tmpdir(),"context-os-table-http-")),service=await createServer({directory,automaticApi:false});
   await new Promise<void>(resolve=>service.server.listen(0,"127.0.0.1",resolve));
   const origin=`http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
-  const headers={"X-DataEngine-Token":service.adminToken,"Content-Type":"application/octet-stream"};
+  const headers={"X-ContextOS-Token":service.adminToken,"Content-Type":"application/octet-stream"};
   const url=(name:string)=>origin+"/api/canvas/upload/table?"+new URLSearchParams({page:"setup",name});
   try{
     const bytes=Buffer.from("id,name\n001,甲\n");

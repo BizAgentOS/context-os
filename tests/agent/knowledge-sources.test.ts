@@ -128,7 +128,7 @@ test("authorized knowledge directory, bounded read and cited foundation survive 
     const response = await fetch(base + path, {
       method: body ? "POST" : "GET",
       headers: {
-        "x-dataengine-token": service.adminToken,
+        "x-contextos-token": service.adminToken,
         "content-type": "application/json",
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
@@ -221,7 +221,7 @@ test("MCP knowledge contract rejects filtering, unknown identity coverage, schem
     const response = await fetch(base + path, {
       method: "POST",
       headers: {
-        "x-dataengine-token": service.adminToken,
+        "x-contextos-token": service.adminToken,
         "content-type": "application/json",
       },
       body: JSON.stringify(body),

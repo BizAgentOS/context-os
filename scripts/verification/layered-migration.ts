@@ -14,7 +14,7 @@ import { migrateLegacyModel, projectLegacyModel, type LegacyModel } from "../../
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const BASELINE = "f446b3b";
-const temporary = mkdtempSync(join(tmpdir(), "ade-layered-migration-"));
+const temporary = mkdtempSync(join(tmpdir(), "context-os-layered-migration-"));
 const keep = process.argv.includes("--keep");
 const selected = process.argv.find(argument => argument.startsWith("--workspace="))?.slice("--workspace=".length);
 const targets = [

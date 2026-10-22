@@ -7,11 +7,11 @@ import type {AddressInfo} from 'node:net';
 import {createHeatingDemo} from '../../src/demo/server.ts';
 
 test('online demo simulates writes at the HTTP boundary while formal object queries and navigation stay available',async()=>{
- const directory=mkdtempSync(join(tmpdir(),'ade-demo-simulation-')),service=await createHeatingDemo(directory);
+ const directory=mkdtempSync(join(tmpdir(),'context-os-demo-simulation-')),service=await createHeatingDemo(directory);
  try{
   await new Promise<void>(resolve=>service.server.listen(0,'127.0.0.1',resolve));
   const base=`http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
-  const call=async(path:string,body:unknown,method='POST',raw=false)=>{const response=await fetch(base+path,{method,headers:{'x-dataengine-token':service.adminToken,'content-type':raw?'application/octet-stream':'application/json'},body:raw?String(body):JSON.stringify(body)});return{status:response.status,body:await response.json() as any};};
+  const call=async(path:string,body:unknown,method='POST',raw=false)=>{const response=await fetch(base+path,{method,headers:{'x-contextos-token':service.adminToken,'content-type':raw?'application/octet-stream':'application/json'},body:raw?String(body):JSON.stringify(body)});return{status:response.status,body:await response.json() as any};};
   const model=service.app.memory.listArtifacts('live_ontology').find(item=>item.status==='adopted')!,complaint=service.app.live.readLayered(model.id).semantic.entityTypes.find(item=>item.name==='投诉')!;
   const data=await call('/api/live/query',{modelId:model.id,modelVersion:model.version,conceptId:complaint.id,id:'TS002',relation:'居民回访'});
   assert.equal(data.status,200);assert.equal(data.body.items[0].$id,'HF002');assert.equal(data.body.items[0].反馈结果,'未改善');
@@ -34,12 +34,12 @@ test('online demo simulates writes at the HTTP boundary while formal object quer
 });
 
 test('online demo example questions run through the public QA mode and use actual semantic receipts',async()=>{
- const directory=mkdtempSync(join(tmpdir(),'ade-demo-qa-')),service=await createHeatingDemo(directory);
+ const directory=mkdtempSync(join(tmpdir(),'context-os-demo-qa-')),service=await createHeatingDemo(directory);
  try{
   await new Promise<void>(resolve=>service.server.listen(0,'127.0.0.1',resolve));
   const base=`http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
   const ask=async(page:string,text:string)=>{
-   const response=await fetch(base+'/api/canvas/message',{method:'POST',headers:{'x-dataengine-token':service.adminToken,'content-type':'application/json'},body:JSON.stringify({page,text,mode:'qa',dataView:{kind:'working'},messageId:'demo-'+page})});
+   const response=await fetch(base+'/api/canvas/message',{method:'POST',headers:{'x-contextos-token':service.adminToken,'content-type':'application/json'},body:JSON.stringify({page,text,mode:'qa',dataView:{kind:'working'},messageId:'demo-'+page})});
    assert.equal(response.status,202);await service.app.idle();
    const run=service.app.canvasState(page as 'ontology'|'consumption').agentRuns.at(-1)! as any;
    assert.equal(run.status,'completed',JSON.stringify(run));return run;

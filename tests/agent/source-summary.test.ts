@@ -10,12 +10,12 @@ import { Workspace } from "../../src/agent/workspace.ts";
 import { sourceSummary } from "../../src/agent/source-summary.ts";
 
 test("all pages share source counts, CSV aliases are deduplicated and history is paged over HTTP", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-source-summary-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-source-summary-"));
   const service = await createServer({ directory, automaticApi: false });
   service.server.listen(0, "127.0.0.1");
   await new Promise<void>(resolve => service.server.once("listening", resolve));
   const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
-  const headers = { "x-dataengine-token": service.adminToken };
+  const headers = { "x-contextos-token": service.adminToken };
   try {
     const workspace = new Workspace(service.app.memory);
     const csv = workspace.upload("tasks.csv", "id,title\nT1,交付\nT2,验收\n");
@@ -49,7 +49,7 @@ test("all pages share source counts, CSV aliases are deduplicated and history is
 });
 
 test('a failed synchronization remains a source problem while the prior snapshot cutoff and data stay readable',async()=>{
- const directory=mkdtempSync(join(tmpdir(),'ade-source-failure-')),service=await createServer({directory,automaticApi:false});let denied=false;
+ const directory=mkdtempSync(join(tmpdir(),'context-os-source-failure-')),service=await createServer({directory,automaticApi:false});let denied=false;
  const upstream=httpServer((request,response)=>{response.setHeader('content-type','application/json');response.statusCode=denied?401:200;response.end(JSON.stringify(denied?{error:'credential expired'}:{items:[{id:'T1',title:'已采用数据'}],total:1}));});
  await new Promise<void>(resolve=>upstream.listen(0,'127.0.0.1',resolve));
  try{
@@ -63,7 +63,7 @@ test('a failed synchronization remains a source problem while the prior snapshot
 });
 
 test("source data cutoff is the adopted snapshot time while a new structure awaits confirmation", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-source-cutoff-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-source-cutoff-"));
   const service = await createServer({ directory, automaticApi: false });
   try {
     const workspace = new Workspace(service.app.memory);

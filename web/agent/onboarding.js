@@ -2,9 +2,10 @@ import { element as el, action } from "./connection-ui.js";
 import { openConnections } from "./connections.js";
 import { openApiImport } from "./openapi-import.js";
 import {safeText} from './ui-display.js';
+import { readBrowserValue } from "./browser-storage.js";
 
 const engineTitles = ["连接模型", "添加第一个来源", "查看构建进度", "确认业务命名", "看看你的本体", "提出第一个问题"];
-const engineDescriptions = ["先连接模型，让 ADE 助手帮助你理解本体和回答问题。", "上传表格、连接数据库或接口。企业资料可以之后在设置中补充。", "按真实读取、发现和构建回执展示进度；关闭引导不会中止后台工作。", "核对助手提出的名称与说明，也可以稍后在待处理中完成。", "已采用的实体与关系可用于查询，待核对的发现继续保留在待处理中心。", "下面的问题来自当前可查询本体，点击后由问答助手读取实际数据并回答。"];
+const engineDescriptions = ["先连接模型，让 Context OS 助手帮助你理解本体和回答问题。", "上传表格、连接数据库或接口。企业资料可以之后在设置中补充。", "按真实读取、发现和构建回执展示进度；关闭引导不会中止后台工作。", "核对助手提出的名称与说明，也可以稍后在待处理中完成。", "已采用的实体与关系可用于查询，待核对的发现继续保留在待处理中心。", "下面的问题来自当前可查询本体，点击后由问答助手读取实际数据并回答。"];
 const titles = ["连接模型", "认识你的企业", "选择行业本体", "连接资料与系统", "准备开始"];
 const descriptions = [
   "连接一个模型，让助手帮你理解企业、整理资料与建立本体。",
@@ -30,15 +31,15 @@ function selectField(parent, title, values, value) {
 }
 export function renderOnboarding(initial, actions) {
   let state=initial, working=false, rendered="", packSelection=null, researchId=null, refreshStep=()=>{};
-  const root=el("section",null,"onboarding"); root.setAttribute("aria-label","ADE 初始化");
+  const root=el("section",null,"onboarding"); root.setAttribute("aria-label","Context OS 初始化");
   const draftKey=initial.workspaceId;
   let draft=drafts.get(draftKey);
   if (!draft) {
-    try { draft=JSON.parse(localStorage.getItem(`de-onboarding:${draftKey}`)||"null"); } catch {}
+    try { draft=JSON.parse(readBrowserValue(localStorage, `context-os:onboarding:${draftKey}`, [`de-onboarding:${draftKey}`])||"null"); } catch {}
     draft ||= {company:{...initial.onboarding.company},profileVersion:initial.onboarding.currentProfileVersion};
     drafts.set(draftKey,draft);
   }
-  const keep=()=>{ try { localStorage.setItem(`de-onboarding:${draftKey}`,JSON.stringify(draft)); } catch {} };
+  const keep=()=>{ try { localStorage.setItem(`context-os:onboarding:${draftKey}`,JSON.stringify(draft)); } catch {} };
   const status=el("p",null,"ob-status");status.setAttribute("role","status");status.hidden=true;
   const show=message=>{status.textContent=message;status.hidden=!message;};
   const fresh=async()=>{const snapshot=await actions.api("/api/canvas?page=setup");actions.apply(snapshot);state=snapshot;return snapshot;};
@@ -269,7 +270,7 @@ export function renderOnboarding(initial, actions) {
   }
   function summary(body) {
     const contents=el("div",null,"ob-result");body.append(contents);
-    footer(4,"进入企业与数据 →",async()=>{await save("complete");drafts.delete(draftKey);try{localStorage.removeItem(`de-onboarding:${draftKey}`);}catch{}});
+    footer(4,"进入企业与数据 →",async()=>{await save("complete");drafts.delete(draftKey);try{localStorage.removeItem(`context-os:onboarding:${draftKey}`);}catch{}});
   }
   function live() {
     refreshStep();

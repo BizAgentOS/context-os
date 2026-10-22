@@ -50,7 +50,7 @@ export class DocumentFiles {
       let result: ExtractedDocument = { text: "", blocks: [], warnings: [] }, parseError: string | undefined;
       try { result = await extract(file, format); } catch (error) { parseError = (error as Error).message; }
       return { name, signature, status: parseError ? "failed" : "ready", content: { origin: "upload", format: "text", raw: result.text, hash: documentHash(result.text),
-        documentFile: JSON.parse(JSON.stringify({ format, file: filename, hash: signature, bytes, blocks: result.blocks, warnings: result.warnings, extractor: "ade-document-v1" })), ...(parseError ? { parseError } : {}) }, discard: () => rm(file, { force: true }) };
+        documentFile: JSON.parse(JSON.stringify({ format, file: filename, hash: signature, bytes, blocks: result.blocks, warnings: result.warnings, extractor: "context-os-document-v1" })), ...(parseError ? { parseError } : {}) }, discard: () => rm(file, { force: true }) };
     } catch (error) { out.destroy(); await done.catch(() => {}); await rm(file, { force: true }); throw error; }
   }
 }

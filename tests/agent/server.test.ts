@@ -12,7 +12,7 @@ import { Workspace } from "../../src/agent/workspace.ts";
 import { seedFoundation } from "./program-foundation-fixture.ts";
 
 test("separate A to B to A writes stay distinct while consecutive retries return the saved result", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-retry-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-retry-"));
   const saved: Artifact[] = [];
   const driver: AgentDriver = {
     async run(request) {
@@ -53,7 +53,7 @@ test("separate A to B to A writes stay distinct while consecutive retries return
 });
 
 test("free text never adopts a waiting proposal; a human decision validates its exact verified version", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-adoption-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-adoption-"));
   let candidate: Artifact;
   const driver: AgentDriver = {
     async run(request) {
@@ -88,7 +88,7 @@ test("free text never adopts a waiting proposal; a human decision validates its 
 });
 
 test("legacy upload model adoption keeps pinned data and rejects changed source facts", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-pinned-adoption-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-pinned-adoption-"));
   const app = new AgentApplication(directory, { async run() { return { text: "idle", sessionId: "s", runId: "r" }; }, async stop() {}, async close() {} });
   try {
     const workspace = new Workspace(app.memory), source = workspace.upload("tickets.csv", "id,status\nT1,closed\n");
@@ -112,7 +112,7 @@ test("legacy upload model adoption keeps pinned data and rejects changed source 
 });
 
 test("invalid focus does not strand a running task; historical focus and stale user edits keep exact versions", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-focus-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-focus-"));
   let input = "";
   const driver: AgentDriver = {
     async run(request) {
@@ -185,7 +185,7 @@ test("invalid focus does not strand a running task; historical focus and stale u
 });
 
 test("stopping invalidates a late model write and task waiting freezes subsequent tools", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-stop-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-stop-"));
   let release: () => void = () => {};
   let started: () => void = () => {};
   let writesBlocked = 0;
@@ -238,7 +238,7 @@ test("stopping invalidates a late model write and task waiting freezes subsequen
 });
 
 test("a user message executes tools, saves a visible artifact and survives reopening; duplicate messages do not run twice", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-api-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-api-"));
   let calls = 0;
   const driver: AgentDriver = {
     async run(request: RunRequest) {
@@ -265,7 +265,7 @@ test("a user message executes tools, saves a visible artifact and survives reope
     const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
     const initial = await (
       await fetch(`${base}/api/bootstrap`, {
-        headers: { "x-dataengine-token": service.adminToken },
+        headers: { "x-contextos-token": service.adminToken },
       })
     ).json();
     const denied = await fetch(`${base}/api/messages`, {
@@ -283,7 +283,7 @@ test("a user message executes tools, saves a visible artifact and survives reope
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-DataEngine-Token": initial.token,
+          "X-ContextOS-Token": initial.token,
         },
         body: JSON.stringify(body),
       });
@@ -291,7 +291,7 @@ test("a user message executes tools, saves a visible artifact and survives reope
     await service.app.idle();
     const state = await (
       await fetch(`${base}/api/state`, {
-        headers: { "x-dataengine-token": service.adminToken },
+        headers: { "x-contextos-token": service.adminToken },
       })
     ).json();
     assert.equal(state.task.status, "paused");

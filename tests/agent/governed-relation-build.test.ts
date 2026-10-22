@@ -10,7 +10,7 @@ import { Workspace } from "../../src/agent/workspace.ts";
 const ref = (artifact: Artifact) => ({ id: artifact.id, version: artifact.version });
 
 test("a governed relation survives same-structure rebuilds with its semantic identity and executable binding", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-governed-rebuild-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-governed-rebuild-"));
   const service = await createServer({ directory, automaticApi: false });
   const { app } = service;
   try {

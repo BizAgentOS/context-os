@@ -12,7 +12,7 @@
 
 1. 填名称与用途，选择发布。
 2. 明确实体、属性（可取消默认选择）、两端都已开放的关系与依据范围。
-3. 选择是否允许 ADE Agent 调查委托，默认关闭。
+3. 选择是否允许 Context OS Agent 调查委托，默认关闭。
 4. 签发独立密钥，只显示一次；配置提供实际 Node 路径、stdio MCP 和 HTTP 说明，持久记录与示例只存摘要或占位符。
 5. 实际执行 MCP 握手、工具发现和一次查询；测试成功不代表所有业务问题或来源都可用。
 
@@ -28,7 +28,7 @@
 
 每次请求及在途返回前核对当前接入与来源授权；历史证据、旧发布、幂等重放和委托结果不能绕过撤销。固定快照可重放保存范围内的数据，不宣称不存在的源端业务历史。动态说明由执行合同生成，与真实读取方式、许可和工具一致。
 
-## 可选 ADE Agent 委托
+## 可选 Context OS Agent 委托
 
 明确启用的接入方可提交、读取和取消只读调查，任务绑定发布、接入方与范围，不提供管理、来源配置、结构提议、采用或签发密钥能力。最多 24 次读取、512 KiB 工具结果、每次 20 对象；未配置模型显示实际等待或不可用，解释与确定性结果分开。
 
@@ -69,7 +69,7 @@ FEATURE_023 将在线第三页改为本体数据集工作台。管理员选择�
 | query_objects | /v4/objects | 有界业务查询；type / id / relation / fields / offset / limit |
 | read_evidence | /v4/evidence?ref=… | 对查询返回的获准依据引用逐项读取 |
 
-外部 Agent 使用生成的本机 stdio 配置（实际 Node 路径、桥接脚本、服务 URL 和数据集密钥），DataEngine 服务需保持运行。当前不提供远程 MCP URL、公网托管、记录级或多租户权限。每次调用独立校验权限，数据集密钥不能用于管理或旧消费接口。页面“测试 MCP”执行真实握手、工具发现、目录及一个概念读取，不能代表外部 Agent 已配置，也不证明全部业务来源可用。验收见 [本体数据集](experiment/ONTOLOGY_DATASETS.md)。
+外部 Agent 使用生成的本机 stdio 配置（实际 Node 路径、桥接脚本、服务 URL 和数据集密钥），Context OS 服务需保持运行。当前不提供远程 MCP URL、公网托管、记录级或多租户权限。每次调用独立校验权限，数据集密钥不能用于管理或旧消费接口。页面“测试 MCP”执行真实握手、工具发现、目录及一个概念读取，不能代表外部 Agent 已配置，也不证明全部业务来源可用。验收见 [本体数据集](experiment/ONTOLOGY_DATASETS.md)。
 
 ### 消费视图
 
@@ -145,7 +145,7 @@ FEATURE_023 将在线第三页改为本体数据集工作台。管理员选择�
 
 `GET /v3/connection` 返回该视图 OpenAPI 3.1、HTTP 示例、本地 MCP 配置及许可范围。管理端用 `/api/live/views/connection?id=…&version=…` 获取同份说明；`/api/live/views/evidence-options` 使用相同模型引用列出可授权历史读取。密钥始终是占位符；源服务地址、未授权字段和内部 bundle 引用不进入对外说明。本地桥接脚本的实际文件路径用于本机配置，不是远程托管地址。
 
-`node scripts/dataengine-mcp.ts` 接受 `DATAENGINE_URL` 与本视图 `DATAENGINE_CONSUMER_KEY`，通过实际 HTTP 服务读取，不依赖浏览器或内部模型。v3 工具为 `describe_catalog`、`describe_type`、`query_objects`、`read_evidence`、`describe_connection`；目录/查询/证据流程与 HTTP 相同。原 v1/v2 桥接不变。仍未提供远程托管 MCP 或记录级企业 IAM；迁移契约见 T016-03。
+`node scripts/context-os-mcp.ts` 接受 `CONTEXT_OS_URL` 与本视图 `CONTEXT_OS_CONSUMER_KEY`，通过实际 HTTP 服务读取，不依赖浏览器或内部模型。v3 工具为 `describe_catalog`、`describe_type`、`query_objects`、`read_evidence`、`describe_connection`；目录/查询/证据流程与 HTTP 相同。原 v1/v2 桥接不变。仍未提供远程托管 MCP 或记录级企业 IAM；迁移契约见 T016-03。
 
 内部 Agent 在消费页已能只读 `evidence_list/read` 以确认真实引用，再通过 `consumer_view_propose` 保存显式许可；模型可能漏填证据范围，界面与实际草稿回执是核查依据，宿主不推断或补授用户未提交的权限。
 

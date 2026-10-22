@@ -54,7 +54,7 @@ export class AgentMcp {
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
     }
-    // Migrate only this workspace's ADE connection file, never global MCP profiles.
+    // Migrate only this workspace's Context OS connection file, never global MCP profiles.
     if(this.connections.some(c=>Object.keys(c.config.headers??{}).length)){
       const credentials=this.vault.get('agent_mcp');
       for(const c of this.connections)if(Object.keys(c.config.headers??{}).length)credentials[c.name]=c.config.headers;

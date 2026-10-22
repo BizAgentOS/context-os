@@ -1,3 +1,4 @@
+import { environment } from "../config/brand.ts";
 import { OntologyWorkspace } from "../semantic/workspace.ts";
 import {BackupService} from '../security/workspace-backup.ts';
 import {CredentialVault} from '../security/credential-vault.ts';
@@ -40,7 +41,7 @@ import { WorkspaceEvents, snapshotScopes } from "./workspace-events.ts";
 const webRoot = fileURLToPath(new URL("../../web/agent/", import.meta.url));
 const managementArtifactKinds=new Set(['local_user','audit_record','workspace_backup','retention_settings','retention_run','usage_policy_receipt']);
 const staticFiles: Record<string, { file: string; type: string }> = {
-  ...Object.fromEntries(["local-auth", "workspace-settings", "ontology-workbench", "database-connection", "answer-card", "answer-visualization", "naming-review", "document-preview", "feishu-tables", "sync-settings", "sync-issue", "agent-mode-controls", "gap-detail", "run-card", "decision-card", "message-markdown", "workspace-store", "agent-panel", "task-center", "pending-center", "data-profile", "share-workspace", "page-region", "sessions"].map(name => [`/${name}.js`, { file: `${name}.js`, type: "text/javascript; charset=utf-8" }])),
+  ...Object.fromEntries(["browser-storage", "local-auth", "workspace-settings", "ontology-workbench", "database-connection", "answer-card", "answer-visualization", "naming-review", "document-preview", "feishu-tables", "sync-settings", "sync-issue", "agent-mode-controls", "gap-detail", "run-card", "decision-card", "message-markdown", "workspace-store", "agent-panel", "task-center", "pending-center", "data-profile", "share-workspace", "page-region", "sessions"].map(name => [`/${name}.js`, { file: `${name}.js`, type: "text/javascript; charset=utf-8" }])),
   "/glass-theme.css": {file:"glass-theme.css",type:"text/css; charset=utf-8"},
   "/glass-ontology.css": {file:"glass-ontology.css",type:"text/css; charset=utf-8"},
   "/ontology-workspace.css": {file:"ontology-workspace.css",type:"text/css; charset=utf-8"},
@@ -165,7 +166,7 @@ export async function createServer(
   try {
     writeFileSync(
       tokenFile,
-      `de_admin_${randomBytes(32).toString("base64url")}`,
+      `cos_admin_${randomBytes(32).toString("base64url")}`,
       { flag: "wx", mode: 0o600 },
     );
   } catch (error) {
@@ -176,11 +177,13 @@ export async function createServer(
   }
   chmodSync(tokenFile, 0o600);
   const token = readFileSync(tokenFile, "utf8").trim();
-  if (!/^de_admin_[A-Za-z0-9_-]{43}$/.test(token)) {
+  if (!/^(?:cos|de)_admin_[A-Za-z0-9_-]{43}$/.test(token)) {
     await app.close();
     throw new Error("管理员凭据文件无效");
   }
-  const cookieName = `dataengine_admin_${createHash("sha256").update(token).digest("hex").slice(0, 16)}`;
+  const cookieName = "context_os_session";
+  // Existing browser sessions remain valid while their actual token is still authorized.
+  const legacyCookieName = `dataengine_admin_${createHash("sha256").update(token).digest("hex").slice(0, 16)}`;
   const openApiImports = new OpenApiImports(app.live.sources);
   const events = new WorkspaceEvents(app.memory.changes);
   const matchesToken = (value: unknown) => {
@@ -246,12 +249,10 @@ export async function createServer(
       }
       let requestActor:Actor|undefined,sessionToken='';
       if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
-        const supplied = request.headers["x-dataengine-token"];
-        const cookie = request.headers.cookie
-          ?.split(";")
-          .map((part) => part.trim())
-          .find((part) => part.startsWith(`${cookieName}=`))
-          ?.slice(cookieName.length + 1);
+        const supplied = request.headers["x-contextos-token"] ?? request.headers["x-dataengine-token"];
+        const cookies = request.headers.cookie?.split(";").map(part => part.trim()) ?? [];
+        const cookieValue = (name: string) => cookies.find(part => part.startsWith(`${name}=`))?.slice(name.length + 1);
+        const cookie = cookieValue(cookieName) ?? cookieValue(legacyCookieName);
         const origin = request.headers.origin;
         const credential=supplied!==undefined?supplied:request.method==='GET'?cookie:undefined;
         if(typeof credential==='string'){
@@ -511,19 +512,19 @@ export async function createServer(
           send(200, {
             mcp: {
               mcpServers: {
-                dataengine: {
+                "context-os": {
                   command: process.execPath,
                   args: [
                     fileURLToPath(
                       new URL(
-                        "../../scripts/dataengine-mcp.ts",
+                        "../../scripts/context-os-mcp.ts",
                         import.meta.url,
                       ),
                     ),
                   ],
                   env: {
-                    DATAENGINE_URL: origin,
-                    DATAENGINE_CONSUMER_KEY: "<本调用方 API Key>",
+                    CONTEXT_OS_URL: origin,
+                    CONTEXT_OS_CONSUMER_KEY: "<本调用方 API Key>",
                   },
                 },
               },
@@ -589,7 +590,7 @@ export async function createServer(
       }
       let result: unknown;
       switch (url.pathname) {
-        case '/api/auth/logout':result=app.users.logout(sessionToken);response.setHeader('Set-Cookie',`${cookieName}=; HttpOnly; SameSite=Strict; Path=/api; Max-Age=0`);break;
+        case '/api/auth/logout':result=app.users.logout(sessionToken);response.setHeader('Set-Cookie',[cookieName,legacyCookieName].map(name=>`${name}=; HttpOnly; SameSite=Strict; Path=/api; Max-Age=0`));break;
         case '/api/users/create':result={user:app.users.create(body)};break;
         case '/api/users/update':result={user:app.users.update(body)};break;
         case '/api/usage/policy':result=app.usage.configure(body);break;
@@ -1058,13 +1059,13 @@ if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(resolve(process.argv[1])).href
 ) {
-  const port = Number(process.env.DATAENGINE_PORT ?? 8788);
+  const port = Number(environment("PORT") ?? 8788);
   const service = await createServer({
-    directory: process.env.DATAENGINE_STATE_DIR,
+    directory: environment("STATE_DIR"),
   });
   service.server.listen(port, "127.0.0.1", () => {
     console.log(
-      `DataEngine: http://127.0.0.1:${port}/#access=${service.adminToken}`,
+      `Context OS: http://127.0.0.1:${port}/#access=${service.adminToken}`,
     );
   });
   const shutdown = () => {

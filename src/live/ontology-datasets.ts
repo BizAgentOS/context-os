@@ -139,7 +139,7 @@ export class OntologyDatasets {
         const view = views.createForRelease({ ...args.business, operationId: "dataset:" + args.operationId, name: args.name, purpose: "MCP 本体数据集" }, releaseRef);
         business = jsonData({ viewRef: { id: view.id, version: view.version }, ...args.business });
       }
-      const key = "de_dataset_" + randomBytes(32).toString("base64url");
+      const key = "cos_dataset_" + randomBytes(32).toString("base64url");
       const dataset = this.memory.putArtifact({
         kind: "ontology_dataset", title: args.name, status: "active",
         content: jsonData({
@@ -171,10 +171,10 @@ export class OntologyDatasets {
     if (a.version !== r.version || a.status !== "active") throw new Error("数据集已变化或停用");
     return {
       dataset: publicDataset(a), transport: "stdio", localOnly: true,
-      mcp: { mcpServers: { ["dataengine-" + a.id]: {
+      mcp: { mcpServers: { ["context-os-" + a.id]: {
         command: process.execPath,
-        args: [fileURLToPath(new URL("../../scripts/dataengine-mcp.ts", import.meta.url))],
-        env: { DATAENGINE_URL: origin, DATAENGINE_CONSUMER_KEY: "<本数据集接入密钥>" },
+        args: [fileURLToPath(new URL("../../scripts/context-os-mcp.ts", import.meta.url))],
+        env: { CONTEXT_OS_URL: origin, CONTEXT_OS_CONSUMER_KEY: "<本数据集接入密钥>" },
       } } },
       http:{baseUrl:origin,authorization:"Bearer <本数据集接入密钥>",endpoints:[
         {method:"GET",path:"/v4/dataset",description:"读取获准目录"},
@@ -185,7 +185,7 @@ export class OntologyDatasets {
     };
   }
   authenticate(key: string) {
-    if (!/^de_dataset_[A-Za-z0-9_-]+$/.test(key)) return undefined;
+    if (!/^(?:cos|de)_dataset_[A-Za-z0-9_-]+$/.test(key)) return undefined;
     return this.memory.listArtifacts("ontology_dataset").find(a => a.status === "active" && a.content.keyHash === digest(key) && this.published(a));
   }
   private published(dataset:Artifact){

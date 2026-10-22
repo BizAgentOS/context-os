@@ -237,8 +237,8 @@ test('incomplete identity targets do not become formal belonging edges',async()=
   const w=await identityWorkspace();
   try{
     const changed=await w.adopt('identity_rule',{kind:'belongs_to',left:{bindingId:w.binding('account'),columns:['email']},right:{bindingId:w.binding('person'),columns:['email']},relationName:'归属',reason:'需唯一归属',evidence:'名册'}),relationTypeId=(changed.content.effect as any).relationTypeId;
-    const previous=process.env.ADE_SNAPSHOT_MAX_ROWS;process.env.ADE_SNAPSHOT_MAX_ROWS='1';
-    try{await w.service.app.snapshots.sync({operationId:'partial',sourceIds:[w.sources.people.id]});}finally{if(previous===undefined)delete process.env.ADE_SNAPSHOT_MAX_ROWS;else process.env.ADE_SNAPSHOT_MAX_ROWS=previous;}
+    const previous=process.env.CONTEXT_OS_SNAPSHOT_MAX_ROWS;process.env.CONTEXT_OS_SNAPSHOT_MAX_ROWS='1';
+    try{await w.service.app.snapshots.sync({operationId:'partial',sourceIds:[w.sources.people.id]});}finally{if(previous===undefined)delete process.env.CONTEXT_OS_SNAPSHOT_MAX_ROWS;else process.env.CONTEXT_OS_SNAPSHOT_MAX_ROWS=previous;}
     const query=new SemanticQuery(w.service.app.memory,w.service.app.live,w.service.app.snapshots),result=await query.execute({target:{entityTypeId:'account',id:'A1'},traverse:[{relationTypeId}],fields:[]},{modelRef:ref(w.model)});
     assert.deepEqual(result.items,[]);assert.equal(result.coverage.sourceComplete,false);assert.equal(result.coverage.total,null);
   }finally{await w.close();}

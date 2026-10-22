@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { MemoryStore } from "../../src/agent/memory.ts";
 
 test("model history windows never delete stored messages and older pages survive reopening", () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-history-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-history-"));
   let memory = new MemoryStore(directory);
   try {
     const task = memory.createTask("历史保留");

@@ -4,7 +4,7 @@
 
 ## 目标
 
-企业用户选择服务、完成官方登录或授权，即可回到 DataEngine 验证连接。普通接入不要求填写 MCP 请求头、CLI 参数、工具 schema 或业务字段 JSON。顶部导航、Logo、底部助手保持现状；改动集中于资料与数据的接入入口及连接对话框。
+企业用户选择服务、完成官方登录或授权，即可回到 Context OS 验证连接。普通接入不要求填写 MCP 请求头、CLI 参数、工具 schema 或业务字段 JSON。顶部导航、Logo、底部助手保持现状；改动集中于资料与数据的接入入口及连接对话框。
 
 ## 已核查的上游实现
 
@@ -18,7 +18,7 @@
 
 这不是给所有 MCP 加一个统一登录网址。各服务使用自己的授权机制，有的需要官方 CLI，有的使用 OAuth，有的仍有管理员或凭据前置要求。应按真实支持展示，不把浏览器打开成功当成连接成功。
 
-当前 DataEngine KodaX 0.7.96-beta.2 已导出 discoverOAuthEndpoints、registerOAuthClient、performOAuthLogin 等符号；仅确认导出存在，不等于已验证上游适配兼容或完成集成。Space 当前许可证为 KAI-FCL；直接引入源码需保留来源与许可，并按本产品团队的适用授权维护，不将其标为 MIT/Apache 副本。
+当前 Context OS KodaX 0.7.96-beta.2 已导出 discoverOAuthEndpoints、registerOAuthClient、performOAuthLogin 等符号；仅确认导出存在，不等于已验证上游适配兼容或完成集成。Space 当前许可证为 KAI-FCL；直接引入源码需保留来源与许可，并按本产品团队的适用授权维护，不将其标为 MIT/Apache 副本。
 
 ## 用户流程
 
@@ -39,7 +39,7 @@
 
 资料目录按知识文档、BI 指标、业务记录呈现实际读取内容；账号连接目录管理授权关系。这两个目录关联而不混为同一事实状态。
 
-## DataEngine 的适配边界
+## Context OS 的适配边界
 
 - Electron IPC 改成本地 Node 后端的连接任务 API；前端只读取任务状态和允许打开的授权 URL。
 - OAuth/CLI 由宿主执行。回调校验、任务取消、超时、令牌刷新、凭据保存由后端负责；公共 API 和模型结果不包含凭据或原始登录日志。

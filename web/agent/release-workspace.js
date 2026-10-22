@@ -1,3 +1,4 @@
+import { readBrowserValue } from "./browser-storage.js";
 import { technicalDetails } from "./ui-display.js";
 import { updateRegion } from "./page-region.js";
 import { requestPending } from "./pending-center.js";
@@ -49,7 +50,7 @@ export function renderReleaseWorkspace(state, actions) {
   function publish(){
     if(!mayManage())return;
     const working=structuredClone(data.working);
-    const d=dialog("检查并发布工作版本",true);const storageKey=`ade-release-draft:${state.workspaceId}`;let draft={};try{draft=JSON.parse(localStorage.getItem(storageKey)||"{}");}catch{}
+    const d=dialog("检查并发布工作版本",true);const storageKey=`context-os:release-draft:${state.workspaceId}`;let draft={};try{draft=JSON.parse(readBrowserValue(localStorage,storageKey,[`ade-release-draft:${state.workspaceId}`])||"{}");}catch{}
     const form=el("form"),name=field(form,"版本名称",draft.name||`v1.${data.releases.length}`),notes=field(form,"版本说明",draft.notes||"",true);name.required=true;name.maxLength=160;notes.maxLength=4000;
     const keep=()=>{try{localStorage.setItem(storageKey,JSON.stringify({name:name.value,notes:notes.value}));}catch{}};form.oninput=keep;
     const notices=el("section",null,"engine-panel");
@@ -79,9 +80,9 @@ export function renderReleaseWorkspace(state, actions) {
         d.body.append(el("p",`${connection.title} → ${releaseName(result.release)} · ${result.localOnly?"本机接入":"服务接入"}`,"engine-muted"));
         d.body.append(el("h3","HTTP 接入"),el("p",`地址：${result.http?.baseUrl||""} · 使用 Bearer 密钥认证；查询参数遵循下列合同。`,"engine-muted"),table(result.http?.endpoints||[],[["方法",item=>item.method],["接口",item=>item.path],["用途",item=>item.description]]),technicalDetails(result.http||{}));
         const placeholder=result.mcp;const box=el("div"),area=downloadConfig(box,placeholder);d.body.append(box);
-        const materialize=()=>{const config=structuredClone(placeholder);for(const entry of Object.values(config.mcpServers||{})){if(entry.env)entry.env.DATAENGINE_CONSUMER_KEY=key.value.trim();}return config;};
+        const materialize=()=>{const config=structuredClone(placeholder);for(const entry of Object.values(config.mcpServers||{})){if(entry.env)entry.env.CONTEXT_OS_CONSUMER_KEY=key.value.trim();}return config;};
         const full=action("填入密钥生成完整配置",()=>{if(!key.value.trim()){output.textContent="请先填写接入密钥。";key.focus();return;}area.value=JSON.stringify(materialize(),null,2);output.textContent="配置已包含密钥，请仅提供给获准的接入方。";});d.body.append(full);
-        d.body.append(el("h3","开放能力"),el("p",(result.tools||[]).map(t=>typeof t==="string"?t:t.name).join(" · "),"engine-muted"),el("p",connection.content.agentEnabled?"允许委托 ADE 助手执行授权范围内的只读任务。":"仅开放确定性的本体与数据读取。","engine-muted"),el("p","ADE 服务需要持续运行。密钥不在浏览器持久保存；升级会撤销旧密钥并签发新密钥。","engine-muted"));
+        d.body.append(el("h3","开放能力"),el("p",(result.tools||[]).map(t=>typeof t==="string"?t:t.name).join(" · "),"engine-muted"),el("p",connection.content.agentEnabled?"允许委托 Context OS 助手执行授权范围内的只读任务。":"仅开放确定性的本体与数据读取。","engine-muted"),el("p","Context OS 服务需要持续运行。密钥不在浏览器持久保存；升级会撤销旧密钥并签发新密钥。","engine-muted"));
         if(result.dataset){const test=action("测试本机 MCP",()=>transact(d,output,async()=>{if(!key.value.trim())throw Error("请先填写接入密钥。");const checked=await actions.api("/api/datasets/test",{id:result.dataset.id,key:key.value.trim()});output.textContent=`本机 MCP 测试通过 · ${when(checked.checkedAt)}。${checked.query?`已实际读取「${checked.query.type}」${checked.query.rows} 条记录。`:"此接入未授权业务记录，仅测试本体目录。"} ${checked.scope}`;}));d.body.append(test);}
       }catch(e){output.textContent=e.message;d.body.append(action("重新读取配置",()=>void loadConfig()));}
     }void loadConfig();
@@ -112,7 +113,7 @@ export function renderReleaseWorkspace(state, actions) {
         row.input.disabled=!selected.has(relation.from)||!selected.has(relation.to)||!fieldsReady;if(row.input.disabled)row.input.checked=false;row.evidence.disabled=!row.input.checked||!business;if(row.evidence.disabled)row.evidence.checked=false;
       }
     }
-    panels[3].append(el("h3","是否开放只读 Agent 委托"));const agent=check(panels[3],"允许委托 ADE 助手","第三方可以提交本接入范围内的只读分析任务。默认关闭。");
+    panels[3].append(el("h3","是否开放只读 Agent 委托"));const agent=check(panels[3],"允许委托 Context OS 助手","第三方可以提交本接入范围内的只读分析任务。默认关闭。");
     const output=message(d.body),controls=el("div",null,"engine-actions"),back=action("上一步",()=>show(step-1)),next=action("下一步",()=>{if(step===0&&(!name.reportValidity()||!purpose.reportValidity()))return;if(step===2&&![...concepts.values()].some(input=>input.checked)){output.textContent="请至少开放一个实体。";return;}show(step+1);}),submit=action("创建并签发密钥",()=>{void transact(d,output,async()=>{
       const selectedGrants=grants.filter(grant=>concepts.get(grant.type.conceptId)?.checked&&grant.enabled.checked).map(grant=>{const selectedRelations=[...relations.values()].filter(row=>row.input.checked&&row.definition.from===grant.type.conceptId);return{type:grant.type.name,fields:grant.fields.filter(field=>field.input.checked).map(field=>field.name),relations:selectedRelations.map(row=>row.definition.name),evidence:{fields:grant.fields.filter(field=>field.evidence?.checked).map(field=>field.name),relations:selectedRelations.filter(row=>row.evidence.checked).map(row=>row.definition.name)}};});
       const body={name:name.value,purpose:purpose.value,releaseRef:ref(release),conceptIds:[...concepts].filter(([,input])=>input.checked).map(([id])=>id),relationIds:[...relations].filter(([,row])=>row.input.checked).map(([id])=>id),metricIds:[...metrics].filter(([,row])=>row.input.checked).map(([id])=>id),...(selectedGrants.length?{business:{grants:selectedGrants}}:{}),agentEnabled:agent.checked};const signature=JSON.stringify(body);if(signature!==fingerprint){operationId=crypto.randomUUID();fingerprint=signature;}const result=await actions.api("/api/releases/connect",{operationId,...body});d.close();refresh();void configuration(result.connection,result.key||"");

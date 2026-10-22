@@ -1,4 +1,4 @@
-# Data Engine 文档中心
+# Context OS 文档中心
 
 更新：2026-10-22。文档按基于 KodaX 的领域 Agent 产品组织：产品目标 → 系统职责 → Agent 方法与运行 → 共同语义契约 → 人类交互和外部消费 → 实施与验证。
 
@@ -23,7 +23,7 @@
 | 要回答的问题 | 主文档 | 负责的内容 |
 |---|---|---|
 | 产品为什么存在、给谁用、Agent 带来什么价值 | [产品需求（PRD）](PRODUCT.md) | 用户、业务任务、能力闭环、三页职责、成功判据 |
-| 系统由谁负责什么 | [总体架构（HLD）](DATA_ENGINE_DESIGN.md) | KodaX、应用宿主、领域服务、来源、前端与消费边界 |
+| 系统由谁负责什么 | [总体架构（HLD）](CONTEXT_OS_DESIGN.md) | KodaX、应用宿主、领域服务、来源、前端与消费边界 |
 | 内部 Agent 如何工作和完成任务 | [Agent 设计](AGENT_DESIGN.md) | 身份、工作方式、运行装配、能力使用、状态、停止和恢复 |
 | KodaX 哪些能力真的接入了 | [KodaX 能力接入记录](KODAX_CAPABILITY_LEDGER.md) | 当前 SDK 依据、本产品调用路径、证据和缺口 |
 | 0.2.0 三页怎样运行与验收 | [数据底座工作台](experiment/ENGINE_WORKBENCH.md) | 模型优先、程序构建、修订、发布接入与受限委托 |
@@ -46,7 +46,7 @@
 | 怎样维护文档与实现 | [开发流程](DEVELOPMENT.md)、[变更记录](CHANGELOG.md) | Feature 流程、文档变更归属、实际交付记录 |
 | 还有哪些已知问题待修 | [问题与处理状态](ISSUES.md)、[本轮验收](experiment/ISSUES_2026_10_17.md) | 原始问题、当前修复证据与尚待验证项；不代替台账状态 |
 
-保留 `PRODUCT.md` 和 `DATA_ENGINE_DESIGN.md` 的现有路径，分别承担 PRD 和 HLD 的职责，不再新建同义长文。
+保留 `PRODUCT.md` 和 `CONTEXT_OS_DESIGN.md` 的现有路径，分别承担 PRD 和 HLD 的职责，不再新建同义长文。
 
 ## Agent 产品的阅读与开发顺序
 
@@ -68,9 +68,9 @@
 
 ## KodaX-Space 的借鉴与本产品取舍
 
-对照固定源码 [84352756](https://github.com/icetomoyo/KodaX-Space/tree/84352756f9d792c6f327a506cede062e809392e1)，读取其文档中心、PRD、HLD、能力台账、内置 Skill 维护和 ADR。原项目文档中正式发布与源码候选分开描述；本次借鉴组织方式，不采用其 SDK 版本或声明其能力已在 Data Engine 接入。
+对照固定源码 [84352756](https://github.com/icetomoyo/KodaX-Space/tree/84352756f9d792c6f327a506cede062e809392e1)，读取其文档中心、PRD、HLD、能力台账、内置 Skill 维护和 ADR。原项目文档中正式发布与源码候选分开描述；本次借鉴组织方式，不采用其 SDK 版本或声明其能力已在 Context OS 接入。
 
-| 参考结构 | Data Engine 的对应调整 |
+| 参考结构 | Context OS 的对应调整 |
 |---|---|
 | [文档中心](https://github.com/icetomoyo/KodaX-Space/blob/84352756f9d792c6f327a506cede062e809392e1/docs/README.md)按目标导航、区分当前与历史 | 当前文档职责表、按任务阅读、历史 Agent 归档 |
 | [PRD](https://github.com/icetomoyo/KodaX-Space/blob/84352756f9d792c6f327a506cede062e809392e1/docs/PRD.md)与 [HLD](https://github.com/icetomoyo/KodaX-Space/blob/84352756f9d792c6f327a506cede062e809392e1/docs/HLD.md)分开产品与技术责任 | 产品围绕本体融合工作闭环；架构明确 SDK、宿主与领域服务的职责 |
@@ -78,4 +78,4 @@
 | [内置 Skill 维护](https://github.com/icetomoyo/KodaX-Space/blob/84352756f9d792c6f327a506cede062e809392e1/docs/BUILTIN_SKILLS.md)独立管理方法资源 | 管理本项目方法、实际工具依赖与可验证产物；首轮没有复制其完整分发工具链 |
 | [ADR 索引](https://github.com/icetomoyo/KodaX-Space/blob/84352756f9d792c6f327a506cede062e809392e1/docs/ADR/README.md)保留决策与取舍 | 固定单循环、共同领域操作边界、状态与来源分离三项决定 |
 
-Data Engine 当前是 Node HTTP 服务与 Web 画布。Space 的 Electron、Coder/Partner、共享 daemon、桌面面板及权限档位有各自产品背景，本轮不引入这些结构。外部数据消费仍是独立的确定性服务入口，无需经过内部模型。
+Context OS 当前是 Node HTTP 服务与 Web 画布。Space 的 Electron、Coder/Partner、共享 daemon、桌面面板及权限档位有各自产品背景，本轮不引入这些结构。外部数据消费仍是独立的确定性服务入口，无需经过内部模型。

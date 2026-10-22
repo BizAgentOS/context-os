@@ -25,7 +25,7 @@ const within = async <T>(promise: Promise<T>) => {
 
 test("a failed message save can be retried with the same id and then really executes", { timeout: 20000 }, async () => {
   const directory = mkdtempSync(
-    join(tmpdir(), "dataengine-canvas-write-failure-"),
+    join(tmpdir(), "context-os-canvas-write-failure-"),
   );
   let runs = 0;
   const driver: AgentDriver = {
@@ -53,14 +53,14 @@ test("a failed message save can be retried with the same id and then really exec
     const url = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
     const bootstrap = await (
       await fetch(`${url}/api/canvas/bootstrap`, {
-        headers: { "x-dataengine-token": service.adminToken },
+        headers: { "x-contextos-token": service.adminToken },
       })
     ).json();
     const request = {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-dataengine-token": bootstrap.token,
+        "x-contextos-token": bootstrap.token,
       },
       body: JSON.stringify({
         page: "company",
@@ -73,7 +73,7 @@ test("a failed message save can be retried with the same id and then really exec
     assert.equal(runs, 0);
     const beforeRetry = await (
       await fetch(`${url}/api/canvas`, {
-        headers: { "x-dataengine-token": service.adminToken },
+        headers: { "x-contextos-token": service.adminToken },
       })
     ).json();
     assert.equal(beforeRetry.messages.length, 0);
@@ -83,7 +83,7 @@ test("a failed message save can be retried with the same id and then really exec
     await service.app.idle();
     const afterRetry = await (
       await fetch(`${url}/api/canvas`, {
-        headers: { "x-dataengine-token": service.adminToken },
+        headers: { "x-contextos-token": service.adminToken },
       })
     ).json();
     assert.equal(runs, 1);
@@ -105,7 +105,7 @@ test("a failed message save can be retried with the same id and then really exec
 });
 
 test("the canvas keeps user-edited company facts and remains on setup after the run settles", { timeout: 20000 }, async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-canvas-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-canvas-"));
   let finish!: () => void;
   let saved!: () => void;
   const savedPromise = new Promise<void>((resolve) => {
@@ -150,7 +150,7 @@ test("the canvas keeps user-edited company facts and remains on setup after the 
   try {
     let url = await start();
     const initialResponse = await fetch(`${url}/api/canvas/bootstrap`, {
-      headers: { "x-dataengine-token": service.adminToken },
+      headers: { "x-contextos-token": service.adminToken },
     });
     assert.equal(initialResponse.status, 200);
     const initial = await initialResponse.json();
@@ -161,7 +161,7 @@ test("the canvas keeps user-edited company facts and remains on setup after the 
     companyFixture(service.app);
     const headers = {
       "content-type": "application/json",
-      "x-dataengine-token": initial.token,
+      "x-contextos-token": initial.token,
     };
     const visited = await fetch(`${url}/api/canvas/navigate`, {
       method: "POST",
@@ -187,7 +187,7 @@ test("the canvas keeps user-edited company facts and remains on setup after the 
     await within(savedPromise);
     const during = await (
       await fetch(`${url}/api/canvas`, {
-        headers: { "x-dataengine-token": service.adminToken },
+        headers: { "x-contextos-token": service.adminToken },
       })
     ).json();
     assert.equal(during.currentPage, "setup");
@@ -205,7 +205,7 @@ test("the canvas keeps user-edited company facts and remains on setup after the 
     await service.app.idle();
     const after = await (
       await fetch(`${url}/api/canvas`, {
-        headers: { "x-dataengine-token": service.adminToken },
+        headers: { "x-contextos-token": service.adminToken },
       })
     ).json();
     assert.equal(after.currentPage, "setup");
@@ -222,7 +222,7 @@ test("the canvas keeps user-edited company facts and remains on setup after the 
     url = await start();
     const reopened = await (
       await fetch(`${url}/api/canvas/bootstrap`, {
-        headers: { "x-dataengine-token": service.adminToken },
+        headers: { "x-contextos-token": service.adminToken },
       })
     ).json();
     assert.equal(reopened.currentPage, "setup");
@@ -236,7 +236,7 @@ test("the canvas keeps user-edited company facts and remains on setup after the 
 });
 
 test("one cross-page conversation has bounded model context while saved enterprise memory and complete history survive", { timeout: 20000 }, async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-canvas-context-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-canvas-context-"));
   const requests: RunRequest[] = [];
   const driver: AgentDriver = {
     async run(request) {
@@ -307,7 +307,7 @@ test("one cross-page conversation has bounded model context while saved enterpri
 });
 
 test("source inspection uses real records and every build page offers only unified structural proposals", { timeout: 20000 }, async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-canvas-stages-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-canvas-stages-"));
   let offered: string[] = [];
   const driver: AgentDriver = {
     async run(request) {
@@ -381,7 +381,7 @@ test("source inspection uses real records and every build page offers only unifi
 });
 
 test("explicit cancellation after navigation invalidates pending writes, and failed completion cannot advance the canvas", { timeout: 20000 }, async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-canvas-stop-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-canvas-stop-"));
   let release!: () => void;
   let entered!: () => void;
   const enteredPromise = new Promise<void>((resolve) => {

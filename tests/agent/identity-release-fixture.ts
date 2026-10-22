@@ -12,13 +12,13 @@ export const ref = (a: { id: string; version: number }) => ({ id: a.id, version:
 
 /** Separate people and account datasets: a shared mailbox is not proof that a bot is a person. */
 export async function identityWorkspace(driver?: AgentDriver) {
-  const directory = mkdtempSync(join(tmpdir(), "ade-identity-release-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-identity-release-"));
   const service = await createServer({ directory, driver, automaticApi: false });
   await new Promise<void>(resolve => service.server.listen(0, "127.0.0.1", resolve));
   const origin = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
   const request = async (path: string, body?: unknown) => {
     const response = await fetch(origin + path, { method: body === undefined ? "GET" : "POST",
-      headers: { "Content-Type": "application/json", "X-DataEngine-Token": service.adminToken },
+      headers: { "Content-Type": "application/json", "X-ContextOS-Token": service.adminToken },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     return { status: response.status, body: await response.json() as any };
   };

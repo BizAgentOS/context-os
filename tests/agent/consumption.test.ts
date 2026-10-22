@@ -86,7 +86,7 @@ const read = (
   });
 
 test("a reviewed consumer receives only granted fields, keeps its exact source version and can be revoked after reopen", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-consumption-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-consumption-"));
   let memory = new MemoryStore(directory);
   let service = new ConsumptionService(directory, memory);
   try {
@@ -155,7 +155,7 @@ test("a reviewed consumer receives only granted fields, keeps its exact source v
 });
 
 test("relationships require both endpoint grants and never expose hidden fields or evidence; undeclared operations are denied", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-relations-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-relations-"));
   const memory = new MemoryStore(directory);
   const service = new ConsumptionService(directory, memory);
   try {
@@ -265,7 +265,7 @@ test("relationships require both endpoint grants and never expose hidden fields 
 
 test("real HTTP separates admin capabilities from consumer keys, audits denied reads and survives restart", async () => {
   const { createServer } = await import("../../src/agent/server.ts");
-  const directory = mkdtempSync(join(tmpdir(), "dataengine-consumer-http-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-consumer-http-"));
   const driver = {
     async run() {
       return { text: "", sessionId: "unused", runId: "unused" };
@@ -285,7 +285,7 @@ test("real HTTP separates admin capabilities from consumer keys, audits denied r
   try {
     assert.equal((await fetch(`${origin}/api/canvas/bootstrap`)).status, 403);
     const bootstrap = await fetch(`${origin}/api/canvas/bootstrap`, {
-      headers: { "x-dataengine-token": service.adminToken },
+      headers: { "x-contextos-token": service.adminToken },
     });
     assert.equal(bootstrap.status, 200);
     const cookie = bootstrap.headers.get("set-cookie")!;
@@ -341,7 +341,7 @@ test("real HTTP separates admin capabilities from consumer keys, audits denied r
       (
         await fetch(`${origin}/v4/objects?type=Complaint`, {
           headers: {
-            "x-dataengine-token": service.adminToken,
+            "x-contextos-token": service.adminToken,
             cookie: cookie.split(";")[0],
           },
         })
@@ -405,7 +405,7 @@ test("real HTTP separates admin capabilities from consumer keys, audits denied r
       ).status,
       403,
     );
-    const records=await fetch(`${origin}/api/releases/connection-detail?id=${consumer.id}&version=${consumer.version+1}`,{headers:{"x-dataengine-token":service.adminToken}});
+    const records=await fetch(`${origin}/api/releases/connection-detail?id=${consumer.id}&version=${consumer.version+1}`,{headers:{"x-contextos-token":service.adminToken}});
     assert.equal(records.status,200);
     const audit=(await records.json()).usage;
     assert(audit.succeeded>0);assert(audit.failed>0);
@@ -419,7 +419,7 @@ test("real HTTP separates admin capabilities from consumer keys, audits denied r
 
 test("a relation grant also requires the start object's identifier even when its join uses another field", async () => {
   const directory = mkdtempSync(
-    join(tmpdir(), "dataengine-relation-identity-"),
+    join(tmpdir(), "context-os-relation-identity-"),
   );
   const memory = new MemoryStore(directory);
   const service = new ConsumptionService(directory, memory);

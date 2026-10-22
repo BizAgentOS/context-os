@@ -15,7 +15,7 @@ const ref = (a: { id: string; version: number }) => ({ id: a.id, version: a.vers
 const definition = { enterprise: { name: "Release fixture" }, concepts: [{ id: "company", name: "公司", description: "接受服务的公司" }], relations: [], evidence: [], unknowns: [], conflicts: [] };
 
 test("release lifecycle is checked, immutable, idempotent, scoped, and survives restart", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-releases-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-releases-"));
   let memory = new MemoryStore(directory);
   let live = new LiveMemory(directory, memory);
   let releases = new Releases(memory, live);
@@ -36,9 +36,9 @@ test("release lifecycle is checked, immutable, idempotent, scoped, and survives 
     const selection = { operationId: "consumer", name: "Agent A", releaseRef: ref(first.release), conceptIds: ["company"], relationIds: [], agentEnabled: true };
     const consumer = releases.connect(selection);
     assert.equal(consumer.connection.content.agentEnabled, true);
-    assert.match(consumer.key!, /^de_dataset_/);
+    assert.match(consumer.key!, /^cos_dataset_/);
     assert.equal(releases.connect(selection).key, null);
-    assert.doesNotMatch(JSON.stringify(releases.overview()), /keyHash|de_dataset_/);
+    assert.doesNotMatch(JSON.stringify(releases.overview()), /keyHash|cos_dataset_/);
     const datasets = new OntologyDatasets(memory, live);
     const read = () => datasets.handle("/v4/concept", new URLSearchParams({ conceptId: "company" }), "Bearer " + consumer.key);
     assert.equal((await read()).status, 200);
@@ -63,7 +63,7 @@ test("release lifecycle is checked, immutable, idempotent, scoped, and survives 
 });
 
 test("published business versions remain independent over source updates, explicit upgrades preserve grants, and stale checks fail", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-release-business-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-release-business-"));
   const source = await createFusionSources();
   const memory = new MemoryStore(directory), live = new LiveMemory(directory, memory);
   const releases = new Releases(memory, live), datasets = new OntologyDatasets(memory, live);

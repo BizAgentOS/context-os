@@ -7,18 +7,18 @@ import type { OntologyDatasets } from "./ontology-datasets.ts";
 
 /** Run the same local MCP bridge an external Agent uses; credentials never enter results. */
 export async function testDatasetMcp(service: OntologyDatasets, input: unknown, origin: string) {
-  const args = z.object({ id: z.string().min(1).max(200), key: z.string().regex(/^de_dataset_[A-Za-z0-9_-]{20,100}$/) }).strict().parse(input);
+  const args = z.object({ id: z.string().min(1).max(200), key: z.string().regex(/^(?:cos|de)_dataset_[A-Za-z0-9_-]{20,100}$/) }).strict().parse(input);
   const dataset = service.authenticate(args.key);
   if (!dataset || dataset.id !== args.id) throw new Error("密钥不属于此启用的数据集");
-  const client = new Client({ name: "dataengine-connection-check", version: "1" });
+  const client = new Client({ name: "context-os-connection-check", version: "1" });
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const result = await Promise.race([
       (async () => {
         await client.connect(new StdioClientTransport({
           command: process.execPath,
-          args: [fileURLToPath(new URL("../../scripts/dataengine-mcp.ts", import.meta.url))],
-          env: { DATAENGINE_URL: origin, DATAENGINE_CONSUMER_KEY: args.key }, stderr: "pipe",
+          args: [fileURLToPath(new URL("../../scripts/context-os-mcp.ts", import.meta.url))],
+          env: { CONTEXT_OS_URL: origin, CONTEXT_OS_CONSUMER_KEY: args.key }, stderr: "pipe",
         }));
         const tools = await client.listTools();
         const reading = await client.callTool({ name: "describe_dataset", arguments: {} });

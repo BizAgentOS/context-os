@@ -11,7 +11,7 @@ import { createServer } from "node:http";
 import { Workspace } from "../../src/agent/workspace.ts";
 
 function fixture() {
-  const directory = mkdtempSync(join(tmpdir(), "ade-engine-build-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-engine-build-"));
   const memory = new MemoryStore(directory);
   const live = new LiveMemory(directory, memory);
   const foundation = new FoundationService(memory, live);

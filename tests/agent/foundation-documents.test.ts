@@ -93,7 +93,7 @@ test("uploaded enterprise text is read before citation and its versioned excerpt
       const response = await fetch(base + path, {
         method: body ? "POST" : "GET",
         headers: {
-          "x-dataengine-token": service.adminToken,
+          "x-contextos-token": service.adminToken,
           "content-type": "application/json",
         },
         ...(body ? { body: JSON.stringify(body) } : {}),

@@ -7,8 +7,8 @@ import {fileURLToPath} from 'node:url';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 const outputArg=process.argv.find(arg=>arg.startsWith('--output='));
-const output=outputArg?resolve(outputArg.slice('--output='.length)):mkdtempSync(join(tmpdir(),'ade-enterprise-scale-'));
-mkdirSync(output,{recursive:true});const keyDirectory=mkdtempSync(join(tmpdir(),'ade-enterprise-scale-keys-'));
+const output=outputArg?resolve(outputArg.slice('--output='.length)):mkdtempSync(join(tmpdir(),'context-os-enterprise-scale-'));
+mkdirSync(output,{recursive:true});const keyDirectory=mkdtempSync(join(tmpdir(),'context-os-enterprise-scale-keys-'));
 const groups=[
  {id:'storage',covers:['按类别索引与2万成果列表','历史大内容迁移','精确引文保留','不含凭据的备份恢复'],files:['memory-scale','enterprise-scale','workspace-retention','workspace-backup']},
  {id:'discovery',covers:['发现结果一次物化分页','高基数保守签名与全量核实','24实体与20类型容量提示','跨系统身份候选和自引用'],files:['discovery-scale','engine-discovery']},
@@ -22,7 +22,7 @@ try{
  for(const group of groups){
   const start=Date.now(),log=join(output,group.id+'.log');console.log(`开始 ${group.id}: ${group.covers.join('、')}`);
   const exitCode=await new Promise<number|null>((done,reject)=>{
-   const stream=createWriteStream(log,{flags:'wx'}),child=spawn(process.execPath,['--test','--test-concurrency=1',...group.files.map(name=>`tests/agent/${name}.test.ts`)],{cwd:root,env:{...process.env,ADE_VAULT_KEY_DIRECTORY:keyDirectory},stdio:['ignore','pipe','pipe']});
+   const stream=createWriteStream(log,{flags:'wx'}),child=spawn(process.execPath,['--test','--test-concurrency=1',...group.files.map(name=>`tests/agent/${name}.test.ts`)],{cwd:root,env:{...process.env,CONTEXT_OS_VAULT_KEY_DIRECTORY:keyDirectory},stdio:['ignore','pipe','pipe']});
    const timeout=setTimeout(()=>{child.kill('SIGTERM');},10*60*1000);
    child.stdout.pipe(stream,{end:false});child.stderr.pipe(stream,{end:false});child.once('error',error=>{clearTimeout(timeout);stream.end();reject(error);});child.once('close',code=>{clearTimeout(timeout);stream.end(()=>done(code));});
   });

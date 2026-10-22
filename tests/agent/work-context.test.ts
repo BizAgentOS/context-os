@@ -52,7 +52,7 @@ test("a selected live relation binds the same validated target to the browser an
     );
     const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
     const headers = {
-      "x-dataengine-token": service.adminToken,
+      "x-contextos-token": service.adminToken,
       "content-type": "application/json",
     };
     const post = async (path: string, body: unknown) =>
@@ -133,7 +133,7 @@ test("object relation context reads current source facts in its fixed range and 
     );
     const base = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
     const headers = {
-      "x-dataengine-token": service.adminToken,
+      "x-contextos-token": service.adminToken,
       "content-type": "application/json",
     };
     const post = async (context: unknown) =>

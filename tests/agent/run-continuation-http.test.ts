@@ -8,7 +8,7 @@ import {createServer} from "../../src/agent/server.ts";
 import type {AgentDriver} from "../../src/agent/runtime.ts";
 
 test("stopping an existing build session before its first model step retains the submitted goal for continuation", {timeout: 15000}, async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-run-goal-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-run-goal-"));
   const goal = "请核对账号所属人员的关系，保留机器人与无法对应的记录。";
   let invocation = 0, continuedGoal: unknown, release: (() => void) | undefined, entered!: () => void;
   const started = new Promise<void>(resolve => { entered = resolve; });
@@ -31,7 +31,7 @@ test("stopping an existing build session before its first model step retains the
     const origin = `http://127.0.0.1:${(service.server.address() as AddressInfo).port}`;
     const call = async (path: string, body?: unknown) => {
       const response = await fetch(origin + path, {method: body === undefined ? "GET" : "POST",
-        headers: {"x-dataengine-token": service.adminToken, "content-type": "application/json"},
+        headers: {"x-contextos-token": service.adminToken, "content-type": "application/json"},
         ...(body === undefined ? {} : {body: JSON.stringify(body)})});
       assert(response.ok, await response.clone().text());
       return response.json() as Promise<any>;

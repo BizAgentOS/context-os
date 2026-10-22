@@ -29,7 +29,7 @@ test("identity decisions advance one working version and are fixed by each relea
     assert.deepEqual((await w.external(secondReader.key, "a-bot")).body.items, [], "a superseded decision stays fixed for its release");
     const spec = await w.manage(`/api/releases/connection?id=${secondReader.connection.id}&version=${secondReader.connection.version}`);
     const config = Object.values(spec.mcp.mcpServers)[0] as any;
-    await client.connect(new StdioClientTransport({ command: config.command, args: config.args, env: { ...config.env, DATAENGINE_CONSUMER_KEY: secondReader.key }, stderr: "pipe" }));
+    await client.connect(new StdioClientTransport({ command: config.command, args: config.args, env: { ...config.env, CONTEXT_OS_CONSUMER_KEY: secondReader.key }, stderr: "pipe" }));
     const result = await client.callTool({ name: "query_objects", arguments: { type: "账号", id: "a-bot", relation: "所属人员" } });
     assert.equal(result.isError, undefined, JSON.stringify(result));
     assert.deepEqual((result.structuredContent as any).items, [], "MCP uses the same pinned decisions as HTTP");

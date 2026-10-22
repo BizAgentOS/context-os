@@ -36,7 +36,7 @@ test("published connection upgrades preserve exact scope, rotate keys and reject
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-dataengine-token": service.adminToken,
+        "x-contextos-token": service.adminToken,
       },
       body: JSON.stringify(body),
     });
@@ -123,7 +123,7 @@ test("published connection upgrades preserve exact scope, rotate keys and reject
     });
     const changeRef=ref(change);
     const target=await publishWorking(service.app,"新口径");
-    const previewResponse=await fetch(origin+"/api/releases/upgrade-preview?"+new URLSearchParams({connectionId:active.connection.id,connectionVersion:String(active.connection.version),releaseId:target.id,releaseVersion:String(target.version)}),{headers:{"x-dataengine-token":service.adminToken}});
+    const previewResponse=await fetch(origin+"/api/releases/upgrade-preview?"+new URLSearchParams({connectionId:active.connection.id,connectionVersion:String(active.connection.version),releaseId:target.id,releaseVersion:String(target.version)}),{headers:{"x-contextos-token":service.adminToken}});
     assert.equal(previewResponse.status,200);const preview=await previewResponse.json() as any;
     assert.equal(preview.compatible,true);
     assert.ok(preview.affected.length>0);
@@ -148,7 +148,7 @@ test("published connection upgrades preserve exact scope, rotate keys and reject
     assert.equal((await read("/v4/evidence?ref="+oldEvidence,migrated.key)).status,403);
     const client=new Client({name:"migration-client",version:"1.0"});
     try{
-      await client.connect(new StdioClientTransport({command:process.execPath,args:[fileURLToPath(new URL("../../scripts/dataengine-mcp.ts",import.meta.url))],env:{PATH:process.env.PATH!,DATAENGINE_URL:origin,DATAENGINE_CONSUMER_KEY:migrated.key}}));
+      await client.connect(new StdioClientTransport({command:process.execPath,args:[fileURLToPath(new URL("../../scripts/context-os-mcp.ts",import.meta.url))],env:{PATH:process.env.PATH!,CONTEXT_OS_URL:origin,CONTEXT_OS_CONSUMER_KEY:migrated.key}}));
       const response=await client.callTool({name:"query_objects",arguments:{type:"投诉"}});
       assert.equal(response.isError,undefined);
       assert.equal((response.structuredContent as any).items[0].properties.实际反馈.value,"已办结");

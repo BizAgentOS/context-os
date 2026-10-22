@@ -70,7 +70,7 @@ test("host domain evidence and quoted conversation refine the rule-built foundat
       const response = await fetch(base + path, {
         method: body ? "POST" : "GET",
         headers: {
-          "x-dataengine-token": service.adminToken,
+          "x-contextos-token": service.adminToken,
           "content-type": "application/json",
         },
         ...(body ? { body: JSON.stringify(body) } : {}),

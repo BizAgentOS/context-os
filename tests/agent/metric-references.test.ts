@@ -19,7 +19,7 @@ import { Workspace } from "../../src/agent/workspace.ts";
 const ref = (a: Artifact) => ({ id: a.id, version: a.version });
 
 test("a heating metric is attached to stable entity properties only after reviewing its actual definition", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-metric-reference-")), source = await createMetricSource();
+  const directory = mkdtempSync(join(tmpdir(), "context-os-metric-reference-")), source = await createMetricSource();
   const app = new AgentApplication(directory, undefined, new Set(), false);
   try {
     seedFoundation(app.memory, app.foundation, { enterprise: "澄川热力", concepts: [{ id: "station", name: "供热站", description: "运营供热站" }] });
@@ -74,7 +74,7 @@ test("a heating metric is attached to stable entity properties only after review
 });
 
 test("program reconstruction retains independently governed metrics and semantic dimension IDs", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-metric-program-")), source = await createMetricSource();
+  const directory = mkdtempSync(join(tmpdir(), "context-os-metric-program-")), source = await createMetricSource();
   const app = new AgentApplication(directory, undefined, new Set(), false);
   try {
     const workspace = new Workspace(app.memory);
@@ -99,7 +99,7 @@ test("program reconstruction retains independently governed metrics and semantic
 });
 
 test("independent MCP reads metric coverage while denied dimensions, stop and revocation prevent further reads", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-metric-mcp-")), source = await createMetricSource();
+  const directory = mkdtempSync(join(tmpdir(), "context-os-metric-mcp-")), source = await createMetricSource();
   const service = await createServer({ directory, automaticApi: false }), app = service.app;
   const client = new Client({ name: "independent-heating-agent", version: "1" });
   let releaseRead = () => {};
@@ -122,7 +122,7 @@ test("independent MCP reads metric coverage while denied dimensions, stop and re
     const connected = releases.connect({ operationId: "connect", name: "统计助手", releaseRef: ref(published), conceptIds: ["station"], relationIds: [], metricIds: ["complaint-resolution"] });
     const configuration = new OntologyDatasets(app.memory, app.live).connection(ref(connected.dataset), origin);
     const config = Object.values(configuration.mcp.mcpServers)[0];
-    await client.connect(new StdioClientTransport({ command: config.command, args: config.args, env: { ...config.env, DATAENGINE_CONSUMER_KEY: connected.key! }, stderr: "pipe" }));
+    await client.connect(new StdioClientTransport({ command: config.command, args: config.args, env: { ...config.env, CONTEXT_OS_CONSUMER_KEY: connected.key! }, stderr: "pipe" }));
     assert((await client.listTools()).tools.some(tool => tool.name === "query_metric"));
     const input = { metricReferenceId: "complaint-resolution", start: "2026-01-01", end: "2026-02-01" };
     const actual = await client.callTool({ name: "query_metric", arguments: input });
@@ -179,7 +179,7 @@ test("metric references and their unbound dimensions survive model rebuilding an
 });
 
 test("published metrics require an explicit grant and keep their definition when the source changes", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-metric-release-")), source = await createMetricSource();
+  const directory = mkdtempSync(join(tmpdir(), "context-os-metric-release-")), source = await createMetricSource();
   const app = new AgentApplication(directory, undefined, new Set(), false);
   try {
     seedFoundation(app.memory, app.foundation, { enterprise: "澄川热力", concepts: [{ id: "station", name: "供热站", description: "运营供热站" }] });
@@ -240,7 +240,7 @@ test("published metrics require an explicit grant and keep their definition when
 });
 
 test("heating QA reads actual metric observations by semantic dimension and cannot silently use a changed definition", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ade-metric-qa-")), source = await createMetricSource();
+  const directory = mkdtempSync(join(tmpdir(), "context-os-metric-qa-")), source = await createMetricSource();
   const app = new AgentApplication(directory, undefined, new Set(), false);
   try {
     seedFoundation(app.memory, app.foundation, { enterprise: "澄川热力", concepts: [{ id: "station", name: "供热站", description: "运营供热站" }] });

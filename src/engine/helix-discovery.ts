@@ -1,8 +1,8 @@
 // Adapted from Helix Foundry apps/api/src/discovery.ts (Apache-2.0, commit 00d7927).
-// ADE changes are listed in third_party/helix-foundry/MODIFICATIONS.md: an injected snapshot
+// Context OS changes are listed in third_party/helix-foundry/MODIFICATIONS.md: an injected snapshot
 // query replaces the Helix store, names split on Unicode words and Chinese key suffixes, notes
 // and link names are Chinese, and capacity cuts are reported instead of applied silently.
-// ADE also reports non-identity overlap, pruned paths and unconfirmed names for review.
+// Context OS also reports non-identity overlap, pruned paths and unconfirmed names for review.
 import { createHash } from "node:crypto";
 
 export interface ColumnProfile { name: string; type: string; nulls: number; distinct: number; primaryKey: boolean }
@@ -258,7 +258,7 @@ function ownKey(x: Info) {
     ) ??
     unique.find((c) => idName(c.name)) ??
     unique.find((c) => keyName(c.name) && !email(c.name))
-    // ADE: an arbitrary unique column (a name, a timestamp, free text) is not promoted to an
+    // Context OS: an arbitrary unique column (a name, a timestamp, free text) is not promoted to an
     // identity; such a dataset stays unplaced and is reported for a person or the assistant.
   )?.name;
 }

@@ -9,7 +9,7 @@ import {exportLegacyConsumptionAudit} from '../../src/live/legacy-audit.ts';
 import {withActor} from '../../src/security/actors.ts';
 
 test('retired access exports every historical scope and read receipt without credentials or current-release internals',()=>{
- const directory=mkdtempSync(join(tmpdir(),'ade-retired-audit-')),memory=new MemoryStore(directory),consumption=new ConsumptionService(directory,memory);
+ const directory=mkdtempSync(join(tmpdir(),'context-os-retired-audit-')),memory=new MemoryStore(directory),consumption=new ConsumptionService(directory,memory);
  try{
   const scope=memory.putArtifact({kind:'consumer_view',title:'历史客服范围',status:'active',content:{keyHash:'secret-hash',grants:[{type:'投诉',fields:['$id','状态']}],operationId:'old-operation'}});
   memory.putArtifact({...scope,expectedVersion:scope.version,status:'revoked'});

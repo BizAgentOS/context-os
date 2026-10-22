@@ -15,7 +15,7 @@ import {createKnowledgeSource,knowledgeCapability} from '../../tests/agent/knowl
 import {createMetricSource,metricCapability} from '../../tests/agent/metrics-fixture.ts';
 
 if(process.argv.includes('--real'))throw new Error('verify:chain 只做当前公共协议验收，不调用模型。真实模型验收须使用单独授权的验收流程。');
-const directory=mkdtempSync(join(tmpdir(),'ade-fusion-chain-')),reportPath=join(directory,'acceptance.json'),authPath=join(directory,'private-access.json');
+const directory=mkdtempSync(join(tmpdir(),'context-os-fusion-chain-')),reportPath=join(directory,'acceptance.json'),authPath=join(directory,'private-access.json');
 const keepOpen=process.argv.includes('--keep-open'),credentials=new Set<string>();
 const report:any={startedAt:new Date().toISOString(),realModel:false,humanDecisions:'explicit_protocol_fixture',scope:'current HTTP/MCP; multi-source fusion, authenticated document evidence, publication, scoped upgrades, restart and revocation',checks:[],status:'running'};
 let stage='start',service:Awaited<ReturnType<typeof createServer>>|undefined,records:Awaited<ReturnType<typeof createFusionSources>>|undefined,knowledge:Awaited<ReturnType<typeof createKnowledgeSource>>|undefined,metrics:Awaited<ReturnType<typeof createMetricSource>>|undefined,origin='';
@@ -35,7 +35,7 @@ const save=()=>writeFileSync(reportPath,JSON.stringify(report,null,2),{mode:0o60
 const checkpoint=(name:string,facts:Record<string,unknown>={})=>{report.checks.push({name,...facts});save();console.log(JSON.stringify({stage:name,...facts}));};
 const ref=(artifact:{id:string;version:number})=>({id:artifact.id,version:artifact.version});
 async function listen(){await new Promise<void>(resolve=>service!.server.listen(0,'127.0.0.1',resolve));origin=`http://127.0.0.1:${(service!.server.address() as AddressInfo).port}`;credentials.add(service!.adminToken);}
-async function call(path:string,body?:unknown,key?:string){const response=await fetch(origin+path,{method:body===undefined?'GET':'POST',headers:{...(key?{authorization:'Bearer '+key}:{'x-dataengine-token':service!.adminToken}),'content-type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(90000)});return{status:response.status,body:await response.json() as any};}
+async function call(path:string,body?:unknown,key?:string){const response=await fetch(origin+path,{method:body===undefined?'GET':'POST',headers:{...(key?{authorization:'Bearer '+key}:{'x-contextos-token':service!.adminToken}),'content-type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(90000)});return{status:response.status,body:await response.json() as any};}
 async function api(path:string,body?:unknown){const result=await call(path,body);assert(result.status<300,`${path}: ${JSON.stringify(result)}`);return result.body;}
 const read=(path:string,key:string)=>call(path,undefined,key);
 async function decide(type:string,subject:unknown){const operationId=randomUUID(),proposed=(await api('/api/changes/propose',{operationId,origin:'human',type,subject,baseline:(await api('/api/changes')).baseline})).change;
@@ -92,7 +92,7 @@ try{
  assert.deepEqual(newA.connection.content.business,a.connection.content.business);assert.equal((await api('/api/releases/upgrade',upgrade)).key,null);
  assert.equal((await read(objectPath,a.key)).status,403);assert.equal((await read(evidencePath,newA.key)).status,403);assert.equal((await read(objectPath,newA.key)).body.items[0].properties.实际反馈.value,'已改善');assert.equal((await read(objectPath,b.key)).body.items[0].properties.状态.status,'conflict');
  const client=new Client({name:'independent-fusion-chain',version:'1'});
- try{await client.connect(new StdioClientTransport({command:process.execPath,args:[fileURLToPath(new URL('../dataengine-mcp.ts',import.meta.url))],env:{PATH:process.env.PATH!,DATAENGINE_URL:origin,DATAENGINE_CONSUMER_KEY:newA.key},stderr:'pipe'}));assert((await client.listTools()).tools.some(tool=>tool.name==='describe_dataset'));
+ try{await client.connect(new StdioClientTransport({command:process.execPath,args:[fileURLToPath(new URL('../context-os-mcp.ts',import.meta.url))],env:{PATH:process.env.PATH!,CONTEXT_OS_URL:origin,CONTEXT_OS_CONSUMER_KEY:newA.key},stderr:'pipe'}));assert((await client.listTools()).tools.some(tool=>tool.name==='describe_dataset'));
   const result=await client.callTool({name:'query_objects',arguments:{type:'投诉',id:'TS002'}});assert.equal(result.isError,undefined);assert.equal((result.structuredContent as any).items[0].properties.实际反馈.value,'已改善');
   assert.equal((await client.callTool({name:'query_objects',arguments:{type:'投诉',fields:['$id','phone']}})).isError,true);
  }finally{await client.close();}

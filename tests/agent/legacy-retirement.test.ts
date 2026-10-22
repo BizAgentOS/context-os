@@ -9,7 +9,7 @@ test('standalone historical datasets cannot keep serving v4 after retirement whi
  try{
   const release=await w.publish('正式发布'),connection=await w.connect(release,'正式客服'),app=w.service.app,datasets=new OntologyDatasets(app.memory,app.live);
   const owner=app.memory.getArtifact(connection.connection.id),datasetRef=owner.content.datasetRef as {id:string;version:number},current=app.memory.getArtifact(datasetRef.id,datasetRef.version);
-  const {releaseRef,...oldContent}=current.content,key='de_dataset_retiredfixture';
+  const {releaseRef,...oldContent}=current.content,key='cos_dataset_retiredfixture';
   const historical=app.memory.putArtifact({kind:'ontology_dataset',title:'旧独立数据集',status:'active',content:{...oldContent,keyHash:createHash('sha256').update(key).digest('hex')}});
   assert.equal((await datasets.handle('/v4/dataset',new URLSearchParams(),`Bearer ${key}`)).status,403);
   assert.throws(()=>datasets.connection(ref(historical),'http://127.0.0.1'),/已下线|发布/);

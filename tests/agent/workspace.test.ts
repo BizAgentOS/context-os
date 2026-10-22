@@ -8,7 +8,7 @@ import { Workspace } from "../../src/agent/workspace.ts";
 import type { Artifact, Data } from "../../src/agent/contracts.ts";
 
 test("empty typed collections retain valid interfaces and reject undefined operations", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "dataengine-empty-interfaces-"));
+  const dir = mkdtempSync(join(tmpdir(), "context-os-empty-interfaces-"));
   const repo = new MemoryStore(dir);
   try {
     const workspace = new Workspace(repo);
@@ -125,7 +125,7 @@ test("empty typed collections retain valid interfaces and reject undefined opera
 });
 
 test("a reopened investigation keeps its model and data scope when another task adopts newer memory", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "dataengine-investigation-"));
+  const dir = mkdtempSync(join(tmpdir(), "context-os-investigation-"));
   let repo = new MemoryStore(dir);
   try {
     const host = new Workspace(repo);
@@ -208,7 +208,7 @@ test("a reopened investigation keeps its model and data scope when another task 
 });
 
 test("an invalid CSV remains inspectable as a failed source and a corrected upload creates a new usable version", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "dataengine-invalid-csv-"));
+  const dir = mkdtempSync(join(tmpdir(), "context-os-invalid-csv-"));
   const repo = new MemoryStore(dir);
   try {
     const workspace = new Workspace(repo);
@@ -279,7 +279,7 @@ test("an invalid CSV remains inspectable as a failed source and a corrected uplo
 });
 
 test("collection references preserve their exact scope across object calls and reject fabricated totals or subsets", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "dataengine-collections-"));
+  const dir = mkdtempSync(join(tmpdir(), "context-os-collections-"));
   const repo = new MemoryStore(dir);
   try {
     const workspace = new Workspace(repo);
@@ -400,7 +400,7 @@ test("collection references preserve their exact scope across object calls and r
 });
 
 test("uploaded sources and statement provenance reopen; model suggestions cannot overwrite user edits", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "dataengine-workspace-"));
+  const dir = mkdtempSync(join(tmpdir(), "context-os-workspace-"));
   let repo = new MemoryStore(dir);
   try {
     let workspace = new Workspace(repo);
@@ -446,7 +446,7 @@ test("uploaded sources and statement provenance reopen; model suggestions cannot
 });
 
 test("retrying a successful candidate check returns the same saved version", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "dataengine-retry-"));
+  const dir = mkdtempSync(join(tmpdir(), "context-os-retry-"));
   const repo = new MemoryStore(dir);
   try {
     const workspace = new Workspace(repo);
@@ -485,7 +485,7 @@ test("retrying a successful candidate check returns the same saved version", asy
 });
 
 test("candidate reports remain previews; changed dependencies and nonunique identities cannot be adopted", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "dataengine-preview-"));
+  const dir = mkdtempSync(join(tmpdir(), "context-os-preview-"));
   const repo = new MemoryStore(dir);
   try {
     const workspace = new Workspace(repo);
@@ -566,7 +566,7 @@ test("candidate reports remain previews; changed dependencies and nonunique iden
 });
 
 test("user statements need an exact quote from the current task and keep that provenance", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "dataengine-quotes-"));
+  const dir = mkdtempSync(join(tmpdir(), "context-os-quotes-"));
   const repo = new MemoryStore(dir);
   try {
     const task = repo.createTask("定义企业");
@@ -616,7 +616,7 @@ test("user statements need an exact quote from the current task and keep that pr
 });
 
 test("reports preserve checked evidence and object snapshots across source refresh and reopen", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "dataengine-report-"));
+  const dir = mkdtempSync(join(tmpdir(), "context-os-report-"));
   let repo = new MemoryStore(dir);
   try {
     const workspace = new Workspace(repo);
@@ -752,7 +752,7 @@ test("reports preserve checked evidence and object snapshots across source refre
 });
 
 test("a checked candidate stays a preview until host adoption; typed objects traverse sources and keep unknown recovery evidence", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "dataengine-model-"));
+  const dir = mkdtempSync(join(tmpdir(), "context-os-model-"));
   const repo = new MemoryStore(dir);
   try {
     const workspace = new Workspace(repo);

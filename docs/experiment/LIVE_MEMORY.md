@@ -20,7 +20,7 @@ flowchart LR
   G --> E
 ```
 
-来源端数据不整体导入 DataEngine。连接记录保存地址、批准的能力、字段/过滤/分页契约；本体保存业务定义及映射。每次查询实际调用原系统，返回读取时间和覆盖范围。无全量后台同步、跨源原子快照或远端历史回放。
+来源端数据不整体导入 Context OS。连接记录保存地址、批准的能力、字段/过滤/分页契约；本体保存业务定义及映射。每次查询实际调用原系统，返回读取时间和覆盖范围。无全量后台同步、跨源原子快照或远端历史回放。
 
 建模时少量源样本进入模型上下文；画布运行结束后删除对应 SDK 临时会话。页面保留有界用户/助手对话，助手的业务说明可能引用样本。持久对象库不保存原始记录数组，业务定义和来源引用独立于对话保存。进程异常退出时 SDK 会话残留的恢复清理、主机磁盘加密、组织数据保留政策仍需在生产部署前补齐。
 
@@ -35,7 +35,7 @@ npm run live:demo
 
 - 8801：独立的虚构热力投诉 HTTP API。
 - 8802：独立的虚构热力回访 MCP Streamable HTTP。
-- 8796：实际 DataEngine，连接两个来源，使用正常的 KodaX 驱动。查看和确认无需模型调用；聊天沿用已配置模型凭据。
+- 8796：实际 Context OS，连接两个来源，使用正常的 KodaX 驱动。查看和确认无需模型调用；聊天沿用已配置模型凭据。
 - 本体页查看投诉 TS002 和回访 HF002；办结只表示工单流程结束，回访“未改善”是另一条事实。
 - 点击“采用本体”，在连接页按字段创建范围，再点“启用以上范围”；密钥只在独立窗口交付一次。
 - 在运行终端输入 `improved`，源系统的回访变为“已改善”；重新查询看到新值。本体、授权和密钥保持不变。输入 `unchanged` 恢复。模拟源记录只保存在模拟服务进程内，重启恢复初值。
@@ -77,7 +77,7 @@ HTTP 能力另加 `path`，例如 `/callbacks`；MCP 的 `name` 必须为真实�
 - `GET /v2/schema`：当前调用方可用的业务结构与按需读取语义。
 - `GET /v2/objects?type=...&id=...&relation=...&fields=...&offset=0&limit=20`：获准的对象或关系。
 - `Authorization: Bearer <连接页交付的 de_live_ 密钥>`。
-- MCP 使用 `scripts/dataengine-mcp.ts`，环境变量 `DATAENGINE_URL` 为服务 origin，`DATAENGINE_CONSUMER_KEY` 为本调用方密钥。`describe_memory` / `query_objects` 通过同一授权查询。桥接按 de_live_ 与原 de_consumer_ 密钥分别选择 /v2 与 /v1。
+- MCP 使用 `scripts/context-os-mcp.ts`，环境变量 `CONTEXT_OS_URL` 为服务 origin，`CONTEXT_OS_CONSUMER_KEY` 为本调用方密钥。`describe_memory` / `query_objects` 通过同一授权查询。桥接按 de_live_ 与原 de_consumer_ 密钥分别选择 /v2 与 /v1。
 
 授权绑定采用时的本体版本，源记录可变化。返回 `readAt` 说明读取时刻；两次查询可读到不同记录，不提供旧文件接口的 `dataVersion` 固定快照。返回值不是全局事务视图。停用绕过正在运行的 Agent 和管理请求队列；已经在途的结果在返回前重新检查授权和来源状态。
 

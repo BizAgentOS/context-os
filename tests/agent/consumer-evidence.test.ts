@@ -36,7 +36,7 @@ test("permissioned evidence is bound to a view and reading, with explicit scope 
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-dataengine-token": service.adminToken,
+        "x-contextos-token": service.adminToken,
       },
       body: JSON.stringify(body),
     });
@@ -150,13 +150,13 @@ test("permissioned evidence is bound to a view and reading, with explicit scope 
       command: process.execPath,
       args: [
         fileURLToPath(
-          new URL("../../scripts/dataengine-mcp.ts", import.meta.url),
+          new URL("../../scripts/context-os-mcp.ts", import.meta.url),
         ),
       ],
       env: {
         PATH: process.env.PATH!,
-        DATAENGINE_URL: origin,
-        DATAENGINE_CONSUMER_KEY: active.key!,
+        CONTEXT_OS_URL: origin,
+        CONTEXT_OS_CONSUMER_KEY: active.key!,
       },
     });
     try {
@@ -202,7 +202,7 @@ test("permissioned evidence is bound to a view and reading, with explicit scope 
       (await read("/v4/evidence?ref=" + newest, active.key!)).status,
       200,
     );
-    const docsResponse=await fetch(origin+"/api/releases/connection?"+new URLSearchParams({id:active.connection.id,version:String(active.connection.version)}),{headers:{"x-dataengine-token":service.adminToken}});
+    const docsResponse=await fetch(origin+"/api/releases/connection?"+new URLSearchParams({id:active.connection.id,version:String(active.connection.version)}),{headers:{"x-contextos-token":service.adminToken}});
     assert.equal(docsResponse.status,200);
     const docs=await docsResponse.json() as any;
     assert.ok(docs.http.endpoints.some((endpoint:any)=>endpoint.path==="/v4/objects"));
@@ -223,7 +223,7 @@ test("v4 release connections reject evidence fields outside the granted fields w
   const { LiveMemory } = await import("../../src/live/memory.ts");
   const { Releases } = await import("../../src/engine/releases.ts");
   const { OntologyDatasets } = await import("../../src/live/ontology-datasets.ts");
-  const directory = mkdtempSync(join(tmpdir(), "ade-release-evidence-scope-"));
+  const directory = mkdtempSync(join(tmpdir(), "context-os-release-evidence-scope-"));
   const source = await createFusionSources();
   const memory = new MemoryStore(directory), live = new LiveMemory(directory, memory);
   const releases = new Releases(memory, live), datasets = new OntologyDatasets(memory, live);
