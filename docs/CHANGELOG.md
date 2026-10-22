@@ -4,7 +4,7 @@
 
 ## [Unreleased]
 
-- 2026-10-22 / GitHub 协作：按用户要求将产品仓库托管到组织私有仓库 `BizAgentOS/context-os`，默认分支 `main`，保留产品提交历史与既有版本 Tag；新增贡献指南并同步克隆、运行、分支和 Pull Request 流程。本次不调整产品版本、不生成 GitHub Release，凭据与本机运行数据不上传。
+- 2026-10-22 / GitHub 协作：按用户要求将产品仓库托管到组织私有仓库 `BizAgentOS/context-os`，默认分支 `main`，保留产品提交历史与既有版本 Tag；新增贡献指南并同步克隆、运行、分支和 Pull Request 流程。本次不调整产品版本、不生成 GitHub Release，凭据与本机运行数据不上传。 已核验私有可见性、`main` 默认分支及六个历史 Tag；全新克隆的 `npm ci` 与类型检查通过，锁文件无变化。安装发现的 7 项依赖安全告警（1 critical、6 high）登记为 [ISSUE-017](ISSUES.md#issue-017-生产依赖树存在-npm-audit-安全告警)，尚未修复。
 
 - 2026-10-22 / 项目更名：按用户要求将产品统一更名为 Context OS，覆盖前后端显示、运行 Agent 身份、包与 MCP 标识、环境变量、管理请求头、项目目录和第一方文档。新技术名称为 `context-os`，主 MCP 入口为 `scripts/context-os-mcp.ts`；旧配置、路径与已有凭据保留兼容读取。总体架构文档改为 `CONTEXT_OS_DESIGN.md` 并同步引用；保留历史验收路径、测试数据、第三方原名及既有发布 Tag。此次不新增 Feature、不发布新版本，版本仍为 `0.3.1`。迁移范围见[README](../README.md#名称与已有配置迁移)。 在新的真实目录完成类型检查与 653/653 项 Node 回归；验证新旧 MCP 配置、管理请求头、浏览器存储和凭据/备份兼容。现有工作区 6 个来源保留，管理员令牌与加密凭据文件哈希未变化；数据、本体、发布与接入三页浏览器验收通过。新名称离线 HTML 已生成，截图见 `output/playwright/context-os-rename/frontend.png`。
 

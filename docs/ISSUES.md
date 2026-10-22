@@ -4,6 +4,14 @@
 
 记录日期：2026-10-16。来源：投研 Mock 工作区实测、DeepSeek 真实运行（`deepseek-v4-flash`）、浏览器检查与代码复核。
 
+## 2026-10-22 GitHub 首次上传检查
+
+### ISSUE-017 生产依赖树存在 npm audit 安全告警
+
+- 发现：在组织私有仓库 `BizAgentOS/context-os` 的全新 `main` 克隆上，从公开 npm 注册表执行 `npm ci` 成功，锁文件未变化，类型检查通过；`npm audit` 报告 7 项包级安全告警（1 critical、6 high）。
+- 范围：critical 为传递依赖 `shell-quote`；high 涉及 `@anthropic-ai/sandbox-runtime`、`@kodax-ai/kodax`、`@modelcontextprotocol/client`、`@modelcontextprotocol/server`、`brace-expansion` 和 `node-forge`，均在生产依赖树。
+- 状态：待处理。此次 GitHub 上传没有改变依赖版本、锁文件或 SDK；后续修复需验证 KodaX 与 MCP 接口兼容及相关公共边界。
+
 ## v0.3.0 当前偏差与跟踪（2026-10-19）
 
 下面依据 2026-10-19 产品体检登记现存偏差，不改写后文带日期的旧验收。修复状态、票与证据分别以[功能台账](FEATURE_LIST.md)、[版本设计](features/v0.3.0.md)和本轮验收为准；此表不维护第二套完成状态。
