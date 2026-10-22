@@ -4,7 +4,7 @@
 
 ## [Unreleased]
 
-- 2026-10-22 / GitHub 发布流程：按用户选择保留现有成员权限，新增仅 NoraJing 可运行的手动 GitHub Release 流程；绑定账号 ID、触发人与重新执行人，要求 `main`、明确版本标签与完整提交 SHA，检查包版本、主线历史、已有 Release / 草稿和标签指向；新标签采用附注形式，发布固定 SHA，不移动或覆盖旧版本。同步发布指南与协作约定。本次不发布产品版本；这是流程门禁，GitHub 网页/API 的 Write/Admin 手动发布权限仍保留。 27 项独立发布门禁测试、类型检查与工作流 YAML 检查通过；对既有 `v0.3.1` 标签完成 7 次真实只读 API 校验，无远程写入。
+- 2026-10-22 / GitHub 发布流程：按用户选择保留现有成员权限，新增仅 NoraJing 可运行的手动 GitHub Release 流程；绑定账号 ID、触发人与重新执行人，要求 `main`、明确版本标签与完整提交 SHA，检查包版本、主线历史、已有 Release / 草稿和标签指向；新标签采用附注形式，发布固定 SHA，不移动或覆盖旧版本。同步发布指南与协作约定。本次不发布产品版本；这是流程门禁，GitHub 网页/API 的 Write/Admin 手动发布权限仍保留。 27 项独立发布门禁测试、类型检查与工作流 YAML 检查通过；对既有 `v0.3.1` 标签完成 7 次真实只读 API 校验，无远程写入。 [GitHub 实际拒绝验证](https://github.com/BizAgentOS/context-os/actions/runs/39758813288)确认 `poppersamhar` 在首次身份校验被拦截、发布任务跳过；未创建测试标签或 Release。
 
 - 2026-10-22 / GitHub 协作：按用户要求将产品仓库托管到组织私有仓库 `BizAgentOS/context-os`，默认分支 `main`，保留产品提交历史与既有版本 Tag；新增贡献指南并同步克隆、运行、分支和 Pull Request 流程。本次不调整产品版本、不生成 GitHub Release，凭据与本机运行数据不上传。 已核验私有可见性、`main` 默认分支及六个历史 Tag；全新克隆的 `npm ci` 与类型检查通过，锁文件无变化。安装发现的 7 项依赖安全告警（1 critical、6 high）登记为 [ISSUE-017](ISSUES.md#issue-017-生产依赖树存在-npm-audit-安全告警)，尚未修复。
 

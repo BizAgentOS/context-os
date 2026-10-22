@@ -39,3 +39,9 @@ node --test tests/agent/release-gate.test.ts
 工作流只使用官方 `actions/checkout`，固定到通过官方仓库 API 核验的 v4 提交 `11d5960a326750d5838078e36cf38b85af677262`，并设置 `persist-credentials: false`。校验任务仅有 `contents: read`；发布任务通过身份与前置任务检查后才有 `contents: write`。不需要 PAT、第三方 action 或新的密钥。
 
 GitHub 官方依据：[仓库角色与 Release 权限](https://docs.github.com/en/organizations/managing-user-access-to-your-organizations-repositories/managing-repository-roles/repository-roles-for-an-organization)、[Release API](https://docs.github.com/en/rest/releases/releases#create-a-release)、[私库审批保护的套餐限制](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments#required-reviewers)。
+
+## 2026-10-22 配置验证
+
+- 27 项无网络 mock 测试、类型检查、YAML 与脚本语法检查通过；既有 `v0.3.1` 的提交、版本和附注标签经过 7 次真实只读 API 校验。
+- 使用 `poppersamhar` 触发了[一次实际拒绝验证](https://github.com/BizAgentOS/context-os/actions/runs/39758813288)：第一步身份校验按预期失败，发布任务被跳过，校验脚本与 checkout 均未执行。这次运行的红色失败状态代表门禁成功拒绝了其他账号。
+- 验证输入为 `v0.0.0` 与不存在的全零 SHA；未创建测试标签或任何 GitHub Release，现有历史标签保留。NoraJing 的正向发布身份与发布 API 调用由本地 mock 覆盖；本次没有代她实际发布版本。
