@@ -19,7 +19,7 @@ v0.3.0 的 FEATURE_036—068 已完成 **33/33**：分层本体、统一变更�
 | 0.2.1 | 2026-10-15 | Tag `v0.2.1` | 移植 Helix 快照底座：全量快照、全量本体发现与检查、发布锁定数据（FEATURE_031—035）及后续修复 |
 | 0.2.0 | 2026-10-14 | `930b10e` / Tag `v0.2.0` | 数据 · 本体 · 发布与接入三页工作台（FEATURE_025—030） |
 
-版本只在本地 Git 发布，仓库没有配置远程。完整变更见 [CHANGELOG](docs/CHANGELOG.md)，功能状态见[功能台账](docs/FEATURE_LIST.md)，版本规则见下方[版本与发布管理](#版本与发布管理)。
+代码仓库：[BizAgentOS/context-os](https://github.com/BizAgentOS/context-os)（私有），默认分支为 `main`。历史版本 Tag 与提交记录保留；GitHub Release 和线上部署单独管理。完整变更见 [CHANGELOG](docs/CHANGELOG.md)，功能状态见[功能台账](docs/FEATURE_LIST.md)，协作步骤见[贡献指南](CONTRIBUTING.md)。
 
 ## 三个页面
 
@@ -31,9 +31,11 @@ v0.3.0 的 FEATURE_036—068 已完成 **33/33**：分层本体、统一变更�
 
 ## 快速开始
 
-需要 Node.js 22.18+。
+需要 Node.js 22.18+，以及该私有仓库的访问权限。
 
 ```sh
+git clone https://github.com/BizAgentOS/context-os.git
+cd context-os
 npm ci
 npm start
 ```
@@ -76,7 +78,7 @@ npm start
 
 - **包版本号只有一个来源**：`package.json` 的 `version`。开发期间不加 `-dev` 后缀，保持最近一次发布的版本号，未发布内容记在 CHANGELOG 的 `[Unreleased]`。当前开发版本由功能台账和对应设计块标明，不能仅凭包版本判断开发范围。
 - **发布步骤**（由用户确认版本号后执行）：同步 `package.json` / `package-lock.json` 和代码中对外报告的版本号 → CHANGELOG 把 `[Unreleased]` 整理成 `[x.y.z] - 日期` → 功能台账填写 `Released` → 本地提交 `chore(release): vx.y.z` → 打附注 Tag `vx.y.z`。
-- **Tag 一经发布不移动**；发现问题就发下一个补丁版本。推送远程和 GitHub Release 需用户另行确认。
+- **Tag 一经发布不移动**；发现问题就发下一个补丁版本。日常开发通过分支和 Pull Request 协作；GitHub Release 与线上部署按单独授权执行。
 - 完整规则见 [AGENTS.md](AGENTS.md#版本与发布) 与[开发流程](docs/DEVELOPMENT.md)。
 
 ## 文档入口

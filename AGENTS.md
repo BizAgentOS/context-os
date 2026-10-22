@@ -48,6 +48,6 @@ v0.2.3（2026-10-16）是本轮开发的历史基线；[0.2.x 设计](docs/featu
   4. 台账填写 `Released` 与版本状态；README“当前版本”表与 AGENTS“当前范围”更新。
   5. 本地提交 `chore(release): vx.y.z`，再打附注 Tag：`git tag -a vx.y.z -m "Context OS vx.y.z"`。
 - **Tag 一经发布不移动、不复用**。发布后发现问题，修复后发下一个 PATCH。打 Tag 前先用 `git tag` 确认版本号未被占用，包括在仓库外发出过的版本。
-- 仓库没有配置远程；推送、GitHub Release 或部署需用户另行明确同意。
+- 远程仓库为 `https://github.com/BizAgentOS/context-os.git`（私有），默认分支为 `main`；按用户授权推送功能分支和 Pull Request。GitHub Release、版本变更与线上部署仍需单独明确授权，不能把上传代码等同于发布新版本。协作步骤见 [CONTRIBUTING](CONTRIBUTING.md)。
 - 带日期的验收与设计记录保留当时原文；后续变化以追加段落或标注说明，不改写历史。
 
