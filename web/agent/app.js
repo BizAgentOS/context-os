@@ -594,7 +594,8 @@ function renderCanvas(force = false) {
   canvas.scrollTop = scroll;
 }
 function renderOntologyBoard(actions) {
-  return renderOntologyWorkspace(state, {api, refresh, selections:ui.graphSelections, linkedAnswer:ui.linkedAnswer, exitAnswer:()=>{ui.linkedAnswer=null;}, ask:askAssistant, askBuild, data:()=>navigate("setup"), select:actions.select});
+  return renderOntologyWorkspace(state, {api, refresh, selections:ui.graphSelections,
+    onStage:stage=>{if(stage)$(".canvas-app").dataset.ontologyStage=stage;else delete $(".canvas-app").dataset.ontologyStage;}, linkedAnswer:ui.linkedAnswer, exitAnswer:()=>{ui.linkedAnswer=null;}, ask:askAssistant, askBuild, data:()=>navigate("setup"), select:actions.select});
 }
 
 function followOntologySelection(artifact, target, guard) {

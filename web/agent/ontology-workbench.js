@@ -23,6 +23,8 @@ export function renderOntologyWorkspace(state,actions){
  let data,selected=null,generation=0,detailGeneration=0,disposed=false,scene=null,mode=window.matchMedia('(max-width: 700px)').matches?'list':'plane',edit=false,linkedAnswer=actions.linkedAnswer||null,highlight=null,answerView=null;
  const saved=actions.selections?.get('ontology-workspace');if(saved?.mode&&!window.matchMedia('(max-width: 700px)').matches)mode=saved.mode;
  const save=()=>actions.selections?.set('ontology-workspace',{mode,selected});
+ // Browsing depth for the shared assistant dock: overview, one focused entity or relation, or concrete detail work.
+ const stageTo=stage=>actions.onStage?.(stage);stageTo('global');
  const baselineOf=value=>structuredClone({foundationRef:value?.foundationRef??null,modelRef:value?.modelRef??null});
  toolbar.append(action('新增实体',()=>entityEditor()));
  const tools=[['plane','平面'],['3d','三维'],['list','列表']];
@@ -69,7 +71,7 @@ export function renderOntologyWorkspace(state,actions){
  search.oninput=drawDirectory;
  search.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();void findObject();}};
  async function findObject(){
-  if(!data||!search.value.trim())return;const id=search.value.trim(),tick=++detailGeneration;edit=false;sidebar.replaceChildren(el('h2','查找对象'),el('p','正在按完整对象编号查询…'));
+  if(!data||!search.value.trim())return;const id=search.value.trim(),tick=++detailGeneration;edit=false;stageTo('detail');sidebar.replaceChildren(el('h2','查找对象'),el('p','正在按完整对象编号查询…'));
   const candidates=data.entities.filter(item=>item.bindings.length&&!item.proposalRef).slice(0,12);
   const results=await Promise.allSettled(candidates.map(async entity=>({entity,result:await actions.api('/api/live/query',{modelId:data.modelRef.id,modelVersion:data.modelRef.version,conceptId:entity.id,id,limit:1})})));
   if(disposed||tick!==detailGeneration)return;sidebar.replaceChildren(el('h2',`对象查找 · ${id}`));let found=0,failed=0;
@@ -77,12 +79,12 @@ export function renderOntologyWorkspace(state,actions){
   if(!found)sidebar.append(el('p','当前已查询的实体中没有此编号的对象。'));
   if(failed||data.entities.filter(item=>item.bindings.length).length>12)sidebar.append(el('p','本次查找范围不完整；可选择具体实体，在数据分区继续核对。'));
  }
- function detailsHeader(detail){sidebar.replaceChildren();const head=el('header',null,'ow-detail-head');head.append(el('h2',detail.title),action('关闭详情',()=>{detailGeneration++;edit=false;selected=null;save();sidebar.replaceChildren(el('p','选择一个实体或关系查看详情。'));draw();}));sidebar.append(head,el('p',detail.description||'尚未补充说明'));}
+ function detailsHeader(detail){sidebar.replaceChildren();const head=el('header',null,'ow-detail-head');head.append(el('h2',detail.title),action('关闭详情',()=>{detailGeneration++;edit=false;selected=null;save();stageTo('global');sidebar.replaceChildren(el('p','选择一个实体或关系查看详情。'));draw();}));sidebar.append(head,el('p',detail.description||'尚未补充说明'));}
  async function select(kind,id,tab='overview'){
   if(linkedAnswer)exitAnswer();
   const proposed=(kind==='entity'?data?.entities:data?.relations)?.find(item=>item.id===id)?.proposalRef;
   if(proposed){requestPending(proposed);return;}
-  edit=false; selected={kind,id,tab};save();draw();const tick=++detailGeneration;sidebar.replaceChildren(el('p','正在读取详情…'));
+  edit=false; selected={kind,id,tab};save();stageTo(tab==='overview'?'local':'detail');draw();const tick=++detailGeneration;sidebar.replaceChildren(el('p','正在读取详情…'));
   try{const detail=await actions.api(`/api/ontology/detail?${new URLSearchParams({kind,id,developer:String(developerView())})}`);if(disposed||tick!==detailGeneration)return;
    detailsHeader(detail);const tabs=el('nav',null,'ow-tabs');tabs.setAttribute('aria-label','详情内容');
    const available=kind==='entity'?[['overview','概览'],['properties','属性'],['relations','关系'],['data','数据'],['evidence','依据'],['pending','待处理']]:[['overview','概览'],['evidence','依据'],['pending','待处理']];
@@ -126,7 +128,7 @@ export function renderOntologyWorkspace(state,actions){
  function wordingEditor(detail,parent,target=detail.kind==='entity'?'concept':detail.kind,source=detail){
   let baseline=baselineOf(source),saved=structuredClone({name:detail.name,aliases:detail.aliases||[],description:detail.description||''});
   const selection=structuredClone(selected);
-  edit=true;parent.replaceChildren(el('h3','编辑名称与说明'));const name=field(parent,'名称',saved.name),aliases=field(parent,'别名（用逗号分隔）',saved.aliases.join('，')),description=field(parent,'说明',saved.description,true),output=message(parent);
+  edit=true;stageTo('detail');parent.replaceChildren(el('h3','编辑名称与说明'));const name=field(parent,'名称',saved.name),aliases=field(parent,'别名（用逗号分隔）',saved.aliases.join('，')),description=field(parent,'说明',saved.description,true),output=message(parent);
   const adopt=async(type,subject,evidence)=>{
    const result=await propose(type,subject,evidence,baseline,true),effect=result.content?.effect;
    if(!effect||!Object.hasOwn(effect,'foundationRef')||!Object.hasOwn(effect,'modelRef'))throw new Error('保存回执缺少下一次编辑的基线，请重新读取详情。');
@@ -171,7 +173,7 @@ export function renderOntologyWorkspace(state,actions){
  }
  function propertyEditor(detail,property,parent){
   const baseline=baselineOf(detail),propertyId=property?.id||`property_${crypto.randomUUID().replaceAll('-','')}`;
-  edit=true;parent.replaceChildren(el('h3',property?'修改属性结构':'新增属性'));const name=field(parent,'属性名称',property?.name||''),type=el('select');type.setAttribute('aria-label','属性类型');for(const value of ['unknown','string','integer','decimal','boolean','date','datetime','enum','reference']){const option=el('option',value);option.value=value;type.append(option);}type.value=property?.valueType||'string';parent.append(type);
+  edit=true;stageTo('detail');parent.replaceChildren(el('h3',property?'修改属性结构':'新增属性'));const name=field(parent,'属性名称',property?.name||''),type=el('select');type.setAttribute('aria-label','属性类型');for(const value of ['unknown','string','integer','decimal','boolean','date','datetime','enum','reference']){const option=el('option',value);option.value=value;type.append(option);}type.value=property?.valueType||'string';parent.append(type);
   const unit=field(parent,'单位（可选）',property?.unit||''),identityLabel=el('label','作为对象身份属性'),identity=el('input');identity.type='checkbox';identity.checked=property?.isIdentity||false;identityLabel.prepend(identity);parent.append(identityLabel);
   const enums=enumEditor(parent,property?.enumValues),reason=field(parent,'变更依据','',true),output=message(parent);
   type.onchange=()=>{enums.box.hidden=type.value!=='enum';};type.onchange();
@@ -179,13 +181,13 @@ export function renderOntologyWorkspace(state,actions){
  }
  function entityEditor(){
   const baseline=baselineOf(data);
-  edit=true;selected=null;detailGeneration++;sidebar.replaceChildren(el('h2','新增业务实体'));
+  edit=true;stageTo('detail');selected=null;detailGeneration++;sidebar.replaceChildren(el('h2','新增业务实体'));
   const entityId=`entity_${crypto.randomUUID().replaceAll('-','')}`,name=field(sidebar,'实体名称'),description=field(sidebar,'业务说明','',true),reason=field(sidebar,'新增依据','',true),output=message(sidebar);
   sidebar.append(action('生成实体变更',()=>transact(sidebar,output,async()=>{await propose('entity',{action:'add',entity:{id:entityId,name:name.value,description:description.value}},reason.value,baseline);edit=false;output.textContent='已生成实体变更，请在待处理中心核对并采用。';}),'engine-primary'),action('取消',()=>{edit=false;sidebar.replaceChildren(el('p','选择一个实体或关系查看详情。'));void load();}));
  }
  function bindingEditor(detail,parent){
   const baseline=baselineOf(detail);
-  edit=true;const box=section(parent,'编辑主来源绑定'),catalog=(data.sourceCatalog||[]).flatMap(source=>source.capabilities.map(cap=>({source,cap}))),existing=detail.bindings.find(item=>item.role==='primary');
+  edit=true;stageTo('detail');const box=section(parent,'编辑主来源绑定'),catalog=(data.sourceCatalog||[]).flatMap(source=>source.capabilities.map(cap=>({source,cap}))),existing=detail.bindings.find(item=>item.role==='primary');
   if(!detail.identityKeys?.length){box.append(el('p','请先新增一个身份属性，再为该实体绑定数据。'),action('编辑属性',()=>void select('entity',detail.id,'properties')));edit=false;return;}
   const label=el('label','来源表'),pick=el('select');label.append(pick);box.append(label);for(const [index,item]of catalog.entries()){const option=el('option',`${item.source.name} · ${item.cap.name}`);option.value=String(index);pick.append(option);}
   const initial=catalog.findIndex(item=>item.source.id===existing?.dataset.sourceId&&item.cap.name===existing?.dataset.capability);if(initial>=0)pick.value=String(initial);
@@ -227,7 +229,7 @@ export function renderOntologyWorkspace(state,actions){
  }
  async function objectDetail(detail,row,result){
   if(linkedAnswer)exitAnswer();
-  const tick=++detailGeneration;sidebar.replaceChildren(action('返回数据',()=>void select('entity',detail.id,'data')),el('h2',`${detail.name} · ${displayValue(row.$id)}`));
+  const tick=++detailGeneration;stageTo('detail');sidebar.replaceChildren(action('返回数据',()=>void select('entity',detail.id,'data')),el('h2',`${detail.name} · ${displayValue(row.$id)}`));
   const evidence=result.evidence?.find(item=>String(item.objectId)===String(row.$id));
   for(const [name,value]of Object.entries(row).filter(([key])=>key!=='$id')){const box=section(sidebar,name),property=evidence?.properties?.[name];box.append(el('p',displayValue(value)),el('small',({resolved:'值已确定',conflict:'来源存在冲突',missing:'无可用值',uncertain:'仍需核对'})[property?.status]||'来源未报告状态'));
    for(const source of property?.evidence||[])box.append(el('p',`${source.sourceTitle} · 记录 ${displayValue(source.recordId)} · 字段 ${source.field}：${displayValue(source.value)} · ${when(source.readAt)}`));
@@ -243,7 +245,7 @@ export function renderOntologyWorkspace(state,actions){
  }
  function correctionEditor(detail,row,definition,parent,targetIds){
   const baseline=baselineOf(detail);
-  edit=true;const box=section(parent,targetIds?'仅纠正这个对象的关系':'仅纠正这个对象的属性值');box.append(el('p',`对象：${detail.name} · ${row.$id}。原始来源与其他对象保持原值，纠正需复验后采用。`));
+  edit=true;stageTo('detail');const box=section(parent,targetIds?'仅纠正这个对象的关系':'仅纠正这个对象的属性值');box.append(el('p',`对象：${detail.name} · ${row.$id}。原始来源与其他对象保持原值，纠正需复验后采用。`));
   const value=field(box,targetIds?'正确目标编号（每行一个；留空表示无关联）':'纠正后的值',targetIds?targetIds.join('\n'):String(row[definition.name]??''),!!targetIds);
   const clearLabel=el('label','明确清空此属性'),clear=el('input');clear.type='checkbox';clearLabel.prepend(clear);if(!targetIds)box.append(clearLabel);
   const reason=field(box,'纠正理由','',true),evidence=field(box,'纠正依据','',true),output=message(box);
@@ -254,10 +256,10 @@ export function renderOntologyWorkspace(state,actions){
    await propose('local_correction',targetIds?{kind:'relation',...common,relationTypeId:definition.id,targetIds:value.value.split('\n').map(id=>id.trim()).filter(Boolean)}:{kind:'property',...common,propertyId:definition.id,value:clear.checked?null:corrected},evidence.value.trim(),baseline);edit=false;output.textContent='局部纠正已保存，待你核对并采用。';
   }),'engine-primary'),action('取消',()=>{edit=false;box.remove();}));
  }
- function exitAnswer(){linkedAnswer=null;answerView?.dispose();answerView=null;highlight=null;actions.exitAnswer?.();sidebar.replaceChildren(el('p','选择一个实体或关系查看详情。'));draw();}
- root.showAnswer=answer=>{linkedAnswer=structuredClone(answer);if(!data)return;detailGeneration++;edit=false;selected=null;answerView?.dispose();sidebar.replaceChildren();answerView=renderAnswerVisualization(linkedAnswer,{onHighlight:value=>{highlight=value;draw();},onExit:exitAnswer});sidebar.append(answerView);sidebar.focus({preventScroll:true});};
+ function exitAnswer(){linkedAnswer=null;answerView?.dispose();answerView=null;highlight=null;actions.exitAnswer?.();stageTo('global');sidebar.replaceChildren(el('p','选择一个实体或关系查看详情。'));draw();}
+ root.showAnswer=answer=>{linkedAnswer=structuredClone(answer);if(!data)return;stageTo('detail');detailGeneration++;edit=false;selected=null;answerView?.dispose();sidebar.replaceChildren();answerView=renderAnswerVisualization(linkedAnswer,{onHighlight:value=>{highlight=value;draw();},onExit:exitAnswer});sidebar.append(answerView);sidebar.focus({preventScroll:true});};
  async function load(){const tick=++generation;try{const response=await actions.api('/api/ontology/workspace');if(disposed||tick!==generation)return;data=response;title.textContent=safeText(data.title);version.textContent=`工作版 v${data.workspaceVersion}`;pending.textContent=`待处理（${data.pending.total}）`;hints.replaceChildren();for(const hint of data.nextSteps)hints.append(action(hint.label,()=>hint.action==='data'?actions.data():hint.action==='ask'?actions.ask('请根据当前企业本体给出可以回答的业务问题。'):requestPending({category:hint.category})));status.textContent='';draw();if(linkedAnswer)root.showAnswer(linkedAnswer);else if(!selected)sidebar.replaceChildren(el('p','选择一个实体或关系查看详情。'));}catch(error){if(tick===generation)status.textContent=error.message;}}
  root.focusReferences=ids=>{if(!data)return false;const entity=data.entities.find(x=>ids.includes(x.id)),relation=data.relations.find(x=>ids.includes(x.id));if(entity||relation){void select(entity?'entity':'relation',(entity||relation).id);return true;}return false;};
- let signature=JSON.stringify([state.workspaceVersion,state.pendingSummary]);root.updateWorkspace=next=>{if(next.pendingSummary)pending.textContent=`待处理（${next.pendingSummary.total}）`;const current=JSON.stringify([next.workspaceVersion,next.pendingSummary]);if(current!==signature){signature=current;if(!edit)void load();}return true;};root.dispose=()=>{disposed=true;generation++;detailGeneration++;scene?.dispose();answerView?.dispose();};
+ let signature=JSON.stringify([state.workspaceVersion,state.pendingSummary]);root.updateWorkspace=next=>{if(next.pendingSummary)pending.textContent=`待处理（${next.pendingSummary.total}）`;const current=JSON.stringify([next.workspaceVersion,next.pendingSummary]);if(current!==signature){signature=current;if(!edit)void load();}return true;};root.dispose=()=>{actions.onStage?.(null);disposed=true;generation++;detailGeneration++;scene?.dispose();answerView?.dispose();};
  void load();return root;
 }

@@ -7,8 +7,43 @@ export function createAgentPanel({ state, ui, $, node, button, api, hasCanvasCon
 const deferred = new Set();
 $(".interaction").classList.add("agent-panel-shell");
 const modeControls=createAgentModeControls({ui,api,onChange:()=>{modeChanged?.();renderDialogue();},disabled:()=>modesDisabled?.()===true});
-$(".history-panel").prepend(modeControls.root);
-const collapse=$("#collapse-composer");collapse.textContent='收起助手';modeControls.root.after(collapse);
+// Mode, view and collapse sit directly above the input, so they stay visible while history is closed.
+const bar=node("div","agent-dock-bar");
+const collapse=$("#collapse-composer");collapse.textContent='收起';bar.append(modeControls.root,collapse);
+$(".interaction .composer-wrap").prepend(bar);
+const shell=$(".interaction"),app=$(".canvas-app"),canvas=$("#canvas");
+/** The dock follows the page: centered on data/release pages, and on the ontology page it moves with
+ * the browsing stage (overview → right, one entity or relation → over the graph, detail → the detail column). */
+function placeDock(){
+  const vw=document.documentElement.clientWidth,mode=shell.dataset.mode,stage=app.dataset.ontologyStage;
+  if(mode!=="history")app.style.setProperty("--dock-height",`${Math.round(shell.getBoundingClientRect().height)}px`);
+  if(mode==="collapsed")return;
+  const frame=canvas.getBoundingClientRect(),content=canvas.firstElementChild?.getBoundingClientRect();
+  const area=content?.width?{left:content.left,width:content.width}:{left:frame.left+24,width:Math.max(0,frame.width-48)};
+  const pick=selector=>{const rect=canvas.querySelector(selector)?.getBoundingClientRect();return rect?.width?rect:null;};
+  let target=area,width=Math.min(680,area.width),align="center";
+  if(vw<=700){target={left:8,width:vw-16};width=target.width;}
+  else if(stage&&vw>1000){
+    if(stage==="local"){target=pick(".ow-visual")||area;width=Math.min(640,target.width-32);}
+    else if(stage==="detail"){target=pick(".ow-sidebar")||area;width=target.width;align="start";}
+    else{width=Math.min(460,area.width);align="end";}
+  }
+  // The idle compact bar stays short and expands in place once the input is used.
+  if(mode==="compact")width=Math.min(width,340);
+  const left=align==="center"?target.left+(target.width-width)/2:align==="end"?target.left+target.width-width:target.left;
+  shell.style.setProperty("--dock-left",`${Math.round(left)}px`);
+  shell.style.setProperty("--dock-width",`${Math.round(width)}px`);
+}
+let placing=0;
+const schedule=()=>{cancelAnimationFrame(placing);placing=requestAnimationFrame(placeDock);};
+new ResizeObserver(schedule).observe(canvas);
+new ResizeObserver(schedule).observe(shell);
+new MutationObserver(schedule).observe(canvas,{childList:true});
+new MutationObserver(schedule).observe(app,{attributes:true,attributeFilter:["data-ontology-stage","data-chat-mode"]});
+window.addEventListener("resize",schedule);
+placeDock();
+// Move only after the first placement, so loading does not animate the dock in from the side.
+requestAnimationFrame(()=>shell.classList.add("is-placed"));
 function renderDialogue() {
   const lines = state.messages
     .filter(

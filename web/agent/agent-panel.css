@@ -1,36 +1,51 @@
-/* Shared assistant surface for every workspace page. */
+/* Shared assistant dock for every workspace page. agent-panel.js places it over the page content:
+   centered on data and release pages, following the browsing stage on the ontology page. */
 .canvas-app .interaction.agent-panel-shell {
-  position: fixed; top: 78px; right: 16px !important; bottom: 16px !important; left: auto !important;
-  width: min(410px, calc(100vw - 32px)) !important; min-width: 0; max-width: none; max-height: none; padding: 0 !important;
-  transform: none; z-index: 30; gap: 0; color: #293b3a; color-scheme: light;
+  position: fixed; top: auto; right: auto !important; bottom: 16px !important; left: var(--dock-left, 50%) !important;
+  width: var(--dock-width, min(680px, calc(100vw - 32px))) !important; min-width: 0; max-width: calc(100vw - 16px); max-height: calc(100dvh - 96px); padding: 0 !important;
+  transform: none; z-index: 30; gap: 6px; color: #293b3a; color-scheme: light;
 }
-.canvas-app .interaction.agent-panel-shell[data-mode="collapsed"] { top: auto; width: auto !important; }
-.canvas-app .agent-panel-shell .chat-surface { flex: 1; min-height: 0; pointer-events: auto; border-radius: 14px; background: #fff; box-shadow: 0 8px 32px #202b3420; overflow: hidden; padding: 0; }
-.agent-panel-shell .chat-surface[hidden], .agent-panel-shell[data-mode="collapsed"] .agent-sessions { display: none; }
+.canvas-app .interaction.agent-panel-shell.is-placed { transition: left .55s cubic-bezier(.22,.7,.22,1), width .55s cubic-bezier(.22,.7,.22,1); }
+.canvas-app .interaction.agent-panel-shell[data-mode="collapsed"] { left: calc(var(--dock-left, 50%) + var(--dock-width, 0px) / 2) !important; width: auto !important; transform: translateX(-50%); }
+.canvas-app .agent-panel-shell .chat-surface { flex: 0 1 auto; min-height: 0; pointer-events: auto; border: 1px solid #dfe7ee; border-radius: 16px; background: #fff; box-shadow: 0 10px 36px #202b3426; overflow: hidden; padding: 0; }
+.agent-panel-shell .chat-surface[hidden], .agent-panel-shell:not([data-mode="history"]) .agent-sessions { display: none; }
+.agent-panel-shell .agent-sessions { display: flex; flex-wrap: wrap; flex-shrink: 0; gap: 5px; padding: 8px 10px; margin: 0; border: 1px solid #dfe7ee; border-radius: 14px; background: #fff; box-shadow: 0 6px 24px #202b341a; pointer-events: auto; }
+.agent-panel-shell .agent-sessions select { flex: 1; min-width: 100px; max-width: 100%; }
+.agent-panel-shell .agent-sessions button { font-size: 11px; padding: 5px; }
 .agent-panel-shell .agent-sessions { flex-wrap: wrap; flex-shrink: 0; gap: 5px; padding: 10px; margin: 0; border: 1px solid #e5e7eb; border-radius: 14px 14px 0 0; background: #fff; pointer-events: auto; }
 .agent-panel-shell .agent-sessions select { flex: 1; min-width: 100px; max-width: 100%; }
 .agent-panel-shell .agent-sessions button { font-size: 11px; padding: 5px; }
-.agent-panel-shell .agent-sessions + .chat-launcher { align-self: flex-end; }
-.canvas-app .agent-panel-shell .history-panel { display: flex !important; flex: 1; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; overflow: hidden; }
+.canvas-app .agent-panel-shell .history-panel { display: flex !important; flex: 0 0 auto; min-height: 0; margin: 0; padding: 0; border: 0; border-bottom: 1px solid #e6eceb; border-radius: 0; background: transparent; overflow: hidden; }
+.canvas-app .agent-panel-shell[data-mode="history"] .history-panel { flex: 1 1 auto; }
+/* Outside history only the toggle remains, so the dock stays an input bar over the content. */
+.canvas-app .agent-panel-shell:not([data-mode="history"]) .history-panel .dialogue { display: none; }
+.canvas-app .agent-panel-shell #agent-task-status:not([hidden]) { display: flex; align-items: center; gap: 8px; }
+.canvas-app .agent-panel-shell #agent-task-status > span { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.canvas-app .agent-panel-shell #agent-task-status > small { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #637a75; }
+.canvas-app .agent-panel-shell #agent-task-status button { flex: 0 0 auto; min-height: 24px; margin: 0; padding: 2px 6px; white-space: nowrap; }
+.canvas-app .agent-panel-shell[data-mode="compact"] :is(.history-panel, .agent-dock-bar) { display: none !important; }
+.agent-dock-bar { display: flex; align-items: center; gap: 8px; padding: 0 2px 6px; }
+.agent-dock-bar .agent-mode-slot { flex: 1 1 auto; min-width: 0; }
 .agent-panel-shell .history-toggle { flex-shrink: 0; padding: 7px 14px; }
-.agent-mode-slot { padding: 10px 14px 5px; font-size: 13px; font-weight: 600; color: #315b59; }
+.agent-mode-slot { padding: 0; font-size: 11px; font-weight: 600; color: #315b59; }
 .agent-mode-slot { display:flex; flex-wrap:wrap; gap:8px; flex:0 0 auto; }
 .agent-mode-slot[hidden] { display:none; }
-.agent-mode-slot label { display:flex; flex:1 1 130px; flex-direction:column; gap:3px; min-width:0; font-size:11px; }
-.agent-mode-slot select { max-width:100%; min-width:0; padding:5px; border:1px solid #d7e2de; border-radius:6px; background:#fff; color:#315b59; }
+.agent-mode-slot label { display:flex; flex:0 1 auto; align-items:center; gap:5px; min-width:0; font-size:11px; }
+.agent-mode-slot select { max-width:100%; min-width:0; padding:3px 5px; border:1px solid #d7e2de; border-radius:6px; background:#fff; color:#315b59; }
 .agent-mode-slot label[hidden] { display:none; }
-.agent-mode-slot > span { font-size:11px; width:100%; }
-.canvas-app .agent-panel-shell .chat-collapse { display:block; position:static; flex:0 0 auto; align-self:flex-end; width:auto; height:auto; margin:0; padding:5px 8px; opacity:1; pointer-events:auto; transform:none; border:1px solid #d7e2de; border-radius:6px; font-size:11px; }
+.agent-mode-slot > span { font-size:11px; }
+.agent-mode-slot > span:empty { display:none; }
+.canvas-app .agent-panel-shell .chat-collapse { display:block; position:static; flex:0 0 auto; align-self:center; margin-left:auto; width:auto; height:auto; margin-top:0; margin-bottom:0; padding:4px 8px; opacity:1; pointer-events:auto; transform:none; border:1px solid #d7e2de; border-radius:6px; font-size:11px; }
 .canvas-app .agent-panel-shell .chat-launcher { pointer-events:auto; }
-.canvas-app .agent-panel-shell #agent-task-status { position:static; inset:auto; flex:0 0 auto; order:3; max-width:100%; width:auto; margin:0 10px 8px; padding:7px 10px; box-shadow:none; border-radius:8px; font-size:11px; pointer-events:auto; }
+.canvas-app .agent-panel-shell #agent-task-status { position:static; inset:auto; flex:0 0 auto; order:0; max-width:100%; width:auto; margin:0 0 6px; padding:7px 10px; box-shadow:none; border-radius:8px; font-size:11px; pointer-events:auto; }
 .message-mode { display:block; color:#637a75; font-size:10px; }
 .agent-answer-card { border-bottom:1px solid #d9e5e0; padding-bottom:10px; margin-bottom:8px; }
 .agent-answer-card > h4 { font-size:14px; }
 .answer-view { color:#506e66; }
-.canvas-app .agent-panel-shell .dialogue { display: flex; flex: 1; min-height: 0; height: auto; max-height: none; padding: 12px; gap: 14px; overflow: auto; mask-image: none; -webkit-mask-image: none; scroll-padding: 12px; }
+.canvas-app .agent-panel-shell .dialogue { display: flex; flex: 1; min-height: 0; height: auto; max-height: min(440px, 46dvh); padding: 12px; gap: 14px; overflow: auto; mask-image: none; -webkit-mask-image: none; scroll-padding: 12px; }
 .agent-panel-shell .dialogue-line { display: block; max-width: 100%; width: 100%; margin: 0; color: #293b3a; font-size: 13px; line-height: 1.65; overflow: visible; opacity: 1; white-space: normal; -webkit-line-clamp: unset; }
 .agent-panel-shell .dialogue-line.user { align-self: flex-end; width: fit-content; max-width: 92%; text-align: left; padding: 8px 11px; border-radius: 12px; background: #eef4f3; }
-.agent-panel-shell .composer-wrap { flex: 0 0 auto; padding: 8px; background: #fff; border-top: 1px solid #e6eceb; }
+.canvas-app .agent-panel-shell .composer-wrap { flex: 0 0 auto; padding: 8px 10px 10px; background: #fff; border-radius: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
 .canvas-app .agent-panel-shell .composer { width: 100%; min-width: 0; margin: 0; border-radius: 10px; box-shadow: none; }
 .agent-panel-shell .composer textarea { max-height: 140px; min-height: 44px; }
 .agent-panel-shell .composer-note { display: none; }
@@ -73,25 +88,26 @@
 .message-table th, .message-table td { border: 1px solid #dce6e1; padding: 5px 7px; text-align: left; white-space: normal; min-width: 65px; overflow-wrap: anywhere; }
 .message-table th { background: #edf4f0; font-weight: 600; }
 .agent-streaming { font-size: 12px; }
-@media (min-width: 1100px) {
-  .canvas-app:has(.agent-panel-shell:not([data-mode="collapsed"])) .canvas { padding-right: 442px; }
-}
 @media (max-width: 700px) {
-  .canvas-app .interaction.agent-panel-shell { top: auto; left: 8px !important; right: 8px !important; bottom: 8px !important; width: auto !important; height: min(76dvh, 680px); max-height: calc(100dvh - 70px); }
-  .canvas-app .interaction.agent-panel-shell[data-mode="collapsed"] { left: auto !important; height: auto; }
+  .canvas-app .interaction.agent-panel-shell[data-mode="history"] { height: min(76dvh, 680px); max-height: calc(100dvh - 70px); }
+  .canvas-app .interaction.agent-panel-shell[data-mode="history"] .chat-surface { flex: 1 1 auto; }
+  .canvas-app .interaction.agent-panel-shell { bottom: 8px !important; }
   .agent-panel-shell .agent-sessions { padding: 7px; }
   .agent-panel-shell .composer { padding: 8px; }
   .agent-panel-shell .message-context { max-width: 100%; overflow-wrap: anywhere; }
 }
-/* The assistant occupies a side column; its measured height must not shrink the canvas. */
+/* The dock floats above the canvas; the content keeps a scroll tail so its last rows clear the input. */
 .canvas-app:has(.agent-panel-shell) > .canvas {
   margin-bottom: 0 !important;
-  scroll-padding-bottom: 24px;
+  scroll-padding-bottom: calc(var(--dock-height, 140px) + 24px);
 }
-.canvas-app:has(.agent-panel-shell) > .canvas::after { height: 24px; }
+.canvas-app:has(.agent-panel-shell) > .canvas::after { height: calc(var(--dock-height, 140px) + 24px); }
+.canvas-app:has(.agent-panel-shell)[data-chat-mode="collapsed"] > .canvas::after { height: 72px; }
 @media (min-width: 1100px) {
-  body.haizhi-glass .canvas-app:has(.agent-panel-shell:not([data-mode="collapsed"])) > .canvas { padding-right: 442px; }
   body.haizhi-glass .canvas-app > .topbar { display:flex; gap:12px; }
   body.haizhi-glass .canvas-app > .topbar .page-nav { margin-left:auto; margin-right:auto; }
   .topbar .workspace-version { flex:0 0 auto; width:auto; padding:5px 12px; white-space:nowrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .canvas-app .interaction.agent-panel-shell.is-placed { transition: none; }
 }
