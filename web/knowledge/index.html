@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Context OS · 知识构建</title><link rel="stylesheet" href="/style.css"></head>
+<body><header><div><small>CONTEXT OS</small><h1>企业知识工作台</h1><p>从资料到对象，每条知识都有依据。</p></div><form id="login"><label>实例访问令牌<input id="token" type="password" autocomplete="off" required></label><button>连接</button><span id="identity"></span></form></header>
+<div id="notice" role="status" aria-live="polite">请连接企业实例。令牌仅保留在当前页面内存中。</div>
+<nav><a href="#sources">资料与任务</a><a href="#ontology">本体定义</a><a href="#objects">对象与证据</a><button id="refresh" type="button">刷新</button></nav>
+<main>
+<section id="sources"><h2>1. 接入资料</h2><p>CSV 需要唯一记录键；PDF 需要可提取的文本层。同一个来源编号再次上传，会产生新版本并重新评估旧知识。</p>
+<form id="upload"><div class="row"><label>来源编号<input name="sourceKey" required placeholder="例如 contracts"></label><label>资料名称<input name="title" required></label><label>CSV 记录键列<input name="keyColumn" placeholder="例如 contract_no"></label></div><label>选择文件<input name="file" type="file" accept=".csv,.pdf" required></label><button>上传资料</button></form>
+<div id="source-list"></div><h3>构建任务</h3><p>任务不会自动重复调用付费模型。失败后可检查原因，再手动重试。列表每页显示 100 条。</p><div id="job-list"></div></section>
+<section id="ontology"><h2>2. 建立业务本体</h2><p>先从资料提出类型和关系，再检查并发布。也可以直接编辑类型定义。已发布版本不可修改，可复制为新草稿。</p>
+<div class="row"><button id="discover" type="button">根据当前资料生成候选本体</button><button id="example" type="button">载入合同验证示例</button><label>已有版本<select id="ontology-select"><option value="">新草稿</option></select></label></div>
+<label>类型、属性、关系与可用操作<textarea id="definition" rows="18" spellcheck="false" aria-label="本体定义 JSON"></textarea></label>
+<div class="row"><button id="save-draft" type="button">保存草稿</button><button id="copy-draft" type="button">另存新草稿</button><button id="publish" type="button">发布选中草稿</button></div>
+<h3>生成对象知识</h3><div class="row"><label>来源版本<select id="extract-source"></select></label><label>已发布本体<select id="extract-ontology"></select></label></div>
+<label>CSV 字段映射（PDF 留空，由模型抽取）<textarea id="mapping" rows="10" spellcheck="false"></textarea></label><button id="extract" type="button">开始构建</button></section>
+<section id="objects"><h2>3. 查看对象、时间与证据</h2><div id="object-list"></div>
+<form id="history"><div class="row"><label>业务时点（本地时间）<input name="validAt" type="datetime-local"></label><label>系统获知时点（留空为当前）<input name="knownAt" type="datetime-local"></label><button>查询选中对象</button></div></form>
+<div id="object-detail">选择对象以查看属性和关系。</div><div id="evidence"></div>
+<details><summary>修正或否决知识</summary><p>修正保留原始资料。属性纠正需要明确时间和持续方式；撤销人工值可对其声明执行否决。</p>
+<form id="action"><div class="row"><label>操作<select name="kind"><option>CorrectProperty</option><option>RejectAssertion</option><option>CorrectValidity</option></select></label><label>目标（对象或声明）<input name="targetId" required></label><label>目标修订号<input name="expectedRevision" type="number" min="1" required></label></div>
+<div class="row"><label>属性编号<input name="predicate"></label><label>新值（JSON，如 "1000000.00"）<input name="value"></label></div>
+<div class="row"><label>有效起点（本地时间）<input name="from" type="datetime-local"></label><label>有效终点（可空）<input name="to" type="datetime-local"></label><label>时间精度<select name="precision"><option value="instant">时刻</option><option value="day">日期</option><option value="unknown">未知</option></select></label></div>
+<div class="row"><label>持续方式<select name="duration"><option value="until_revoked">直到撤销</option><option value="source_version">仅覆盖指定来源版本</option></select></label><label>所覆盖的来源版本<input name="sourceVersionId"></label></div>
+<label>修正理由<input name="reason" required></label><button>提交修正</button></form></details>
+<details><summary>操作审计</summary><button id="audit" type="button">读取最近操作</button><pre id="audit-result"></pre></details></section>
+</main><footer>第一阶段开发入口。模型输出需依据证据检查；未知时间与冲突会明确显示。</footer><script src="/app.js" type="module"></script></body></html>

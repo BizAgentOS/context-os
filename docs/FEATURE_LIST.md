@@ -1,5 +1,11 @@
 # Context OS Feature List
 
+## 当前新增工作：KNOWLEDGE_PHASE1
+
+状态：**InProgress（核心机制与合成小样本已验证，真实企业场景验收待开展）**；类型检查、新核心 16/16、既有回归 680/680、CLI/浏览器与指定 GLM 5.3 小样本结果见[运行验证](implementation/PHASE1_VERIFICATION.md)。未指定新的发布版本，不改变旧 Feature 的完成和 Released 记录。
+
+范围：[实施决定](implementation/PHASE1_DECISION.md)。代码、配置、运行步骤与限制：[开发交接](implementation/PHASE1_DEVELOPMENT.md)。首轮开发时只更新源码和文档；后经用户授权执行的验证见上方记录。核心机制通过不等于真实企业场景或全平台验收完成。
+
 **2026-10-22 名称维护：**产品统一更名为 Context OS，包与技术标识改为 `context-os`，文档路径与运行身份同步，旧配置保留兼容。此项为既有产品维护，不新增 Feature，不改变完成数或 Released 版本；当前版本仍为 v0.3.1。详见[迁移说明](../README.md#名称与已有配置迁移)。
 
 Last Updated: 2026-10-22

@@ -1,0 +1,8 @@
+{
+  "typeId":"Contract",
+  "namespace":"contract_no",
+  "identityColumn":"contract_no",
+  "properties":{"contract_no":"contract_no","contract_amount":"amount"},
+  "links":[{"predicate":"contract_customer","column":"company_code","targetType":"Company","targetNamespace":"company_code"},{"predicate":"contract_owner","column":"employee_no","targetType":"Person","targetNamespace":"employee_no"}],
+  "validity":{"fromColumn":"valid_from","toColumn":"valid_to"}
+}

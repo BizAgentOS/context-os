@@ -9,6 +9,7 @@
 .DS_Store
 .idea/
 .vscode/
+.codegraph
 
 # Python and Node environments
 .venv/

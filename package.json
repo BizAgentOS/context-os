@@ -7,7 +7,13 @@
     "node": ">=22.18.0"
   },
   "scripts": {
-    "start": "node src/agent/server.ts",
+    "start": "node src/knowledge/server.ts",
+    "legacy:start": "node src/agent/server.ts",
+    "knowledge:start": "node src/knowledge/server.ts",
+    "knowledge:init": "node scripts/knowledge/database.ts init",
+    "knowledge:reset": "node scripts/knowledge/database.ts reset-development",
+    "knowledge:sample-pdf": "node scripts/knowledge/make-sample-pdf.ts",
+    "test:knowledge": "node --test --test-concurrency=1 tests/knowledge/*.test.ts",
     "demo": "node src/demo/server.ts",
     "mcp": "node scripts/context-os-mcp.ts",
     "test": "node --test --test-concurrency=4 tests/agent/*.test.ts",
@@ -30,6 +36,7 @@
     "esbuild": "0.28.2",
     "iconv-lite": "0.7.3",
     "pdfjs-dist": "6.4.299",
+    "pg": "8.16.3",
     "saxes": "6.0.0",
     "three": "0.186.0",
     "unzipper": "0.12.5",
