@@ -1,5 +1,9 @@
 # Context OS
 
+**第一阶段验证更新：**用户授权后已完成类型检查、新核心 16 项、现有回归 680 项及 CLI/浏览器检查，修复启动、权限、分页和模型适配问题，并用已配置 GLM 5.3 完成合成资料小样本验证。详情见[运行记录](docs/implementation/PHASE1_VERIFICATION.md)；实际企业资料与生产条件仍待验收。
+
+> **当前开发方向：单企业实例的对象式知识核心。** 新阶段以 [实施决定](docs/implementation/PHASE1_DECISION.md)为准，代码入口已改为 PostgreSQL 知识核心，使用步骤与配置见[开发交接](docs/implementation/PHASE1_DEVELOPMENT.md)。首轮按用户要求仅编写实现，授权后的运行结果见上方更新；下方旧版验收为历史记录。`npm start` 使用新入口；旧入口为 `npm run legacy:start`。
+
 本体驱动的通用多源数据底座。把散落在不同系统的数据接进来，构建可溯源、有依据的本体，按版本发布给人和外部 Agent 使用。程序负责构建结构，KodaX Agent 协助接入、解释与修订。投研作为后续验证场景。
 
 ## 当前版本：v0.3.1

@@ -1,0 +1,10 @@
+{
+  "name": "合同知识验证",
+  "types": [
+    {"id":"Company","name":"企业","identityNamespaces":["company_code"],"properties":[{"id":"company_name","name":"企业名称","valueType":"string"}]},
+    {"id":"Contract","name":"合同","identityNamespaces":["contract_no"],"properties":[{"id":"contract_no","name":"合同编号","valueType":"string","required":true},{"id":"contract_amount","name":"合同金额","valueType":"decimal"}]},
+    {"id":"Person","name":"负责人","identityNamespaces":["employee_no"],"properties":[{"id":"person_name","name":"姓名","valueType":"string"}]}
+  ],
+  "links":[{"id":"contract_customer","name":"合同客户","from":"Contract","to":"Company","multiple":false},{"id":"contract_owner","name":"合同负责人","from":"Contract","to":"Person","multiple":false}],
+  "actions":["CorrectProperty","RejectAssertion","CorrectValidity","PublishOntologyVersion"]
+}
