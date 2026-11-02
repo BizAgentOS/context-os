@@ -32,7 +32,7 @@ export async function createKnowledgeServer(options: { db: Database; directory: 
   if (new Set(principals.map(p => p.token)).size !== principals.length || new Set(principals.map(p => p.id)).size !== principals.length) throw new Error('身份或令牌重复');
   const core = new KnowledgeCore(options.db), jobs = new KnowledgeJobs(core, options.model);
   // Startup reads schema version only, never initializes or resets the database implicitly.
-  if (!(await options.db.pool.query('SELECT version FROM knowledge_schema_versions WHERE version=1')).rows.length) throw new Error('请先显式初始化知识数据库');
+  if (!(await options.db.pool.query('SELECT version FROM knowledge_schema_versions WHERE version=2')).rows.length) throw new Error('请先运行 knowledge:init 更新知识数据库');
   const server = httpServer(async (request, response) => {
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Cache-Control', 'no-store');
@@ -60,7 +60,7 @@ export async function createKnowledgeServer(options: { db: Database; directory: 
       const actor: Principal = { id: matched.id, role: matched.role };
       if (request.method === 'GET' && url.pathname === '/api/state') {
         const [sources, ontologies, objects, tasks] = await Promise.all(['sources', 'ontologies', 'objects', 'jobs'].map(kind => core.list(actor, kind as 'sources' | 'ontologies' | 'objects' | 'jobs')));
-        send(200, { actor, model: options.model?.identity ?? null, sources, ontologies, objects, jobs: tasks, pagination: { limit: 100, offset: 0, note: '仅展示第一页，请使用列表接口翻页' } }); return;
+        send(200, { actor, model: options.model?.identity ?? null, sources, ontologies, objects, jobs: tasks, accessScope: 'all_instance_data', fineGrainedPermissions: false, inference: 'pending_only', pagination: { limit: 100, offset: 0, note: '仅展示第一页，请使用列表接口翻页' } }); return;
       }
       const list = /^\/api\/list\/(sources|ontologies|objects|jobs)$/.exec(url.pathname);
       if (request.method === 'GET' && list) {
@@ -87,11 +87,13 @@ export async function createKnowledgeServer(options: { db: Database; directory: 
       const object = /^\/api\/objects\/([^/]+)$/.exec(url.pathname);
       if (request.method === 'GET' && object) { send(200, await core.object(actor, object[1], { validAt: url.searchParams.get('validAt') ?? undefined, knownAt: url.searchParams.get('knownAt') ?? undefined })); return; }
       const evidence = /^\/api\/evidence\/([^/]+)$/.exec(url.pathname);
-      if (request.method === 'GET' && evidence) { send(200, await core.evidence(actor, evidence[1])); return; }
+      if (request.method === 'GET' && evidence) { send(200, await core.evidence(actor, evidence[1], url.searchParams.has('revision') ? Number(url.searchParams.get('revision')) : undefined)); return; }
       const source = /^\/api\/source-versions\/([^/]+)$/.exec(url.pathname);
       if (request.method === 'GET' && source) { const { original_path, ...safe } = await core.sourceVersion(actor, source[1]); send(200, safe); return; }
       const retry = /^\/api\/jobs\/([^/]+)\/retry$/.exec(url.pathname);
       if (request.method === 'POST' && retry) { await body(request); send(200, await jobs.retry(actor, retry[1])); return; }
+      const attempts = /^\/api\/jobs\/([^/]+)\/attempts$/.exec(url.pathname);
+      if (request.method === 'GET' && attempts) { send(200, await core.jobAttempts(actor, attempts[1])); return; }
       send(404, { error: '接口不存在' });
     } catch (error) {
       const detail = error instanceof z.ZodError ? error.issues.map(i => i.message).join('；') : error instanceof Error ? error.message : '';

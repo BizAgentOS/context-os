@@ -67,3 +67,26 @@ test('CSV mapping retains record, identity and time evidence without float conve
   assert.equal(output.claims.length, 4);
   assert.ok(output.claims.every(c => c.evidence.some(e => e.kind === 'field' && e.field === 'contract_no')));
 });
+
+test('negative, planned and conditional assertions cannot become ordinary facts', () => {
+  for (const semantics of [{ polarity: 'negated' }, { modality: 'planned' }, { condition: 'after approval' }]) {
+    const parsed = claimSchema.parse({ subject: { typeId: 'Contract', namespace: 'contract_no', value: 'C001' }, predicate: 'contract_amount', value: '1', semantics, evidence: [{ kind: 'field', recordKey: 'C001', field: 'amount' }] });
+    const result = field([statement({ semantics: parsed.semantics })]);
+    assert.equal(result.value, null);
+    assert.deepEqual(result.pendingAssertions, ['s1']);
+    assert.ok(result.candidates[0].semantics);
+    assert.equal(result.candidates[0].reviewReasons.length, 1);
+  }
+});
+
+test('incompatible currency or missing required comparison prevents adoption', () => {
+  const scoped = ontologySchema.parse({ ...ontology, types: ontology.types.map(t => ({ ...t, properties: t.properties.map(p => p.id === 'contract_amount' ? { ...p, comparison: { currency: 'CNY', unit: 'yuan', scope: 'tax-included' } } : p) })) });
+  const cny = statement({ comparison: { currency: 'CNY', unit: 'yuan', scope: 'tax-included' } });
+  const project = (rows: Statement[]) => projectStatements('Contract', scoped, rows, '2026-04-20T00:00:00Z').fields.contract_amount as any;
+  assert.equal(project([cny]).value, '1000000.00');
+  for (const comparison of [{ currency: 'USD', unit: 'yuan', scope: 'tax-included' }, { currency: 'CNY', unit: 'yuan', scope: 'tax-excluded' }, {}]) {
+    const result = project([cny, statement({ id: 's2', comparison })]);
+    assert.equal(result.status, 'incomparable');
+    assert.equal(result.value, null);
+  }
+});

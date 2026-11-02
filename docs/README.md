@@ -1,6 +1,6 @@
 # Context OS 文档中心
 
-**当前新阶段入口：**[第一阶段实施决定](implementation/PHASE1_DECISION.md)、[现状评估](implementation/ASSESSMENT.md)、[代码与待验证项交接](implementation/PHASE1_DEVELOPMENT.md)。新定位为单企业实例、元数据驱动 OO 本体、PostgreSQL 声明/证据/双时间与 Action；旧文档中的范围限制不覆盖本轮已确认目标。本轮未运行验证，历史验收与当前实现状态分开记录。
+**当前新阶段入口：**[第一阶段实施决定](implementation/PHASE1_DECISION.md)、[现状评估](implementation/ASSESSMENT.md)、[代码交接](implementation/PHASE1_DEVELOPMENT.md)、[11-02 补齐交付](implementation/PHASE1_HARDENING.md)、[试点评测基线](implementation/PHASE1_PILOT_EVALUATION.md)。新定位为单企业实例、元数据驱动 OO 本体、PostgreSQL 声明/证据/双时间与 Action；旧文档中的范围限制不覆盖本轮已确认目标。核心机制已运行验证，真实业务效果与生产验收仍待开展。
 
 更新：2026-10-22。文档按基于 KodaX 的领域 Agent 产品组织：产品目标 → 系统职责 → Agent 方法与运行 → 共同语义契约 → 人类交互和外部消费 → 实施与验证。
 

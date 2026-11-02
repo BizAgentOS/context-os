@@ -90,9 +90,14 @@ test('PostgreSQL: import, evidence, conflicts, dual time, corrections, resync, r
     assert.equal((await db.pool.query('SELECT state FROM knowledge.jobs WHERE id=$1', [job.id])).rows[0].state, 'failed');
     await jobs.retry(actor, job.id);
     assert.equal((await db.pool.query('SELECT state FROM knowledge.jobs WHERE id=$1', [job.id])).rows[0].state, 'queued');
+    await jobs.once();
+    const attempts = await core.jobAttempts(actor, job.id);
+    assert.deepEqual(attempts.map(a => a.outcome), ['failed', 'failed']);
+    assert.deepEqual(attempts.map(a => a.attempt), [1, 2]);
+    assert.ok(attempts.every(a => a.metrics.durationMs >= 0 && a.metrics.cost === null));
     await jobs.close();
   } finally {
-    if (ownsSchema) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version=1'); }
+    if (ownsSchema) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version IN (1,2)'); }
     await db.close(); await rm(dir, { recursive: true, force: true });
   }
 });

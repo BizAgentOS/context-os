@@ -4,6 +4,17 @@ import { authorize, extractionSchema, mappingSchema, ontologySchema, type Princi
 import { KnowledgeCore } from './service.ts';
 import { fingerprint, locateEvidence, mapCsv, type SourceContent } from './sources.ts';
 import type { JsonModel } from './model.ts';
+const PROMPT_VERSION = 'knowledge-semantics-v2';
+function numericUsage(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const entries = Object.entries(value).flatMap<[string, unknown]>(([key, v]) => {
+    if (!/^[A-Za-z_]+$/.test(key)) return [];
+    if (typeof v === 'number' && Number.isFinite(v) && v >= 0) return [[key, v]];
+    const nested = numericUsage(v);
+    return nested ? [[key, nested]] : [];
+  });
+  return entries.length ? Object.fromEntries(entries) : null;
+}
 
 const jobInput = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('discover'), operationId: z.string().min(1).max(160), sourceVersionIds: z.array(z.string().uuid()).min(1).max(10) }).strict(),
@@ -18,11 +29,11 @@ export class KnowledgeJobs {
   constructor(core: KnowledgeCore, model?: JsonModel) { this.core = core; this.model = model; }
   async enqueue(actor: Principal, raw: unknown) {
     authorize(actor, true); const input = jobInput.parse(raw);
-    const hash = fingerprint({ actor: actor.id, input, model: this.model?.identity ?? null, prompt: 'knowledge-v1' });
+    const hash = fingerprint({ actor: actor.id, input, model: this.model?.identity ?? null, prompt: PROMPT_VERSION });
     return this.core.db.transaction(async sql => {
       const prior = (await sql.query('SELECT * FROM knowledge.jobs WHERE operation_id=$1', [input.operationId])).rows[0];
       if (prior) { if (prior.fingerprint !== hash) throw new Error('任务 operationId 输入不一致'); return prior; }
-      return (await sql.query('INSERT INTO knowledge.jobs(id,operation_id,fingerprint,kind,actor_id,payload) VALUES($1,$2,$3,$4,$5,$6::jsonb) RETURNING *', [randomUUID(), input.operationId, hash, input.kind, actor.id, JSON.stringify({ input, modelId: this.model?.identity ?? null, promptVersion: 'knowledge-v1' })])).rows[0];
+      return (await sql.query('INSERT INTO knowledge.jobs(id,operation_id,fingerprint,kind,actor_id,payload) VALUES($1,$2,$3,$4,$5,$6::jsonb) RETURNING *', [randomUUID(), input.operationId, hash, input.kind, actor.id, JSON.stringify({ input, modelId: this.model?.identity ?? null, promptVersion: PROMPT_VERSION })])).rows[0];
     });
   }
   async retry(actor: Principal, id: string) {
@@ -30,6 +41,7 @@ export class KnowledgeJobs {
     return this.core.db.transaction(async sql => {
       const row = (await sql.query("UPDATE knowledge.jobs SET state='queued',error=NULL,lease_token=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE id=$1 AND (state='failed' OR state='running' AND lease_until<clock_timestamp()) RETURNING *", [id])).rows[0];
       if (!row) throw new Error('任务尚在运行或已完成');
+      await sql.query("UPDATE knowledge.job_attempts SET outcome='interrupted',metrics=metrics || jsonb_build_object('interruptedAt',clock_timestamp(),'usageUnknown',true) WHERE job_id=$1 AND outcome='running'", [id]);
       return row;
     });
   }
@@ -52,17 +64,25 @@ export class KnowledgeJobs {
   async once() {
     const job = await this.core.db.transaction(async sql => {
       // Expired work requires explicit retry, avoiding repeated paid model calls after a crash.
+      await sql.query("UPDATE knowledge.job_attempts SET outcome='interrupted',metrics=metrics || jsonb_build_object('interruptedAt',clock_timestamp(),'usageUnknown',true) WHERE outcome='running' AND id IN (SELECT lease_token FROM knowledge.jobs WHERE state='running' AND lease_until<clock_timestamp())");
       await sql.query("UPDATE knowledge.jobs SET state='failed',error='任务租约失效，请确认后重试',lease_token=NULL WHERE state='running' AND lease_until<clock_timestamp()");
       const pending = (await sql.query("SELECT * FROM knowledge.jobs WHERE state='queued' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1")).rows[0];
       if (!pending) return null;
-      return (await sql.query("UPDATE knowledge.jobs SET state='running',attempts=attempts+1,lease_token=$2,lease_until=clock_timestamp()+interval '5 minutes',updated_at=clock_timestamp() WHERE id=$1 RETURNING *", [pending.id, randomUUID()])).rows[0];
+      const row = (await sql.query("UPDATE knowledge.jobs SET state='running',attempts=attempts+1,lease_token=$2,lease_until=clock_timestamp()+interval '5 minutes',updated_at=clock_timestamp() WHERE id=$1 RETURNING *", [pending.id, randomUUID()])).rows[0];
+      await sql.query("INSERT INTO knowledge.job_attempts(id,job_id,attempt,outcome,metrics) VALUES($1,$2,$3,'running',jsonb_build_object('startedAt',clock_timestamp()))", [row.lease_token, row.id, row.attempts]);
+      return row;
     });
     if (!job) return;
+    const started = performance.now();
+    const startedAt = new Date().toISOString();
+    let modelCalled = false, inputBytes: number | null = null;
+    const metrics = () => ({ attempt: job.attempts, startedAt, finishedAt: new Date().toISOString(), durationMs: Math.round(performance.now() - started), inputBytes, modelCalled, usage: modelCalled ? numericUsage(this.model?.lastRun?.usage) : null, cost: null });
     const lease = { id: job.id as string, leaseToken: job.lease_token as string };
     const heartbeat = setInterval(() => { void this.core.db.pool.query("UPDATE knowledge.jobs SET lease_until=clock_timestamp()+interval '5 minutes' WHERE id=$1 AND lease_token=$2 AND state='running'", [lease.id, lease.leaseToken]).catch(() => {}); }, 30000);
     try {
       const actor: Principal = { id: job.actor_id, role: 'editor' };
       const input = jobInput.parse(job.payload.input);
+      if (job.payload.promptVersion !== PROMPT_VERSION) throw new Error('任务提示版本已变化，请创建新任务');
       if ((input.kind === 'discover' || !input.mapping) && job.payload.modelId !== (this.model?.identity ?? null)) throw new Error('模型配置已变化，请新建任务而非复用原任务');
       let result: unknown;
       if (input.kind === 'discover') {
@@ -74,7 +94,9 @@ export class KnowledgeJobs {
           return { id: s.id, sourceNamespace: `source.${s.source_id}`, kind: content.kind, text: content.text?.slice(0, 16000), coverage: { characters: Math.min(16000, content.text?.length ?? 0), total: content.text?.length ?? 0 } };
         });
         if (Buffer.byteLength(JSON.stringify(samples)) > 100000) throw new Error('本体样本超过单次预算，请减少来源');
-        const output = ontologySchema.parse(await this.model.generate('discover', { sources: samples }, ontologySchema));
+        const modelInput = { sources: samples };
+        inputBytes = Buffer.byteLength(JSON.stringify(modelInput)); modelCalled = true; this.model.lastRun = undefined;
+        const output = ontologySchema.parse(await this.model.generate('discover', modelInput, ontologySchema));
         for (const item of output.discoveryEvidence) {
           const source = sources.find(s => s.id === item.sourceVersionId);
           if (!source) throw new Error('本体依据必须引用本次输入的来源版本');
@@ -90,22 +112,28 @@ export class KnowledgeJobs {
         const source = await this.core.sourceVersion(actor, input.sourceVersionId);
         const ontology = await this.core.ontology(actor, input.ontologyId, true);
         const content = source.content as SourceContent;
-        const configuration = { prompt: 'knowledge-v1', model: input.mapping ? 'deterministic-mapping-v1' : this.model?.identity, mapping: input.mapping ?? null };
+        const configuration = { prompt: PROMPT_VERSION, model: input.mapping ? 'deterministic-mapping-v2' : this.model?.identity, mapping: input.mapping ?? null };
+        inputBytes = Buffer.byteLength(JSON.stringify(content));
         let output: unknown;
         if (input.mapping) output = mapCsv(content, input.mapping, ontology.definition);
         else {
           if (!this.model) throw new Error('尚未配置模型；CSV 可指定字段映射，PDF 需配置模型');
           if (content.kind !== 'pdf') throw new Error('结构化数据请提供显式字段映射');
           if ((content.text?.length ?? 0) > 40000) throw new Error('第一阶段单次模型抽取最多 40000 字符，请拆分文档后接入；没有静默截断');
-          output = await this.model.generate('extract', { ontology: ontology.definition, sourceNamespace: `source.${source.source_id}`, sourceVersionId: source.id, content }, extractionSchema);
+          const modelInput = { ontology: ontology.definition, sourceNamespace: `source.${source.source_id}`, sourceVersionId: source.id, content };
+          inputBytes = Buffer.byteLength(JSON.stringify(modelInput)); modelCalled = true; this.model.lastRun = undefined;
+          output = await this.model.generate('extract', modelInput, extractionSchema);
         }
         result = await this.core.commitExtraction(actor, { operationId: input.operationId, ontologyId: input.ontologyId, sourceVersionId: input.sourceVersionId, configuration, output, job: lease });
       }
-      await this.core.db.pool.query("UPDATE knowledge.jobs SET state='completed',result=$3::jsonb,error=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE id=$1 AND lease_token=$2 AND state='running'", [job.id, lease.leaseToken, JSON.stringify(result)]);
+      await this.core.db.pool.query("UPDATE knowledge.jobs SET state='completed',result=$3::jsonb,error=NULL,lease_until=NULL,metrics=$4::jsonb,updated_at=clock_timestamp() WHERE id=$1 AND lease_token=$2 AND state IN ('running','completed')", [job.id, lease.leaseToken, JSON.stringify(result), JSON.stringify(metrics())]);
     } catch (error) {
       // Avoid persisting arbitrary provider messages that can contain credentials or request content.
       const message = error instanceof z.ZodError ? '输入或模型输出未通过结构校验' : error instanceof Error && !/key|token|authorization|bearer|https?:/i.test(error.message) ? error.message.slice(0, 500) : '任务失败，请检查配置或输入后重试';
-      await this.core.db.pool.query("UPDATE knowledge.jobs SET state='failed',error=$3,lease_until=NULL,updated_at=clock_timestamp() WHERE id=$1 AND lease_token=$2 AND state='running'", [job.id, lease.leaseToken, message]);
-    } finally { clearInterval(heartbeat); }
+      await this.core.db.pool.query("UPDATE knowledge.jobs SET state='failed',error=$3,lease_until=NULL,metrics=$4::jsonb,updated_at=clock_timestamp() WHERE id=$1 AND lease_token=$2 AND state='running'", [job.id, lease.leaseToken, message, JSON.stringify(metrics())]);
+    } finally {
+      clearInterval(heartbeat);
+      await this.core.db.pool.query("UPDATE knowledge.job_attempts SET outcome=CASE WHEN j.lease_token IS DISTINCT FROM $1::uuid THEN 'interrupted' WHEN j.state='completed' THEN 'completed' WHEN j.state='failed' THEN 'failed' ELSE 'interrupted' END,metrics=$2::jsonb FROM knowledge.jobs j WHERE knowledge.job_attempts.id=$1 AND j.id=knowledge.job_attempts.job_id", [lease.leaseToken, JSON.stringify(metrics())]);
+    }
   }
 }

@@ -6,5 +6,5 @@
     {"id":"Person","name":"负责人","identityNamespaces":["employee_no"],"properties":[{"id":"person_name","name":"姓名","valueType":"string"}]}
   ],
   "links":[{"id":"contract_customer","name":"合同客户","from":"Contract","to":"Company","multiple":false},{"id":"contract_owner","name":"合同负责人","from":"Contract","to":"Person","multiple":false}],
-  "actions":["CorrectProperty","RejectAssertion","CorrectValidity","PublishOntologyVersion"]
+  "actions":["CorrectProperty","RejectAssertion","CorrectValidity","PublishOntologyVersion","RematchIdentity"]
 }

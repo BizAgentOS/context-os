@@ -2,6 +2,8 @@
 
 当前状态：首轮按用户要求仅编写实现；用户审阅并授权后，已执行运行测试、修复和 GLM 5.3 小样本验证。实际结果与边界见 [运行验证记录](PHASE1_VERIFICATION.md)。下文保留配置与操作说明，历史“尚未执行”表述仅指最初开发交接时点。
 
+2026-11-02 补齐已实现并验证，新增字段、RematchIdentity、修订证据、schema 002 初始化和剩余边界见[补齐交付](PHASE1_HARDENING.md)。启动前需显式运行 knowledge:init 更新 schema；真实试点按[评测与运行基线](PHASE1_PILOT_EVALUATION.md)执行。
+
 ## 入口与范围
 
 新默认 `npm start` 指向 `src/knowledge/server.ts`，独立于旧 AgentApplication / SQLite 状态。旧开发入口仅保留为 `npm run legacy:start`，方便查阅既有实现，不属于新核心依赖。

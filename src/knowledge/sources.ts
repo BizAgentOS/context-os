@@ -112,7 +112,7 @@ export function mapCsv(content: SourceContent, rawMapping: Mapping, ontology: On
         value = raw === 'true';
       }
       if (property.valueType === 'datetime') value = date(raw);
-      const claim = claimSchema.parse({ subject, predicate, value, validity, evidence: evidence(column) });
+      const claim = claimSchema.parse({ subject, predicate, value, validity, comparison: mapping.comparisons[predicate] ?? {}, evidence: evidence(column) });
       validateClaim(ontology, claim); claims.push(claim);
     }
     for (const link of mapping.links) {

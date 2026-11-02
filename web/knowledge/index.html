@@ -2,6 +2,7 @@
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Context OS · 知识构建</title><link rel="stylesheet" href="/style.css"></head>
 <body><header><div><small>CONTEXT OS</small><h1>企业知识工作台</h1><p>从资料到对象，每条知识都有依据。</p></div><form id="login"><label>实例访问令牌<input id="token" type="password" autocomplete="off" required></label><button>连接</button><span id="identity"></span></form></header>
 <div id="notice" role="status" aria-live="polite">请连接企业实例。令牌仅保留在当前页面内存中。</div>
+<p>当前授权用户可读取本实例全部资料，尚无部门或字段隔离。否定、计划、条件与推断声明仅保留为待处理候选。</p>
 <nav><a href="#sources">资料与任务</a><a href="#ontology">本体定义</a><a href="#objects">对象与证据</a><button id="refresh" type="button">刷新</button></nav>
 <main>
 <section id="sources"><h2>1. 接入资料</h2><p>CSV 需要唯一记录键；PDF 需要可提取的文本层。同一个来源编号再次上传，会产生新版本并重新评估旧知识。</p>
@@ -21,6 +22,14 @@
 <div class="row"><label>属性编号<input name="predicate"></label><label>新值（JSON，如 "1000000.00"）<input name="value"></label></div>
 <div class="row"><label>有效起点（本地时间）<input name="from" type="datetime-local"></label><label>有效终点（可空）<input name="to" type="datetime-local"></label><label>时间精度<select name="precision"><option value="instant">时刻</option><option value="day">日期</option><option value="unknown">未知</option></select></label></div>
 <div class="row"><label>持续方式<select name="duration"><option value="until_revoked">直到撤销</option><option value="source_version">仅覆盖指定来源版本</option></select></label><label>所覆盖的来源版本<input name="sourceVersionId"></label></div>
+<label>比较口径（JSON，可填 unit / currency / scope）<input name="comparison" placeholder='{"currency":"CNY","unit":"yuan","scope":"tax-included"}'></label>
+<label>本次修正依据（可空，JSON 数组：sourceVersionId 和 locator）<textarea name="evidence" rows="4" placeholder='[{"sourceVersionId":"来源版本 UUID","locator":{"kind":"field","recordKey":"C001","field":"amount"}}]'></textarea></label>
 <label>修正理由<input name="reason" required></label><button>提交修正</button></form></details>
+<details><summary>纠正标识绑定（管理员）</summary><p>仅迁移明确选中的来源声明，未来该标识解析到新对象。其他声明不自动移动。可用返回的新声明编号执行反向纠错；此入口不是通用合并或拆分。</p>
+<form id="identity-action"><div class="row"><label>旧对象<input name="targetId" required></label><label>旧对象修订<input name="expectedRevision" type="number" min="1" required></label></div>
+<div class="row"><label>对象类型<input name="typeId" required></label><label>标识命名空间<input name="namespace" required></label><label>标识值<input name="identityValue" required></label></div>
+<div class="row"><label>目标对象（空则新建）<input name="newObjectId"></label><label>已有目标修订<input name="expectedTargetRevision" type="number" min="1"></label></div>
+<label>已审核来源声明编号（JSON 数组，含要重定向的关系）<textarea name="assertionIds" rows="4" required>[]</textarea></label>
+<label>纠错理由<input name="reason" required></label><button>提交身份纠错</button></form><pre id="identity-result"></pre></details>
 <details><summary>操作审计</summary><button id="audit" type="button">读取最近操作</button><pre id="audit-result"></pre></details></section>
 </main><footer>第一阶段开发入口。模型输出需依据证据检查；未知时间与冲突会明确显示。</footer><script src="/app.js" type="module"></script></body></html>

@@ -28,11 +28,14 @@ export class Database {
     finally { client.release(); }
   }
   async initialize() {
-    const schema = await readFile(new URL('./sql/001-core.sql', import.meta.url), 'utf8');
+    const schemas = await Promise.all(['001-core.sql', '002-phase1-hardening.sql'].map(name => readFile(new URL(`./sql/${name}`, import.meta.url), 'utf8')));
     await this.transaction(async sql => {
       await sql.query('CREATE TABLE IF NOT EXISTS knowledge_schema_versions(version integer PRIMARY KEY, installed_at timestamptz NOT NULL DEFAULT clock_timestamp())');
-      const applied = await sql.query('SELECT version FROM knowledge_schema_versions WHERE version=1');
-      if (!applied.rows.length) { await sql.query(schema); await sql.query('INSERT INTO knowledge_schema_versions(version) VALUES(1)'); }
+      for (const [index, schema] of schemas.entries()) {
+        const version = index + 1;
+        const applied = await sql.query('SELECT version FROM knowledge_schema_versions WHERE version=$1', [version]);
+        if (!applied.rows.length) { await sql.query(schema); await sql.query('INSERT INTO knowledge_schema_versions(version) VALUES($1)', [version]); }
+      }
     });
   }
   close() { return this.pool.end(); }

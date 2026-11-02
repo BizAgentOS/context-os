@@ -21,6 +21,7 @@ test('HTTP: authenticate, PDF parse, publish, queued extraction, conflict, feedb
     await db.initialize(); ownsSchema = true;
     const admin = randomBytes(32).toString('hex'), editor = randomBytes(32).toString('hex'), viewer = randomBytes(32).toString('hex');
     const model: JsonModel = { identity: 'http-fixture', async close() {}, async generate(task, raw) {
+      this.lastRun = { runId: 'fake-run', status: 'completed', usage: { inputTokens: 42, outputTokens: 18, note: 'not persisted' } };
       assert.equal(task, 'extract');
       const input = raw as { content: { text: string } };
       const quote = input.content.text.trim();
@@ -55,19 +56,30 @@ test('HTTP: authenticate, PDF parse, publish, queued extraction, conflict, feedb
     await app.jobs.once();
     const state = await call('/api/state');
     assert.ok(state.body.jobs.every((j: any) => j.state === 'completed'), JSON.stringify(state.body.jobs));
+    assert.equal(state.body.accessScope, 'all_instance_data');
+    assert.equal(state.body.fineGrainedPermissions, false);
+    const modelJob = state.body.jobs.find((j: any) => j.payload.input.operationId === 'http-document');
+    assert.ok(modelJob.metrics.durationMs >= 0);
+    assert.ok(modelJob.metrics.inputBytes > 0);
+    assert.deepEqual(modelJob.metrics.usage, { inputTokens: 42, outputTokens: 18 });
+    assert.equal(modelJob.metrics.cost, null);
+    assert.equal((await call(`/api/jobs/${modelJob.id}/attempts`)).body[0].outcome, 'completed');
     const objectId = state.body.objects.find((o: any) => o.type_id === 'Contract').id;
     const object = await call(`/api/objects/${objectId}?validAt=2026-04-20T00:00:00Z`);
     assert.equal(object.body.fields.contract_amount.status, 'conflict');
     const claim = object.body.assertions.find((a: any) => a.source_version_id === pdf.body.version.id);
     const evidence = await call('/api/evidence/' + claim.id);
     assert.deepEqual(evidence.body[0].locator.location.pages, [1]);
+    assert.equal((await call('/api/evidence/' + claim.id + '?revision=0')).status, 400);
+    assert.equal((await call('/api/evidence/' + claim.id + '?revision=1')).status, 200);
     const correction = { operationId: 'http-correct', kind: 'CorrectProperty', targetId: objectId, expectedRevision: object.body.revision, reason: 'reviewed amendment', predicate: 'contract_amount', value: '1300000.00', duration: 'until_revoked', validity: { from: '2026-04-01T00:00:00Z', to: null, precision: 'instant' } };
     assert.equal((await call('/api/actions', correction, viewer)).status, 403);
+    assert.equal((await call('/api/actions', { ...correction, kind: 'RematchIdentity' }, editor)).status, 403);
     assert.equal((await call('/api/actions', correction)).status, 200);
     assert.equal((await call(`/api/objects/${objectId}?validAt=2026-04-20T00:00:00Z`, undefined, viewer)).body.fields.contract_amount.value, '1300000.00');
     assert.ok((await call('/api/audit')).body.length >= 2);
   } finally {
-    if (ownsSchema) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version=1'); }
+    if (ownsSchema) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version IN (1,2)'); }
     if (app) await app.close(); else await db.close();
     await rm(directory, { recursive: true, force: true });
   }

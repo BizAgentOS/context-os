@@ -10,10 +10,30 @@ export const validitySchema = z.object({
 }).strict().refine(v => !(v.from && v.to) || Date.parse(v.from) < Date.parse(v.to), '有效区间必须为左闭右开正区间')
   .refine(v => v.precision !== 'unknown' || (!v.from && !v.to), '未知时间不能包含已知边界');
 export type Validity = z.infer<typeof validitySchema>;
+export const comparisonSchema = z.object({ unit: label.optional(), currency: label.optional(), scope: label.optional() }).strict();
+export const semanticsSchema = z.object({
+  polarity: z.enum(['affirmed', 'negated']).default('affirmed'),
+  modality: z.enum(['actual', 'planned', 'hypothetical']).default('actual'),
+  condition: z.string().trim().min(1).max(4000).optional(),
+}).strict();
+export type Semantics = z.infer<typeof semanticsSchema>;
+export type Comparison = z.infer<typeof comparisonSchema>;
+export function reviewReasons(basis: string, semantics?: Partial<Semantics>) {
+  const reasons: string[] = [];
+  if (basis === 'inferred') reasons.push('inferred_without_verified_derivation');
+  if (semantics?.polarity === 'negated') reasons.push('negative_assertion');
+  if (semantics?.modality && semantics.modality !== 'actual') reasons.push(`${semantics.modality}_assertion`);
+  if (semantics?.condition) reasons.push('conditional_assertion');
+  return reasons;
+}
+export function requiresReview(basis: string, semantics?: Partial<Semantics>) {
+  return reviewReasons(basis, semantics).length > 0;
+}
 export const propertySchema = z.object({
   id: key, name: label, valueType: z.enum(['string', 'decimal', 'integer', 'boolean', 'datetime', 'enum']),
   required: z.boolean().default(false), multiple: z.boolean().default(false),
   enumValues: z.array(label).max(100).optional(),
+  comparison: comparisonSchema.optional(),
 }).strict().refine(p => p.valueType !== 'enum' || !!p.enumValues?.length, '枚举缺少取值');
 export const objectTypeSchema = z.object({
   id: key, name: label, description: z.string().max(4000).default(''),
@@ -23,7 +43,7 @@ export const objectTypeSchema = z.object({
 export const linkSchema = z.object({
   id: key, name: label, from: key, to: key, multiple: z.boolean().default(true),
 }).strict();
-export const builtinActions = ['CorrectProperty', 'RejectAssertion', 'CorrectValidity', 'PublishOntologyVersion'] as const;
+export const builtinActions = ['CorrectProperty', 'RejectAssertion', 'CorrectValidity', 'PublishOntologyVersion', 'RematchIdentity'] as const;
 export const ontologySchema = z.object({
   name: label, types: z.array(objectTypeSchema).min(1).max(100), links: z.array(linkSchema).max(200).default([]),
   actions: z.array(z.enum(builtinActions)).default([...builtinActions]),
@@ -51,6 +71,8 @@ export const claimSchema = z.object({
   validity: validitySchema.default({ from: null, to: null, precision: 'unknown' }),
   evidence: z.array(evidenceInputSchema).min(1).max(20),
   basis: z.enum(['explicit', 'inferred']).default('explicit'),
+  semantics: semanticsSchema.default({ polarity: 'affirmed', modality: 'actual' }),
+  comparison: comparisonSchema.default({}),
 }).strict().refine(c => (c.value !== undefined) !== (c.object !== undefined), '声明必须且只能有标量值或对象引用');
 export type Claim = z.infer<typeof claimSchema>;
 export const extractionSchema = z.object({ claims: z.array(claimSchema).max(2000) }).strict();
@@ -59,6 +81,7 @@ export const mappingSchema = z.object({
   properties: z.record(key, label),
   links: z.array(z.object({ predicate: key, column: label, targetType: key, targetNamespace: key }).strict()).default([]),
   validity: z.object({ fromColumn: label.optional(), toColumn: label.optional() }).strict().optional(),
+  comparisons: z.record(key, comparisonSchema).default({}),
 }).strict();
 export type Mapping = z.infer<typeof mappingSchema>;
 export const actionSchema = z.object({
@@ -66,7 +89,16 @@ export const actionSchema = z.object({
   reason: z.string().trim().min(1).max(4000), predicate: key.optional(), value: scalar.optional(),
   validity: validitySchema.optional(), duration: z.enum(['until_revoked', 'source_version']).optional(),
   sourceVersionId: z.string().uuid().optional(),
-}).strict();
+  comparison: comparisonSchema.optional(),
+  evidence: z.array(z.object({ sourceVersionId: z.string().uuid(), locator: evidenceInputSchema }).strict()).max(20).optional(),
+  identity: identitySchema.optional(), newObjectId: z.string().uuid().optional(),
+  expectedTargetRevision: z.number().int().positive().optional(),
+  assertionIds: z.array(z.string().uuid()).min(1).max(200).optional(),
+}).strict().superRefine((action, ctx) => {
+  if (action.evidence?.length && !['CorrectProperty', 'CorrectValidity'].includes(action.kind)) ctx.addIssue({ code: 'custom', message: '本次操作不支持修正证据参数' });
+  if (action.comparison && action.kind !== 'CorrectProperty') ctx.addIssue({ code: 'custom', message: '比较口径仅用于属性修正' });
+  if (action.kind !== 'RematchIdentity' && (action.identity || action.newObjectId || action.expectedTargetRevision || action.assertionIds)) ctx.addIssue({ code: 'custom', message: '身份参数仅用于身份纠错' });
+});
 export type Action = z.infer<typeof actionSchema>;
 export interface Principal { id: string; role: 'admin' | 'editor' | 'viewer'; }
 export class AccessDenied extends Error {}
