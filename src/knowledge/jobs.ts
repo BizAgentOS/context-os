@@ -1,9 +1,10 @@
+import { getLogger } from '../observability/logger.ts';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { authorize, extractionSchema, mappingSchema, ontologySchema, type Principal } from './contracts.ts';
 import { KnowledgeCore } from './service.ts';
 import { fingerprint, locateEvidence, mapCsv, type SourceContent } from './sources.ts';
-import type { JsonModel } from './model.ts';
+import type { JsonModel, ModelDiagnostic } from './model.ts';
 const PROMPT_VERSION = 'knowledge-semantics-v2';
 function numericUsage(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -50,7 +51,7 @@ export class KnowledgeJobs {
     this.stopping = false;
     const tick = () => {
       if (this.stopping) return;
-      this.active = this.once().catch(() => { /* Individual job failure is persisted; infrastructure errors are retried on next tick. */ }).finally(() => {
+      this.active = this.once().catch(() => { getLogger().error('worker.infrastructure_failed', { component: 'knowledge.worker' }); }).finally(() => {
         this.active = undefined;
         if (!this.stopping) this.timer = setTimeout(() => { this.timer = undefined; tick(); }, 1500);
       });
@@ -73,12 +74,20 @@ export class KnowledgeJobs {
       return row;
     });
     if (!job) return;
+    const events: ModelDiagnostic[] = [];
+    let failure: string | undefined;
+    const record = (event: ModelDiagnostic) => {
+      if (events.length < 200) events.push(event);
+      getLogger().log(event.kind === 'job.failed' || event.kind === 'run.timed_out' ? 'error' : event.kind === 'submission.rejected' ? 'warn' : 'info', event.kind, { component: 'knowledge.job', jobId: job.id, attempt: job.attempts, ...event });
+    };
+    record({ at: new Date().toISOString(), kind: 'job.started' });
+    if (this.model) this.model.onDiagnostic = record;
     const started = performance.now();
     const startedAt = new Date().toISOString();
     let modelCalled = false, inputBytes: number | null = null;
-    const metrics = () => ({ attempt: job.attempts, startedAt, finishedAt: new Date().toISOString(), durationMs: Math.round(performance.now() - started), inputBytes, modelCalled, usage: modelCalled ? numericUsage(this.model?.lastRun?.usage) : null, cost: null });
+    const metrics = () => ({ attempt: job.attempts, startedAt, finishedAt: new Date().toISOString(), durationMs: Math.round(performance.now() - started), inputBytes, modelCalled, usage: modelCalled ? numericUsage(this.model?.lastRun?.usage) : null, cost: null, error: failure, events });
     const lease = { id: job.id as string, leaseToken: job.lease_token as string };
-    const heartbeat = setInterval(() => { void this.core.db.pool.query("UPDATE knowledge.jobs SET lease_until=clock_timestamp()+interval '5 minutes' WHERE id=$1 AND lease_token=$2 AND state='running'", [lease.id, lease.leaseToken]).catch(() => {}); }, 30000);
+    const heartbeat = setInterval(() => { void this.core.db.pool.query("UPDATE knowledge.jobs SET lease_until=clock_timestamp()+interval '5 minutes',metrics=$3::jsonb WHERE id=$1 AND lease_token=$2 AND state='running'", [lease.id, lease.leaseToken, JSON.stringify({ ...metrics(), finishedAt: null })]).catch(() => {}); }, 30000);
     try {
       const actor: Principal = { id: job.actor_id, role: 'editor' };
       const input = jobInput.parse(job.payload.input);
@@ -126,13 +135,17 @@ export class KnowledgeJobs {
         }
         result = await this.core.commitExtraction(actor, { operationId: input.operationId, ontologyId: input.ontologyId, sourceVersionId: input.sourceVersionId, configuration, output, job: lease });
       }
+      record({ at: new Date().toISOString(), kind: 'job.completed' });
       await this.core.db.pool.query("UPDATE knowledge.jobs SET state='completed',result=$3::jsonb,error=NULL,lease_until=NULL,metrics=$4::jsonb,updated_at=clock_timestamp() WHERE id=$1 AND lease_token=$2 AND state IN ('running','completed')", [job.id, lease.leaseToken, JSON.stringify(result), JSON.stringify(metrics())]);
     } catch (error) {
       // Avoid persisting arbitrary provider messages that can contain credentials or request content.
       const message = error instanceof z.ZodError ? '输入或模型输出未通过结构校验' : error instanceof Error && !/key|token|authorization|bearer|https?:/i.test(error.message) ? error.message.slice(0, 500) : '任务失败，请检查配置或输入后重试';
+      failure = message;
+      record({ at: new Date().toISOString(), kind: 'job.failed' });
       await this.core.db.pool.query("UPDATE knowledge.jobs SET state='failed',error=$3,lease_until=NULL,metrics=$4::jsonb,updated_at=clock_timestamp() WHERE id=$1 AND lease_token=$2 AND state='running'", [job.id, lease.leaseToken, message, JSON.stringify(metrics())]);
     } finally {
       clearInterval(heartbeat);
+      if (this.model) this.model.onDiagnostic = undefined;
       await this.core.db.pool.query("UPDATE knowledge.job_attempts SET outcome=CASE WHEN j.lease_token IS DISTINCT FROM $1::uuid THEN 'interrupted' WHEN j.state='completed' THEN 'completed' WHEN j.state='failed' THEN 'failed' ELSE 'interrupted' END,metrics=$2::jsonb FROM knowledge.jobs j WHERE knowledge.job_attempts.id=$1 AND j.id=knowledge.job_attempts.job_id", [lease.leaseToken, JSON.stringify(metrics())]);
     }
   }

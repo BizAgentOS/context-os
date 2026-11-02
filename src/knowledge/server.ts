@@ -1,3 +1,4 @@
+import { getLogger } from '../observability/logger.ts';
 import { createServer as httpServer, type IncomingMessage } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -106,19 +107,31 @@ export async function createKnowledgeServer(options: { db: Database; directory: 
   if (options.worker !== false) jobs.start();
   return { server, core, jobs, async close() { await jobs.close(); await new Promise<void>((done, fail) => server.listening ? server.close(error => error ? fail(error) : done()) : done()); await options.db.close(); } };
 }
+let startupStage = '数据库连接配置';
 async function main() {
   const db = await openDatabase(process.env.CONTEXT_OS_KNOWLEDGE_DATABASE_URL ?? '');
   try {
     const directory = resolve(process.env.CONTEXT_OS_KNOWLEDGE_DIRECTORY ?? 'local-state/knowledge');
+    startupStage = '访问身份配置（CONTEXT_OS_KNOWLEDGE_PRINCIPALS：JSON 数组，token 至少 32 字符）';
     const principals = JSON.parse(process.env.CONTEXT_OS_KNOWLEDGE_PRINCIPALS ?? '[]');
-    const app = await createKnowledgeServer({ db, directory, principals, model: configuredModel(resolve(directory, 'runtime')) });
+    principalConfig.parse(principals);
+    startupStage = '模型配置（检查 MODEL_PROVIDER、MODEL 和自定义 MODEL_PROTOCOL）';
+    const model = configuredModel(resolve(directory, 'runtime'));
+    startupStage = '数据库连接、迁移版本或重复的访问身份（请检查连接并运行 npm run knowledge:init）';
+    const app = await createKnowledgeServer({ db, directory, principals, model });
+    startupStage = '监听端口配置（CONTEXT_OS_KNOWLEDGE_PORT：1–65535）';
     const port = z.coerce.number().int().min(1).max(65535).parse(process.env.CONTEXT_OS_KNOWLEDGE_PORT ?? 3211);
-    app.server.listen(port, '127.0.0.1', () => process.stdout.write(`Context OS knowledge: http://127.0.0.1:${port}\n`));
+    await new Promise<void>((done, fail) => {
+      app.server.once('error', fail);
+      app.server.listen(port, '127.0.0.1', () => { app.server.removeListener('error', fail); done(); });
+    }).catch(async error => { await app.jobs.close(); throw error; });
+    getLogger().info('server.started', { port });
+    process.stdout.write(`Context OS knowledge: http://127.0.0.1:${port}\n`);
     let closing = false;
-    const close = () => { if (closing) return; closing = true; void app.close().catch(() => { process.exitCode = 1; }); };
+    const close = () => { if (closing) return; closing = true; void app.close().catch(() => { process.exitCode = 1; getLogger().error('server.shutdown_failed'); }).finally(async () => { getLogger().info('server.stopped'); await getLogger().flush(); }); };
     process.once('SIGINT', close); process.once('SIGTERM', close);
   } catch (error) { await db.close(); throw error; }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  main().catch(() => { process.stderr.write('知识核心启动失败，请检查依赖、数据库初始化及配置。\n'); process.exitCode = 1; });
+  main().catch(async () => { getLogger().error('server.startup_failed', { stage: startupStage }); await getLogger().flush(); process.stderr.write(`知识核心启动失败：${startupStage}。\n`); process.exitCode = 1; });
 }

@@ -7,13 +7,13 @@
     "node": ">=22.18.0"
   },
   "scripts": {
-    "start": "node src/knowledge/server.ts",
+    "start": "node --env-file-if-exists=.env src/knowledge/server.ts",
     "legacy:start": "node src/agent/server.ts",
-    "knowledge:start": "node src/knowledge/server.ts",
-    "knowledge:init": "node scripts/knowledge/database.ts init",
-    "knowledge:reset": "node scripts/knowledge/database.ts reset-development",
+    "knowledge:start": "node --env-file-if-exists=.env src/knowledge/server.ts",
+    "knowledge:init": "node --env-file-if-exists=.env scripts/knowledge/database.ts init",
+    "knowledge:reset": "node --env-file-if-exists=.env scripts/knowledge/database.ts reset-development",
     "knowledge:sample-pdf": "node scripts/knowledge/make-sample-pdf.ts",
-    "test:knowledge": "node --test --test-concurrency=1 tests/knowledge/*.test.ts",
+    "test:knowledge": "node --env-file-if-exists=.env --test --test-concurrency=1 tests/knowledge/*.test.ts",
     "demo": "node src/demo/server.ts",
     "mcp": "node scripts/context-os-mcp.ts",
     "test": "node --test --test-concurrency=4 tests/agent/*.test.ts",

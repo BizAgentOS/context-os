@@ -107,3 +107,23 @@ npm start
 4. 浏览器与真实模型效果分别执行，先限制样本和调用量，再考虑旧功能回归与规模测试。
 
 只有实际执行并记录结果后，才能标记验收完成。当前项目版本仍为 0.3.1，没有提交、推送或发布。
+
+## 2026-11-02 本地环境文件与启动诊断
+
+`npm start`、`npm run knowledge:start`、`npm run knowledge:init`、`npm run knowledge:reset` 和 `npm run test:knowledge` 现在通过 Node 的 `--env-file-if-exists=.env` 读取仓库根目录配置。可复制 `.env.example` 为 `.env`，替换数据库、身份及可选模型配置；已有 shell 环境变量优先，修改配置后需重启服务。`.env` 已在 Git 忽略规则中，不提交真实凭据。直接执行 `node src/knowledge/server.ts` 不会读取该文件，需要自行添加上述参数。
+
+启动失败按配置、数据库与监听端口阶段提示，不回显原始错误或密钥。类型检查及环境文件解析验证通过；HTTP 集成测试因工具终端未配置专用测试数据库而跳过，未验证用户终端的实际数据库连接和模型调用。
+
+### 任务诊断补充
+
+任务 worker 现在向 stderr 输出 JSON 行（任务 ID、尝试号、时间、事件类型）；模型记录开始、迭代、提交接收/接受/拒绝、结束和超时。校验失败仅记录字段路径及错误码，不记录输入值、模型全文、凭据或任意提供方错误。每次尝试的 metrics 保留最多 200 条事件和本次错误，心跳每 30 秒更新任务 metrics，结束时写入 job_attempts；页面“查看尝试记录”可读取。历史记录无法补回，进程突然退出可能丢失尚未持久化的事件。
+
+可用 `npm start 2>&1 | tee -a local-state/knowledge.log` 留存终端输出（先确保 local-state 目录存在）。类型检查和 3 项模型适配测试通过；未调用付费模型，数据库诊断写入未在真实数据库集成运行验证。
+
+### 统一运行日志
+
+知识核心启动/停止、任务过程和 worker 基础设施失败使用 `src/observability/logger.ts` 的共享 logger。默认同时写 stderr 和 `local-state/logs/context-os.log`（JSON Lines），无需 tee。`.env` 可配置 CONTEXT_OS_LOG_LEVEL（默认 info）、CONTEXT_OS_LOG_FILE、CONTEXT_OS_LOG_MAX_BYTES（默认 10485760）、CONTEXT_OS_LOG_BACKUPS（默认 5），修改后重启。备份后缀为 `.1` 到 `.5`。
+
+其他模块可通过 getLogger().info/warn/error/debug 使用。调用方仅传入明确允许的诊断元数据，不直接传请求体或原始错误；递归凭据字段名脱敏只是补充。文件异步串行写入，正常退出等待 flush，写入失败在终端提示。当前实现用于单进程，不支持多个进程共享文件轮转；强杀可能丢失待写事件，旧模块的 console 输出尚未全部迁移。
+
+类型检查及 logger/model 共 4 项测试通过，覆盖落盘、级别、嵌套凭据字段脱敏和轮转保留；未运行真实模型任务。
