@@ -28,13 +28,22 @@ export class Database {
     finally { client.release(); }
   }
   async initialize() {
-    const schemas = await Promise.all(['001-core.sql', '002-phase1-hardening.sql'].map(name => readFile(new URL(`./sql/${name}`, import.meta.url), 'utf8')));
+    const schemas = await Promise.all(['001-core.sql', '002-phase1-hardening.sql', '003-build-plans.sql', '004-build-heads.sql', '005-source-identities.sql'].map(name => readFile(new URL(`./sql/${name}`, import.meta.url), 'utf8')));
     await this.transaction(async sql => {
       await sql.query('CREATE TABLE IF NOT EXISTS knowledge_schema_versions(version integer PRIMARY KEY, installed_at timestamptz NOT NULL DEFAULT clock_timestamp())');
+      const schema = await sql.query("SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='knowledge') AS present");
+      // A removed schema leaves public migration markers behind. There is no domain
+      // data to preserve when the entire namespace is absent; replay known migrations.
+      if (!schema.rows[0].present) await sql.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND $1', [schemas.length]);
       for (const [index, schema] of schemas.entries()) {
         const version = index + 1;
         const applied = await sql.query('SELECT version FROM knowledge_schema_versions WHERE version=$1', [version]);
-        if (!applied.rows.length) { await sql.query(schema); await sql.query('INSERT INTO knowledge_schema_versions(version) VALUES($1)', [version]); }
+        if (!applied.rows.length) {
+          // Earlier backfills may queue deferred FK checks on a table altered by the next migration.
+          await sql.query('SET CONSTRAINTS ALL IMMEDIATE');
+          await sql.query(schema);
+          await sql.query('INSERT INTO knowledge_schema_versions(version) VALUES($1)', [version]);
+        }
       }
     });
   }

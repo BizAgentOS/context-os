@@ -12,6 +12,7 @@
     "knowledge:start": "node --env-file-if-exists=.env src/knowledge/server.ts",
     "knowledge:init": "node --env-file-if-exists=.env scripts/knowledge/database.ts init",
     "knowledge:reset": "node --env-file-if-exists=.env scripts/knowledge/database.ts reset-development",
+    "knowledge:compare": "node --env-file-if-exists=.env scripts/knowledge/compare-discovery.ts",
     "knowledge:sample-pdf": "node scripts/knowledge/make-sample-pdf.ts",
     "test:knowledge": "node --env-file-if-exists=.env --test --test-concurrency=1 tests/knowledge/*.test.ts",
     "demo": "node src/demo/server.ts",

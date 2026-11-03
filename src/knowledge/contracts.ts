@@ -10,6 +10,13 @@ export const validitySchema = z.object({
 }).strict().refine(v => !(v.from && v.to) || Date.parse(v.from) < Date.parse(v.to), '有效区间必须为左闭右开正区间')
   .refine(v => v.precision !== 'unknown' || (!v.from && !v.to), '未知时间不能包含已知边界');
 export type Validity = z.infer<typeof validitySchema>;
+const comparisonValue = label.refine(v => !/未知|未声明|未标明|未注明|未说明|原文未|不详|未提供|unknown|unspecified|not specified|not stated|n\/a/i.test(v), '缺失口径请省略字段，解释写入审核问题，不能作为业务值');
+export const strictComparisonSchema = z.object({
+  unit: comparisonValue.refine(v => !['金额', 'amount', 'money'].includes(v.toLowerCase()), '金额不是计量单位').optional(),
+  currency: z.string().regex(/^[A-Z]{3}$/, '币种须为已核实的三位大写代码；未知请省略').refine(v => Intl.supportedValuesOf('currency').includes(v), '币种不在当前支持列表，需核实并显式扩展；不能猜测代码').optional(),
+  scope: comparisonValue.optional(),
+}).strict();
+// Keep historical data readable; stricter rules are enforced at write boundaries.
 export const comparisonSchema = z.object({ unit: label.optional(), currency: label.optional(), scope: label.optional() }).strict();
 export const semanticsSchema = z.object({
   polarity: z.enum(['affirmed', 'negated']).default('affirmed'),
@@ -34,11 +41,12 @@ export const propertySchema = z.object({
   required: z.boolean().default(false), multiple: z.boolean().default(false),
   enumValues: z.array(label).max(100).optional(),
   comparison: comparisonSchema.optional(),
+  comparisonRequired: z.array(z.enum(['unit', 'currency', 'scope'])).max(3).optional(),
 }).strict().refine(p => p.valueType !== 'enum' || !!p.enumValues?.length, '枚举缺少取值');
 export const objectTypeSchema = z.object({
   id: key, name: label, description: z.string().max(4000).default(''),
   identityNamespaces: z.array(key).max(20).default([]),
-  properties: z.array(propertySchema).min(1).max(100),
+  properties: z.array(propertySchema).max(100),
 }).strict();
 export const linkSchema = z.object({
   id: key, name: label, from: key, to: key, multiple: z.boolean().default(true),

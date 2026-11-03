@@ -23,9 +23,9 @@ test('HTTP: authenticate, PDF parse, publish, queued extraction, conflict, feedb
     const model: JsonModel = { identity: 'http-fixture', async close() {}, async generate(task, raw) {
       this.lastRun = { runId: 'fake-run', status: 'completed', usage: { inputTokens: 42, outputTokens: 18, note: 'not persisted' } };
       assert.equal(task, 'extract');
-      const input = raw as { content: { text: string } };
+      const input = raw as { sourceNamespace: string; content: { text: string } };
       const quote = input.content.text.trim();
-      return { claims: [{ subject: { typeId: 'Contract', namespace: 'contract_no', value: 'C001' }, predicate: 'contract_amount', value: '1200000.00', validity: { from: '2026-04-01T00:00:00Z', to: null, precision: 'instant' }, evidence: [{ kind: 'quote', quote, start: input.content.text.indexOf(quote) }] }] };
+      return { claims: [{ subject: { typeId: 'Contract', namespace: input.sourceNamespace, value: 'C001' }, predicate: 'contract_amount', value: '1200000.00', validity: { from: '2026-04-01T00:00:00Z', to: null, precision: 'instant' }, evidence: [{ kind: 'quote', quote, start: input.content.text.indexOf(quote) }] }] };
     } };
     app = await createKnowledgeServer({ db, directory, worker: false, model, principals: [{ id: 'admin', role: 'admin', token: admin }, { id: 'editor', role: 'editor', token: editor }, { id: 'viewer', role: 'viewer', token: viewer }] });
     app.server.listen(0, '127.0.0.1'); await once(app.server, 'listening');
@@ -47,6 +47,7 @@ test('HTTP: authenticate, PDF parse, publish, queued extraction, conflict, feedb
     const source = await call('/api/sources/csv', { operationId: 'http-csv', sourceKey: 'contracts', title: 'Contracts', keyColumn: 'contract_no', text: csv });
     assert.equal(source.status, 200);
     const mapping = JSON.parse(await readFile(new URL('../../data/samples/knowledge-core/mapping.json', import.meta.url), 'utf8'));
+    mapping.namespace = `source.${source.body.source.id}`; mapping.links.forEach((l: any) => { l.targetNamespace = mapping.namespace; });
     assert.equal((await call('/api/jobs', { kind: 'extract', operationId: 'http-map', ontologyId: draft.body.id, sourceVersionId: source.body.version.id, mapping })).status, 202);
     await app.jobs.once();
     const pdf = await call('/api/sources/pdf', { operationId: 'http-pdf', sourceKey: 'pdf', title: 'PDF contract', name: 'contract.pdf', base64: textPdf(['Contract C001 amount is 1200000.00 effective 2026-04-01.']).toString('base64') });
@@ -64,9 +65,11 @@ test('HTTP: authenticate, PDF parse, publish, queued extraction, conflict, feedb
     assert.deepEqual(modelJob.metrics.usage, { inputTokens: 42, outputTokens: 18 });
     assert.equal(modelJob.metrics.cost, null);
     assert.equal((await call(`/api/jobs/${modelJob.id}/attempts`)).body[0].outcome, 'completed');
-    const objectId = state.body.objects.find((o: any) => o.type_id === 'Contract').id;
+    const contractViews = await Promise.all(state.body.objects.filter((o: any) => o.type_id === 'Contract').map((o: any) => call(`/api/objects/${o.id}?validAt=2026-04-20T00:00:00Z`)));
+    assert.equal(contractViews.length, 2, 'direct extraction keeps source identities separate');
+    const objectId = contractViews.find(v => v.body.assertions.some((a: any) => a.source_version_id === pdf.body.version.id))!.body.id;
     const object = await call(`/api/objects/${objectId}?validAt=2026-04-20T00:00:00Z`);
-    assert.equal(object.body.fields.contract_amount.status, 'conflict');
+    assert.equal(object.body.fields.contract_amount.status, 'resolved');
     const claim = object.body.assertions.find((a: any) => a.source_version_id === pdf.body.version.id);
     const evidence = await call('/api/evidence/' + claim.id);
     assert.deepEqual(evidence.body[0].locator.location.pages, [1]);
@@ -79,7 +82,7 @@ test('HTTP: authenticate, PDF parse, publish, queued extraction, conflict, feedb
     assert.equal((await call(`/api/objects/${objectId}?validAt=2026-04-20T00:00:00Z`, undefined, viewer)).body.fields.contract_amount.value, '1300000.00');
     assert.ok((await call('/api/audit')).body.length >= 2);
   } finally {
-    if (ownsSchema) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version IN (1,2)'); }
+    if (ownsSchema) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version IN (1,2,3,4,5)'); }
     if (app) await app.close(); else await db.close();
     await rm(directory, { recursive: true, force: true });
   }

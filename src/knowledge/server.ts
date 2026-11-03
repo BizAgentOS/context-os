@@ -7,8 +7,9 @@ import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { openDatabase, type Database } from './database.ts';
 import { KnowledgeCore } from './service.ts';
-import { KnowledgeJobs } from './jobs.ts';
-import { configuredModel, type JsonModel } from './model.ts';
+import { KnowledgeJobs, PROMPT_VERSION } from './jobs.ts';
+import { BuildPlans } from './build-plans.ts';
+import { configuredModel, ModelConfigurationError, type JsonModel } from './model.ts';
 import { prepareCsv, preparePdf } from './sources.ts';
 import { AccessDenied, type Principal } from './contracts.ts';
 
@@ -26,14 +27,19 @@ async function body(request: IncomingMessage) {
 const assets = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+  ['/plans.js', ['plans.js', 'text/javascript; charset=utf-8']],
+  ['/action-target.js', ['action-target.js', 'text/javascript; charset=utf-8']],
+  ['/evidence.js', ['evidence.js', 'text/javascript; charset=utf-8']],
   ['/style.css', ['style.css', 'text/css; charset=utf-8']],
 ]);
 export async function createKnowledgeServer(options: { db: Database; directory: string; principals: unknown; model?: JsonModel; worker?: boolean }) {
   const principals = principalConfig.parse(options.principals);
   if (new Set(principals.map(p => p.token)).size !== principals.length || new Set(principals.map(p => p.id)).size !== principals.length) throw new Error('身份或令牌重复');
-  const core = new KnowledgeCore(options.db), jobs = new KnowledgeJobs(core, options.model);
+  const core = new KnowledgeCore(options.db), jobs = new KnowledgeJobs(core, options.model), plans = new BuildPlans(core);
   // Startup reads schema version only, never initializes or resets the database implicitly.
-  if (!(await options.db.pool.query('SELECT version FROM knowledge_schema_versions WHERE version=2')).rows.length) throw new Error('请先运行 knowledge:init 更新知识数据库');
+  if (!(await options.db.pool.query('SELECT version FROM knowledge_schema_versions WHERE version=5')).rows.length) throw new Error('请先运行 knowledge:init 更新知识数据库');
+  const tables = (await options.db.pool.query("SELECT to_regclass('knowledge.jobs') AS jobs,to_regclass('knowledge.job_attempts') AS attempts")).rows[0];
+  if (!tables.jobs || !tables.attempts) throw new Error('任务表缺失，迁移记录与实际结构不一致；请运行 npm run knowledge:init 检查并修复');
   const server = httpServer(async (request, response) => {
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Cache-Control', 'no-store');
@@ -61,7 +67,7 @@ export async function createKnowledgeServer(options: { db: Database; directory: 
       const actor: Principal = { id: matched.id, role: matched.role };
       if (request.method === 'GET' && url.pathname === '/api/state') {
         const [sources, ontologies, objects, tasks] = await Promise.all(['sources', 'ontologies', 'objects', 'jobs'].map(kind => core.list(actor, kind as 'sources' | 'ontologies' | 'objects' | 'jobs')));
-        send(200, { actor, model: options.model?.identity ?? null, sources, ontologies, objects, jobs: tasks, accessScope: 'all_instance_data', fineGrainedPermissions: false, inference: 'pending_only', pagination: { limit: 100, offset: 0, note: '仅展示第一页，请使用列表接口翻页' } }); return;
+        send(200, { actor, model: options.model?.identity ?? null, modelPolicy: options.model?.executionPolicy ?? null, promptVersion: PROMPT_VERSION, sources, ontologies, objects, jobs: tasks, plans: await plans.list(actor), accessScope: 'all_instance_data', fineGrainedPermissions: false, inference: 'pending_only', pagination: { limit: 100, offset: 0, note: '仅展示第一页，请使用列表接口翻页' } }); return;
       }
       const list = /^\/api\/list\/(sources|ontologies|objects|jobs)$/.exec(url.pathname);
       if (request.method === 'GET' && list) {
@@ -78,13 +84,36 @@ export async function createKnowledgeServer(options: { db: Database; directory: 
         send(200, await core.importSource(actor, input.operationId, input.sourceKey, input.title, await preparePdf(options.directory, input.name, Buffer.from(input.base64, 'base64')))); return;
       }
       if (request.method === 'POST' && url.pathname === '/api/ontologies') {
-        const input = z.object({ definition: z.unknown(), id: z.string().uuid().optional(), expectedRevision: z.number().int().positive().optional() }).strict().parse(await body(request));
+        const input = z.object({ definition: z.unknown(), copyFromId: z.string().uuid().optional(), id: z.string().uuid().optional(), expectedRevision: z.number().int().positive().optional() }).strict().parse(await body(request));
+        if (input.id && input.copyFromId) throw new Error('不能同时编辑和复制草稿');
         if (input.id && !input.expectedRevision) throw new Error('编辑草稿需要 expectedRevision');
-        send(200, await core.draft(actor, input.definition, input.id ? { id: input.id, expectedRevision: input.expectedRevision! } : undefined)); return;
+        send(200, await core.draft(actor, input.definition, input.id ? { id: input.id, expectedRevision: input.expectedRevision! } : undefined, undefined, {}, input.copyFromId)); return;
       }
+      const reviewPath = /^\/api\/ontologies\/([^/]+)\/review$/.exec(url.pathname);
+      if (request.method === 'POST' && reviewPath) { send(200, await core.reviewDiscovery(actor, reviewPath[1], await body(request))); return; }
+      const ontologyPath = /^\/api\/ontologies\/([^/]+)$/.exec(url.pathname);
+      if (request.method === 'GET' && ontologyPath) { send(200, await core.ontology(actor, ontologyPath[1])); return; }
       if (request.method === 'POST' && url.pathname === '/api/jobs') { send(202, await jobs.enqueue(actor, await body(request))); return; }
       if (request.method === 'POST' && url.pathname === '/api/actions') { send(200, await core.act(actor, await body(request))); return; }
       if (request.method === 'GET' && url.pathname === '/api/audit') { send(200, await core.events(actor)); return; }
+      if (request.method === 'GET' && url.pathname === '/api/plans') { send(200, await plans.list(actor)); return; }
+      const planPath = /^\/api\/plans\/([^/]+)(?:\/(save|preflight|approve|events|identities))?$/.exec(url.pathname);
+      if (planPath) {
+        const [, id, operation] = planPath;
+        if (request.method === 'GET' && !operation) { send(200, await plans.get(actor, id)); return; }
+        if (request.method === 'GET' && operation === 'events') { send(200, await plans.events(actor, id)); return; }
+        if (request.method === 'POST' && operation) {
+          if (actor.role === 'viewer') { send(403, { error: '只读身份不能审核或批准计划' }); return; }
+          if (operation === 'identities') { send(200, await plans.decideIdentityBatch(actor, id, await body(request), PROMPT_VERSION)); return; }
+          if (operation === 'save') {
+            const input = z.object({ expectedRevision: z.number().int().positive(), proposal: z.unknown(), review: z.unknown() }).strict().parse(await body(request));
+            send(200, await plans.save(actor, id, input.expectedRevision, input.proposal, input.review)); return;
+          }
+          const input = z.object({ expectedRevision: z.number().int().positive() }).strict().parse(await body(request));
+          if (operation === 'preflight') { send(200, await plans.preflight(actor, id, input.expectedRevision)); return; }
+          if (operation === 'approve') { send(200, await plans.approve(actor, id, input.expectedRevision)); return; }
+        }
+      }
       const object = /^\/api\/objects\/([^/]+)$/.exec(url.pathname);
       if (request.method === 'GET' && object) { send(200, await core.object(actor, object[1], { validAt: url.searchParams.get('validAt') ?? undefined, knownAt: url.searchParams.get('knownAt') ?? undefined })); return; }
       const evidence = /^\/api\/evidence\/([^/]+)$/.exec(url.pathname);
@@ -93,6 +122,10 @@ export async function createKnowledgeServer(options: { db: Database; directory: 
       if (request.method === 'GET' && source) { const { original_path, ...safe } = await core.sourceVersion(actor, source[1]); send(200, safe); return; }
       const retry = /^\/api\/jobs\/([^/]+)\/retry$/.exec(url.pathname);
       if (request.method === 'POST' && retry) { await body(request); send(200, await jobs.retry(actor, retry[1])); return; }
+      const revalidate = /^\/api\/jobs\/([^/]+)\/revalidate$/.exec(url.pathname);
+      if (request.method === 'POST' && revalidate) { await body(request); send(202, await jobs.revalidate(actor, revalidate[1])); return; }
+      const recreate = /^\/api\/jobs\/([^/]+)\/recreate$/.exec(url.pathname);
+      if (request.method === 'POST' && recreate) { await body(request); send(202, await jobs.recreate(actor, recreate[1])); return; }
       const attempts = /^\/api\/jobs\/([^/]+)\/attempts$/.exec(url.pathname);
       if (request.method === 'GET' && attempts) { send(200, await core.jobAttempts(actor, attempts[1])); return; }
       send(404, { error: '接口不存在' });
@@ -105,7 +138,7 @@ export async function createKnowledgeServer(options: { db: Database; directory: 
   });
   server.requestTimeout = 90000; server.headersTimeout = 15000;
   if (options.worker !== false) jobs.start();
-  return { server, core, jobs, async close() { await jobs.close(); await new Promise<void>((done, fail) => server.listening ? server.close(error => error ? fail(error) : done()) : done()); await options.db.close(); } };
+  return { server, core, jobs, plans, async close() { await jobs.close(); await new Promise<void>((done, fail) => server.listening ? server.close(error => error ? fail(error) : done()) : done()); await options.db.close(); } };
 }
 let startupStage = '数据库连接配置';
 async function main() {
@@ -133,5 +166,11 @@ async function main() {
   } catch (error) { await db.close(); throw error; }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  main().catch(async () => { getLogger().error('server.startup_failed', { stage: startupStage }); await getLogger().flush(); process.stderr.write(`知识核心启动失败：${startupStage}。\n`); process.exitCode = 1; });
+  main().catch(async error => {
+    const reason = error instanceof ModelConfigurationError ? error.message : startupStage;
+    getLogger().error('server.startup_failed', { stage: startupStage, reason });
+    await getLogger().flush();
+    process.stderr.write(`知识核心启动失败：${reason}。\n`);
+    process.exitCode = 1;
+  });
 }

@@ -1,7 +1,7 @@
 import { requiresReview, reviewReasons, type Comparison, type Semantics, type Ontology } from './contracts.ts';
 import { fingerprint } from './sources.ts';
 
-export const FUSION_POLICY = 'semantic-conflict-v2';
+export const FUSION_POLICY = 'semantic-conflict-v3-context';
 
 export interface Statement {
   id: string; revision: number; predicate: string; value: unknown; target_id: string | null;
@@ -14,8 +14,8 @@ const time = (value: string | Date) => new Date(value).getTime();
 export function projectStatements(typeId: string, ontology: Ontology, statements: Statement[], validAt: string) {
   const type = ontology.types.find(t => t.id === typeId);
   const definitions = new Map([
-    ...(type?.properties.map(p => [p.id, { multiple: p.multiple, name: p.name, comparison: p.comparison }] as const) ?? []),
-    ...ontology.links.filter(l => l.from === typeId).map(l => [l.id, { multiple: l.multiple, name: l.name, comparison: undefined }] as const),
+    ...(type?.properties.map(p => [p.id, { multiple: p.multiple, name: p.name, comparison: p.comparison, comparisonRequired: p.comparisonRequired }] as const) ?? []),
+    ...ontology.links.filter(l => l.from === typeId).map(l => [l.id, { multiple: l.multiple, name: l.name, comparison: undefined, comparisonRequired: undefined }] as const),
   ]);
   const at = time(validAt);
   if (!Number.isFinite(at)) throw new Error('业务查询时间无效');
@@ -28,7 +28,7 @@ export function projectStatements(typeId: string, ontology: Ontology, statements
     const overrides = known.filter(s => s.origin === 'human' && (s.override_mode !== 'source_version' || statements.some(other => other.origin === 'source' && other.status === 'accepted' && other.source_version_id === s.override_source_version)));
     const candidates = overrides.length ? overrides : known;
     const expected = definitions.get(predicate)?.comparison;
-    const incomparable = new Set(known.map(s => fingerprint(s.comparison ?? {}))).size > 1 ||
+    const incomparable = known.some(s => (definitions.get(predicate)?.comparisonRequired ?? []).some(d => !s.comparison?.[d])) || new Set(known.map(s => fingerprint(s.comparison ?? {}))).size > 1 ||
       !!expected && known.some(s => Object.entries(expected).some(([key, value]) => s.comparison?.[key as keyof Comparison] !== value));
     const value = (s: Statement) => s.target_id ? { objectId: s.target_id } : s.value;
     const distinct = [...new Map(candidates.map(s => [JSON.stringify(value(s)), value(s)])).values()];

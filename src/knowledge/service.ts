@@ -1,13 +1,19 @@
+import { refreshDiscoveryValidation } from './discovery.ts';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { Database, type Sql } from './database.ts';
-import { AccessDenied, actionSchema, authorize, extractionSchema, identitySchema, ontologySchema, requiresReview, validateValue, type Action, type Claim, type Ontology, type Principal } from './contracts.ts';
+import { AccessDenied, actionSchema, strictComparisonSchema, authorize, extractionSchema, identitySchema, ontologySchema, requiresReview, validateValue, type Action, type Claim, type Ontology, type Principal } from './contracts.ts';
 import { fingerprint, locateEvidence, validateClaim, type PreparedSource, type SourceContent } from './sources.ts';
 import { FUSION_POLICY, projectStatements, type Statement } from './projection.ts';
 import { rematchIdentity } from './identity.ts';
+import type { IdentityMapping } from './build-plans.ts';
 
 const json = (v: unknown) => JSON.stringify(v);
 const uuid = (v: string) => z.string().uuid().parse(v);
+function ontologyDiscoveryView(row: Record<string, any>) {
+  if (row.status !== 'draft' || !row.discovery?.validation) return row;
+  return { ...row, discovery: { ...row.discovery, validation: refreshDiscoveryValidation(ontologySchema.parse(row.definition), row.discovery.validation) } };
+}
 async function one(sql: Sql, query: string, values: unknown[] = []) {
   const row = (await sql.query(query, values)).rows[0];
   if (!row) throw new Error('目标不存在');
@@ -31,7 +37,8 @@ export class KnowledgeCore {
     if (kind === 'sources') return (await this.db.pool.query('SELECT s.*,v.revision AS active_revision FROM knowledge.sources s LEFT JOIN knowledge.source_versions v ON v.id=s.active_version ORDER BY s.title,s.id LIMIT $1 OFFSET $2', [take, skip])).rows;
     const order = 'created_at DESC,id';
     // Table names are a closed enumeration, never request SQL.
-    return (await this.db.pool.query(`SELECT * FROM knowledge.${kind} ORDER BY ${order} LIMIT $1 OFFSET $2`, [take, skip])).rows;
+    const rows = (await this.db.pool.query(`SELECT * FROM knowledge.${kind} ORDER BY ${order} LIMIT $1 OFFSET $2`, [take, skip])).rows;
+    return kind === 'ontologies' ? rows.map(ontologyDiscoveryView) : rows;
   }
   async sourceVersion(actor: Principal, id: string) {
     authorize(actor); return one(this.db.pool, 'SELECT * FROM knowledge.source_versions WHERE id=$1', [uuid(id)]);
@@ -40,19 +47,46 @@ export class KnowledgeCore {
     authorize(actor);
     const row = await one(this.db.pool, 'SELECT * FROM knowledge.ontologies WHERE id=$1', [uuid(id)]);
     if (published && row.status !== 'published') throw new Error('需使用已发布本体版本');
-    return { ...row, definition: ontologySchema.parse(row.definition) };
+    return { ...ontologyDiscoveryView(row), discovery: ontologyDiscoveryView(row).discovery, id: String(row.id), revision: Number(row.revision), status: String(row.status), definition: ontologySchema.parse(row.definition) };
   }
-  async draft(actor: Principal, input: unknown, existing?: { id: string; expectedRevision: number }, job?: { id: string; leaseToken: string }) {
+  async draft(actor: Principal, input: unknown, existing?: { id: string; expectedRevision: number }, job?: { id: string; leaseToken: string }, discovery: unknown = {}, copyFromId?: string) {
     authorize(actor, true); const definition = ontologySchema.parse(input);
+    for (const t of definition.types) for (const p of t.properties) if (p.comparison) strictComparisonSchema.parse(p.comparison);
     return this.db.transaction(async sql => {
       await checkJob(sql, job);
       if (!existing) {
+        if (copyFromId) {
+          const parent = await one(sql, 'SELECT discovery,definition,status FROM knowledge.ontologies WHERE id=$1', [uuid(copyFromId)]);
+          const metadata = parent.discovery;
+          discovery = metadata?.validation ? { ...metadata, review: null, parentOntologyId: copyFromId, validation: { ...refreshDiscoveryValidation(definition, { ...metadata.validation, baseline: parent.status === 'published' ? ontologySchema.parse(parent.definition) : metadata.validation.baseline }), evidenceValid: false } } : metadata;
+        }
         const id = randomUUID();
-        const result = await one(sql, 'INSERT INTO knowledge.ontologies(id,status,definition) VALUES($1,\'draft\',$2::jsonb) RETURNING *', [id, json(definition)]);
+        const result = await one(sql, 'INSERT INTO knowledge.ontologies(id,status,definition,discovery) VALUES($1,\'draft\',$2::jsonb,$3::jsonb) RETURNING *', [id, json(definition), json(discovery)]);
         await finishJob(sql, job, result);
         return result;
       }
-      return one(sql, "UPDATE knowledge.ontologies SET definition=$3::jsonb,revision=revision+1 WHERE id=$1 AND revision=$2 AND status='draft' RETURNING *", [uuid(existing.id), existing.expectedRevision, json(definition)]);
+      const old = await one(sql, "SELECT * FROM knowledge.ontologies WHERE id=$1 AND revision=$2 AND status='draft'", [uuid(existing.id), existing.expectedRevision]);
+      let metadata = old.discovery;
+      if (metadata?.validation && fingerprint(ontologySchema.parse(old.definition)) !== fingerprint(definition)) {
+        metadata = { ...metadata, review: null, validation: { ...refreshDiscoveryValidation(definition, metadata.validation), evidenceValid: false } };
+      }
+      return one(sql, "UPDATE knowledge.ontologies SET definition=$3::jsonb,discovery=$4::jsonb,revision=revision+1 WHERE id=$1 AND revision=$2 RETURNING *", [existing.id, existing.expectedRevision, json(definition), json(metadata)]);
+    });
+  }
+  async reviewDiscovery(actor: Principal, id: string, raw: unknown) {
+    authorize(actor, true);
+    const input = z.object({ expectedRevision: z.number().int().positive(), issueIds: z.array(z.string()).max(2000), reason: z.string().trim().min(1).max(4000) }).strict().parse(raw);
+    return this.db.transaction(async sql => {
+      const draft = ontologyDiscoveryView(await one(sql, "SELECT * FROM knowledge.ontologies WHERE id=$1 AND revision=$2 AND status='draft'", [uuid(id), input.expectedRevision]));
+      if (!draft.discovery?.validation) throw new Error('该本体没有新版本发现校验，请重新生成候选');
+      const definition = ontologySchema.parse(draft.definition);
+      if (draft.discovery.validation.definitionHash !== fingerprint(definition)) throw new Error('定义已修改，请保存后重新读取审核项');
+      const issues = draft.discovery.validation.issues as Array<{ id: string }>;
+      if (new Set(input.issueIds).size !== issues.length || input.issueIds.length !== issues.length || issues.some(i => !input.issueIds.includes(i.id))) throw new Error('重大事件集合已变化，请重新读取节点摘要后决定');
+      const review = { actorId: actor.id, at: new Date().toISOString(), reason: input.reason, issueIds: input.issueIds, definitionHash: fingerprint(definition) };
+      const discovery = { ...draft.discovery, review };
+      await sql.query('INSERT INTO knowledge.action_events(operation_id,fingerprint,actor_id,kind,target_id,payload,result) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb)', [randomUUID(), fingerprint({ id, input }), actor.id, 'ReviewOntologyDiscovery', id, json(input), json(review)]);
+      return one(sql, 'UPDATE knowledge.ontologies SET discovery=$2::jsonb,revision=revision+1 WHERE id=$1 RETURNING *', [id, json(discovery)]);
     });
   }
   async importSource(actor: Principal, operationId: string, sourceKey: string, title: string, prepared: PreparedSource) {
@@ -99,24 +133,64 @@ export class KnowledgeCore {
     await sql.query('INSERT INTO knowledge.identity_bindings(id,type_id,namespace,value,object_id) VALUES($1,$2,$3,$4,$5)', [randomUUID(), identity.typeId, identity.namespace, identity.value, id]);
     return id;
   }
-  async commitExtraction(actor: Principal, input: { operationId: string; ontologyId: string; sourceVersionId: string; configuration: unknown; output: unknown; job?: { id: string; leaseToken: string } }) {
+  async commitExtraction(actor: Principal, input: { operationId: string; ontologyId: string; sourceVersionId: string; configuration: unknown; output: unknown; buildPlanId?: string; job?: { id: string; leaseToken: string } }) {
     authorize(actor, true);
     const output = extractionSchema.parse(input.output);
-    const hash = fingerprint({ actor: actor.id, ontologyId: input.ontologyId, sourceVersionId: input.sourceVersionId, configuration: input.configuration });
+    for (const claim of output.claims) strictComparisonSchema.parse(claim.comparison);
+    const hash = fingerprint({ actor: input.buildPlanId ? null : actor.id, ontologyId: input.ontologyId, sourceVersionId: input.sourceVersionId, configuration: input.configuration, ...(input.buildPlanId ? { buildPlanId: input.buildPlanId } : {}) });
     return this.db.transaction(async sql => {
       await checkJob(sql, input.job);
       const previous = (await sql.query('SELECT * FROM knowledge.extraction_runs WHERE operation_id=$1', [input.operationId])).rows[0];
-      if (previous) { if (previous.fingerprint !== hash) throw new Error('抽取 operationId 输入不一致'); return previous.result; }
+      if (previous) {
+        if (previous.fingerprint !== hash) throw new Error('抽取 operationId 输入不一致');
+        if (input.buildPlanId) {
+          const current = await sql.query('SELECT h.run_id FROM knowledge.source_build_heads h JOIN knowledge.sources s ON s.id=h.source_id AND s.active_version=h.source_version_id WHERE h.source_version_id=$1 AND h.run_id=$2', [input.sourceVersionId, previous.id]);
+          if (!current.rows.length) throw new Error('该计划结果已有后续构建或来源更新，请新建计划');
+        }
+        return previous.result;
+      }
       const ontology = await one(sql, "SELECT * FROM knowledge.ontologies WHERE id=$1 AND status='published'", [uuid(input.ontologyId)]);
       const definition = ontologySchema.parse(ontology.definition);
       const source = await one(sql, 'SELECT v.*,s.active_version FROM knowledge.source_versions v JOIN knowledge.sources s ON s.id=v.source_id WHERE v.id=$1', [uuid(input.sourceVersionId)]);
       if (source.active_version !== source.id) throw new Error('来源已变化，请基于新版本抽取');
+      let approvedNamespaces: string[] = [];
+      let identityMappings: IdentityMapping[] = [];
+      if (input.buildPlanId) {
+        const approved = await one(sql, "SELECT p.ontology_id,p.ontology_hash,p.approved_at,o.output_hash,o.namespaces,o.identity_mappings FROM knowledge.build_plans p JOIN knowledge.approved_plan_outputs o ON o.plan_id=p.id WHERE p.id=$1 AND p.status='approved' AND o.source_version_id=$2", [uuid(input.buildPlanId), source.id]);
+        if (approved.ontology_id !== ontology.id || approved.ontology_hash !== fingerprint(definition) || approved.output_hash !== fingerprint(output)) throw new Error('构建内容与已批准计划不一致');
+        const newer = await sql.query('SELECT run_id FROM knowledge.source_build_heads WHERE source_id=$1 AND installed_at>$2 AND build_plan_id IS DISTINCT FROM $3::uuid', [source.source_id, approved.approved_at, input.buildPlanId]);
+        if (newer.rows.length) throw new Error('该批准之后已有后续构建，请重新生成并审核计划');
+        approvedNamespaces = approved.namespaces;
+        identityMappings = approved.identity_mappings;
+        if (output.claims.length && !identityMappings.length) throw new Error('旧计划缺少来源身份审核快照，请重新生成并批准计划');
+        for (const mapping of identityMappings) {
+          const current = (await sql.query('SELECT id,object_id FROM knowledge.identity_bindings WHERE type_id=$1 AND namespace=$2 AND value=$3 AND system_to IS NULL', [mapping.source.typeId, mapping.source.namespace, mapping.source.value])).rows[0];
+          if ((current?.id ?? null) !== mapping.bindingId || (current?.object_id ?? null) !== mapping.objectId) throw new Error('来源身份绑定已变化，请重新预检并批准新计划');
+          if (mapping.source.namespace !== `source.${source.source_id}` || mapping.source.typeId !== mapping.target.typeId || mapping.source.value !== mapping.target.value) throw new Error('批准的来源身份映射无效');
+          if (mapping.targetBindingId === undefined) throw new Error('旧计划缺少目标身份快照，请重新生成计划');
+          const target = (await sql.query('SELECT id,object_id,approval_plan_id FROM knowledge.identity_bindings WHERE type_id=$1 AND namespace=$2 AND value=$3 AND system_to IS NULL', [mapping.target.typeId, mapping.target.namespace, mapping.target.value])).rows[0];
+          const createdByThisPlan = mapping.targetBindingId === null && target?.approval_plan_id === input.buildPlanId;
+          if (!createdByThisPlan && ((target?.id ?? null) !== mapping.targetBindingId || (target?.object_id ?? null) !== mapping.targetObjectId)) throw new Error('目标身份在批准后已变化，请重新审核计划');
+          if (mapping.adopt) {
+            const anchor = (await sql.query('SELECT id,object_id FROM knowledge.identity_bindings WHERE type_id=$1 AND namespace=$2 AND value=$3 AND system_to IS NULL', [mapping.adopt.identity.typeId, mapping.adopt.identity.namespace, mapping.adopt.identity.value])).rows[0];
+            if (mapping.adopt.identity.typeId !== mapping.target.typeId || mapping.adopt.identity.value !== mapping.target.value || !mapping.adopt.identity.namespace.startsWith('source.') || anchor?.id !== mapping.adopt.bindingId || anchor?.object_id !== mapping.adopt.objectId) throw new Error('已批准的现有对象依据已变化，请重新预检并批准');
+            if (target && target.object_id !== mapping.adopt.objectId) throw new Error('目标身份已绑定其他对象，请先身份纠错');
+          }
+          if (current && current.object_id !== (target?.object_id ?? mapping.adopt?.objectId)) throw new Error('来源标识已绑定其他对象，请先进行身份纠错');
+        }
+      }
+      if (!input.buildPlanId) for (const claim of output.claims) for (const identity of [claim.subject, ...(claim.object ? [claim.object] : [])]) {
+        const shared = await sql.query('SELECT id FROM knowledge.identity_bindings WHERE type_id=$1 AND namespace=$2 AND value=$3 AND system_to IS NULL AND approval_plan_id IS NOT NULL', [identity.typeId, identity.namespace, identity.value]);
+        if (shared.rows.length) throw new Error('已有跨源绑定的标识需通过构建计划重新审核延续，不能直接抽取');
+      }
       // Validate entire batch before any object or assertion is written.
       const validated = output.claims.map(claim => {
         validateClaim(definition, claim);
         for (const identity of [claim.subject, ...(claim.object ? [claim.object] : [])]) {
+          if (!input.buildPlanId && identity.namespace !== `source.${source.source_id}`) throw new Error('直接抽取仅允许来源内身份；跨源或共享身份必须通过构建计划审核');
+          if (input.buildPlanId && !identityMappings.some(m => fingerprint(m.target) === fingerprint(identity))) throw new Error('声明身份没有对应的批准来源映射');
           const allowed = definition.types.find(t => t.id === identity.typeId)!.identityNamespaces;
-          if (!allowed.includes(identity.namespace) && identity.namespace !== `source.${source.source_id}`) throw new Error('身份命名空间未获本体批准');
+          if (!allowed.includes(identity.namespace) && identity.namespace !== `source.${source.source_id}` && !approvedNamespaces.includes(identity.namespace)) throw new Error('身份命名空间未获本体批准');
           if (identity.namespace !== `source.${source.source_id}` && !claim.evidence.some(ref => ref.kind === 'field'
             ? String((source.content as SourceContent).rows?.find(r => r[(source.content as SourceContent).keyColumn!] === ref.recordKey)?.[ref.field]) === identity.value
             : ref.quote.includes(identity.value))) throw new Error('可信身份值缺少来源证据');
@@ -125,7 +199,29 @@ export class KnowledgeCore {
         return { claim, locators: claim.evidence.map(ref => locateEvidence(source.content as SourceContent, ref)) };
       });
       const runId = randomUUID();
-      await sql.query("INSERT INTO knowledge.extraction_runs(id,operation_id,fingerprint,ontology_id,source_version_id,configuration,status) VALUES($1,$2,$3,$4,$5,$6::jsonb,'running')", [runId, input.operationId, hash, ontology.id, source.id, json(input.configuration)]);
+      if (input.buildPlanId) await this.retireVersion(sql, source.id);
+      await sql.query("INSERT INTO knowledge.extraction_runs(id,operation_id,fingerprint,ontology_id,source_version_id,configuration,status,build_plan_id) VALUES($1,$2,$3,$4,$5,$6::jsonb,'running',$7)", [runId, input.operationId, hash, ontology.id, source.id, json(input.configuration), input.buildPlanId ?? null]);
+      // Materialize the approved target and its source alias together in this source transaction.
+      for (const mapping of identityMappings) {
+        if (mapping.adopt) {
+          const existingTarget = (await sql.query('SELECT object_id FROM knowledge.identifiers WHERE type_id=$1 AND namespace=$2 AND value=$3', [mapping.target.typeId, mapping.target.namespace, mapping.target.value])).rows[0];
+          if (existingTarget && existingTarget.object_id !== mapping.adopt.objectId) throw new Error('目标身份已有其他对象，请重新预检');
+          if (!existingTarget) {
+            await sql.query('INSERT INTO knowledge.identifiers(type_id,namespace,value,object_id) VALUES($1,$2,$3,$4)', [mapping.target.typeId, mapping.target.namespace, mapping.target.value, mapping.adopt.objectId]);
+            await sql.query('INSERT INTO knowledge.identity_bindings(id,type_id,namespace,value,object_id,approval_plan_id) VALUES($1,$2,$3,$4,$5,$6)', [randomUUID(), mapping.target.typeId, mapping.target.namespace, mapping.target.value, mapping.adopt.objectId, input.buildPlanId]);
+          }
+        }
+        const objectId = await this.resolveObject(sql, mapping.target);
+        if (mapping.targetBindingId === null && mapping.source.namespace !== mapping.target.namespace) await sql.query('UPDATE knowledge.identity_bindings SET approval_plan_id=$4 WHERE type_id=$1 AND namespace=$2 AND value=$3 AND system_to IS NULL AND approval_plan_id IS NULL', [mapping.target.typeId, mapping.target.namespace, mapping.target.value, input.buildPlanId]);
+        if (fingerprint(mapping.source) !== fingerprint(mapping.target)) {
+          const existing = (await sql.query('SELECT object_id FROM knowledge.identifiers WHERE type_id=$1 AND namespace=$2 AND value=$3', [mapping.source.typeId, mapping.source.namespace, mapping.source.value])).rows[0];
+          if (existing && existing.object_id !== objectId) throw new Error('来源标识冲突，请先进行身份纠错');
+          if (!existing) {
+            await sql.query('INSERT INTO knowledge.identifiers(type_id,namespace,value,object_id) VALUES($1,$2,$3,$4)', [mapping.source.typeId, mapping.source.namespace, mapping.source.value, objectId]);
+            await sql.query('INSERT INTO knowledge.identity_bindings(id,type_id,namespace,value,object_id,approval_plan_id) VALUES($1,$2,$3,$4,$5,$6)', [randomUUID(), mapping.source.typeId, mapping.source.namespace, mapping.source.value, objectId, input.buildPlanId]);
+          }
+        }
+      }
       const ids: string[] = [], touched = new Set<string>();
       for (const { claim, locators } of validated) {
         const objectId = await this.resolveObject(sql, claim.subject);
@@ -147,7 +243,8 @@ export class KnowledgeCore {
       for (const id of touched) { await sql.query('UPDATE knowledge.objects SET revision=revision+1 WHERE id=$1', [id]); await sql.query('DELETE FROM knowledge.projections WHERE object_id=$1', [id]); }
       const result = { runId, assertionIds: ids, objects: [...touched], count: ids.length };
       await sql.query("UPDATE knowledge.extraction_runs SET status='completed',result=$2::jsonb WHERE id=$1", [runId, json(result)]);
-      await finishJob(sql, input.job, result);
+      await sql.query('INSERT INTO knowledge.source_build_heads(source_id,source_version_id,run_id,build_plan_id) VALUES($1,$2,$3,$4) ON CONFLICT(source_id) DO UPDATE SET source_version_id=EXCLUDED.source_version_id,run_id=EXCLUDED.run_id,build_plan_id=EXCLUDED.build_plan_id,installed_at=clock_timestamp()', [source.source_id, source.id, runId, input.buildPlanId ?? null]);
+      if (!input.buildPlanId) await finishJob(sql, input.job, result);
       return result;
     });
   }
@@ -171,6 +268,7 @@ export class KnowledgeCore {
   }
   async act(actor: Principal, raw: unknown) {
     authorize(actor, true); const input = actionSchema.parse(raw);
+    if (input.comparison) strictComparisonSchema.parse(input.comparison);
     if (input.kind === 'PublishOntologyVersion' && actor.role !== 'admin') throw new AccessDenied('只有管理员可以发布本体');
     if (input.kind === 'RematchIdentity' && actor.role !== 'admin') throw new AccessDenied('只有管理员可以纠正身份绑定');
     const hash = fingerprint({ actor: actor.id, input });
@@ -187,11 +285,30 @@ export class KnowledgeCore {
     if (input.kind === 'PublishOntologyVersion') {
       const draft = await one(sql, "SELECT * FROM knowledge.ontologies WHERE id=$1 AND revision=$2 AND status='draft'", [input.targetId, input.expectedRevision]);
       const definition = ontologySchema.parse(draft.definition);
+      for (const t of definition.types) for (const p of t.properties) if (p.comparison) strictComparisonSchema.parse(p.comparison);
+      if (draft.discovery?.jobId) {
+        const validation = draft.discovery.validation ? refreshDiscoveryValidation(definition, draft.discovery.validation) : null;
+        if (!validation) throw new Error('旧自动候选缺少证据及语义审核契约，请重新生成');
+        const review = draft.discovery.review;
+        if (validation.issues.length && (!review || review.definitionHash !== fingerprint(definition) || validation.issues.some((i: { id: string }) => !review.issueIds.includes(i.id)))) throw new Error('尚未保存当前重大本体事件的决定：请在“重大本体事件”查看定义摘要，填写决定理由并确认保存，再发布草稿');
+        draft.discovery = { ...draft.discovery, validation };
+        const refs = definition.discoveryEvidence;
+        for (const ref of refs) {
+          const source = await one(sql, 'SELECT content FROM knowledge.source_versions WHERE id=$1', [ref.sourceVersionId]);
+          locateEvidence(source.content as SourceContent, ref.locator);
+        }
+        const base = draft.discovery.baseOntologyId ? (await sql.query('SELECT definition FROM knowledge.ontologies WHERE id=$1', [draft.discovery.baseOntologyId])).rows[0] : null;
+        const oldMembers = base ? [...base.definition.types, ...base.definition.types.flatMap((t: Ontology['types'][number]) => t.properties), ...base.definition.links] : [];
+        for (const member of [...definition.types, ...definition.types.flatMap(t => t.properties), ...definition.links]) if (!refs.some(e => e.memberId === member.id) && !oldMembers.some(m => m.id === member.id && fingerprint(m) === fingerprint(member))) throw new Error(`成员缺少依据：${member.id}`);
+      }
       if (!definition.actions.includes(input.kind)) throw new Error('本体未启用发布操作');
-      return one(sql, "UPDATE knowledge.ontologies SET status='published',published_at=clock_timestamp(),revision=revision+1 WHERE id=$1 RETURNING *", [draft.id]);
+      const metadata = draft.discovery?.validation ? { ...draft.discovery, validation: { ...draft.discovery.validation, evidenceValid: true, semanticVerified: false, semanticReviewStatus: draft.discovery.validation.issues.length ? 'human_decided_major_events' : 'automatic_checks_passed' } } : draft.discovery;
+      return one(sql, "UPDATE knowledge.ontologies SET status='published',discovery=$2::jsonb,published_at=clock_timestamp(),revision=revision+1 WHERE id=$1 RETURNING *", [draft.id, json(metadata)]);
     }
     if (input.kind === 'CorrectProperty') {
-      const object = await one(sql, 'SELECT * FROM knowledge.objects WHERE id=$1 AND revision=$2', [input.targetId, input.expectedRevision]);
+      const object = (await sql.query('SELECT * FROM knowledge.objects WHERE id=$1', [input.targetId])).rows[0];
+      if (!object) throw new Error('属性纠正需要对象 ID，不能使用声明 ID；请重新查看对象并点击“纠正此属性”');
+      if (object.revision !== input.expectedRevision) throw new Error('对象修订号已变化，请重新查看对象后再提交属性纠正');
       if (input.value === undefined || !input.predicate || !input.validity || input.validity.precision === 'unknown' || !(input.validity.from || input.validity.to) || !input.duration) throw new Error('纠正需要属性、值、已知有效范围及明确持续方式');
       const model = await one(sql, "SELECT * FROM knowledge.ontologies WHERE status='published' ORDER BY published_at DESC LIMIT 1");
       const definition = ontologySchema.parse(model.definition);

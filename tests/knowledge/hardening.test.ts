@@ -21,7 +21,7 @@ test('hardening: semantic isolation and revision-specific correction evidence', 
     const draft = await core.draft(admin, definition);
     await core.act(admin, { operationId: 'publish', kind: 'PublishOntologyVersion', targetId: draft.id, expectedRevision: 1, reason: 'reviewed' });
     const source = await core.importSource(admin, 'upload', 'test', 'Contracts', await prepareCsv(dir, 'id,amount,guaranteed\nC1,100,false\n', 'id'));
-    const mapping = { typeId: 'Contract', namespace: 'contract_no', identityColumn: 'id', properties: { amount: 'amount', guaranteed: 'guaranteed' }, links: [], comparisons: { amount: { currency: 'CNY', unit: 'yuan', scope: 'tax-included' } }, validity: undefined };
+    const mapping = { typeId: 'Contract', namespace: `source.${source.source.id}`, identityColumn: 'id', properties: { amount: 'amount', guaranteed: 'guaranteed' }, links: [], comparisons: { amount: { currency: 'CNY', unit: 'yuan', scope: 'tax-included' } }, validity: undefined };
     const mapped = mapCsv(source.version.content, mapping, definition);
     const validity = { from: '2026-01-01T00:00:00Z', to: null, precision: 'instant' };
     await core.commitExtraction(admin, { operationId: 'extract', ontologyId: draft.id, sourceVersionId: source.version.id, configuration: {}, output: { claims: mapped.claims.map(c => ({ ...c, validity })) } });
@@ -34,7 +34,7 @@ test('hardening: semantic isolation and revision-specific correction evidence', 
     view = await core.object(admin, object.id);
     assert.equal((view.fields.amount as any).value, '100');
     assert.equal((view.fields.amount as any).pendingAssertions.length, 3);
-    assert.equal(view.policy, 'semantic-conflict-v2');
+    assert.equal(view.policy, 'semantic-conflict-v3-context');
     const correction = { operationId: 'correct', kind: 'CorrectProperty', targetId: object.id, expectedRevision: view.revision, predicate: 'amount', value: '200', validity, duration: 'until_revoked', reason: 'human review', comparison: mapping.comparisons.amount, evidence: [{ sourceVersionId: source.version.id, locator: { kind: 'field', recordKey: 'C1', field: 'amount' } }] };
     await assert.rejects(core.act(admin, { ...correction, operationId: 'bad-evidence', evidence: [{ sourceVersionId: source.version.id, locator: { kind: 'field', recordKey: 'missing', field: 'amount' } }] }));
     assert.equal((await core.object(admin, object.id)).revision, view.revision);
@@ -50,7 +50,7 @@ test('hardening: semantic isolation and revision-specific correction evidence', 
     assert.equal((incomparable.fields.amount as any).status, 'incomparable');
     assert.equal((incomparable.fields.amount as any).value, null, 'human override cannot hide a scope mismatch');
   } finally {
-    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version IN (1,2)'); }
+    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version IN (1,2,3,4,5)'); }
     await db.close(); await rm(dir, { recursive: true, force: true });
   }
 });
@@ -70,7 +70,7 @@ test('hardening: updating schema preserves existing version-one data and identit
     assert.deepEqual(view.rows, [{ object_id: '00000000-0000-4000-8000-000000000001', value: 'C1' }]);
     assert.equal((await db.pool.query('SELECT * FROM knowledge.objects')).rows.length, 1);
   } finally {
-    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version IN (1,2)'); }
+    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version IN (1,2,3,4,5)'); }
     await db.close();
   }
 });
@@ -86,7 +86,7 @@ test('hardening: identity rematch preserves history, selected ownership, undo an
     const draft = await core.draft(admin, definition);
     await core.act(admin, { operationId: 'publish', kind: 'PublishOntologyVersion', targetId: draft.id, expectedRevision: 1, reason: 'reviewed' });
     const source = await core.importSource(admin, 'upload', 'people', 'People', await prepareCsv(dir, 'id,title,manager\nE1,Engineer,E2\nE2,Director,E1\n', 'id'));
-    const mapping = { typeId: 'Person', namespace: 'employee_no', identityColumn: 'id', properties: { title: 'title' }, links: [{ predicate: 'reports_to', column: 'manager', targetType: 'Person', targetNamespace: 'employee_no' }], comparisons: {} };
+    const mapping = { typeId: 'Person', namespace: `source.${source.source.id}`, identityColumn: 'id', properties: { title: 'title' }, links: [{ predicate: 'reports_to', column: 'manager', targetType: 'Person', targetNamespace: `source.${source.source.id}` }], comparisons: {} };
     const output = mapCsv(source.version.content, mapping, definition);
     const validity = { from: '2026-01-01T00:00:00Z', to: null, precision: 'instant' };
     await core.commitExtraction(admin, { operationId: 'extract', ontologyId: draft.id, sourceVersionId: source.version.id, configuration: {}, output: { claims: output.claims.map(c => ({ ...c, validity })) } });
@@ -95,7 +95,7 @@ test('hardening: identity rematch preserves history, selected ownership, undo an
     const selected = old.assertions.filter((a: any) => a.predicate === 'title').map((a: any) => a.id);
     const incoming = old.incoming[0];
     const knownAt = (await db.pool.query("SELECT to_char(clock_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') AS stamp")).rows[0].stamp;
-    const action = { operationId: 'rematch', kind: 'RematchIdentity', targetId: old.id, expectedRevision: old.revision, identity: { typeId: 'Person', namespace: 'employee_no', value: 'E1' }, assertionIds: [...selected, incoming.id], reason: 'wrong identity mapping reviewed' };
+    const action = { operationId: 'rematch', kind: 'RematchIdentity', targetId: old.id, expectedRevision: old.revision, identity: { typeId: 'Person', namespace: `source.${source.source.id}`, value: 'E1' }, assertionIds: [...selected, incoming.id], reason: 'wrong identity mapping reviewed' };
     await assert.rejects(core.act({ id: 'editor', role: 'editor' }, action));
     await assert.rejects(core.act(admin, { ...action, operationId: 'bad-selection', assertionIds: [...selected, '00000000-0000-4000-8000-000000000099'] }));
     assert.equal((await core.object(admin, old.id)).revision, old.revision);
@@ -130,7 +130,7 @@ test('hardening: identity rematch preserves history, selected ownership, undo an
     assert.equal(((await core.object(admin, old.id)).fields.title as any).value, 'Lead');
     assert.equal((await core.object(admin, old.id, { knownAt })).identifiers[0].value, 'E1');
   } finally {
-    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version IN (1,2)'); }
+    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version IN (1,2,3,4,5)'); }
     await db.close(); await rm(dir, { recursive: true, force: true });
   }
 });

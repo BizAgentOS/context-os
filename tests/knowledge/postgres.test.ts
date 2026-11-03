@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { commitReviewedFixture } from './reviewed-fixture.ts';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -33,8 +34,8 @@ test('PostgreSQL: import, evidence, conflicts, dual time, corrections, resync, r
     assert.equal(source.version.id, repeatedSource.version.id);
     const output = mapCsv(source.version.content, mapping, ontologySchema.parse(definition));
     const config = { mapping, model: 'test-mapping' };
-    const result = await core.commitExtraction(actor, { operationId: 'extract-1', ontologyId: String(published.id), sourceVersionId: source.version.id, configuration: config, output });
-    const repeated = await core.commitExtraction(actor, { operationId: 'extract-1', ontologyId: String(published.id), sourceVersionId: source.version.id, configuration: config, output });
+    const result = await commitReviewedFixture(core, actor, { operationId: 'extract-1', ontologyId: String(published.id), sourceVersionId: source.version.id, configuration: config, output });
+    const repeated = await commitReviewedFixture(core, actor, { operationId: 'extract-1', ontologyId: String(published.id), sourceVersionId: source.version.id, configuration: config, output });
     assert.deepEqual(result, repeated);
     const objectId = (await db.pool.query("SELECT object_id FROM knowledge.identifiers WHERE namespace='contract_no' AND value='C001'")).rows[0].object_id;
     const first = await core.object(actor, objectId, { validAt: '2026-04-20T00:00:00Z' });
@@ -46,7 +47,7 @@ test('PostgreSQL: import, evidence, conflicts, dual time, corrections, resync, r
     const text = 'Contract C001 amount is 1200000.00.';
     const pdf = await core.importSource(actor, 'pdf-fixture', 'pdf-fixture', 'PDF fixture (preparsed)', { hash: 'fixture', content: { kind: 'pdf', text, blocks: [{ kind: 'page', start: 0, end: text.length, page: 1 }], warnings: [] }, path: 'fixture-not-an-original-pdf', async discard() {} });
     const documentClaim = { subject: { typeId: 'Contract', namespace: 'contract_no', value: 'C001' }, predicate: 'contract_amount', value: '1200000.00', validity: { from: '2026-04-01T00:00:00Z', to: null, precision: 'instant' }, evidence: [{ kind: 'quote', quote: text, start: 0 }] };
-    await core.commitExtraction(actor, { operationId: 'pdf-extract', ontologyId: draft.id, sourceVersionId: pdf.version.id, configuration: { model: 'fixture' }, output: { claims: [documentClaim] } });
+    await commitReviewedFixture(core, actor, { operationId: 'pdf-extract', ontologyId: draft.id, sourceVersionId: pdf.version.id, configuration: { model: 'fixture' }, output: { claims: [documentClaim] } });
     const conflict = await core.object(actor, objectId, { validAt: '2026-04-20T00:00:00Z' });
     assert.equal((conflict.fields.contract_amount as any).status, 'conflict');
     const known = (await db.pool.query(`SELECT to_char(clock_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS stamp`)).rows[0].stamp;
@@ -61,7 +62,7 @@ test('PostgreSQL: import, evidence, conflicts, dual time, corrections, resync, r
     await assert.rejects(core.act(actor, { ...correction, operationId: 'stale', value: '2.00' }));
     const nextCsv = await readFile(new URL('../../data/samples/knowledge-core/contracts-updated.csv', import.meta.url), 'utf8');
     const next = await core.importSource(actor, 'import-update', 'contracts', 'Contracts', await prepareCsv(dir, nextCsv, 'contract_no'));
-    await core.commitExtraction(actor, { operationId: 'extract-update', ontologyId: draft.id, sourceVersionId: next.version.id, configuration: config, output: mapCsv(next.version.content, mapping, ontologySchema.parse(definition)) });
+    await commitReviewedFixture(core, actor, { operationId: 'extract-update', ontologyId: draft.id, sourceVersionId: next.version.id, configuration: config, output: mapCsv(next.version.content, mapping, ontologySchema.parse(definition)) });
     assert.equal((await core.object(actor, objectId, { validAt: '2026-05-20T00:00:00Z' })).fields.contract_amount && ((await core.object(actor, objectId, { validAt: '2026-05-20T00:00:00Z' })).fields.contract_amount as any).value, '1300000.00');
     assert.equal((await core.evidence(actor, amount.id))[0].source_version_id, source.version.id);
     const pdfAmount = conflict.assertions.find((a: any) => a.source_version_id === pdf.version.id)!;
@@ -72,7 +73,7 @@ test('PostgreSQL: import, evidence, conflicts, dual time, corrections, resync, r
     await core.act(actor, { ...correction, operationId: 'scoped-human', expectedRevision: sourceOnly.revision, value: '1400000.00', duration: 'source_version', sourceVersionId: next.version.id });
     assert.equal(((await core.object(actor, objectId, { validAt: '2026-05-20T00:00:00Z' })).fields.contract_amount as any).value, '1400000.00');
     const third = await core.importSource(actor, 'third-import', 'contracts', 'Contracts', await prepareCsv(dir, nextCsv.replace('1100000.00', '1150000.00'), 'contract_no'));
-    await core.commitExtraction(actor, { operationId: 'third-extract', ontologyId: draft.id, sourceVersionId: third.version.id, configuration: config, output: mapCsv(third.version.content, mapping, ontologySchema.parse(definition)) });
+    await commitReviewedFixture(core, actor, { operationId: 'third-extract', ontologyId: draft.id, sourceVersionId: third.version.id, configuration: config, output: mapCsv(third.version.content, mapping, ontologySchema.parse(definition)) });
     const expired = await core.object(actor, objectId, { validAt: '2026-05-20T00:00:00Z' });
     assert.equal((expired.fields.contract_amount as any).value, '1150000.00', '来源新版本使限定版本的人工覆盖失效');
     const raced = await Promise.allSettled([
@@ -81,7 +82,7 @@ test('PostgreSQL: import, evidence, conflicts, dual time, corrections, resync, r
     ]);
     assert.equal(raced.filter(r => r.status === 'fulfilled').length, 1, '两个相同对象修订上的并发修正只能成功一次');
     await assert.rejects(core.act({ id: 'viewer', role: 'viewer' }, correction));
-    await assert.rejects(core.commitExtraction(actor, { operationId: 'old-source', ontologyId: draft.id, sourceVersionId: source.version.id, configuration: {}, output }));
+    await assert.rejects(commitReviewedFixture(core, actor, { operationId: 'old-source', ontologyId: draft.id, sourceVersionId: source.version.id, configuration: {}, output }));
     // A failed job is explicit and retryable, never silently treated as successful.
     const model: JsonModel = { identity: 'failure-fixture', async generate() { throw new Error('fixture failure'); }, async close() {} };
     const jobs = new KnowledgeJobs(core, model);
@@ -97,7 +98,7 @@ test('PostgreSQL: import, evidence, conflicts, dual time, corrections, resync, r
     assert.ok(attempts.every(a => a.metrics.durationMs >= 0 && a.metrics.cost === null));
     await jobs.close();
   } finally {
-    if (ownsSchema) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version IN (1,2)'); }
+    if (ownsSchema) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version IN (1,2,3,4,5)'); }
     await db.close(); await rm(dir, { recursive: true, force: true });
   }
 });

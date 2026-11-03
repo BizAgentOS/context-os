@@ -1,5 +1,7 @@
 # Context OS 文档中心
 
+当前工作区的架构与流程图见[新知识核心现状图](implementation/CURRENT_ARCHITECTURE.md)：区分模型生成、程序执行、重大业务决定、存储与旧入口边界。
+
 **当前新阶段入口：**[第一阶段实施决定](implementation/PHASE1_DECISION.md)、[现状评估](implementation/ASSESSMENT.md)、[代码交接](implementation/PHASE1_DEVELOPMENT.md)、[11-02 补齐交付](implementation/PHASE1_HARDENING.md)、[试点评测基线](implementation/PHASE1_PILOT_EVALUATION.md)。新定位为单企业实例、元数据驱动 OO 本体、PostgreSQL 声明/证据/双时间与 Action；旧文档中的范围限制不覆盖本轮已确认目标。核心机制已运行验证，真实业务效果与生产验收仍待开展。
 
 更新：2026-10-22。文档按基于 KodaX 的领域 Agent 产品组织：产品目标 → 系统职责 → Agent 方法与运行 → 共同语义契约 → 人类交互和外部消费 → 实施与验证。
@@ -82,3 +84,5 @@
 | [ADR 索引](https://github.com/icetomoyo/KodaX-Space/blob/84352756f9d792c6f327a506cede062e809392e1/docs/ADR/README.md)保留决策与取舍 | 固定单循环、共同领域操作边界、状态与来源分离三项决定 |
 
 Context OS 当前是 Node HTTP 服务与 Web 画布。Space 的 Electron、Coder/Partner、共享 daemon、桌面面板及权限档位有各自产品背景，本轮不引入这些结构。外部数据消费仍是独立的确定性服务入口，无需经过内部模型。
+
+当前企业知识核心工程验证：[2026-11-03 收尾记录](implementation/PHASE1_CLOSEOUT.md)，知识核心 59/59、旧回归 680/680；正式业务效果与后续领域配置单独验收。

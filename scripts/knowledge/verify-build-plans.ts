@@ -1,0 +1,50 @@
+import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { resolve, join } from 'node:path';
+import { openDatabase } from '../../src/knowledge/database.ts';
+import { KnowledgeCore } from '../../src/knowledge/service.ts';
+import { KnowledgeJobs } from '../../src/knowledge/jobs.ts';
+import { BuildPlans } from '../../src/knowledge/build-plans.ts';
+import { configuredModel } from '../../src/knowledge/model.ts';
+import { prepareCsv, preparePdf } from '../../src/knowledge/sources.ts';
+
+const url = process.env.CONTEXT_OS_KNOWLEDGE_TEST_DATABASE_URL;
+const directory = process.env.CONTEXT_OS_KNOWLEDGE_VERIFY_DIRECTORY;
+if (!url || !directory) throw new Error('必须显式指定空的 TEST_DATABASE_URL 和 VERIFY_DIRECTORY；本脚本会调用已配置模型');
+await mkdir(resolve(directory), { recursive: true, mode: 0o700 });
+const db = await openDatabase(url), actor = { id: 'synthetic-auto-verifier', role: 'admin' as const };
+const report: Record<string, any> = { startedAt: new Date().toISOString(), input: 'synthetic CSV and actual sample PDF', paidCalls: 0, status: 'running' };
+let jobs: KnowledgeJobs | undefined;
+const save = () => writeFile(join(resolve(directory), 'auto-report.json'), JSON.stringify(report, null, 2), { mode: 0o600 });
+try {
+  if ((await db.pool.query("SELECT 1 FROM pg_namespace WHERE nspname='knowledge'")).rows.length) throw new Error('拒绝在已有 knowledge schema 的数据库运行；请提供新的专用空库');
+  await db.initialize();
+  const model = configuredModel(join(resolve(directory), 'runtime'));
+  if (!model) throw new Error('未配置模型');
+  report.model = model.identity;
+  const core = new KnowledgeCore(db), plans = new BuildPlans(core);
+  jobs = new KnowledgeJobs(core, model);
+  const csvText = await readFile(new URL('../../data/samples/knowledge-core/contracts.csv', import.meta.url), 'utf8');
+  const pdfBytes = await readFile(new URL('../../data/samples/knowledge-core/contract-document.pdf', import.meta.url));
+  const csv = await core.importSource(actor, 'auto-csv', 'contracts', 'Contract CSV', await prepareCsv(directory, csvText, 'contract_no'));
+  const pdf = await core.importSource(actor, 'auto-pdf', 'contract-pdf', 'Contract PDF', await preparePdf(directory, 'contract-document.pdf', pdfBytes));
+  const sourceVersionIds = [csv.version.id, pdf.version.id]; report.sourceVersionIds = sourceVersionIds;
+  const discover = await jobs.enqueue(actor, { kind: 'discover', operationId: 'auto-discover', sourceVersionIds }); report.discoveryJobId = discover.id; report.paidCalls++; await save();
+  await jobs.once();
+  const discovery = (await core.list(actor, 'jobs')).find(j => j.id === discover.id)!;
+  report.discovery = { state: discovery.state, error: discovery.error, metrics: discovery.metrics, result: discovery.result }; await save();
+  if (discovery.state !== 'completed') throw new Error('本体生成失败，查看 auto-report.json 的诊断');
+  const ontology = await core.ontology(actor, discovery.result.id); report.generatedOntology = ontology;
+  const task = await jobs.enqueue(actor, { kind: 'plan', operationId: 'auto-plan', ontologyId: ontology.id, expectedRevision: ontology.revision, sourceVersionIds }); report.planJobId = task.id; report.paidCalls++; await save();
+  await jobs.once();
+  const planJob = (await core.list(actor, 'jobs')).find(j => j.id === task.id)!;
+  report.planTask = { state: planJob.state, error: planJob.error, metrics: planJob.metrics, result: planJob.result }; await save();
+  if (planJob.state !== 'completed') throw new Error('计划生成失败，查看 auto-report.json 的诊断；不会自动再次付费重试');
+  const plan = await plans.get(actor, planJob.result.planId);
+  report.originalPlan = plan;
+  report.preflight = await plans.preflight(actor, plan.id, plan.revision);
+  report.status = 'generated_needs_human_review';
+  await save();
+  process.stdout.write(JSON.stringify({ status: report.status, ontologyId: ontology.id, planId: plan.id, reportFile: join(resolve(directory), 'auto-report.json') }) + '\n');
+} catch (error) {
+  report.status = 'failed'; report.error = error instanceof Error && !/key|password|bearer|postgresql:/i.test(error.message) ? error.message : '验证失败，请查看阶段事件'; await save(); process.exitCode = 1;
+} finally { await jobs?.close(); await db.close(); }
