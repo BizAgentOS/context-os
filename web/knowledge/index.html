@@ -16,6 +16,7 @@
 <section id="ontology"><h2>2. 建立业务本体</h2><p>先从资料提出类型和关系，再检查并发布。也可以直接编辑类型定义。已发布版本不可修改，可复制为新草稿。</p>
 <h3>选择本次生成与计划的资料</h3><div id="discovery-sources"></div><label><input id="use-base" type="checkbox" checked>以选中的本体为基础补充，保留已有成员编号</label><div id="discovery-coverage"></div>
 <div class="row"><button id="discover" type="button">根据当前资料生成候选本体</button><button id="example" type="button">载入合同验证示例</button><label>已有版本<select id="ontology-select"><option value="">新草稿</option></select></label></div>
+<p id="discovery-submit-status" role="status" aria-live="polite">提交后将在这里显示任务编号、进度提示或失败原因。</p>
 <label>类型、属性、关系与可用操作<textarea id="definition" rows="18" spellcheck="false" aria-label="本体定义 JSON"></textarea></label>
 <div class="row"><button id="save-draft" type="button">保存草稿</button><button id="copy-draft" type="button">另存新草稿</button><button id="publish" type="button">发布选中草稿</button></div>
 <h3>下一步：构建知识</h3><p>选择已保存草稿或已发布本体与资料。草稿先生成计划并汇总本体/身份事项；发布后自动预检与构建。</p><button id="generate-plan" type="button">开始构建知识</button><details><summary>高级：仅生成计划</summary><button id="generate-plan-only" type="button">仅生成计划，不继续执行</button></details>

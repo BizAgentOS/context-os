@@ -1,7 +1,37 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 // @ts-expect-error Browser JavaScript is verified separately with node --check.
-import { createPlanWorkspace, discoveryDecisionState } from '../../web/knowledge/plans.js';
+import { createPlanWorkspace, discoveryDecisionState, submitDiscovery } from '../../web/knowledge/plans.js';
+
+test('discovery action reports an old backend beside the button without creating a model task', async () => {
+  const messages: Array<{message:string;error:boolean}> = [];
+  let requests=0;
+  await submitDiscovery({getState:()=>({model:'fixture',ontologies:[]}),selectedSourceVersions:()=>Array(21).fill('version'),baseOntologyId:()=>'',useBase:()=>false,
+    api:async()=>{requests++;},refresh:async()=>{},feedback:(message:string,error=false)=>messages.push({message,error})});
+  assert.equal(requests,0);assert.match(messages.at(-1)!.message,/旧进程.*重启/);assert.equal(messages.at(-1)!.error,true);
+});
+
+test('discovery action accepts 21 selected sources and immediately displays its persisted job ID', async () => {
+  const messages:string[]=[],calls:any[]=[];
+  const result=await submitDiscovery({getState:()=>({model:'fixture',maxSourceAssets:50,ontologies:[]}),selectedSourceVersions:()=>Array.from({length:21},(_,i)=>`version-${i}`),baseOntologyId:()=>'',useBase:()=>false,
+    api:async(path:string,input:any)=>{calls.push({path,input});return {id:'saved-job'};},refresh:async()=>{},feedback:(message:string)=>messages.push(message)});
+  assert.equal(result.id,'saved-job');assert.equal(calls.length,1);assert.equal(calls[0].input.sourceVersionIds.length,21);
+  assert.match(messages[0],/正在提交 21/);assert.match(messages.at(-1)!,/saved-job/);
+});
+
+test('discovery refresh failure preserves accepted job feedback rather than suggesting another submission', async () => {
+  const messages:string[]=[];let requests=0;
+  const result=await submitDiscovery({getState:()=>({model:'fixture',maxSourceAssets:50,ontologies:[]}),selectedSourceVersions:()=>['version'],baseOntologyId:()=>'',useBase:()=>false,
+    api:async()=>{requests++;return {id:'accepted-job'};},refresh:async()=>{throw new Error('network unavailable');},feedback:(message:string)=>messages.push(message)});
+  assert.equal(requests,1);assert.equal(result.id,'accepted-job');assert.match(messages.at(-1)!,/已创建.*accepted-job.*刷新失败/);assert.match(messages.at(-1)!,/不要重复生成/);
+});
+
+test('discovery transport failure leaves submission unconfirmed rather than claiming no job was created', async () => {
+  const messages:string[]=[];let operationId='';
+  await submitDiscovery({getState:()=>({model:'fixture',maxSourceAssets:50,ontologies:[]}),selectedSourceVersions:()=>['version'],baseOntologyId:()=>'',useBase:()=>false,
+    api:async(_path:string,input:any)=>{operationId=input.operationId;throw new Error('response lost');},refresh:async()=>{},feedback:(message:string)=>messages.push(message)});
+  assert.ok(operationId);assert.match(messages.at(-1)!,/提交结果尚未确认/);assert.ok(messages.at(-1)!.includes(operationId));assert.doesNotMatch(messages.at(-1)!,/未创建/);
+});
 
 function draft() {
   return { id: 'draft', revision: 3, status: 'draft', definition: { name: '合同管理', types: [{ id: 'Contract', name: '合同', description: '一般业务合同', identityNamespaces: [], properties: [{ id: 'amount', name: '金额', valueType: 'decimal', required: false, multiple: false }] }], links: [], discoveryEvidence: [] }, discovery: { validation: { definitionHash: 'current', issues: [{ id: 'first', kind: 'first_release', memberId: 'ontology', question: '首次启用' }] }, review: null as any } };

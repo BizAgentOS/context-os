@@ -1,3 +1,30 @@
+/** Keep feedback next to the action and never present an accepted job as a failed submission. */
+export async function submitDiscovery({ getState, selectedSourceVersions, baseOntologyId, useBase, api, refresh, feedback }) {
+  let accepted, operationId;
+  try {
+    const state = getState();
+    if (!state) throw new Error('请先连接企业实例');
+    if (state.maxSourceAssets === undefined) throw new Error('后端仍是旧进程，请先重启服务并刷新页面，再生成候选本体');
+    const ids = selectedSourceVersions(), maximum = state.maxSourceAssets;
+    if (!ids.length || ids.length > maximum) throw new Error(`请选择 1 至 ${maximum} 个来源`);
+    if (ids.some(id => !id)) throw new Error('所选来源尚未采集完成，请等待来源版本就绪');
+    if (!state.model) throw new Error('服务未配置模型，请配置后重启服务');
+    const base = state.ontologies.find(o => o.id === baseOntologyId());
+    feedback(`正在提交 ${ids.length} 个来源的候选本体任务…`);
+    operationId = crypto.randomUUID();
+    accepted = await api('/api/jobs', { kind: 'discover', operationId, sourceVersionIds: ids,
+      ...(useBase() && base ? { baseOntologyId: base.id, baseRevision: base.revision } : {}) });
+    feedback(`候选本体任务已创建（${accepted.id}），后台正在处理。可在“构建任务”查看进度，无需重复点击。`);
+    await refresh();
+    return accepted;
+  } catch (error) {
+    feedback(accepted ? `候选本体任务已创建（${accepted.id}），但列表刷新失败：${error.message}。请刷新任务列表，不要重复生成。`
+      : operationId ? `提交结果尚未确认（请求编号 ${operationId}）：${error.message}。请先刷新任务列表核对，不要重复生成。`
+      : `未创建候选本体任务：${error.message}`, true);
+    return accepted ?? null;
+  }
+}
+
 export function discoveryDecisionState(current) {
   const validation = current?.discovery?.validation;
   const issues = validation?.issues ?? [];
