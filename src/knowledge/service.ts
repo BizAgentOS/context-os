@@ -1,3 +1,4 @@
+import { sourceContent } from './table-content.ts';
 import { refreshDiscoveryValidation } from './discovery.ts';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -34,14 +35,15 @@ export class KnowledgeCore {
     authorize(actor);
     z.enum(['sources', 'ontologies', 'objects', 'jobs']).parse(kind);
     const take = z.number().int().min(1).max(200).parse(limit), skip = z.number().int().nonnegative().parse(offset);
-    if (kind === 'sources') return (await this.db.pool.query('SELECT s.*,v.revision AS active_revision FROM knowledge.sources s LEFT JOIN knowledge.source_versions v ON v.id=s.active_version ORDER BY s.title,s.id LIMIT $1 OFFSET $2', [take, skip])).rows;
+    if (kind === 'sources') return (await this.db.pool.query('SELECT s.*,v.revision AS active_revision,o.revision AS observed_revision FROM knowledge.sources s LEFT JOIN knowledge.source_versions v ON v.id=s.active_version LEFT JOIN knowledge.source_versions o ON o.id=s.observed_version ORDER BY s.title,s.id LIMIT $1 OFFSET $2', [take, skip])).rows;
     const order = 'created_at DESC,id';
     // Table names are a closed enumeration, never request SQL.
     const rows = (await this.db.pool.query(`SELECT * FROM knowledge.${kind} ORDER BY ${order} LIMIT $1 OFFSET $2`, [take, skip])).rows;
     return kind === 'ontologies' ? rows.map(ontologyDiscoveryView) : rows;
   }
-  async sourceVersion(actor: Principal, id: string) {
-    authorize(actor); return one(this.db.pool, 'SELECT * FROM knowledge.source_versions WHERE id=$1', [uuid(id)]);
+  async sourceVersion(actor: Principal, id: string, sampleLimit?: number): Promise<Record<string, any>> {
+    authorize(actor); const row = await one(this.db.pool, 'SELECT * FROM knowledge.source_versions WHERE id=$1', [uuid(id)]);
+    return { ...row, content: await sourceContent(this.db.pool, row.id, row.content, sampleLimit) };
   }
   async ontology(actor: Principal, id: string, published = false) {
     authorize(actor);
@@ -49,7 +51,7 @@ export class KnowledgeCore {
     if (published && row.status !== 'published') throw new Error('需使用已发布本体版本');
     return { ...ontologyDiscoveryView(row), discovery: ontologyDiscoveryView(row).discovery, id: String(row.id), revision: Number(row.revision), status: String(row.status), definition: ontologySchema.parse(row.definition) };
   }
-  async draft(actor: Principal, input: unknown, existing?: { id: string; expectedRevision: number }, job?: { id: string; leaseToken: string }, discovery: unknown = {}, copyFromId?: string) {
+  async draft(actor: Principal, input: unknown, existing?: { id: string; expectedRevision: number }, job?: { id: string; leaseToken: string }, discovery: unknown = {}, copyFromId?: string, afterCreate?: (sql: Sql, result: Record<string, any>) => Promise<void>) {
     authorize(actor, true); const definition = ontologySchema.parse(input);
     for (const t of definition.types) for (const p of t.properties) if (p.comparison) strictComparisonSchema.parse(p.comparison);
     return this.db.transaction(async sql => {
@@ -62,6 +64,7 @@ export class KnowledgeCore {
         }
         const id = randomUUID();
         const result = await one(sql, 'INSERT INTO knowledge.ontologies(id,status,definition,discovery) VALUES($1,\'draft\',$2::jsonb,$3::jsonb) RETURNING *', [id, json(definition), json(discovery)]);
+        await afterCreate?.(sql, result);
         await finishJob(sql, job, result);
         return result;
       }
@@ -151,8 +154,9 @@ export class KnowledgeCore {
       }
       const ontology = await one(sql, "SELECT * FROM knowledge.ontologies WHERE id=$1 AND status='published'", [uuid(input.ontologyId)]);
       const definition = ontologySchema.parse(ontology.definition);
-      const source = await one(sql, 'SELECT v.*,s.active_version FROM knowledge.source_versions v JOIN knowledge.sources s ON s.id=v.source_id WHERE v.id=$1', [uuid(input.sourceVersionId)]);
+      const source = await one(sql, 'SELECT v.*,COALESCE(s.observed_version,s.active_version) AS active_version,s.active_version AS adopted_version FROM knowledge.source_versions v JOIN knowledge.sources s ON s.id=v.source_id WHERE v.id=$1', [uuid(input.sourceVersionId)]);
       if (source.active_version !== source.id) throw new Error('来源已变化，请基于新版本抽取');
+      source.content = await sourceContent(sql, source.id, source.content);
       let approvedNamespaces: string[] = [];
       let identityMappings: IdentityMapping[] = [];
       if (input.buildPlanId) {
@@ -199,7 +203,10 @@ export class KnowledgeCore {
         return { claim, locators: claim.evidence.map(ref => locateEvidence(source.content as SourceContent, ref)) };
       });
       const runId = randomUUID();
-      if (input.buildPlanId) await this.retireVersion(sql, source.id);
+      if (input.buildPlanId) {
+        if (source.adopted_version && source.adopted_version !== source.id) await this.retireVersion(sql, source.adopted_version);
+        await this.retireVersion(sql, source.id);
+      }
       await sql.query("INSERT INTO knowledge.extraction_runs(id,operation_id,fingerprint,ontology_id,source_version_id,configuration,status,build_plan_id) VALUES($1,$2,$3,$4,$5,$6::jsonb,'running',$7)", [runId, input.operationId, hash, ontology.id, source.id, json(input.configuration), input.buildPlanId ?? null]);
       // Materialize the approved target and its source alias together in this source transaction.
       for (const mapping of identityMappings) {
@@ -241,6 +248,7 @@ export class KnowledgeCore {
         ids.push(id); touched.add(objectId);
       }
       for (const id of touched) { await sql.query('UPDATE knowledge.objects SET revision=revision+1 WHERE id=$1', [id]); await sql.query('DELETE FROM knowledge.projections WHERE object_id=$1', [id]); }
+      if (source.content.kind === 'table') await sql.query('UPDATE knowledge.sources SET active_version=$2 WHERE id=$1', [source.source_id, source.id]);
       const result = { runId, assertionIds: ids, objects: [...touched], count: ids.length };
       await sql.query("UPDATE knowledge.extraction_runs SET status='completed',result=$2::jsonb WHERE id=$1", [runId, json(result)]);
       await sql.query('INSERT INTO knowledge.source_build_heads(source_id,source_version_id,run_id,build_plan_id) VALUES($1,$2,$3,$4) ON CONFLICT(source_id) DO UPDATE SET source_version_id=EXCLUDED.source_version_id,run_id=EXCLUDED.run_id,build_plan_id=EXCLUDED.build_plan_id,installed_at=clock_timestamp()', [source.source_id, source.id, runId, input.buildPlanId ?? null]);
@@ -294,8 +302,8 @@ export class KnowledgeCore {
         draft.discovery = { ...draft.discovery, validation };
         const refs = definition.discoveryEvidence;
         for (const ref of refs) {
-          const source = await one(sql, 'SELECT content FROM knowledge.source_versions WHERE id=$1', [ref.sourceVersionId]);
-          locateEvidence(source.content as SourceContent, ref.locator);
+          const source = await one(sql, 'SELECT id,content FROM knowledge.source_versions WHERE id=$1', [ref.sourceVersionId]);
+          locateEvidence(await sourceContent(sql, source.id, source.content, undefined, ref.locator.kind === 'field' ? [ref.locator.recordKey] : undefined), ref.locator);
         }
         const base = draft.discovery.baseOntologyId ? (await sql.query('SELECT definition FROM knowledge.ontologies WHERE id=$1', [draft.discovery.baseOntologyId])).rows[0] : null;
         const oldMembers = base ? [...base.definition.types, ...base.definition.types.flatMap((t: Ontology['types'][number]) => t.properties), ...base.definition.links] : [];
@@ -355,7 +363,20 @@ export class KnowledgeCore {
         ORDER BY a.id,r.revision`, [id, knownAt])).rows;
       const model = (await sql.query("SELECT * FROM knowledge.ontologies WHERE status='published' AND ($1::timestamptz IS NULL OR published_at<=$1) ORDER BY published_at DESC LIMIT 1", [knownAt])).rows[0];
       if (!model) throw new Error('查询时点没有已发布本体');
-      const view = projectStatements(object.type_id, ontologySchema.parse(model.definition), rows as Statement[], validAt);
+      const currentDefinition = ontologySchema.parse(model.definition);
+      const currentType = currentDefinition.types.find(t => t.id === object.type_id);
+      const priorIds = [...new Set(rows.filter(r => ['accepted','pending'].includes(r.status) && r.ontology_id !== model.id).map(r => r.ontology_id))];
+      for (const priorId of priorIds) {
+        const prior = await one(sql, 'SELECT definition FROM knowledge.ontologies WHERE id=$1', [priorId]);
+        const priorDefinition = ontologySchema.parse(prior.definition), priorType = priorDefinition.types.find(t => t.id === object.type_id);
+        const header = (t: NonNullable<typeof priorType>) => ({ id:t.id,name:t.name,description:t.description,identityNamespaces:t.identityNamespaces });
+        const compatible = priorType && currentType && fingerprint(header(priorType)) === fingerprint(header(currentType)) &&
+          priorType.properties.every(p => currentType.properties.some(n => n.id === p.id && fingerprint(p) === fingerprint(n))) &&
+          currentType.properties.filter(p => !priorType.properties.some(n => n.id === p.id)).every(p => !p.required) &&
+          priorDefinition.links.filter(l => l.from === object.type_id || l.to === object.type_id).every(l => currentDefinition.links.some(n => n.id === l.id && fingerprint(l) === fingerprint(n)));
+        if (!compatible) throw new Error('最新本体与当前对象声明不兼容，知识迁移尚未完成；查询暂未就绪，请查看发布与构建回执');
+      }
+      const view = projectStatements(object.type_id, currentDefinition, rows as Statement[], validAt);
       const identifiers = (await sql.query('SELECT namespace,value FROM knowledge.identity_bindings WHERE object_id=$1 AND ($2::timestamptz IS NULL AND system_to IS NULL OR $2::timestamptz IS NOT NULL AND system_from<=$2 AND (system_to IS NULL OR system_to>$2))', [id, knownAt])).rows;
       const incoming = (await sql.query(`SELECT a.id,a.object_id,a.predicate,a.ontology_id,r.revision,r.status,r.valid_from,r.valid_to,r.time_precision FROM knowledge.assertions a JOIN knowledge.assertion_revisions r ON r.assertion_id=a.id
         WHERE r.target_id=$1 AND ($2::timestamptz IS NULL AND r.system_to IS NULL OR $2::timestamptz IS NOT NULL AND r.system_from<=$2 AND (r.system_to IS NULL OR r.system_to>$2)) ORDER BY a.id`, [id, knownAt])).rows;
@@ -370,8 +391,8 @@ export class KnowledgeCore {
   }
   private async attachRevisionEvidence(sql: Sql, assertionId: string, revision: number, refs: Action['evidence']) {
     for (const ref of refs ?? []) {
-      const source = await one(sql, 'SELECT content FROM knowledge.source_versions WHERE id=$1', [ref.sourceVersionId]);
-      const locator = locateEvidence(source.content as SourceContent, ref.locator);
+      const source = await one(sql, 'SELECT id,content FROM knowledge.source_versions WHERE id=$1', [ref.sourceVersionId]);
+      const locator = locateEvidence(await sourceContent(sql, source.id, source.content, undefined, ref.locator.kind === 'field' ? [ref.locator.recordKey] : undefined), ref.locator);
       const id = randomUUID();
       await sql.query('INSERT INTO knowledge.evidence(id,source_version_id,locator) VALUES($1,$2,$3::jsonb)', [id, ref.sourceVersionId, json(locator)]);
       await sql.query('INSERT INTO knowledge.assertion_revision_evidence(assertion_id,revision,evidence_id) VALUES($1,$2,$3)', [assertionId, revision, id]);
@@ -382,14 +403,15 @@ export class KnowledgeCore {
     const a = await one(this.db.pool, 'SELECT revision FROM knowledge.assertions WHERE id=$1', [uuid(assertionId)]);
     const selected = revision === undefined ? a.revision : z.number().int().positive().parse(revision);
     await one(this.db.pool, 'SELECT revision FROM knowledge.assertion_revisions WHERE assertion_id=$1 AND revision=$2', [assertionId, selected]);
-    return (await this.db.pool.query(`SELECT e.id,e.locator,v.id AS source_version_id,v.source_id,v.revision,v.content_hash,v.content,ae.role FROM (
+    const evidenceRows = (await this.db.pool.query(`SELECT e.id,e.locator,v.id AS source_version_id,v.source_id,v.revision,v.content_hash,v.content,ae.role FROM (
       SELECT evidence_id,'source_evidence' AS role FROM knowledge.assertion_evidence WHERE assertion_id=$1
       UNION ALL SELECT evidence_id,'revision_basis' AS role FROM knowledge.assertion_revision_evidence WHERE assertion_id=$1 AND revision=$2
-    ) ae JOIN knowledge.evidence e ON e.id=ae.evidence_id JOIN knowledge.source_versions v ON v.id=e.source_version_id`, [assertionId, selected])).rows.map(row => {
-      const locator = locateEvidence(row.content as SourceContent, row.locator);
+    ) ae JOIN knowledge.evidence e ON e.id=ae.evidence_id JOIN knowledge.source_versions v ON v.id=e.source_version_id`, [assertionId, selected])).rows;
+    return Promise.all(evidenceRows.map(async row => {
+      const locator = locateEvidence(await sourceContent(this.db.pool, row.source_version_id, row.content, undefined, row.locator.kind === 'field' ? [row.locator.recordKey] : undefined), row.locator);
       const { content, ...safe } = row;
       return { ...safe, source_version_id: String(row.source_version_id), locator };
-    });
+    }));
   }
   async events(actor: Principal) {
     authorize(actor); return (await this.db.pool.query('SELECT * FROM knowledge.action_events ORDER BY created_at DESC LIMIT 100')).rows;

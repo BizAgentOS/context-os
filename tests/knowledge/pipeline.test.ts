@@ -48,7 +48,7 @@ test('one start persists continuation, pauses only for batch identity decision a
     assert.equal((await db.pool.query('SELECT count(*)::int AS count FROM knowledge.assertions')).rows[0].count, 6);
     await jobs.close();
   } finally {
-    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version IN (1,2,3,4,5)'); }
+    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 6'); }
     await db.close(); await rm(directory, { recursive: true, force: true });
   }
 });

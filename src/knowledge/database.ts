@@ -28,7 +28,7 @@ export class Database {
     finally { client.release(); }
   }
   async initialize() {
-    const schemas = await Promise.all(['001-core.sql', '002-phase1-hardening.sql', '003-build-plans.sql', '004-build-heads.sql', '005-source-identities.sql'].map(name => readFile(new URL(`./sql/${name}`, import.meta.url), 'utf8')));
+    const schemas = await Promise.all(['001-core.sql', '002-phase1-hardening.sql', '003-build-plans.sql', '004-build-heads.sql', '005-source-identities.sql', '006-autonomy.sql'].map(name => readFile(new URL(`./sql/${name}`, import.meta.url), 'utf8')));
     await this.transaction(async sql => {
       await sql.query('CREATE TABLE IF NOT EXISTS knowledge_schema_versions(version integer PRIMARY KEY, installed_at timestamptz NOT NULL DEFAULT clock_timestamp())');
       const schema = await sql.query("SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='knowledge') AS present");

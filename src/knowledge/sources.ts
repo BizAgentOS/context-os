@@ -13,7 +13,8 @@ function canonical(value: unknown): string {
 }
 export const fingerprint = (value: unknown) => createHash('sha256').update(canonical(value)).digest('hex');
 export interface SourceContent {
-  kind: 'csv' | 'pdf'; text?: string; blocks?: Array<{ kind: string; start: number; end: number; page?: number; headings?: string[] }>;
+  kind: 'csv' | 'pdf' | 'table'; rowCount?: number; metadata?: Record<string, unknown>; text?: string; blocks?: Array<{ kind: string; start: number; end: number; page?: number; headings?: string[] }>;
+  nativeValues?: Record<string, Record<string, string | null>>;
   rows?: Record<string, string>[]; columns?: string[]; keyColumn?: string; warnings: string[];
 }
 export interface PreparedSource { hash: string; content: SourceContent; path: string; discard(): Promise<void>; }
@@ -47,10 +48,10 @@ export async function preparePdf(directory: string, name: string, data: Uint8Arr
 }
 export function locateEvidence(content: SourceContent, ref: Claim['evidence'][number]) {
   if (ref.kind === 'field') {
-    if (content.kind !== 'csv' || !content.columns?.includes(ref.field)) throw new Error('字段证据不存在');
+    if (!['csv', 'table'].includes(content.kind) || !content.columns?.includes(ref.field)) throw new Error('字段证据不存在');
     const index = content.rows!.findIndex(row => row[content.keyColumn!] === ref.recordKey);
     if (index < 0) throw new Error('记录证据不存在');
-    return { ...ref, row: index + 2, value: content.rows![index][ref.field] };
+    return { ...ref, value: content.kind === 'table' ? (ref.field === content.keyColumn ? ref.recordKey : content.nativeValues![ref.recordKey][ref.field]) : content.rows![index][ref.field], ...(content.kind === 'table' ? { sourceKind: 'table', table: content.metadata, recordKey: ref.recordKey } : {row:index+2}) };
   }
   if (content.kind !== 'pdf' || !content.text) throw new Error('引文需要文档来源');
   let start = ref.start;

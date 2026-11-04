@@ -103,7 +103,30 @@ test('plans: review, source-isolated identities, approval, reverse relationship,
     await assert.rejects(plans.build(actor, next.id), /后续构建/);
     const attempts = await plans.events(actor, plan.id); assert.ok(attempts.some(e => e.kind === 'approved'));
   } finally {
-    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version IN (1,2,3,4,5)'); }
+    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 6'); }
     await db.close(); await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('excluding every claim keeps that source active and its facts in conflict preflight', {skip:!url},async()=>{
+  const db=await openDatabase(url!),dir=await mkdtemp(join(tmpdir(),'knowledge-replacement-'));let owns=false;
+  try{
+    assert.equal((await db.pool.query("SELECT 1 FROM pg_namespace WHERE nspname='knowledge'")).rows.length,0);await db.initialize();owns=true;
+    const core=new KnowledgeCore(db),plans=new BuildPlans(core);
+    const model=await core.draft(actor,{name:'合同',types:[{id:'Contract',name:'合同',properties:[{id:'amount',name:'金额',valueType:'decimal'}]}]});
+    await core.act(actor,{kind:'PublishOntologyVersion',operationId:'exclude-publish',targetId:model.id,expectedRevision:1,reason:'首次发布'});
+    const add=async(op:string,key:string,value:string)=>core.importSource(actor,op,key,key,await prepareCsv(dir,`id,amount,from\nC1,${value},2026-04-01\n`,'id'));
+    const a=await add('a','a','100'),b=await add('b','b','100');
+    const proposal=(ids:string[])=>({csv:ids.map(id=>({sourceVersionId:id,objects:[{id:'c',typeId:'Contract',identityColumn:'id'}],properties:[{id:'a',object:'c',predicate:'amount',column:'amount',time:{mode:'columns',fromColumn:'from',reason:'金额生效日期'}}],links:[]}))});
+    let initial=await plans.create(actor,model.id,[a.version.id,b.version.id],proposal([a.version.id,b.version.id]));
+    initial=await plans.preflight(actor,initial.id,initial.revision);
+    initial=await plans.decideIdentityBatch(actor,initial.id,{expectedRevision:initial.revision,candidateHash:initial.preview!.identityCandidateHash,decision:'same',reason:'同一合同编号'});
+    initial=await plans.preflight(actor,initial.id,initial.revision);await plans.build(actor,initial.id);
+    const changed=await add('b-change','b','120');
+    let next=await plans.create(actor,model.id,[a.version.id,changed.version.id],proposal([a.version.id,changed.version.id]));
+    const {itemKey}=await import('../../src/knowledge/build-contracts.ts');
+    next=await plans.save(actor,next.id,next.revision,next.proposal,{items:{[itemKey(a.version.id,'property','a')]:{include:false,reviewed:false}}});
+    next=await plans.preflight(actor,next.id,next.revision);
+    assert.ok(next.preview!.events.some(e=>e.kind==='fact_conflict'),'unreplaced source A must still conflict with changed source B');
+  }finally{if(owns){await db.pool.query('DROP SCHEMA knowledge CASCADE');await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 6');}await db.close();await rm(dir,{recursive:true,force:true});}
 });

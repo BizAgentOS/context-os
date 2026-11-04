@@ -73,6 +73,12 @@ Last Updated: 2026-10-22
 - **设计:** [v0.3.0 设计与任务](features/v0.3.0.md)及[目标产品蓝图](features/v0.3.0-blueprint.md)；[v0.2.0 设计与开发步骤](features/v0.2.0.md)；[v0.1.0 历史](features/v0.1.0.md)。
 - **范围:** [产品目标](PRODUCT.md)与 [MVP 目标](MVP.md)。
 
+## 当前新增开发
+
+| ID | 功能 | 状态 | Planned / Released | 设计 |
+|---|---|---|---|---|
+| 069 | MySQL 原生来源接入与人工事项集中处理 | InProgress | 未定 / — | [设计与步骤](features/enterprise-autonomy.md) |
+
 ## Version Summary
 
 | Version | Status | Planned | InProgress | Completed | Progress |
@@ -943,3 +949,15 @@ Last Updated: 2026-10-22
 - **Blocked by:** 036—067。
 - **Design:** [FEATURE_068](features/v0.3.0.md#feature-068)。
 - **验收（2026-10-22）:** 两套真实样本发布、独立HTTP/MCP范围、新快照升级/撤销、44/51文件冷备份恢复及645/645检查通过；基线与原失败/未覆盖项见[总验收](experiment/V030_ACCEPTANCE_2026_10_22.md)。首次随 v0.3.0 本地发布。
+
+
+### 069: MySQL 原生来源接入与人工事项集中处理
+
+- **Status:** InProgress
+- **Category / Priority:** New / High
+- **Planned / Released:** 未定 / —
+- **Created / Started:** 2026-11-04 / 2026-11-04
+- **Description:** 按用户确认方案优先 P0/M1/H1，复用现有批量身份、事件复用和失效校验；新 MySQL 来源不依赖手动 CSV 或旧 SQLite。
+- **Design:** [FEATURE_069](features/enterprise-autonomy.md#feature_069-mysql-来源接入与集中决定)。
+
+**2026-11-04 FEATURE_069 首批实现：**原生MySQL只读目录/分页、独立记录存储、暂存与激活、集中决定包/取代归档/分步恢复、工作台与HTTP入口完成；知识核心66/66、Agent680/680、类型/页面语法检查通过，双轴审查问题已修复。当前是P0/M1/H1纵向切片，真实效果/容量及后续领域、目录、调度、增量和部署未验收，继续InProgress。详见[实施说明](implementation/ENTERPRISE_AUTONOMY.md)。版本保持0.3.1。

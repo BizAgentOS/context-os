@@ -7,7 +7,7 @@ const db = await openDatabase(process.env.CONTEXT_OS_KNOWLEDGE_DATABASE_URL ?? '
 try {
   if (command === 'reset-development') await db.transaction(async sql => {
     await sql.query('DROP SCHEMA IF EXISTS knowledge CASCADE');
-    await sql.query('DELETE FROM knowledge_schema_versions WHERE version IN (1,2,3,4,5)');
+    await sql.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 6');
   });
   await db.initialize();
   process.stdout.write('知识核心 schema 已初始化。\n');

@@ -1,3 +1,6 @@
+import { CredentialVault } from '../security/credential-vault.ts';
+import { ConnectedSources } from './connected-sources.ts';
+import { DecisionPackages } from './decision-packages.ts';
 import { getLogger } from '../observability/logger.ts';
 import { createServer as httpServer, type IncomingMessage } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
@@ -27,17 +30,21 @@ async function body(request: IncomingMessage) {
 const assets = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+  ['/autonomy.js', ['autonomy.js', 'text/javascript; charset=utf-8']],
   ['/plans.js', ['plans.js', 'text/javascript; charset=utf-8']],
   ['/action-target.js', ['action-target.js', 'text/javascript; charset=utf-8']],
   ['/evidence.js', ['evidence.js', 'text/javascript; charset=utf-8']],
   ['/style.css', ['style.css', 'text/css; charset=utf-8']],
 ]);
-export async function createKnowledgeServer(options: { db: Database; directory: string; principals: unknown; model?: JsonModel; worker?: boolean }) {
+export async function createKnowledgeServer(options: { db: Database; directory: string; principals: unknown; model?: JsonModel; worker?: boolean; vault?: CredentialVault }) {
   const principals = principalConfig.parse(options.principals);
   if (new Set(principals.map(p => p.token)).size !== principals.length || new Set(principals.map(p => p.id)).size !== principals.length) throw new Error('身份或令牌重复');
   const core = new KnowledgeCore(options.db), jobs = new KnowledgeJobs(core, options.model), plans = new BuildPlans(core);
+  const vault = options.vault ?? new CredentialVault(options.directory);
+  const connections = new ConnectedSources(core,vault), packages = new DecisionPackages(core,plans);
+  jobs.observe = (actor,id,operationId,maxRows) => connections.captureAll(actor,id,operationId,maxRows);
   // Startup reads schema version only, never initializes or resets the database implicitly.
-  if (!(await options.db.pool.query('SELECT version FROM knowledge_schema_versions WHERE version=5')).rows.length) throw new Error('请先运行 knowledge:init 更新知识数据库');
+  if (!(await options.db.pool.query('SELECT version FROM knowledge_schema_versions WHERE version=6')).rows.length) throw new Error('请先运行 knowledge:init 更新知识数据库');
   const tables = (await options.db.pool.query("SELECT to_regclass('knowledge.jobs') AS jobs,to_regclass('knowledge.job_attempts') AS attempts")).rows[0];
   if (!tables.jobs || !tables.attempts) throw new Error('任务表缺失，迁移记录与实际结构不一致；请运行 npm run knowledge:init 检查并修复');
   const server = httpServer(async (request, response) => {
@@ -67,7 +74,34 @@ export async function createKnowledgeServer(options: { db: Database; directory: 
       const actor: Principal = { id: matched.id, role: matched.role };
       if (request.method === 'GET' && url.pathname === '/api/state') {
         const [sources, ontologies, objects, tasks] = await Promise.all(['sources', 'ontologies', 'objects', 'jobs'].map(kind => core.list(actor, kind as 'sources' | 'ontologies' | 'objects' | 'jobs')));
-        send(200, { actor, model: options.model?.identity ?? null, modelPolicy: options.model?.executionPolicy ?? null, promptVersion: PROMPT_VERSION, sources, ontologies, objects, jobs: tasks, plans: await plans.list(actor), accessScope: 'all_instance_data', fineGrainedPermissions: false, inference: 'pending_only', pagination: { limit: 100, offset: 0, note: '仅展示第一页，请使用列表接口翻页' } }); return;
+        send(200, { actor, model: options.model?.identity ?? null, modelPolicy: options.model?.executionPolicy ?? null, promptVersion: PROMPT_VERSION, sources, ontologies, objects, jobs: tasks, plans: await plans.list(actor), connections: await connections.list(actor), decisionPackages: await packages.list(actor), accessScope: 'all_instance_data', fineGrainedPermissions: false, inference: 'pending_only', pagination: { limit: 100, offset: 0, note: '仅展示第一页，请使用列表接口翻页' } }); return;
+      }
+      if(url.pathname==='/api/connections') {
+        if(request.method==='GET'){send(200,await connections.list(actor));return;}
+        if(request.method==='POST'){send(200,await connections.create(actor,await body(request)));return;}
+      }
+      const connectionPath=/^\/api\/connections\/([^/]+)\/(catalog|sync|observations|revoke)$/.exec(url.pathname);
+      if(connectionPath){
+        const [,id,operation]=connectionPath;
+        if(request.method==='GET'&&operation==='catalog'){send(200,await connections.catalog(actor,id));return;}
+        if(request.method==='GET'&&operation==='observations'){send(200,await connections.observations(actor,id));return;}
+        if(request.method==='POST'&&operation==='sync'){
+          const input=z.object({operationId:z.string().min(1).max(160),construct:z.boolean().default(false),maxRows:z.number().int().min(1).max(100000).default(10000)}).strict().parse(await body(request));
+          send(202,await jobs.enqueue(actor,{kind:'observe',connectionId:id,...input}));return;
+        }
+        if(request.method==='POST'&&operation==='revoke'){const input=z.object({expectedRevision:z.number().int().positive()}).strict().parse(await body(request));send(200,await connections.revoke(actor,id,input.expectedRevision));return;}
+      }
+      if(url.pathname==='/api/decision-packages'){
+        if(request.method==='GET'){send(200,await packages.list(actor));return;}
+        if(request.method==='POST'){send(200,await packages.create(actor,await body(request)));return;}
+      }
+      const packagePath=/^\/api\/decision-packages\/([^/]+)(?:\/(submit|refresh|archive))?$/.exec(url.pathname);
+      if(packagePath){
+        const [,id,operation]=packagePath;
+        if(request.method==='GET'&&!operation){send(200,await packages.get(actor,id));return;}
+        if(request.method==='POST'&&operation==='archive'){send(200,await packages.archive(actor,id,await body(request)));return;}
+        if(request.method==='POST'&&operation==='submit'){send(200,await packages.submit(actor,id,await body(request)));return;}
+        if(request.method==='POST'&&operation==='refresh'){const input=z.object({expectedRevision:z.number().int().positive()}).strict().parse(await body(request));send(200,await packages.refresh(actor,id,input.expectedRevision));return;}
       }
       const list = /^\/api\/list\/(sources|ontologies|objects|jobs)$/.exec(url.pathname);
       if (request.method === 'GET' && list) {
@@ -138,7 +172,7 @@ export async function createKnowledgeServer(options: { db: Database; directory: 
   });
   server.requestTimeout = 90000; server.headersTimeout = 15000;
   if (options.worker !== false) jobs.start();
-  return { server, core, jobs, plans, async close() { await jobs.close(); await new Promise<void>((done, fail) => server.listening ? server.close(error => error ? fail(error) : done()) : done()); await options.db.close(); } };
+  return { server, core, jobs, plans, connections, packages, async close() { await jobs.close(); await new Promise<void>((done, fail) => server.listening ? server.close(error => error ? fail(error) : done()) : done()); await options.db.close(); } };
 }
 let startupStage = '数据库连接配置';
 async function main() {

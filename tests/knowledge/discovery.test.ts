@@ -57,7 +57,7 @@ test('automatic ontology gates major release events instead of per-item confirma
     const latest = await core.ontology(actor, draft.id);
     await assert.rejects(core.act(actor, { ...publish, expectedRevision: latest.revision }), /目标不存在/, 'approval cannot manufacture a nonexistent source version');
   } finally {
-    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version IN (1,2,3,4,5)'); }
+    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 6'); }
     await db.close();
   }
 });

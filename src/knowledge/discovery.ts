@@ -20,10 +20,11 @@ export function discoveryInput(sources: DiscoverySource[], baseOntology: Ontolog
     catalog.push({ id: `e${catalog.length + 1}`, sourceVersionId: source.id, locator, value });
   };
   for (const source of sources) {
-    if (source.kind === 'csv') {
+    if (source.kind !== 'pdf') {
       for (const row of source.rows ?? []) for (const field of source.columns ?? []) {
         const recordKey = row[source.keyColumn!];
         if (recordKey === undefined) throw new Error('发现样本缺少记录主键');
+        if (source.kind === 'table' && source.nativeValues?.[recordKey]?.[field] === null) continue;
         add(source, { kind: 'field', recordKey, field }, row[field] ?? '');
       }
     } else {
@@ -40,7 +41,7 @@ export function discoveryInput(sources: DiscoverySource[], baseOntology: Ontolog
     }
   }
   return { catalog, input: {
-    sources: sources.map(s => ({ id: s.id, kind: s.kind, sourceNamespace: s.sourceNamespace, columns: s.columns, keyColumn: s.keyColumn, coverage: s.coverage })),
+    sources: sources.map(s => ({ id: s.id, kind: s.kind, sourceNamespace: s.sourceNamespace, columns: s.columns, keyColumn: s.keyColumn, ...(s.metadata ? { metadata: s.metadata } : {}), coverage: s.coverage })),
     baseOntology,
     evidenceCatalog: catalog.map(e => ({ evidenceId: e.id, sourceVersionId: e.sourceVersionId, kind: e.locator.kind, ...(e.locator.kind === 'field' ? { recordKey: e.locator.recordKey, field: e.locator.field, value: e.value } : { text: e.value, start: e.locator.start }) })),
   } };

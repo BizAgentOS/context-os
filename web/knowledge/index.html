@@ -5,7 +5,12 @@
 <p>当前授权用户可读取本实例全部资料，尚无部门或字段隔离。否定、计划、条件与推断声明仅保留为待处理候选。</p>
 <nav><a href="#sources">资料与任务</a><a href="#ontology">本体定义</a><a href="#build-plans">构建计划</a><a href="#objects">对象与证据</a><button id="refresh" type="button">刷新</button></nav>
 <main>
-<section id="sources"><h2>1. 接入资料</h2><p>CSV 需要唯一记录键；PDF 需要可提取的文本层。同一个来源编号再次上传，会产生新版本并重新评估旧知识。</p>
+<section id="connections"><h2>企业数据源连接</h2><p>管理员一次配置 MySQL 只读连接及范围，程序读取来源并生成候选。凭据加密保存，不返回到页面。远程连接必须校验证书。</p>
+<form id="connect-mysql"><div class="row"><label>连接名称<input name="name" required></label><label>主机<input name="host" required></label><label>端口<input name="port" type="number" value="3306" min="1" max="65535" required></label><label>数据库<input name="database" required></label></div>
+<div class="row"><label>只读账号<input name="user" required autocomplete="off"></label><label>密码<input name="password" type="password" autocomplete="off" required></label><label>传输保护<select name="tls"><option value="verify">校验 TLS 证书</option><option value="disabled">仅本机测试：关闭 TLS</option></select></label></div>
+<label>授权表范围（逗号分隔；留空为该账号在库内可见的全部表）<input name="tables"></label><label><input type="checkbox" name="construct">采集后自动生成本体和计划（调用已配置模型）</label><button>连接并开始采集</button></form><div id="connection-list"></div><details><summary>查看探查目录与覆盖</summary><pre id="connection-directory"></pre></details></section>
+<section id="decision-packages"><h2>本轮待决定事项</h2><p>先完成可执行分析，本体与计划事项集中提交。修改本体定义会使原计划失效；正式构建仍须发布和预检通过。</p><div id="decision-package-list"></div><div id="decision-package-detail"></div></section>
+<section id="sources"><h2>补充资料与任务</h2><p>CSV 需要唯一记录键；PDF 需要可提取的文本层。同一个来源编号再次上传，会产生新版本并重新评估旧知识。</p>
 <form id="upload"><div class="row"><label>来源编号<input name="sourceKey" required placeholder="例如 contracts"></label><label>资料名称<input name="title" required></label><label>CSV 记录键列<input name="keyColumn" placeholder="例如 contract_no"></label></div><label>选择文件<input name="file" type="file" accept=".csv,.pdf" required></label><button>上传资料</button></form>
 <div id="source-list"></div><h3>构建任务</h3><p>任务不会自动重复调用付费模型。失败后可检查原因，再手动重试。列表每页显示 100 条。</p><div id="job-list"></div></section>
 <section id="ontology"><h2>2. 建立业务本体</h2><p>先从资料提出类型和关系，再检查并发布。也可以直接编辑类型定义。已发布版本不可修改，可复制为新草稿。</p>
@@ -13,7 +18,7 @@
 <div class="row"><button id="discover" type="button">根据当前资料生成候选本体</button><button id="example" type="button">载入合同验证示例</button><label>已有版本<select id="ontology-select"><option value="">新草稿</option></select></label></div>
 <label>类型、属性、关系与可用操作<textarea id="definition" rows="18" spellcheck="false" aria-label="本体定义 JSON"></textarea></label>
 <div class="row"><button id="save-draft" type="button">保存草稿</button><button id="copy-draft" type="button">另存新草稿</button><button id="publish" type="button">发布选中草稿</button></div>
-<h3>下一步：构建知识</h3><p>选择已发布本体与资料后开始。系统自动生成计划、预检、批准和构建，仅在业务事件需要决定时暂停。</p><button id="generate-plan" type="button">开始构建知识</button><details><summary>高级：仅生成计划</summary><button id="generate-plan-only" type="button">仅生成计划，不继续执行</button></details>
+<h3>下一步：构建知识</h3><p>选择已保存草稿或已发布本体与资料。草稿先生成计划并汇总本体/身份事项；发布后自动预检与构建。</p><button id="generate-plan" type="button">开始构建知识</button><details><summary>高级：仅生成计划</summary><button id="generate-plan-only" type="button">仅生成计划，不继续执行</button></details>
 <details><summary>工程兼容入口：手动单源映射</summary><div class="row"><label>来源版本<select id="extract-source"></select></label><label>已发布本体<select id="extract-ontology"></select></label></div>
 <label>CSV 字段映射（PDF 留空，由模型抽取）<textarea id="mapping" rows="10" spellcheck="false"></textarea></label><button id="extract" type="button">开始构建</button></details></section>
 <section id="build-plans"><h2>3. 审核并执行构建计划</h2><label>已保存计划<select id="plan-select"><option value="">请选择计划</option></select></label><p id="plan-status">生成任务完成后，可从任务结果打开计划。</p><div id="plan-manifest"></div><div id="plan-bindings"></div><div id="plan-identities"></div><label>重大事件决定理由（无事件可留空）<input id="plan-reason"></label><div class="row"><button id="plan-refresh" type="button">刷新计划状态</button><button id="plan-build" type="button">继续构建（自动预检与执行）</button></div><details><summary>高级：分步保存与预检</summary><div class="row"><button id="plan-save" type="button">保存配置</button><button id="plan-preflight" type="button">仅预检</button><button id="plan-approve" type="button">发布本体并批准计划</button></div></details><div id="plan-preview"></div><details><summary>高级：查看或修订计划 JSON</summary><textarea id="plan-json" rows="16" spellcheck="false"></textarea><button id="plan-import-json" type="button">载入 JSON 并重新审核</button></details></section>

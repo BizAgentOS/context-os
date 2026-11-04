@@ -50,7 +50,7 @@ test('hardening: semantic isolation and revision-specific correction evidence', 
     assert.equal((incomparable.fields.amount as any).status, 'incomparable');
     assert.equal((incomparable.fields.amount as any).value, null, 'human override cannot hide a scope mismatch');
   } finally {
-    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version IN (1,2,3,4,5)'); }
+    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 6'); }
     await db.close(); await rm(dir, { recursive: true, force: true });
   }
 });
@@ -70,7 +70,7 @@ test('hardening: updating schema preserves existing version-one data and identit
     assert.deepEqual(view.rows, [{ object_id: '00000000-0000-4000-8000-000000000001', value: 'C1' }]);
     assert.equal((await db.pool.query('SELECT * FROM knowledge.objects')).rows.length, 1);
   } finally {
-    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version IN (1,2,3,4,5)'); }
+    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 6'); }
     await db.close();
   }
 });
@@ -130,7 +130,7 @@ test('hardening: identity rematch preserves history, selected ownership, undo an
     assert.equal(((await core.object(admin, old.id)).fields.title as any).value, 'Lead');
     assert.equal((await core.object(admin, old.id, { knownAt })).identifiers[0].value, 'E1');
   } finally {
-    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version IN (1,2,3,4,5)'); }
+    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 6'); }
     await db.close(); await rm(dir, { recursive: true, force: true });
   }
 });

@@ -1,3 +1,5 @@
+import type { Sql } from './database.ts';
+import { DecisionPackages } from './decision-packages.ts';
 import { loadSavedDiscovery } from './saved-discovery.ts';
 import { discoveryInput, discoveryCandidateSchema, validateDiscovery, DiscoveryEvidenceError } from './discovery.ts';
 import { getLogger } from '../observability/logger.ts';
@@ -9,7 +11,7 @@ import { fingerprint, locateEvidence, mapCsv, type SourceContent } from './sourc
 import type { JsonModel, ModelDiagnostic } from './model.ts';
 import { BuildPlans } from './build-plans.ts';
 import { planProposalSchema } from './build-contracts.ts';
-export const PROMPT_VERSION = 'knowledge-build-plans-v9-evidence-recovery';
+export const PROMPT_VERSION = 'knowledge-native-sources-v10-concentrated-decisions';
 function numericUsage(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const entries = Object.entries(value).flatMap<[string, unknown]>(([key, v]) => {
@@ -22,9 +24,11 @@ function numericUsage(value: unknown): Record<string, unknown> | null {
 }
 
 const jobInput = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('discover'), operationId: z.string().min(1).max(160), sourceVersionIds: z.array(z.string().uuid()).min(1).max(10), baseOntologyId: z.string().uuid().optional(), baseRevision: z.number().int().positive().optional(), revalidateFromJobId: z.string().uuid().optional() }).strict(),
+  z.object({kind:z.literal('collect'),operationId:z.string().min(1).max(160),packageId:z.string().uuid()}).strict(),
+  z.object({ kind:z.literal('observe'), operationId:z.string().min(1).max(160), connectionId:z.string().uuid(), construct:z.boolean().default(false), maxRows:z.number().int().min(1).max(100000).default(10000) }).strict(),
+  z.object({ kind: z.literal('discover'), operationId: z.string().min(1).max(160), sourceVersionIds: z.array(z.string().uuid()).min(1).max(10), baseOntologyId: z.string().uuid().optional(), baseRevision: z.number().int().positive().optional(), revalidateFromJobId: z.string().uuid().optional(), collectDecisions: z.boolean().default(false) }).strict(),
   z.object({ kind: z.literal('extract'), operationId: z.string().min(1).max(160), sourceVersionId: z.string().uuid(), ontologyId: z.string().uuid(), mapping: mappingSchema.optional() }).strict(),
-  z.object({ kind: z.literal('plan'), operationId: z.string().min(1).max(160), sourceVersionIds: z.array(z.string().uuid()).min(1).max(10), ontologyId: z.string().uuid(), expectedRevision: z.number().int().positive(), basePlanId: z.string().uuid().optional(), autoBuild: z.boolean().default(false) }).strict(),
+  z.object({ kind: z.literal('plan'), operationId: z.string().min(1).max(160), sourceVersionIds: z.array(z.string().uuid()).min(1).max(10), ontologyId: z.string().uuid(), expectedRevision: z.number().int().positive(), basePlanId: z.string().uuid().optional(), autoBuild: z.boolean().default(false), collectDecisions: z.boolean().default(false) }).strict(),
   z.object({ kind: z.literal('build'), operationId: z.string().min(1).max(160), planId: z.string().uuid(), preflight: z.boolean().default(false) }).strict(),
 ]);
 export class KnowledgeJobs {
@@ -33,6 +37,7 @@ export class KnowledgeJobs {
   private stopping = false;
   private core: KnowledgeCore;
   private model?: JsonModel;
+  observe?: (actor:Principal,id:string,operationId:string,maxRows:number)=>Promise<{sourceVersionIds:string[];changed:boolean}>;
   constructor(core: KnowledgeCore, model?: JsonModel) { this.core = core; this.model = model; }
   async enqueue(actor: Principal, raw: unknown) {
     authorize(actor, true); const input = jobInput.parse(raw);
@@ -42,14 +47,16 @@ export class KnowledgeJobs {
       if (input.mapping.namespace !== namespace || input.mapping.links.some(l => l.targetNamespace !== namespace)) throw new Error('直接映射只能使用该来源的身份空间；跨源构建请生成并审核构建计划');
     }
     if (input.kind === 'plan' && input.autoBuild) await this.core.ontology(actor, input.ontologyId, true);
+    return this.core.db.transaction(sql => this.enqueueIn(sql, actor, input));
+  }
+  private async enqueueIn(sql: Sql, actor: Principal, raw: unknown) {
+    const input = jobInput.parse(raw);
     const modelId = needsModel(input) ? this.model?.identity ?? null : null;
     const modelPolicy = needsModel(input) ? this.model?.executionPolicy ?? null : null;
     const hash = fingerprint({ actor: actor.id, input, model: modelId, modelPolicy, prompt: PROMPT_VERSION });
-    return this.core.db.transaction(async sql => {
-      const prior = (await sql.query('SELECT * FROM knowledge.jobs WHERE operation_id=$1', [input.operationId])).rows[0];
-      if (prior) { if (prior.fingerprint !== hash) throw new Error('任务 operationId 输入不一致'); return prior; }
-      return (await sql.query('INSERT INTO knowledge.jobs(id,operation_id,fingerprint,kind,actor_id,payload) VALUES($1,$2,$3,$4,$5,$6::jsonb) RETURNING *', [randomUUID(), input.operationId, hash, input.kind, actor.id, JSON.stringify({ input, modelId, modelPolicy, promptVersion: PROMPT_VERSION })])).rows[0];
-    });
+    const prior = (await sql.query('SELECT * FROM knowledge.jobs WHERE operation_id=$1', [input.operationId])).rows[0];
+    if (prior) { if (prior.fingerprint !== hash) throw new Error('任务 operationId 输入不一致'); return prior; }
+    return (await sql.query('INSERT INTO knowledge.jobs(id,operation_id,fingerprint,kind,actor_id,payload) VALUES($1,$2,$3,$4,$5,$6::jsonb) RETURNING *', [randomUUID(), input.operationId, hash, input.kind, actor.id, JSON.stringify({ input, modelId, modelPolicy, promptVersion: PROMPT_VERSION })])).rows[0];
   }
   async retry(actor: Principal, id: string) {
     authorize(actor, true); z.string().uuid().parse(id);
@@ -129,12 +136,25 @@ export class KnowledgeJobs {
       if (needsModel(input) && fingerprint(job.payload.modelPolicy ?? null) !== fingerprint(this.model?.executionPolicy ?? null)) throw new Error('模型运行预算已变化，请以当前配置新建任务');
       let result: unknown;
       record({ at: new Date().toISOString(), kind: 'sources.reading' });
-      if (input.kind === 'discover') {
+      if (input.kind === 'collect') {
+        const packages = new DecisionPackages(this.core), pack = await packages.get(actor,input.packageId);
+        const prepared = ['superseded','archived'].includes(pack.state) ? pack : await packages.refresh(actor,pack.id,pack.revision);
+        if(['superseded','archived'].includes(prepared.state)) result={decisionPackageId:prepared.id,stage:prepared.state,modelCalled:false};
+        else if(prepared.summary.ontologyStatus==='published' && prepared.summary.planStatus==='approved' && !prepared.summary.systemErrors.length) {
+          const built=await packages.submit(actor,prepared.id,{expectedRevision:prepared.revision,candidateHash:prepared.summary.candidateHash});
+          result={decisionPackageId:built.id,stage:built.state,modelCalled:false};
+        } else result = {decisionPackageId:prepared.id,stage:'awaiting_decision',modelCalled:false};
+      } else if (input.kind === 'observe') {
+        if (!this.observe) throw new Error('来源接入处理器未配置');
+        const captured = await this.observe(actor,input.connectionId,input.operationId,input.maxRows);
+        const next = input.construct && captured.changed && captured.sourceVersionIds.length ? await this.enqueue(actor,{kind:'discover',operationId:`observation:${job.id}:discover`,sourceVersionIds:captured.sourceVersionIds,collectDecisions:true}) : null;
+        result = {...captured,nextJobId:next?.id??null,stage:next?'queued_discovery':'observed',modelCalled:false};
+      } else if (input.kind === 'discover') {
         if (!this.model && !input.revalidateFromJobId) throw new Error('尚未配置模型，不能自动生成候选本体');
-        const sources = await Promise.all(input.sourceVersionIds.map(id => this.core.sourceVersion(actor, id)));
+        const sources = await Promise.all(input.sourceVersionIds.map(id => this.core.sourceVersion(actor, id, 10)));
         const samples = sources.map(s => {
           const content = s.content as SourceContent;
-          if (content.kind === 'csv') return { id: s.id, sourceNamespace: `source.${s.source_id}`, ...content, rows: content.rows?.slice(0, 10), coverage: { sampled: Math.min(10, content.rows?.length ?? 0), total: content.rows?.length ?? 0 } };
+          if (content.kind !== 'pdf') return { id: s.id, sourceNamespace: `source.${s.source_id}`, ...content, nativeValues: content.kind === 'table' ? Object.fromEntries((content.rows ?? []).slice(0,10).map(row => [row[content.keyColumn!],content.nativeValues![row[content.keyColumn!]]])) : undefined, rows: content.rows?.slice(0, 10), coverage: { sampled: Math.min(10, content.rows?.length ?? 0), total: content.rowCount ?? content.rows?.length ?? 0 } };
           return { ...content, id: s.id, sourceNamespace: `source.${s.source_id}`, kind: content.kind, text: content.text?.slice(0, 16000), coverage: { characters: Math.min(16000, content.text?.length ?? 0), total: content.text?.length ?? 0 } };
         });
         if (Buffer.byteLength(JSON.stringify(samples)) > 100000) throw new Error('本体样本超过单次预算，请减少来源');
@@ -167,20 +187,23 @@ export class KnowledgeJobs {
         const oldMembers = new Map(base ? members(base.definition).map(m => [m.id, fingerprint(m)]) : []);
         if (base && (await this.core.ontology(actor, base.id)).revision !== base.revision) throw new Error('基础草稿在模型运行期间已变化，请重新生成');
         if (input.revalidateFromJobId) for (const source of sources) {
-          const current = (await this.core.db.pool.query('SELECT active_version FROM knowledge.sources WHERE id=$1', [source.source_id])).rows[0];
+          const current = (await this.core.db.pool.query('SELECT COALESCE(observed_version,active_version) AS active_version FROM knowledge.sources WHERE id=$1', [source.source_id])).rows[0];
           if (current?.active_version !== source.id) throw new Error('来源已有新版本，不能将旧候选恢复成当前版本；未调用模型');
         }
         record({ at: new Date().toISOString(), kind: 'ontology.persisting' });
-        result = await this.core.draft(actor, output, undefined, lease, { validation, recoveredTraceId: recoveredTraceId ?? null, recoveredModelId, recoveredFromJobId: input.revalidateFromJobId ?? null, jobId: job.id, model: job.payload.modelId, prompt: PROMPT_VERSION, baseOntologyId: base?.id ?? null, baseRevision: base?.revision ?? null, sources: samples.map((s, index) => ({ id: s.id, sourceId: sources[index].source_id, hash: sources[index].content_hash, kind: s.kind, coverage: s.coverage })), changes: { added: newIds.filter(id => !oldIds.includes(id)), removed: oldIds.filter(id => !newIds.includes(id)), modified: members(output).filter(m => oldMembers.has(m.id) && oldMembers.get(m.id) !== fingerprint(m)).map(m => m.id) } });
+        result = await this.core.draft(actor, output, undefined, lease, { validation, recoveredTraceId: recoveredTraceId ?? null, recoveredModelId, recoveredFromJobId: input.revalidateFromJobId ?? null, jobId: job.id, model: job.payload.modelId, prompt: PROMPT_VERSION, baseOntologyId: base?.id ?? null, baseRevision: base?.revision ?? null, sources: samples.map((s, index) => ({ id: s.id, sourceId: sources[index].source_id, hash: sources[index].content_hash, kind: s.kind, coverage: s.coverage })), changes: { added: newIds.filter(id => !oldIds.includes(id)), removed: oldIds.filter(id => !newIds.includes(id)), modified: members(output).filter(m => oldMembers.has(m.id) && oldMembers.get(m.id) !== fingerprint(m)).map(m => m.id) } }, undefined, input.collectDecisions ? async (sql, generated) => {
+          const next = await this.enqueueIn(sql,actor,{kind:'plan',operationId:`discovery:${job.id}:plan`,ontologyId:generated.id,expectedRevision:generated.revision,sourceVersionIds:input.sourceVersionIds,collectDecisions:true});
+          generated.nextJobId = next.id;
+        } : undefined);
       } else if (input.kind === 'plan') {
         if (!this.model) throw new Error('尚未配置模型，不能生成构建计划');
         const ontology = await this.core.ontology(actor, input.ontologyId);
         if (ontology.revision !== input.expectedRevision) throw new Error('本体修订已变化，请重新选择');
-        const sources = await Promise.all(input.sourceVersionIds.map(id => this.core.sourceVersion(actor, id)));
+        const sources = await Promise.all(input.sourceVersionIds.map(id => this.core.sourceVersion(actor, id, 10)));
         const samples = sources.map(source => {
           const content = source.content as SourceContent;
           if (content.kind === 'pdf' && (content.text?.length ?? 0) > 40000) throw new Error('PDF 超过首期完整候选预算，请拆分来源，不静默截断');
-          return { id: source.id, sourceNamespace: `source.${source.source_id}`, ...content, ...(content.kind === 'csv' ? { rows: content.rows?.slice(0, 10), coverage: { sampledRows: Math.min(10, content.rows?.length ?? 0), totalRows: content.rows?.length ?? 0 } } : { coverage: { characters: content.text?.length ?? 0, totalCharacters: content.text?.length ?? 0 } }) };
+          return { id: source.id, sourceNamespace: `source.${source.source_id}`, ...content, ...(content.kind !== 'pdf' ? { nativeValues: content.kind === 'table' ? Object.fromEntries((content.rows ?? []).slice(0,10).map(row => [row[content.keyColumn!],content.nativeValues![row[content.keyColumn!]]])) : undefined, rows: content.rows?.slice(0, 10), coverage: { sampledRows: Math.min(10, content.rows?.length ?? 0), totalRows: content.rowCount ?? content.rows?.length ?? 0 } } : { coverage: { characters: content.text?.length ?? 0, totalCharacters: content.text?.length ?? 0 } }) };
         });
         const previous = input.basePlanId ? await new BuildPlans(this.core).get(actor, input.basePlanId) : null;
         const modelInput = { ontology: ontology.definition, sources: samples, previousProposal: previous?.proposal ?? null, discoveryIssues: ontology.discovery?.validation?.uncertainties ?? [] };
@@ -191,8 +214,12 @@ export class KnowledgeJobs {
         const current = await this.core.ontology(actor, input.ontologyId);
         if (current.revision !== ontology.revision) throw new Error('模型运行期间本体已变化，请重新生成计划');
         record({ at: new Date().toISOString(), kind: 'plan.persisting' });
-        const plan = await new BuildPlans(this.core).create(actor, input.ontologyId, input.sourceVersionIds, proposal, { jobId: job.id, model: job.payload.modelId, prompt: PROMPT_VERSION, basePlanId: input.basePlanId ?? null, autoBuild: input.autoBuild }, lease, ontology.revision, input.autoBuild ? PROMPT_VERSION : undefined);
+        const plan = await new BuildPlans(this.core).create(actor, input.ontologyId, input.sourceVersionIds, proposal, { jobId: job.id, model: job.payload.modelId, prompt: PROMPT_VERSION, basePlanId: input.basePlanId ?? null, autoBuild: input.autoBuild }, lease, ontology.revision, input.autoBuild ? PROMPT_VERSION : undefined, input.collectDecisions ? async (sql,row) => {
+          row.decisionPackageId = await new DecisionPackages(this.core).insertIn(sql,actor,row,'preparing');
+          await this.enqueueIn(sql,actor,{kind:'collect',operationId:`package:${row.decisionPackageId}:collect`,packageId:row.decisionPackageId});
+        } : undefined);
         result = { planId: plan.id, ...(plan.continuationJobId ? { stage: 'queued_preflight', continuationJobId: plan.continuationJobId } : {}) };
+        if (plan.decisionPackageId) result = {...result as Record<string,unknown>,decisionPackageId:plan.decisionPackageId,stage:'queued_collection'};
       } else if (input.kind === 'build') {
         record({ at: new Date().toISOString(), kind: 'build.started' });
         const plans = new BuildPlans(this.core);

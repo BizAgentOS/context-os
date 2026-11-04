@@ -1,3 +1,4 @@
+import { sourceContent } from './table-content.ts';
 import { buildConflictEvents, type BuildEvent } from './build-events.ts';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -12,7 +13,7 @@ const json = (value: unknown) => JSON.stringify(value);
 const uuid = (value: string) => z.string().uuid().parse(value);
 export interface PlanItem { key: string; sourceVersionId: string; kind: string; label: string; detail: unknown; }
 interface SourceRow { id: string; source_id: string; active_version: string; content_hash: string; title: string; revision: number; content: SourceContent; }
-interface PlanRow { continuationJobId?: string; id: string; revision: number; ontology_id: string; ontology_hash: string; manifest: Array<{ id: string; sourceId: string; title: string; hash: string; coverage: unknown }>; proposal: PlanProposal; review: PlanReview; preview: PlanPreview | null; status: string; provenance: unknown; }
+export interface PlanRow { decisionPackageId?: string; continuationJobId?: string; id: string; revision: number; ontology_id: string; ontology_hash: string; manifest: Array<{ id: string; sourceId: string; title: string; hash: string; coverage: unknown }>; proposal: PlanProposal; review: PlanReview; preview: PlanPreview | null; status: string; provenance: unknown; }
 interface IdentityGroup { key: string; typeId: string; value: string; canonicalId: string; decision: 'pending' | 'same' | 'separate'; autoContinued?: boolean; reason: string; participants: Array<{ sourceVersionId: string; sourceId: string; title: string; evidence: Claim['evidence']; bindingId?: string; objectId?: string; canonicalNamespace?: string }>; }
 export interface IdentityMapping { source: Claim['subject']; target: Claim['subject']; bindingId: string | null; objectId: string | null; targetBindingId: string | null; targetObjectId: string | null; adopt?: { identity: Claim['subject']; bindingId: string; objectId: string }; }
 interface PlanOutput { sourceVersionId: string; output: { claims: Claim[] }; identityMappings?: IdentityMapping[]; }
@@ -24,7 +25,7 @@ async function one<T = Record<string, any>>(sql: Sql, query: string, values: unk
 }
 export function sourceCoverage(source: { content: SourceContent }) {
   const c = source.content;
-  return c.kind === 'csv' ? { kind: 'csv', sampledRows: Math.min(10, c.rows?.length ?? 0), totalRows: c.rows?.length ?? 0 } : { kind: 'pdf', characters: Math.min(40000, c.text?.length ?? 0), totalCharacters: c.text?.length ?? 0 };
+  return c.kind !== 'pdf' ? { kind: c.kind, sampledRows: Math.min(10, c.rowCount ?? c.rows?.length ?? 0), totalRows: c.rowCount ?? c.rows?.length ?? 0 } : { kind: 'pdf', characters: Math.min(40000, c.text?.length ?? 0), totalCharacters: c.text?.length ?? 0 };
 }
 function items(row: PlanRow): PlanItem[] {
   const result: PlanItem[] = row.manifest.map(s => ({ key: itemKey(s.id, 'source', 'include'), sourceVersionId: s.id, kind: 'source', label: s.title, detail: s.coverage }));
@@ -52,9 +53,9 @@ export class BuildPlans {
     if (fingerprint(ontology) !== row.ontology_hash) throw new Error('本体定义已变化，请基于当前版本重新生成计划');
     const sources: SourceRow[] = [];
     for (const ref of row.manifest) {
-      const source = await one<SourceRow>(sql, 'SELECT v.*,s.active_version,s.title FROM knowledge.source_versions v JOIN knowledge.sources s ON s.id=v.source_id WHERE v.id=$1', [ref.id]);
+      const source = await one<SourceRow>(sql, 'SELECT v.*,COALESCE(s.observed_version,s.active_version) AS active_version,s.title FROM knowledge.source_versions v JOIN knowledge.sources s ON s.id=v.source_id WHERE v.id=$1', [ref.id]);
       if (source.active_version !== source.id || source.content_hash !== ref.hash) throw new Error('来源版本已更新，请重新生成或检查计划，旧批准不能自动沿用');
-      sources.push(source);
+      source.content = await sourceContent(sql, source.id, source.content); sources.push(source);
     }
     if (row.status === 'approved') {
       const newer = await sql.query('SELECT h.run_id FROM knowledge.approved_plan_outputs o JOIN knowledge.source_versions v ON v.id=o.source_version_id JOIN knowledge.source_build_heads h ON h.source_id=v.source_id JOIN knowledge.build_plans p ON p.id=o.plan_id WHERE p.id=$1 AND h.installed_at>p.approved_at AND h.build_plan_id IS DISTINCT FROM p.id LIMIT 1', [row.id]);
@@ -65,7 +66,7 @@ export class BuildPlans {
   private async event(sql: Sql, row: PlanRow, actor: Principal, kind: string, details: unknown) {
     await sql.query('INSERT INTO knowledge.plan_events(id,plan_id,actor_id,kind,revision,details) VALUES($1,$2,$3,$4,$5,$6::jsonb)', [randomUUID(), row.id, actor.id, kind, row.revision, json(details)]);
   }
-  async create(actor: Principal, ontologyId: string, sourceVersionIds: string[], raw: unknown, provenance: unknown = {}, job?: { id: string; leaseToken: string }, expectedOntologyRevision?: number, continuationPrompt?: string): Promise<PlanRow> {
+  async create(actor: Principal, ontologyId: string, sourceVersionIds: string[], raw: unknown, provenance: unknown = {}, job?: { id: string; leaseToken: string }, expectedOntologyRevision?: number, continuationPrompt?: string, afterCreate?: (sql: Sql, row: PlanRow) => Promise<void>): Promise<PlanRow> {
     authorize(actor, true); const proposal = planProposalSchema.parse(raw);
     z.array(z.string().uuid()).min(1).max(10).parse(sourceVersionIds);
     if (new Set(sourceVersionIds).size !== sourceVersionIds.length) throw new Error('来源版本不能重复');
@@ -76,7 +77,7 @@ export class BuildPlans {
       const ontology = ontologySchema.parse(current.definition);
       const manifest = [];
       for (const id of sourceVersionIds) {
-        const source = await one<SourceRow>(sql, 'SELECT v.*,s.active_version,s.title FROM knowledge.source_versions v JOIN knowledge.sources s ON s.id=v.source_id WHERE v.id=$1', [id]);
+        const source = await one<SourceRow>(sql, 'SELECT v.*,COALESCE(s.observed_version,s.active_version) AS active_version,s.title FROM knowledge.source_versions v JOIN knowledge.sources s ON s.id=v.source_id WHERE v.id=$1', [id]);
         if (source.active_version !== id) throw new Error('来源已有新版本，请重新选择');
         manifest.push({ id, sourceId: source.source_id, title: source.title, hash: source.content_hash, coverage: sourceCoverage(source) });
       }
@@ -90,7 +91,8 @@ export class BuildPlans {
         const payload = { input, modelId: null, modelPolicy: null, promptVersion: continuationPrompt };
         await sql.query('INSERT INTO knowledge.jobs(id,operation_id,fingerprint,kind,actor_id,payload) VALUES($1,$2,$3,$4,$5,$6::jsonb)', [continuationJobId, input.operationId, fingerprint({ actor: actor.id, input, model: null, modelPolicy: null, prompt: continuationPrompt }), 'build', actor.id, json(payload)]);
       }
-      if (job) await sql.query("UPDATE knowledge.jobs SET state='completed',result=$3::jsonb,lease_until=NULL WHERE id=$1 AND lease_token=$2", [job.id, job.leaseToken, json({ planId: row.id, ...(continuationJobId ? { stage: 'queued_preflight', continuationJobId } : {}) })]);
+      await afterCreate?.(sql, row);
+      if (job) await sql.query("UPDATE knowledge.jobs SET state='completed',result=$3::jsonb,lease_until=NULL WHERE id=$1 AND lease_token=$2", [job.id, job.leaseToken, json({ planId: row.id, ...(row.decisionPackageId ? { decisionPackageId: row.decisionPackageId, stage: 'queued_collection' } : {}), ...(continuationJobId ? { stage: 'queued_preflight', continuationJobId } : {}) })]);
       return { ...row, continuationJobId };
     });
   }
@@ -101,7 +103,7 @@ export class BuildPlans {
   async list(actor: Principal) {
     authorize(actor);
     return (await this.core.db.pool.query(`SELECT p.id,p.revision,p.ontology_id,p.status,p.manifest,p.provenance,p.created_at,p.approved_at,
-      CASE WHEN EXISTS (SELECT 1 FROM jsonb_array_elements(p.manifest) m JOIN knowledge.source_versions v ON v.id=(m->>'id')::uuid JOIN knowledge.sources s ON s.id=v.source_id WHERE s.active_version IS DISTINCT FROM v.id OR v.content_hash IS DISTINCT FROM m->>'hash')
+      CASE WHEN EXISTS (SELECT 1 FROM jsonb_array_elements(p.manifest) m JOIN knowledge.source_versions v ON v.id=(m->>'id')::uuid JOIN knowledge.sources s ON s.id=v.source_id WHERE COALESCE(s.observed_version,s.active_version) IS DISTINCT FROM v.id OR v.content_hash IS DISTINCT FROM m->>'hash')
       OR EXISTS (SELECT 1 FROM knowledge.approved_plan_outputs o JOIN knowledge.source_versions v ON v.id=o.source_version_id JOIN knowledge.source_build_heads h ON h.source_id=v.source_id WHERE o.plan_id=p.id AND h.installed_at>p.approved_at AND h.build_plan_id IS DISTINCT FROM p.id)
       THEN 'obsolete' ELSE p.status END AS effective_status
       FROM knowledge.build_plans p ORDER BY p.created_at DESC,p.id LIMIT 100`)).rows;
@@ -165,7 +167,7 @@ export class BuildPlans {
       try {
         let claims: Claim[];
         const csv = row.proposal.csv.find(s => s.sourceVersionId === source.id), doc = row.proposal.documents.find(s => s.sourceVersionId === source.id);
-        if (source.content.kind === 'csv' && csv) claims = compileCsvPlan(source.content, csv, ontology, `source.${source.source_id}`, row.review).claims;
+        if (source.content.kind !== 'pdf' && csv) claims = compileCsvPlan(source.content, csv, ontology, `source.${source.source_id}`, row.review).claims;
         else if (source.content.kind === 'pdf' && doc) {
           if ((source.content.text?.length ?? 0) > 40000) throw new Error('PDF 超过首期完整候选抽取预算，请拆分后接入；不静默截断');
           claims = doc.claims.flatMap((entry, index) => {
@@ -259,7 +261,7 @@ export class BuildPlans {
     const existingSubjects = new Map<string, Claim['subject']>();
     for (const output of outputs) for (const m of output.identityMappings ?? []) if (m.targetObjectId) existingSubjects.set(m.targetObjectId, m.target);
     if (existingSubjects.size) {
-      const old = (await sql.query("SELECT a.object_id,a.predicate,r.value,r.target_id,ti.type_id AS target_type,ti.namespace AS target_namespace,ti.value AS target_value,r.valid_from,r.valid_to,r.time_precision,r.basis,r.semantics,r.comparison FROM knowledge.assertions a JOIN knowledge.assertion_revisions r ON r.assertion_id=a.id AND r.system_to IS NULL LEFT JOIN LATERAL (SELECT i.type_id,i.namespace,i.value FROM knowledge.identifiers i WHERE i.object_id=r.target_id ORDER BY (i.namespace LIKE 'approved.%') DESC,i.namespace LIMIT 1) ti ON true WHERE a.object_id=ANY($1::uuid[]) AND a.origin='source' AND r.status='accepted' AND NOT (a.source_version_id=ANY($2::uuid[]))", [[...existingSubjects.keys()], outputs.map(o => o.sourceVersionId)])).rows;
+      const old = (await sql.query("SELECT a.object_id,a.predicate,r.value,r.target_id,ti.type_id AS target_type,ti.namespace AS target_namespace,ti.value AS target_value,r.valid_from,r.valid_to,r.time_precision,r.basis,r.semantics,r.comparison FROM knowledge.assertions a JOIN knowledge.assertion_revisions r ON r.assertion_id=a.id AND r.system_to IS NULL LEFT JOIN LATERAL (SELECT i.type_id,i.namespace,i.value FROM knowledge.identifiers i WHERE i.object_id=r.target_id ORDER BY (i.namespace LIKE 'approved.%') DESC,i.namespace LIMIT 1) ti ON true WHERE a.object_id=ANY($1::uuid[]) AND a.origin='source' AND r.status='accepted' AND NOT (a.source_version_id IN (SELECT id FROM knowledge.source_versions WHERE source_id=ANY($2::uuid[])))", [[...existingSubjects.keys()], row.manifest.filter(m => outputs.some(o => o.sourceVersionId === m.id && o.output.claims.length > 0)).map(m => m.sourceId)])).rows;
       for (const fact of old) allClaims.push({ subject: existingSubjects.get(fact.object_id)!, predicate: fact.predicate, ...(fact.target_id ? { object: { typeId: fact.target_type, namespace: fact.target_namespace, value: fact.target_value } } : { value: fact.value }), validity: { from: fact.valid_from ? new Date(fact.valid_from).toISOString() : null, to: fact.valid_to ? new Date(fact.valid_to).toISOString() : null, precision: fact.time_precision }, basis: fact.basis, semantics: fact.semantics, comparison: fact.comparison, evidence: [] });
     }
     const events = buildConflictEvents(ontology, allClaims);

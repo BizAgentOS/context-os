@@ -252,10 +252,10 @@ export function createPlanWorkspace({ api, work, node, button, notice, getState,
   async function generatePlan(autoBuild) {
     const ontologyId = getOntologyId(); if (!ontologyId) throw new Error('请先选择已保存本体');
     const current = await api(`/api/ontologies/${ontologyId}`);
-    if (autoBuild && current.status !== 'published') throw new Error('请先完成本体发布节点');
+    const collectDecisions = current.status !== 'published';
     const ids = selectedSourceVersions(); if (!ids.length || ids.length > 10) throw new Error('请选择 1 至 10 个来源');
-    await api('/api/jobs', { kind: 'plan', operationId: crypto.randomUUID(), ontologyId, expectedRevision: current.revision, sourceVersionIds: ids, autoBuild, ...(plan?.ontology_id === ontologyId ? { basePlanId: plan.id } : {}) });
-    await refresh(); notice(autoBuild ? '已开始构建知识：后台自动生成计划、预检、批准及构建；需要业务决定时会显示待决定任务。' : '仅生成计划，完成后可查看或从计划继续。');
+    await api('/api/jobs', { kind: 'plan', operationId: crypto.randomUUID(), ontologyId, expectedRevision: current.revision, sourceVersionIds: ids, autoBuild: autoBuild && !collectDecisions, collectDecisions, ...(plan?.ontology_id === ontologyId ? { basePlanId: plan.id } : {}) });
+    await refresh(); notice(collectDecisions ? '已在草稿上生成计划；本体与身份事项将在本轮决定包集中处理。' : autoBuild ? '已开始构建知识：后台自动生成计划、预检、批准及构建；需要业务决定时会显示待决定任务。' : '仅生成计划，完成后可查看或从计划继续。');
   }
   $('#generate-plan').addEventListener('click', () => void work(() => generatePlan(true)));
   $('#generate-plan-only').addEventListener('click', () => void work(() => generatePlan(false)));

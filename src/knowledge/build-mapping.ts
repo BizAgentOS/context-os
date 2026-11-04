@@ -29,7 +29,7 @@ function validity(time: CsvPlan['properties'][number]['time'], row: Record<strin
 /** One row, many objects and explicit endpoints; no user code or SQL is evaluated. */
 export function compileCsvPlan(content: SourceContent, raw: unknown, ontology: Ontology, namespace: string, review?: PlanReview) {
   const plan = csvPlanSchema.parse(raw);
-  if (content.kind !== 'csv') throw new Error('CSV 绑定只能用于 CSV 来源');
+  if (!['csv', 'table'].includes(content.kind)) throw new Error('CSV 绑定只能用于 CSV 来源');
   const ids = [...plan.objects, ...plan.properties, ...plan.links].map(v => v.id);
   if (new Set(ids).size !== ids.length) throw new Error('同一来源的绑定编号必须唯一');
   const included = (kind: string, id: string) => review?.items[itemKey(plan.sourceVersionId, kind, id)]?.include !== false;
@@ -59,11 +59,15 @@ export function compileCsvPlan(content: SourceContent, raw: unknown, ontology: O
       if (!property) throw new Error('属性绑定不属于主体类型');
       if (!content.columns?.includes(binding.column)) throw new Error(`映射列不存在：${binding.column}`);
       const raw = row[binding.column];
+      if (content.kind === 'table' && content.nativeValues?.[row[content.keyColumn!]]?.[binding.column] === null) {
+        if (property.required) throw new Error('必填属性为 SQL NULL，不能转为空字符串');
+        continue;
+      }
       if (!raw.trim() && !property.required) continue;
       let value: string | number | boolean | null = raw;
       if (property.valueType === 'integer') { if (!/^-?\d+$/.test(raw)) throw new Error('整数列无效'); value = Number(raw); }
       if (property.valueType === 'boolean') { if (!['true', 'false'].includes(raw)) throw new Error('布尔列必须为 true 或 false'); value = raw === 'true'; }
-      if (property.valueType === 'datetime') { if (!binding.meaning.trim()) throw new Error('日期属性必须说明日期所属业务含义，不能误用关系结束时间'); value = iso(raw); }
+      if (property.valueType === 'datetime') { if (content.kind === 'table' && /^0000-|^\d{4}-00-|^\d{4}-\d{2}-00/.test(raw)) { if (property.required) throw new Error('必填日期为来源零值，无法作为业务时间'); continue; } if (!binding.meaning.trim()) throw new Error('日期属性必须说明日期所属业务含义，不能误用关系结束时间'); value = iso(raw); }
       const claim = claimSchema.parse({ subject, predicate: binding.predicate, value, comparison: binding.comparison, validity: validity(binding.time, row, content.columns!), evidence: evidence([objects.get(binding.object)!.identityColumn, binding.column, ...[binding.time.fromColumn, binding.time.toColumn].filter((v): v is string => !!v)]) });
       validateClaim(ontology, claim); claims.push(claim);
     }
