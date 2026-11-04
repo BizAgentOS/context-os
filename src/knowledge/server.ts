@@ -1,5 +1,6 @@
 import { CredentialVault } from '../security/credential-vault.ts';
 import { ConnectedSources } from './connected-sources.ts';
+import { MAX_SOURCE_ASSETS } from './build-contracts.ts';
 import { DecisionPackages } from './decision-packages.ts';
 import { getLogger } from '../observability/logger.ts';
 import { createServer as httpServer, type IncomingMessage } from 'node:http';
@@ -74,7 +75,7 @@ export async function createKnowledgeServer(options: { db: Database; directory: 
       const actor: Principal = { id: matched.id, role: matched.role };
       if (request.method === 'GET' && url.pathname === '/api/state') {
         const [sources, ontologies, objects, tasks] = await Promise.all(['sources', 'ontologies', 'objects', 'jobs'].map(kind => core.list(actor, kind as 'sources' | 'ontologies' | 'objects' | 'jobs')));
-        send(200, { actor, model: options.model?.identity ?? null, modelPolicy: options.model?.executionPolicy ?? null, promptVersion: PROMPT_VERSION, sources, ontologies, objects, jobs: tasks, plans: await plans.list(actor), connections: await connections.list(actor), decisionPackages: await packages.list(actor), accessScope: 'all_instance_data', fineGrainedPermissions: false, inference: 'pending_only', pagination: { limit: 100, offset: 0, note: '仅展示第一页，请使用列表接口翻页' } }); return;
+        send(200, { actor, model: options.model?.identity ?? null, modelPolicy: options.model?.executionPolicy ?? null, promptVersion: PROMPT_VERSION, maxSourceAssets: MAX_SOURCE_ASSETS, sources, ontologies, objects, jobs: tasks, plans: await plans.list(actor), connections: await connections.list(actor), decisionPackages: await packages.list(actor), accessScope: 'all_instance_data', fineGrainedPermissions: false, inference: 'pending_only', pagination: { limit: 100, offset: 0, note: '仅展示第一页，请使用列表接口翻页' } }); return;
       }
       if(url.pathname==='/api/connections') {
         if(request.method==='GET'){send(200,await connections.list(actor));return;}

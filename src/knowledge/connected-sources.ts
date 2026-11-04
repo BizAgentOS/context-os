@@ -6,6 +6,7 @@ import type { Sql } from './database.ts';
 import { CredentialVault } from '../security/credential-vault.ts';
 import { MysqlReader, type MysqlConfig } from './mysql-reader.ts';
 import { fingerprint } from './sources.ts';
+import { MAX_SOURCE_ASSETS } from './build-contracts.ts';
 import { TABLE_RECORD_KEY } from './table-content.ts';
 
 const configSchema = z.object({ url: z.string().max(4000), tls: z.enum(['verify','disabled']).optional(), ca: z.string().max(20000).optional() }).strict();
@@ -48,7 +49,7 @@ export class ConnectedSources {
     authorize(actor,true);
     const catalog=await this.catalog(actor,id);
     if(!catalog.tables.length)throw new Error('授权范围没有可见表，不推断删除');
-    if(catalog.tables.length>10)throw new Error('本轮业务范围超过十张表，请配置较小的连接范围；不静默抽样');
+    if(catalog.tables.length>MAX_SOURCE_ASSETS)throw new Error(`本轮业务范围超过 ${MAX_SOURCE_ASSETS} 张表，请配置较小的连接范围；不静默抽样`);
     const results=[];
     for(const table of catalog.tables) results.push(await this.capture(actor,id,{operationId:`observe:${fingerprint({operationId,id,table:table.name})}`,table:table.name,maxRows}));
     return {sourceVersionIds:results.map(r=>String(r.sourceVersionId)),changed:results.some(r=>r.changed),coverage:catalog.coverage};

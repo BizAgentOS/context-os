@@ -10,7 +10,7 @@ import { KnowledgeCore } from './service.ts';
 import { fingerprint, locateEvidence, mapCsv, type SourceContent } from './sources.ts';
 import type { JsonModel, ModelDiagnostic } from './model.ts';
 import { BuildPlans } from './build-plans.ts';
-import { planProposalSchema } from './build-contracts.ts';
+import { planProposalSchema, sourceVersionIdsSchema } from './build-contracts.ts';
 export const PROMPT_VERSION = 'knowledge-native-sources-v10-concentrated-decisions';
 function numericUsage(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -26,9 +26,9 @@ function numericUsage(value: unknown): Record<string, unknown> | null {
 const jobInput = z.discriminatedUnion('kind', [
   z.object({kind:z.literal('collect'),operationId:z.string().min(1).max(160),packageId:z.string().uuid()}).strict(),
   z.object({ kind:z.literal('observe'), operationId:z.string().min(1).max(160), connectionId:z.string().uuid(), construct:z.boolean().default(false), maxRows:z.number().int().min(1).max(100000).default(10000) }).strict(),
-  z.object({ kind: z.literal('discover'), operationId: z.string().min(1).max(160), sourceVersionIds: z.array(z.string().uuid()).min(1).max(10), baseOntologyId: z.string().uuid().optional(), baseRevision: z.number().int().positive().optional(), revalidateFromJobId: z.string().uuid().optional(), collectDecisions: z.boolean().default(false) }).strict(),
+  z.object({ kind: z.literal('discover'), operationId: z.string().min(1).max(160), sourceVersionIds: sourceVersionIdsSchema, baseOntologyId: z.string().uuid().optional(), baseRevision: z.number().int().positive().optional(), revalidateFromJobId: z.string().uuid().optional(), collectDecisions: z.boolean().default(false) }).strict(),
   z.object({ kind: z.literal('extract'), operationId: z.string().min(1).max(160), sourceVersionId: z.string().uuid(), ontologyId: z.string().uuid(), mapping: mappingSchema.optional() }).strict(),
-  z.object({ kind: z.literal('plan'), operationId: z.string().min(1).max(160), sourceVersionIds: z.array(z.string().uuid()).min(1).max(10), ontologyId: z.string().uuid(), expectedRevision: z.number().int().positive(), basePlanId: z.string().uuid().optional(), autoBuild: z.boolean().default(false), collectDecisions: z.boolean().default(false) }).strict(),
+  z.object({ kind: z.literal('plan'), operationId: z.string().min(1).max(160), sourceVersionIds: sourceVersionIdsSchema, ontologyId: z.string().uuid(), expectedRevision: z.number().int().positive(), basePlanId: z.string().uuid().optional(), autoBuild: z.boolean().default(false), collectDecisions: z.boolean().default(false) }).strict(),
   z.object({ kind: z.literal('build'), operationId: z.string().min(1).max(160), planId: z.string().uuid(), preflight: z.boolean().default(false) }).strict(),
 ]);
 export class KnowledgeJobs {
@@ -254,6 +254,7 @@ export class KnowledgeJobs {
       record({ at: new Date().toISOString(), kind: 'job.completed' });
       await this.core.db.pool.query("UPDATE knowledge.jobs SET state='completed',result=$3::jsonb,error=NULL,lease_until=NULL,metrics=$4::jsonb,updated_at=clock_timestamp() WHERE id=$1 AND lease_token=$2 AND state IN ('running','completed')", [job.id, lease.leaseToken, JSON.stringify(result), JSON.stringify(metrics())]);
     } catch (error) {
+      if (error instanceof z.ZodError) record({at:new Date().toISOString(),kind:'validation.failed',issues:error.issues.map(i=>({path:i.path.map(p=>typeof p==='number'?'[]':String(p)).join('.'),code:i.code}))});
       if (error instanceof DiscoveryEvidenceError) record({ at: new Date().toISOString(), kind: 'ontology.evidence_missing', code: error.code, issues: error.missingMemberIds.map(id => ({ path: id, code: 'missing_evidence' })) });
       // Avoid persisting arbitrary provider messages that can contain credentials or request content.
       const message = error instanceof z.ZodError ? '输入或模型输出未通过结构校验' : error instanceof Error && !/key|token|authorization|bearer|https?:/i.test(error.message) ? error.message.slice(0, 500) : '任务失败，请检查配置或输入后重试';

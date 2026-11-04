@@ -3,7 +3,7 @@ import { buildConflictEvents, type BuildEvent } from './build-events.ts';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { authorize, ontologySchema, strictComparisonSchema, extractionSchema, type Claim, type Principal, type Ontology } from './contracts.ts';
-import { itemKey, planProposalSchema, planReviewSchema, type PlanProposal, type PlanReview } from './build-contracts.ts';
+import { itemKey, planProposalSchema, planReviewSchema, sourceVersionIdsSchema, type PlanProposal, type PlanReview } from './build-contracts.ts';
 import { compileCsvPlan } from './build-mapping.ts';
 import { fingerprint, locateEvidence, validateClaim, type SourceContent } from './sources.ts';
 import type { Sql } from './database.ts';
@@ -68,7 +68,7 @@ export class BuildPlans {
   }
   async create(actor: Principal, ontologyId: string, sourceVersionIds: string[], raw: unknown, provenance: unknown = {}, job?: { id: string; leaseToken: string }, expectedOntologyRevision?: number, continuationPrompt?: string, afterCreate?: (sql: Sql, row: PlanRow) => Promise<void>): Promise<PlanRow> {
     authorize(actor, true); const proposal = planProposalSchema.parse(raw);
-    z.array(z.string().uuid()).min(1).max(10).parse(sourceVersionIds);
+    sourceVersionIdsSchema.parse(sourceVersionIds);
     if (new Set(sourceVersionIds).size !== sourceVersionIds.length) throw new Error('来源版本不能重复');
     return this.core.db.transaction(async sql => {
       if (job) await one(sql, "SELECT id FROM knowledge.jobs WHERE id=$1 AND lease_token=$2 AND state='running' AND lease_until>clock_timestamp()", [job.id, job.leaseToken]);

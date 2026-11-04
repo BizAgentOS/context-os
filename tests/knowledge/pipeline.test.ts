@@ -1,3 +1,4 @@
+import {randomUUID} from 'node:crypto';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -51,4 +52,37 @@ test('one start persists continuation, pauses only for batch identity decision a
     if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 6'); }
     await db.close(); await rm(directory, { recursive: true, force: true });
   }
+});
+
+
+test('21 captured tables continue through discovery and draft-plan persistence without a hidden ten-source gate', {skip:!url}, async()=>{
+  const db=await openDatabase(url!),directory=await mkdtemp(join(tmpdir(),'knowledge-many-sources-'));let owns=false;
+  const actor={id:'owner',role:'admin' as const};
+  try{
+    assert.equal((await db.pool.query("SELECT 1 FROM pg_namespace WHERE nspname='knowledge'")).rows.length,0);await db.initialize();owns=true;
+    const core=new KnowledgeCore(db),ids:string[]=[];
+    for(let i=0;i<21;i++){
+      const source=await core.importSource(actor,`many-import-${i}`,`many-${i}`,`Table ${i}`,await prepareCsv(directory,`id,amount\nC${i},100\n`,'id'));
+      ids.push(source.version.id);
+    }
+    let calls=0;
+    const model:JsonModel={identity:'fixture',async close(){},async generate(task,raw){
+      calls++;const input=raw as any;assert.equal(input.sources.length,21);
+      if(task==='discover')return {name:'合同',types:[{id:'Contract',name:'合同',properties:[{id:'amount',name:'金额',valueType:'decimal'}]}],links:[],evidenceReferences:[{memberId:'amount',evidenceIds:[input.evidenceCatalog.find((e:any)=>e.field==='amount').evidenceId]}]};
+      assert.equal(task,'plan');return {csv:input.sources.map((s:any)=>({sourceVersionId:s.id,objects:[{id:'c',typeId:'Contract',identityColumn:'id'}],properties:[{id:'a',object:'c',predicate:'amount',column:'amount'}],links:[]}))};
+    }};
+    const jobs=new KnowledgeJobs(core,model);
+    // The acquisition boundary returns saved versions, just as an explicit retry after completed capture does.
+    jobs.observe=async()=>({sourceVersionIds:ids,changed:true});
+    const parent=await jobs.enqueue(actor,{kind:'observe',operationId:'many-observe',connectionId:randomUUID(),construct:true});
+    await jobs.once();
+    let tasks=await core.list(actor,'jobs');const observation=tasks.find(j=>j.id===parent.id)!;
+    assert.equal(observation.state,'completed',observation.error);assert.equal(observation.result.stage,'queued_discovery');assert.equal(calls,0);
+    await jobs.once();await jobs.once();await jobs.once();
+    tasks=await core.list(actor,'jobs');assert.equal(tasks.filter(j=>j.state==='failed').length,0);assert.equal(calls,2);
+    const planning=tasks.find(j=>j.kind==='plan')!;assert.ok(planning.result.decisionPackageId);
+    const plan=await new BuildPlans(core).get(actor,planning.result.planId);assert.equal(plan.manifest.length,21);assert.equal(plan.proposal.csv.length,21);
+    assert.equal((await core.list(actor,'objects')).length,0,'first publication still requires a decision');await jobs.close();
+    await assert.rejects(jobs.enqueue(actor,{kind:'discover',operationId:'too-many',sourceVersionIds:Array.from({length:51},()=>randomUUID())}),/50/);
+  }finally{if(owns){await db.pool.query('DROP SCHEMA knowledge CASCADE');await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 6');}await db.close();await rm(directory,{recursive:true,force:true});}
 });
