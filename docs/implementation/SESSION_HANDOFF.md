@@ -1,4 +1,10 @@
-# 2026-11-04 当前：FEATURE_069 首批自主接入实现
+# 2026-11-04 当前补丁：多表采集后分析入队失败
+
+采集已改50，但发现/计划/候选/页面仍限10；现统一MAX_SOURCE_ASSETS=50，其他预算及提示版本保持。原任务21表completed、modelCalled=false。重启后原失败observe按原配置retry可复用同operationId采集结果继续分析；不要自动替用户触发真实模型。此补丁只静态检查与双轴审查，新增领域夹具未运行。操作详见ENTERPRISE_AUTONOMY.md末节。
+
+---
+
+# 2026-11-04 FEATURE_069 首批自主接入实现
 
 先读 [ENTERPRISE_AUTONOMY.md](ENTERPRISE_AUTONOMY.md) 和 [规格](../features/enterprise-autonomy.md)，再读下方历史。当前新增006迁移、原生MySQL table/记录存储、暂存激活、集中决定包及HTTP/页面入口。用户平台库未迁移，真实企业库/模型未调用。不要直接启动旧001–005库，不要reset。
 
