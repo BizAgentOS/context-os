@@ -28,6 +28,7 @@ export const planProposalSchema = z.object({
 export type PlanProposal = z.infer<typeof planProposalSchema>;
 export type CsvPlan = z.infer<typeof csvPlanSchema>;
 export const planReviewSchema = z.object({
+  datetimeOffset: z.string().regex(/^(?:Z|[+-](?:0\d|1[0-3]):[0-5]\d|[+-]14:00)$/, '时区偏移须为 Z 或 ±HH:MM，最大 ±14:00').optional(),
   items: z.record(z.string(), z.object({ include: z.boolean(), reviewed: z.boolean() }).strict()).default({}),
   identities: z.record(z.string(), z.object({ decision: z.enum(['pending', 'same', 'separate']), reason: z.string().trim().max(4000).default('') }).strict()).default({}),
   eventAcknowledgement: z.string().optional(),

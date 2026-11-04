@@ -108,7 +108,7 @@ test('batch identity continuation preserves unsaved exclusions while allowing re
   const current = {
     id: 'plan', revision: 2, status: 'draft', ontology_id: 'draft',
     manifest: [{ id: 'source-version', title: 'Contracts', coverage: {} }],
-    proposal: { csv: [], documents: [] }, review: { items: {}, identities: {}, reason: '' },
+    proposal: { csv: [{sourceVersionId:'source-version',objects:[{id:'contract',typeId:'Contract',identityColumn:'id'}],properties:[],links:[]}], documents: [] }, review: { items: {}, identities: {}, reason: '' },
     preview: { ready: false, errors: [], events: [], outputs: [], identityCandidateHash: 'candidates', identities: [{ key: 'contract', typeId: 'Contract', value: 'C001', participants: [] }] },
   };
   try {
@@ -117,7 +117,7 @@ test('batch identity continuation preserves unsaved exclusions while allowing re
         if (input !== undefined) { calls.push({ path, input }); return { id: 'plan', continuationJobId: 'continue' }; }
         if (path === '/api/plans/plan') return structuredClone(current);
         if (path === '/api/ontologies/draft') return { ...draft(), status: 'published' };
-        if (path === '/api/source-versions/source-version') return { content: {} };
+        if (path === '/api/source-versions/source-version') return { content: {kind:'table',columns:['id']} };
         throw new Error(`Unexpected API request: ${path}`);
       },
       work: (run: () => unknown) => run(), node: (tag: string, text = '') => new Element(tag, text),
@@ -129,6 +129,8 @@ test('batch identity continuation preserves unsaved exclusions while allowing re
       reason.value = '确认本批具体编号'; reason.listeners.get('input')!();
     };
     await workspace.open('plan');
+    assert.ok(flatten(querySelector('#plan-bindings')).some(el=>el.text==='数据库表 · Contracts'));
+    assert.ok(!flatten(querySelector('#plan-bindings')).some(el=>el.text.startsWith('CSV ·')));
     setReason();
     const exception = flatten(querySelector('#plan-identities')).find(el => el.tag === 'select')!;
     exception.value = 'separate'; exception.listeners.get('change')!();
@@ -143,6 +145,12 @@ test('batch identity continuation preserves unsaved exclusions while allowing re
     include.checked = false; include.listeners.get('change')!();
     await assert.rejects(buttons.get('批准本批对应并继续构建')!(), /保存|预检|未保存/);
     assert.equal(calls.length, 1, 'unsaved exclusions must not enqueue identity decisions or builds');
+
+    await workspace.open('plan');setReason();
+    const offset=flatten(querySelector('#plan-manifest')).find(el=>el.tag==='input'&&el.type==='text')!;
+    offset.value='+08:00';offset.listeners.get('change')!();
+    await assert.rejects(buttons.get('批准本批对应并继续构建')!(), /时区.*未保存/);
+    assert.equal(calls.length,1,'unsaved timezone must not be discarded by identity continuation');
   } finally {
     if (previous) Object.defineProperty(globalThis, 'document', previous); else Reflect.deleteProperty(globalThis, 'document');
   }

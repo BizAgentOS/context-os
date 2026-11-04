@@ -38,7 +38,7 @@ const key = (source, kind, id) => `${source}:${kind}:${id}`;
 export function createPlanWorkspace({ api, work, node, button, notice, getState, getOntologyId, refresh, openOntology }) {
   const $ = s => document.querySelector(s);
   const selectedSources = new Set(), seen = new Set();
-  let plan, ontology, sources = new Map(), dirty = false, savedProposal = '', savedExclusions = '';
+  let plan, ontology, sources = new Map(), dirty = false, savedProposal = '', savedExclusions = '', savedDatetimeOffset;
   const pretty = value => JSON.stringify(value, null, 2);
   const mutable = () => plan && plan.status !== 'approved' && !plan.staleReason && getState()?.actor.role !== 'viewer';
   const review = id => plan.review.items[id] ??= { include: true, reviewed: false };
@@ -71,7 +71,7 @@ export function createPlanWorkspace({ api, work, node, button, notice, getState,
   }
   function timeEditor(container, time, columns, id) {
     container.append(select('此条声明的业务时间', time.mode, [
-      { value: 'unknown', label: '未知（不套用其他声明时间）' }, { value: 'columns', label: '来自指定 CSV 列' }, { value: 'fixed', label: '明确起止时间（需说明依据）' },
+      { value: 'unknown', label: '未知（不套用其他声明时间）' }, { value: 'columns', label: '来自指定来源字段' }, { value: 'fixed', label: '明确起止时间（需说明依据）' },
     ], value => { time.mode = value; delete time.fromColumn; delete time.toColumn; delete time.from; delete time.to; changed(id); render(); }, id));
     if (time.mode === 'columns') {
       container.append(select('有效起点列', time.fromColumn ?? '', ['', ...columns], value => { if (value) time.fromColumn = value; else delete time.fromColumn; }, id));
@@ -88,7 +88,8 @@ export function createPlanWorkspace({ api, work, node, button, notice, getState,
   function heading(container, title) { const section = node('details'); section.open = true; section.append(node('summary', title)); container.append(section); return section; }
   function renderCsv(source) {
     const data = sources.get(source.sourceVersionId), columns = data?.content.columns ?? [];
-    const root = heading($('#plan-bindings'), `CSV · ${data?.title ?? source.sourceVersionId}`);
+    const sourceTitle = data?.title ?? plan.manifest.find(s => s.id === source.sourceVersionId)?.title ?? source.sourceVersionId;
+    const root = heading($('#plan-bindings'), `${data?.content.kind === 'table' ? '数据库表' : 'CSV 文件'} · ${sourceTitle}`);
     const objectOptions = () => source.objects.map(o => ({ value: o.id, label: `${o.id} · ${o.typeId}` }));
     for (const object of source.objects) {
       const id = key(source.sourceVersionId, 'object', object.id), row = heading(root, `对象绑定 ${object.id}`);
@@ -175,6 +176,10 @@ export function createPlanWorkspace({ api, work, node, button, notice, getState,
     $('#plan-status').textContent = `计划 ${plan.id} · r${plan.revision} · ${plan.effectiveStatus ?? plan.status}${plan.staleReason ? ` · 已失效：${plan.staleReason}` : ''}${dirty ? ' · 未保存' : ''}`;
     if (plan.preview?.errors?.length) $('#plan-status').textContent += ` · 尚未执行：${plan.preview.errors.join('；')}`;
     $('#plan-manifest').replaceChildren(node('p', '普通绑定自动校验，无需逐项确认；只处理下方重大事件。正式构建会替代选中来源的旧来源声明，人工修正与历史保留。'));
+    if ([...sources.values()].some(s => s.content.kind === 'table')) {
+      $('#plan-manifest').append(node('p', '数据库 DATETIME 不携带时区。仅在已确认所选来源采用相同本地时区时，填写偏移（如 +08:00 或 Z）；不默认猜测。TIMESTAMP 已由采集连接按 UTC 读取，不受此项重复偏移。'));
+      $('#plan-manifest').append(input('本计划数据库 DATETIME 的时区偏移（未知可留空）', plan.review.datetimeOffset, value => { plan.review.datetimeOffset = value.trim() || undefined; }, undefined));
+    }
     for (const ref of plan.manifest) {
       const row = node('div'); row.append(decisions(key(ref.id, 'source', 'include'), `${ref.title} · ${ref.id}`), node('pre', pretty(ref.coverage))); $('#plan-manifest').append(row);
     }
@@ -186,7 +191,7 @@ export function createPlanWorkspace({ api, work, node, button, notice, getState,
       const commonReason = node('input'); commonReason.placeholder = '本批身份对应的范围与依据'; commonReason.value = plan.review.reason; commonReason.addEventListener('input', () => { plan.review.reason = commonReason.value; $('#plan-reason').value = commonReason.value; dirty = true; syncControls(); });
       $('#plan-identities').append(label('统一决定理由', commonReason));
       for (const [decision, text] of [['same', '批准本批对应并继续构建'], ['separate', '本批保持独立并继续构建']]) $('#plan-identities').append(button(text, async () => {
-        if (JSON.stringify(plan.proposal) !== savedProposal || exclusions(plan.review.items) !== savedExclusions) throw new Error('映射或纳入范围有未保存修改，请先保存并重新预检，再决定本批对应');
+        if (JSON.stringify(plan.proposal) !== savedProposal || exclusions(plan.review.items) !== savedExclusions || plan.review.datetimeOffset !== savedDatetimeOffset) throw new Error('映射、时区或纳入范围有未保存修改，请先保存并重新预检，再决定本批对应');
         const reason = commonReason.value.trim() || $('#plan-reason').value.trim();
         if (!reason) throw new Error('请填写一次本批决定理由');
         const overrides = Object.fromEntries(batchGroups.flatMap(g => { const choice = plan.review.identities[g.key]; return choice?.decision && choice.decision !== 'pending' ? [[g.key, { decision: choice.decision, reason: choice.reason || reason }]] : []; }));
@@ -237,7 +242,7 @@ export function createPlanWorkspace({ api, work, node, button, notice, getState,
   async function open(id, scroll = true) {
     plan = await api(`/api/plans/${id}`); ontology = await api(`/api/ontologies/${plan.ontology_id}`);
     sources = new Map(await Promise.all(plan.manifest.map(async ref => [ref.id, await api(`/api/source-versions/${ref.id}`)])));
-    dirty = false; savedProposal = JSON.stringify(plan.proposal); savedExclusions = exclusions(plan.review.items); $('#plan-select').value = id; render(); if (scroll) $('#build-plans').scrollIntoView();
+    dirty = false; savedProposal = JSON.stringify(plan.proposal); savedExclusions = exclusions(plan.review.items); savedDatetimeOffset = plan.review.datetimeOffset; $('#plan-select').value = id; render(); if (scroll) $('#build-plans').scrollIntoView();
   }
   async function save() {
     if (!mutable()) throw new Error('请先选择可编辑计划');
