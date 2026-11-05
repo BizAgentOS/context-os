@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ontologySchema, propertySchema, objectTypeSchema, strictComparisonSchema, key, type Ontology, type Claim } from './contracts.ts';
 import { fingerprint, locateEvidence, type SourceContent } from './sources.ts';
+import { structuredCandidates } from './structured-profile.ts';
 
 export const DISCOVERY_POLICY = 'catalog-evidence-recovery-v4';
 export const uncertaintySchema = z.object({ memberId: key, kind: z.enum(['definition', 'fact_conflict', 'missing_context', 'time_attachment']), question: z.string().trim().min(1).max(2000), dimensions: z.array(z.enum(['unit', 'currency', 'scope'])).max(3).optional() }).strict().refine(u => u.kind !== 'missing_context' || !!u.dimensions?.length, '缺失口径需明确缺少哪些维度');
@@ -41,7 +42,7 @@ export function discoveryInput(sources: DiscoverySource[], baseOntology: Ontolog
     }
   }
   return { catalog, input: {
-    sources: sources.map(s => ({ id: s.id, kind: s.kind, sourceNamespace: s.sourceNamespace, columns: s.columns, keyColumn: s.keyColumn, ...(s.metadata ? { metadata: s.metadata } : {}), coverage: s.coverage })),
+    sources: sources.map(s => ({ id: s.id, kind: s.kind, sourceNamespace: s.sourceNamespace, columns: s.columns, keyColumn: s.keyColumn, ...(s.metadata ? { metadata: {...s.metadata,profile:undefined} } : {}), ...(s.kind==='table'?{structuredCandidates:structuredCandidates(s)}:{}), coverage: s.coverage })),
     baseOntology,
     evidenceCatalog: catalog.map(e => ({ evidenceId: e.id, sourceVersionId: e.sourceVersionId, kind: e.locator.kind, ...(e.locator.kind === 'field' ? { recordKey: e.locator.recordKey, field: e.locator.field, value: e.value } : { text: e.value, start: e.locator.start }) })),
   } };

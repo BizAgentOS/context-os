@@ -98,7 +98,7 @@ test('PostgreSQL: import, evidence, conflicts, dual time, corrections, resync, r
     assert.ok(attempts.every(a => a.metrics.durationMs >= 0 && a.metrics.cost === null));
     await jobs.close();
   } finally {
-    if (ownsSchema) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 6'); }
+    if (ownsSchema) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 7'); }
     await db.close(); await rm(dir, { recursive: true, force: true });
   }
 });

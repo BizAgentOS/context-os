@@ -45,11 +45,12 @@ export function createAutonomyWorkspace({api,node,button,notice,refresh,getState
   }
   function update(state){
     const list=$('#connection-list');list.replaceChildren();
+    list.append(node('p','首次原生多表构建会逐表分析、统一协调并逐表生成映射，可能包含多次模型调用；已批准且结构兼容的映射可本地复用，所有新计划仍重新预检并集中处理重大事项。'));
     for(const c of state.connections??[]){
       const row=node('div');row.append(node('strong',`${c.name} · ${c.enabled?'已启用':'已停用'} · r${c.revision}`));
       row.append(button('查看可见目录',async()=>{$('#connection-directory').textContent=JSON.stringify(await api(`/api/connections/${c.id}/catalog`),null,2);}));
       if(c.enabled&&state.actor.role!=='viewer'){
-        for(const [construct,text]of [[false,'采集来源（不调用模型）'],[true,'采集并分析变化（使用模型）']])row.append(button(text,async()=>{await api(`/api/connections/${c.id}/sync`,{operationId:crypto.randomUUID(),construct});await refresh();notice('后台来源任务已入队；失败不会隐式重试模型。');}));
+        for(const [construct,text]of [[false,'采集来源（不调用模型）'],[true,'采集并推进构建（必要时使用模型）']])row.append(button(text,async()=>{await api(`/api/connections/${c.id}/sync`,{operationId:crypto.randomUUID(),construct});await refresh();notice('后台来源任务已入队；失败不会隐式重试模型。');}));
         if(state.actor.role==='admin')row.append(button('停用后续采集',async()=>{await api(`/api/connections/${c.id}/revoke`,{expectedRevision:c.revision});await refresh();}));
       }
       list.append(row);

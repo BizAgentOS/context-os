@@ -57,7 +57,7 @@ test('automatic ontology gates major release events instead of per-item confirma
     const latest = await core.ontology(actor, draft.id);
     await assert.rejects(core.act(actor, { ...publish, expectedRevision: latest.revision }), /目标不存在/, 'approval cannot manufacture a nonexistent source version');
   } finally {
-    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 6'); }
+    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 7'); }
     await db.close();
   }
 });
@@ -101,4 +101,22 @@ test('type coverage reuses owned real references without inventing quotes or ski
   assert.equal(result.validation.semanticVerified, false);
   const missing = candidate(); missing.evidenceReferences = [];
   assert.throws(() => validateDiscovery(missing, [source], prepared.catalog, null), /Contract、amount/);
+});
+
+
+test('native discovery carries bounded profiling and declaration candidates without name-based datetime or inferred enum', () => {
+  const native:DiscoverySource={...source,kind:'table',columns:['id','time','start_time','state','category','enabled'],
+    rows:[{id:'1',time:'33.62',start_time:'2026-06-18 22:40:41',state:'OPEN',category:'1',enabled:'1'}],
+    metadata:{schema:'test',name:'logs',primaryKey:['id'],foreignKeys:[],columns:[
+      {name:'id',type:'bigint'},{name:'time',type:'decimal(10,2)',comment:'请求耗时，单位毫秒'},
+      {name:'start_time',type:'timestamp'},{name:'state',type:"enum('OPEN','Done')"},
+      {name:'category',type:'varchar(20)'},{name:'enabled',type:'tinyint(1)'}]}};
+  const c=discoveryInput([native],null).input.sources[0].structuredCandidates!;
+  assert.equal(c.columns.find(p=>p.column==='time')!.valueType,'decimal');
+  assert.equal(c.columns.find(p=>p.column==='start_time')!.valueType,'datetime');
+  assert.deepEqual(c.columns.find(p=>p.column==='state')!.enumValues,['OPEN','Done']);
+  assert.equal(c.columns.find(p=>p.column==='category')!.valueType,'string');
+  assert.equal(c.columns.find(p=>p.column==='enabled')!.valueType,'integer');
+  assert.equal(c.profile.coverage,'sample');assert.equal(c.profile.totalRows,null);
+  assert.deepEqual(c.identity,{declaredPrimaryKey:['id'],inferred:false});
 });

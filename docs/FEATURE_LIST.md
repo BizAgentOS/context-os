@@ -961,3 +961,6 @@ Last Updated: 2026-10-22
 - **Design:** [FEATURE_069](features/enterprise-autonomy.md#feature_069-mysql-来源接入与集中决定)。
 
 **2026-11-04 FEATURE_069 首批实现：**原生MySQL只读目录/分页、独立记录存储、暂存与激活、集中决定包/取代归档/分步恢复、工作台与HTTP入口完成；知识核心66/66、Agent680/680、类型/页面语法检查通过，双轴审查问题已修复。当前是P0/M1/H1纵向切片，真实效果/容量及后续领域、目录、调度、增量和部署未验收，继续InProgress。详见[实施说明](implementation/ENTERPRISE_AUTONOMY.md)。版本保持0.3.1。
+
+
+**2026-11-05 FEATURE_069 后续实现：**增加原生列画像/确定性候选、逐表发现及全局协调、逐表映射与成功步骤检查点、兼容已批准映射本地复用；新增007迁移与v11提示。按用户约束不运行测试、初始化数据库或调用真实模型；回归夹具已补，运行验收待执行，继续InProgress。见[编译规格](features/structured-semantic-compiler.md)。

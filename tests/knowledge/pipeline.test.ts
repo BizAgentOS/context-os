@@ -49,7 +49,7 @@ test('one start persists continuation, pauses only for batch identity decision a
     assert.equal((await db.pool.query('SELECT count(*)::int AS count FROM knowledge.assertions')).rows[0].count, 6);
     await jobs.close();
   } finally {
-    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 6'); }
+    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 7'); }
     await db.close(); await rm(directory, { recursive: true, force: true });
   }
 });
@@ -77,12 +77,12 @@ test('21 captured tables continue through discovery and draft-plan persistence w
     const parent=await jobs.enqueue(actor,{kind:'observe',operationId:'many-observe',connectionId:randomUUID(),construct:true});
     await jobs.once();
     let tasks=await core.list(actor,'jobs');const observation=tasks.find(j=>j.id===parent.id)!;
-    assert.equal(observation.state,'completed',observation.error);assert.equal(observation.result.stage,'queued_discovery');assert.equal(calls,0);
-    await jobs.once();await jobs.once();await jobs.once();
+    assert.equal(observation.state,'completed',observation.error);assert.equal(observation.result.stage,'queued_mapping_check');assert.equal(calls,0);
+    await jobs.once();await jobs.once();await jobs.once();await jobs.once();
     tasks=await core.list(actor,'jobs');assert.equal(tasks.filter(j=>j.state==='failed').length,0);assert.equal(calls,2);
     const planning=tasks.find(j=>j.kind==='plan')!;assert.ok(planning.result.decisionPackageId);
     const plan=await new BuildPlans(core).get(actor,planning.result.planId);assert.equal(plan.manifest.length,21);assert.equal(plan.proposal.csv.length,21);
     assert.equal((await core.list(actor,'objects')).length,0,'first publication still requires a decision');await jobs.close();
     await assert.rejects(jobs.enqueue(actor,{kind:'discover',operationId:'too-many',sourceVersionIds:Array.from({length:51},()=>randomUUID())}),/50/);
-  }finally{if(owns){await db.pool.query('DROP SCHEMA knowledge CASCADE');await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 6');}await db.close();await rm(directory,{recursive:true,force:true});}
+  }finally{if(owns){await db.pool.query('DROP SCHEMA knowledge CASCADE');await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 7');}await db.close();await rm(directory,{recursive:true,force:true});}
 });

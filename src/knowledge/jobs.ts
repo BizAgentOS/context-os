@@ -1,4 +1,6 @@
 import type { Sql } from './database.ts';
+import { StructuredCompiler, STRUCTURED_POLICY } from './structured-compiler.ts';
+import { reusableMapping, verifyReusableMapping } from './mapping-reuse.ts';
 import { DecisionPackages } from './decision-packages.ts';
 import { loadSavedDiscovery } from './saved-discovery.ts';
 import { discoveryInput, discoveryCandidateSchema, validateDiscovery, DiscoveryEvidenceError } from './discovery.ts';
@@ -11,7 +13,7 @@ import { fingerprint, locateEvidence, mapCsv, type SourceContent } from './sourc
 import type { JsonModel, ModelDiagnostic } from './model.ts';
 import { BuildPlans } from './build-plans.ts';
 import { planProposalSchema, sourceVersionIdsSchema } from './build-contracts.ts';
-export const PROMPT_VERSION = 'knowledge-native-sources-v10-concentrated-decisions';
+export const PROMPT_VERSION = 'knowledge-native-sources-v11-structured-compiler';
 function numericUsage(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const entries = Object.entries(value).flatMap<[string, unknown]>(([key, v]) => {
@@ -24,6 +26,7 @@ function numericUsage(value: unknown): Record<string, unknown> | null {
 }
 
 const jobInput = z.discriminatedUnion('kind', [
+  z.object({kind:z.literal('reuse'),operationId:z.string().min(1).max(160),sourceVersionIds:sourceVersionIdsSchema}).strict(),
   z.object({kind:z.literal('collect'),operationId:z.string().min(1).max(160),packageId:z.string().uuid()}).strict(),
   z.object({ kind:z.literal('observe'), operationId:z.string().min(1).max(160), connectionId:z.string().uuid(), construct:z.boolean().default(false), maxRows:z.number().int().min(1).max(100000).default(10000) }).strict(),
   z.object({ kind: z.literal('discover'), operationId: z.string().min(1).max(160), sourceVersionIds: sourceVersionIdsSchema, baseOntologyId: z.string().uuid().optional(), baseRevision: z.number().int().positive().optional(), revalidateFromJobId: z.string().uuid().optional(), collectDecisions: z.boolean().default(false) }).strict(),
@@ -82,6 +85,7 @@ export class KnowledgeJobs {
     if (!old || old.kind !== 'discover' || old.state !== 'failed') throw new Error('仅失败的本体发现任务可复用结果校验');
     const input = jobInput.parse(old.payload.input);
     if (input.kind !== 'discover' || input.revalidateFromJobId) throw new Error('请对原始模型任务复用校验，或直接重试已有的本地校验任务');
+    if (old.metrics?.events?.some((e: ModelDiagnostic) => e.kind==='analysis.staged')) throw new Error('该任务已按步骤保存候选，请按原配置重试以复用已完成步骤，不使用旧整包恢复入口');
     if (!old.metrics?.events?.some((e: ModelDiagnostic) => e.traceId)) throw new Error('原任务未保存可恢复的追踪，不能复用；不会自动调用模型');
     return this.enqueue(actor, { ...input, operationId: `revalidate:${fingerprint({ id, actor: actor.id, prompt: PROMPT_VERSION }).slice(0, 40)}`, revalidateFromJobId: id });
   }
@@ -125,8 +129,20 @@ export class KnowledgeJobs {
     if (this.model) { this.model.onDiagnostic = record; this.model.diagnosticContext = { jobId: job.id, attempt: job.attempts }; }
     const startedAt = new Date().toISOString();
     let modelCalled = false, inputBytes: number | null = null;
-    const metrics = () => ({ attempt: job.attempts, startedAt, finishedAt: new Date().toISOString(), durationMs: Math.round(performance.now() - started), inputBytes, modelCalled, runId: modelCalled ? events.find(e => e.kind === 'run.started')?.runId ?? this.model?.lastRun?.runId ?? null : null, modelPolicy: job.payload.modelPolicy ?? null, usage: modelCalled ? numericUsage(this.model?.lastRun?.usage) : null, cost: null, error: failure, events });
+    const modelCalls:Array<Record<string,unknown>>=[];
+    const metrics = () => ({ attempt: job.attempts, startedAt, finishedAt: new Date().toISOString(), durationMs: Math.round(performance.now() - started), inputBytes, modelCalled, modelCalls, runId: modelCalled ? events.find(e => e.kind === 'run.started')?.runId ?? this.model?.lastRun?.runId ?? null : null, modelPolicy: job.payload.modelPolicy ?? null, usage: modelCalls.length ? null : modelCalled ? numericUsage(this.model?.lastRun?.usage) : null, cost: null, error: failure, events });
     const lease = { id: job.id as string, leaseToken: job.lease_token as string };
+    const compiler=()=>new StructuredCompiler({core:this.core,job:lease,policy:{model:job.payload.modelId,budget:job.payload.modelPolicy,prompt:PROMPT_VERSION},
+      cached:stage=>record({at:new Date().toISOString(),kind:'analysis.cached',status:stage}),
+      generate:async(stage,task,value,schema)=>{
+        if(!this.model)throw new Error('该分析阶段需要模型，当前尚未配置');
+        inputBytes=(inputBytes??0)+Buffer.byteLength(JSON.stringify(value));modelCalled=true;this.model.lastRun=undefined;
+        record({at:new Date().toISOString(),kind:'analysis.stage_started',status:stage});
+        const call:Record<string,unknown>={stage,task,state:'running'};modelCalls.push(call);
+        const outcome=()=> (this.model as JsonModel).lastRun;
+        try{const output=await this.model.generate(task,value,schema);Object.assign(call,{state:'completed',runId:outcome()?.runId??null,usage:numericUsage(outcome()?.usage)});return output;}
+        catch(error){Object.assign(call,{state:'failed',runId:outcome()?.runId??null,usage:numericUsage(outcome()?.usage)});throw error;}
+      }});
     const heartbeat = setInterval(() => { void this.core.db.pool.query("UPDATE knowledge.jobs SET lease_until=clock_timestamp()+interval '5 minutes',metrics=$3::jsonb WHERE id=$1 AND lease_token=$2 AND state='running'", [lease.id, lease.leaseToken, JSON.stringify({ ...metrics(), finishedAt: null })]).catch(() => {}); }, 30000);
     try {
       const actor: Principal = { id: job.actor_id, role: 'editor' };
@@ -136,7 +152,24 @@ export class KnowledgeJobs {
       if (needsModel(input) && fingerprint(job.payload.modelPolicy ?? null) !== fingerprint(this.model?.executionPolicy ?? null)) throw new Error('模型运行预算已变化，请以当前配置新建任务');
       let result: unknown;
       record({ at: new Date().toISOString(), kind: 'sources.reading' });
-      if (input.kind === 'collect') {
+      if (input.kind === 'reuse') {
+        const template=await reusableMapping(this.core,actor,input.sourceVersionIds);
+        if(template){
+          const plan=await new BuildPlans(this.core).create(actor,template.ontologyId,input.sourceVersionIds,template.proposal,
+            {structuredPolicy:STRUCTURED_POLICY,reusedFromPlanId:template.priorPlanId,templateHash:template.templateHash,jobId:job.id,model:null,prompt:PROMPT_VERSION},lease,template.ontologyRevision,undefined,async(sql,row)=>{
+              await verifyReusableMapping(sql,template);
+              row.review=template.review;
+              await sql.query('UPDATE knowledge.build_plans SET review=$2::jsonb WHERE id=$1',[row.id,JSON.stringify(template.review)]);
+              row.decisionPackageId=await new DecisionPackages(this.core).insertIn(sql,actor,row,'preparing');
+              await this.enqueueIn(sql,actor,{kind:'collect',operationId:`package:${row.decisionPackageId}:collect`,packageId:row.decisionPackageId});
+            });
+          result={planId:plan.id,decisionPackageId:plan.decisionPackageId,stage:'queued_collection',reusedFromPlanId:template.priorPlanId,modelCalled:false};
+        }else{
+          const baseline=(await this.core.db.pool.query("SELECT id,revision FROM knowledge.ontologies WHERE status='published' ORDER BY published_at DESC LIMIT 1")).rows[0];
+          const next=await this.enqueue(actor,{kind:'discover',operationId:`reuse:${job.id}:discover`,sourceVersionIds:input.sourceVersionIds,...(baseline?{baseOntologyId:baseline.id,baseRevision:baseline.revision}:{}),collectDecisions:true});
+          result={stage:'queued_discovery',nextJobId:next.id,modelCalled:false,reason:'不存在同范围、同结构、同已发布本体且已构建的兼容映射'};
+        }
+      } else if (input.kind === 'collect') {
         const packages = new DecisionPackages(this.core), pack = await packages.get(actor,input.packageId);
         const prepared = ['superseded','archived'].includes(pack.state) ? pack : await packages.refresh(actor,pack.id,pack.revision);
         if(['superseded','archived'].includes(prepared.state)) result={decisionPackageId:prepared.id,stage:prepared.state,modelCalled:false};
@@ -147,8 +180,8 @@ export class KnowledgeJobs {
       } else if (input.kind === 'observe') {
         if (!this.observe) throw new Error('来源接入处理器未配置');
         const captured = await this.observe(actor,input.connectionId,input.operationId,input.maxRows);
-        const next = input.construct && captured.changed && captured.sourceVersionIds.length ? await this.enqueue(actor,{kind:'discover',operationId:`observation:${job.id}:discover`,sourceVersionIds:captured.sourceVersionIds,collectDecisions:true}) : null;
-        result = {...captured,nextJobId:next?.id??null,stage:next?'queued_discovery':'observed',modelCalled:false};
+        const next = input.construct && captured.changed && captured.sourceVersionIds.length ? await this.enqueue(actor,{kind:'reuse',operationId:`observation:${job.id}:reuse`,sourceVersionIds:captured.sourceVersionIds}) : null;
+        result = {...captured,nextJobId:next?.id??null,stage:next?'queued_mapping_check':'observed',modelCalled:false};
       } else if (input.kind === 'discover') {
         if (!this.model && !input.revalidateFromJobId) throw new Error('尚未配置模型，不能自动生成候选本体');
         const sources = await Promise.all(input.sourceVersionIds.map(id => this.core.sourceVersion(actor, id, 10)));
@@ -157,15 +190,19 @@ export class KnowledgeJobs {
           if (content.kind !== 'pdf') return { id: s.id, sourceNamespace: `source.${s.source_id}`, ...content, nativeValues: content.kind === 'table' ? Object.fromEntries((content.rows ?? []).slice(0,10).map(row => [row[content.keyColumn!],content.nativeValues![row[content.keyColumn!]]])) : undefined, rows: content.rows?.slice(0, 10), coverage: { sampled: Math.min(10, content.rows?.length ?? 0), total: content.rowCount ?? content.rows?.length ?? 0 } };
           return { ...content, id: s.id, sourceNamespace: `source.${s.source_id}`, kind: content.kind, text: content.text?.slice(0, 16000), coverage: { characters: Math.min(16000, content.text?.length ?? 0), total: content.text?.length ?? 0 } };
         });
-        if (Buffer.byteLength(JSON.stringify(samples)) > 100000) throw new Error('本体样本超过单次预算，请减少来源');
+        const native=samples.every(s=>s.kind==='table')&&!input.revalidateFromJobId;
+        if (!native && Buffer.byteLength(JSON.stringify(samples)) > 100000) throw new Error('本体样本超过单次预算，请减少来源');
         const base = input.baseOntologyId ? await this.core.ontology(actor, input.baseOntologyId) : null;
         if (base && base.revision !== input.baseRevision) throw new Error('基础草稿已变化，请重新选择');
-        const prepared = discoveryInput(samples, base?.definition ?? null);
-        const modelInput = prepared.input;
-        inputBytes = Buffer.byteLength(JSON.stringify(modelInput));
+        const prepared = native ? null : discoveryInput(samples, base?.definition ?? null);
+        const modelInput = prepared?.input;
+        inputBytes = native ? 0 : Buffer.byteLength(JSON.stringify(modelInput));
         if (inputBytes > 180000) throw new Error('发现证据目录超过输入预算，请减少来源');
-        let raw: unknown, recoveredTraceId: string | undefined, recoveredModelId: string | null = null;
-        if (input.revalidateFromJobId) {
+        let raw: unknown, recoveredTraceId: string | undefined, recoveredModelId: string | null = null, catalog=prepared?.catalog??[];
+        if(native){
+          record({at:new Date().toISOString(),kind:'analysis.staged'});
+          const staged=await compiler().discover(samples,base?.definition??null);raw=staged.raw;catalog=staged.catalog;
+        } else if (input.revalidateFromJobId) {
           const old = (await this.core.db.pool.query('SELECT * FROM knowledge.jobs WHERE id=$1', [input.revalidateFromJobId])).rows[0];
           if (!old || old.kind !== 'discover' || old.state !== 'failed') throw new Error('原始失败任务不可用');
           const oldInput = jobInput.parse(old.payload.input);
@@ -180,7 +217,7 @@ export class KnowledgeJobs {
           raw = await this.model!.generate('discover', modelInput, discoveryCandidateSchema);
         }
         record({ at: new Date().toISOString(), kind: 'ontology.evidence_validating' });
-        const { definition: output, validation } = validateDiscovery(raw, samples, prepared.catalog, base?.definition ?? null);
+        const { definition: output, validation } = validateDiscovery(raw, samples, catalog, base?.definition ?? null);
         const memberIds = (definition: typeof output) => [...definition.types, ...definition.types.flatMap(t => t.properties), ...definition.links].map(m => m.id);
         const oldIds = base ? memberIds(base.definition) : [], newIds = memberIds(output);
         const members = (definition: typeof output) => [...definition.types, ...definition.types.flatMap(t => t.properties), ...definition.links];
@@ -207,14 +244,16 @@ export class KnowledgeJobs {
         });
         const previous = input.basePlanId ? await new BuildPlans(this.core).get(actor, input.basePlanId) : null;
         const modelInput = { ontology: ontology.definition, sources: samples, previousProposal: previous?.proposal ?? null, discoveryIssues: ontology.discovery?.validation?.uncertainties ?? [] };
-        inputBytes = Buffer.byteLength(JSON.stringify(modelInput));
+        const native=samples.every(s=>s.kind==='table');
+        inputBytes = native ? 0 : Buffer.byteLength(JSON.stringify(modelInput));
         if (inputBytes > 180000) throw new Error('构建计划输入超过单次预算，请减少来源');
-        modelCalled = true; this.model.lastRun = undefined;
-        const proposal = planProposalSchema.parse(await this.model.generate('plan', modelInput, planProposalSchema));
+        let proposal;
+        if(native){record({at:new Date().toISOString(),kind:'analysis.staged'});proposal=await compiler().plan(ontology.definition,samples,previous?.proposal??null,modelInput.discoveryIssues);}
+        else{modelCalled = true; this.model.lastRun = undefined;proposal=planProposalSchema.parse(await this.model.generate('plan', modelInput, planProposalSchema));}
         const current = await this.core.ontology(actor, input.ontologyId);
         if (current.revision !== ontology.revision) throw new Error('模型运行期间本体已变化，请重新生成计划');
         record({ at: new Date().toISOString(), kind: 'plan.persisting' });
-        const plan = await new BuildPlans(this.core).create(actor, input.ontologyId, input.sourceVersionIds, proposal, { jobId: job.id, model: job.payload.modelId, prompt: PROMPT_VERSION, basePlanId: input.basePlanId ?? null, autoBuild: input.autoBuild }, lease, ontology.revision, input.autoBuild ? PROMPT_VERSION : undefined, input.collectDecisions ? async (sql,row) => {
+        const plan = await new BuildPlans(this.core).create(actor, input.ontologyId, input.sourceVersionIds, proposal, { jobId: job.id, model: job.payload.modelId, prompt: PROMPT_VERSION, structuredPolicy:native?STRUCTURED_POLICY:null, basePlanId: input.basePlanId ?? null, autoBuild: input.autoBuild }, lease, ontology.revision, input.autoBuild ? PROMPT_VERSION : undefined, input.collectDecisions ? async (sql,row) => {
           row.decisionPackageId = await new DecisionPackages(this.core).insertIn(sql,actor,row,'preparing');
           await this.enqueueIn(sql,actor,{kind:'collect',operationId:`package:${row.decisionPackageId}:collect`,packageId:row.decisionPackageId});
         } : undefined);

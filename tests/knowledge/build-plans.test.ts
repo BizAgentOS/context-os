@@ -103,7 +103,7 @@ test('plans: review, source-isolated identities, approval, reverse relationship,
     await assert.rejects(plans.build(actor, next.id), /后续构建/);
     const attempts = await plans.events(actor, plan.id); assert.ok(attempts.some(e => e.kind === 'approved'));
   } finally {
-    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 6'); }
+    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 7'); }
     await db.close(); await rm(dir, { recursive: true, force: true });
   }
 });
@@ -128,5 +128,5 @@ test('excluding every claim keeps that source active and its facts in conflict p
     next=await plans.save(actor,next.id,next.revision,next.proposal,{items:{[itemKey(a.version.id,'property','a')]:{include:false,reviewed:false}}});
     next=await plans.preflight(actor,next.id,next.revision);
     assert.ok(next.preview!.events.some(e=>e.kind==='fact_conflict'),'unreplaced source A must still conflict with changed source B');
-  }finally{if(owns){await db.pool.query('DROP SCHEMA knowledge CASCADE');await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 6');}await db.close();await rm(dir,{recursive:true,force:true});}
+  }finally{if(owns){await db.pool.query('DROP SCHEMA knowledge CASCADE');await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 7');}await db.close();await rm(dir,{recursive:true,force:true});}
 });

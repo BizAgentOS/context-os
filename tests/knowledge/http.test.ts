@@ -82,7 +82,7 @@ test('HTTP: authenticate, PDF parse, publish, queued extraction, conflict, feedb
     assert.equal((await call(`/api/objects/${objectId}?validAt=2026-04-20T00:00:00Z`, undefined, viewer)).body.fields.contract_amount.value, '1300000.00');
     assert.ok((await call('/api/audit')).body.length >= 2);
   } finally {
-    if (ownsSchema) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 6'); }
+    if (ownsSchema) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 7'); }
     if (app) await app.close(); else await db.close();
     await rm(directory, { recursive: true, force: true });
   }

@@ -45,7 +45,7 @@ export async function createKnowledgeServer(options: { db: Database; directory: 
   const connections = new ConnectedSources(core,vault), packages = new DecisionPackages(core,plans);
   jobs.observe = (actor,id,operationId,maxRows) => connections.captureAll(actor,id,operationId,maxRows);
   // Startup reads schema version only, never initializes or resets the database implicitly.
-  if (!(await options.db.pool.query('SELECT version FROM knowledge_schema_versions WHERE version=6')).rows.length) throw new Error('请先运行 knowledge:init 更新知识数据库');
+  if (!(await options.db.pool.query('SELECT version FROM knowledge_schema_versions WHERE version=7')).rows.length) throw new Error('请先运行 knowledge:init 更新知识数据库');
   const tables = (await options.db.pool.query("SELECT to_regclass('knowledge.jobs') AS jobs,to_regclass('knowledge.job_attempts') AS attempts")).rows[0];
   if (!tables.jobs || !tables.attempts) throw new Error('任务表缺失，迁移记录与实际结构不一致；请运行 npm run knowledge:init 检查并修复');
   const server = httpServer(async (request, response) => {

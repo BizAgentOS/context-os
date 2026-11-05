@@ -29,6 +29,10 @@ test('connected table capture is immutable and staged; only approved build repla
     const first = await connections.capture(admin, connection.id, { operationId: 'read-1', table: 'native_contracts', maxRows: 10 });
     const version = await core.sourceVersion(admin, first.sourceVersionId);
     assert.equal(version.content.kind, 'table'); assert.equal(version.content.rows.length, 2);
+    assert.equal(version.content.metadata.profile.coverage,'complete_observation');
+    assert.equal(version.content.metadata.profile.rows,2);
+    const noteProfile=version.content.metadata.profile.columns.find((c:any)=>c.column==='note');
+    assert.equal(noteProfile.nulls,1);assert.equal(noteProfile.empty,1);
     const keys=version.content.rows.map((r:any)=>r.__context_record_key);
     const missing=locateEvidence(version.content,{kind:'field',recordKey:keys[0],field:'note'}), empty=locateEvidence(version.content,{kind:'field',recordKey:keys[1],field:'note'});
     assert.equal(missing.kind,'field');assert.equal(empty.kind,'field');
@@ -62,7 +66,7 @@ test('connected table capture is immutable and staged; only approved build repla
     await assert.rejects(connections.capture(admin, connection.id, { operationId: 'revoked', table: 'native_contracts', maxRows: 10 }), /停用|权限/);
   } finally {
     if(ownsRemote)await remote.query('DROP TABLE native_contracts'); await remote.end();
-    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 6'); }
+    if (owns) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 7'); }
     await db.close(); await rm(root, { recursive: true, force: true });
   }
 });

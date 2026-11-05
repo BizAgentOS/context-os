@@ -8,6 +8,7 @@ import { MysqlReader, type MysqlConfig } from './mysql-reader.ts';
 import { fingerprint } from './sources.ts';
 import { MAX_SOURCE_ASSETS } from './build-contracts.ts';
 import { TABLE_RECORD_KEY } from './table-content.ts';
+import { TableProfiler } from './structured-profile.ts';
 
 const configSchema = z.object({ url: z.string().max(4000), tls: z.enum(['verify','disabled']).optional(), ca: z.string().max(20000).optional() }).strict();
 const admin = (actor: Principal) => { authorize(actor, true); if (actor.role !== 'admin') throw new AccessDenied('只有管理员可管理来源连接'); };
@@ -71,10 +72,12 @@ export class ConnectedSources {
       if (!table) throw new Error('表不在连接授权范围或账号不可见，不能当成已删除');
       if (table.columns.some(c => c.name === TABLE_RECORD_KEY)) throw new Error('来源字段与平台保留记录键冲突');
       const digest = createHash('sha256').update(JSON.stringify(table)); let bytes = 0;
+      const profiler = new TableProfiler(table.columns.map(c=>c.name));
       const receipt = await this.reader.read(this.config(id),table,{ pageSize: 500,maxRows: input.maxRows },async page => {
         const encoded = JSON.stringify(page.records); bytes += Buffer.byteLength(encoded);
         if (bytes > 100_000_000) throw new Error('本轮读取超过内容上限，未完成');
         digest.update(encoded);
+        profiler.add(page.records);
         await this.core.db.transaction(async sql => {
           await one(sql,'SELECT id FROM knowledge.connections WHERE id=$1 AND enabled AND revision=$2',[id,connection.revision]);
           await sql.query('INSERT INTO knowledge.observation_pages(run_id,page,records) VALUES($1,$2,$3::jsonb)',[run.id,page.index,encoded]);
@@ -91,7 +94,7 @@ export class ConnectedSources {
         let version = (await sql.query('SELECT id FROM knowledge.source_versions WHERE source_id=$1 AND content_hash=$2 ORDER BY revision DESC LIMIT 1',[source.id,contentHash])).rows[0];
         const changed = !version || (source.observed_version ?? source.active_version) !== version.id;
         if (!version) {
-          const content = { kind: 'table', columns: [TABLE_RECORD_KEY,...table.columns.map(c => c.name)], keyColumn: TABLE_RECORD_KEY, rowCount: receipt.rows, metadata: { ...table, connectionId: id, coverage: receipt }, warnings: table.columns.some(c => /date|time/i.test(c.type)) ? ['日期保留来源表示；零值/缺失日期不得猜测为业务时间。'] : [] };
+          const content = { kind: 'table', columns: [TABLE_RECORD_KEY,...table.columns.map(c => c.name)], keyColumn: TABLE_RECORD_KEY, rowCount: receipt.rows, metadata: { ...table, connectionId: id, coverage: receipt, profile: profiler.finish() }, warnings: table.columns.some(c => /date|time/i.test(c.type)) ? ['日期保留来源表示；零值/缺失日期不得猜测为业务时间。'] : [] };
           version = await one(sql,"INSERT INTO knowledge.source_versions(id,source_id,revision,content_hash,content,original_path) SELECT $1,$2,COALESCE(max(revision),0)+1,$3,$4::jsonb,'native:mysql' FROM knowledge.source_versions WHERE source_id=$2 RETURNING id",[randomUUID(),source.id,contentHash,JSON.stringify(content)]);
           await sql.query(`INSERT INTO knowledge.source_records(source_version_id,record_key,ordinal,values)
             SELECT $1,e.value->>'key',((p.page*500)+e.ordinality-1)::integer,e.value->'values'

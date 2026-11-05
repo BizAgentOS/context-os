@@ -43,7 +43,7 @@ test('one decision package collects first publication and all identity groups, r
     assert.equal((await packages.get(actor,archived.id)).summary.candidateHash,archivedHash,'archive freezes the reviewed fingerprint even when its old draft changes');
     assert.equal(archived.state,'archived');assert.equal((archived as any).archive_reason,'待业务范围重新确定');
     await assert.rejects(packages.submit(actor,archived.id,{expectedRevision:archived.revision,candidateHash:archived.summary.candidateHash,reason:'不能批准归档项'}),/归档|取代|错误/);
-  } finally { if(owns){await db.pool.query('DROP SCHEMA knowledge CASCADE');await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 6');}await db.close();await rm(dir,{recursive:true,force:true}); }
+  } finally { if(owns){await db.pool.query('DROP SCHEMA knowledge CASCADE');await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 7');}await db.close();await rm(dir,{recursive:true,force:true}); }
 });
 
 test('published incompatible ontology cannot silently reinterpret existing assertions before migration', {skip:!url}, async()=>{
@@ -62,7 +62,7 @@ test('published incompatible ontology cannot silently reinterpret existing asser
     await core.act(actor,{kind:'PublishOntologyVersion',operationId:'new-publish',targetId:next.id,expectedRevision:1,reason:'改变业务口径'});
     await assert.rejects(core.object(actor,obj.id),/迁移|未就绪|不兼容/);
     assert.equal((await core.object(actor,obj.id,{knownAt:before})).ontologyId,old.id);
-  }finally{if(owns){await db.pool.query('DROP SCHEMA knowledge CASCADE');await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 6');}await db.close();await rm(dir,{recursive:true,force:true});}
+  }finally{if(owns){await db.pool.query('DROP SCHEMA knowledge CASCADE');await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 7');}await db.close();await rm(dir,{recursive:true,force:true});}
 });
 
 test('publication and approval receipts survive a build failure and local resume does not republish', {skip:!url}, async()=>{
@@ -84,5 +84,5 @@ test('publication and approval receipts survive a build failure and local resume
     const done=await new DecisionPackages(core).submit(actor,pack.id,{expectedRevision:recoverable.revision,candidateHash:recoverable.summary.candidateHash});
     assert.equal(done.state,'built');assert.equal((await core.list(actor,'objects')).length,1);
     assert.equal((await core.list(actor,'ontologies')).length,1,'resume reuses the published ontology');
-  }finally{if(owns){await db.pool.query('DROP SCHEMA knowledge CASCADE');await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 6');}await db.close();await rm(dir,{recursive:true,force:true});}
+  }finally{if(owns){await db.pool.query('DROP SCHEMA knowledge CASCADE');await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 7');}await db.close();await rm(dir,{recursive:true,force:true});}
 });
