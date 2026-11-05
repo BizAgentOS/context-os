@@ -97,7 +97,7 @@ export class BuildPlans {
     });
   }
   private checkSourceRefs(proposal: PlanProposal, ids: string[]) {
-    const refs = [...proposal.csv, ...proposal.documents].map(s => s.sourceVersionId);
+    const refs = [...proposal.csv, ...proposal.documents,...(proposal.skipped??[])].map(s => s.sourceVersionId);
     if (refs.some(id => !ids.includes(id)) || new Set(refs).size !== refs.length) throw new Error('计划包含本次输入以外或重复的来源版本');
   }
   async list(actor: Principal) {
@@ -164,6 +164,8 @@ export class BuildPlans {
     // Ordinary items are validated automatically; only domain events require a decision.
     for (const source of sources) {
       if (!selectedSource(source.id)) continue;
+      const skipped=row.proposal.skipped?.find(s=>s.sourceVersionId===source.id);
+      if(skipped){warnings.push(`${source.title} 本轮不生成事实：${skipped.reason}；旧正式结果保留`);continue;}
       try {
         let claims: Claim[];
         const csv = row.proposal.csv.find(s => s.sourceVersionId === source.id), doc = row.proposal.documents.find(s => s.sourceVersionId === source.id);
@@ -265,6 +267,12 @@ export class BuildPlans {
       for (const fact of old) allClaims.push({ subject: existingSubjects.get(fact.object_id)!, predicate: fact.predicate, ...(fact.target_id ? { object: { typeId: fact.target_type, namespace: fact.target_namespace, value: fact.target_value } } : { value: fact.value }), validity: { from: fact.valid_from ? new Date(fact.valid_from).toISOString() : null, to: fact.valid_to ? new Date(fact.valid_to).toISOString() : null, precision: fact.time_precision }, basis: fact.basis, semantics: fact.semantics, comparison: fact.comparison, evidence: [] });
     }
     const events = buildConflictEvents(ontology, allClaims);
+    for(const skip of row.proposal.skipped??[])events.push({id:fingerprint({kind:'source_exclusion',...skip}),kind:'source_exclusion',summary:`${row.manifest.find(m=>m.id===skip.sourceVersionId)?.title??skip.sourceVersionId} 本轮不构建，需确认理由：${skip.reason}`,details:skip});
+    const policies=row.proposal.csv.filter(s=>selectedSource(s.sourceVersionId)).flatMap(s=>[
+      ...s.properties.filter(p=>p.booleanEncoding==='zero_one'&&included(row,itemKey(s.sourceVersionId,'property',p.id))).map(p=>({sourceId:row.manifest.find(m=>m.id===s.sourceVersionId)!.sourceId,binding:p.id,object:p.object,typeId:s.objects.find(o=>o.id===p.object)?.typeId,predicate:p.predicate,column:p.column,booleanEncoding:p.booleanEncoding})),
+      ...s.objects.filter(o=>o.onNull==='skip_object'&&included(row,itemKey(s.sourceVersionId,'object',o.id))).map(o=>({sourceId:row.manifest.find(m=>m.id===s.sourceVersionId)!.sourceId,binding:o.id,typeId:o.typeId,column:o.identityColumn,onNull:o.onNull})),
+    ]);
+    if(policies.length)events.push({id:fingerprint(policies),kind:'representation_policy',summary:'确认布尔编码及SQL NULL可缺省对象策略；不跳过非法身份或其他取值',details:policies});
     const assumptions = row.proposal.csv.filter(s => selectedSource(s.sourceVersionId)).flatMap(s => [...s.properties, ...s.links].filter(b => b.time.mode === 'fixed' && included(row, itemKey(s.sourceVersionId, 'object' in b ? 'property' : 'link', b.id))).map(b => ({ sourceVersionId: s.sourceVersionId, binding: b.id, time: b.time })));
     if (assumptions.length) events.push({ id: fingerprint(assumptions), kind: 'fixed_time_assumption', summary: '本次含固定时间配置，需确认其业务依据或人工假设', details: assumptions });
     events.sort((a, b) => a.id.localeCompare(b.id));

@@ -96,6 +96,7 @@ export function createPlanWorkspace({ api, work, node, button, notice, getState,
       row.append(decisions(id, '身份取自指定编号列；默认只在本来源内有效'));
       row.append(select('业务对象类型', object.typeId, ontology.definition.types.map(t => ({ value: t.id, label: `${t.name} · ${t.id}` })), value => { object.typeId = value; changed(id); render(); }, id));
       row.append(select('编号列', object.identityColumn, columns, value => object.identityColumn = value, id));
+      row.append(select('SQL NULL 对象策略',object.onNull??'error',[{value:'error',label:'身份不能为空；缺失报错'},{value:'skip_object',label:'原生可空非主键角色：不生成对象及其声明'}],value=>object.onNull=value,id));
     }
     for (const property of source.properties) {
       const id = key(source.sourceVersionId, 'property', property.id), row = heading(root, `属性绑定 ${property.id}`);
@@ -103,8 +104,9 @@ export function createPlanWorkspace({ api, work, node, button, notice, getState,
       row.append(select('所属对象绑定', property.object, objectOptions(), value => { property.object = value; changed(id); render(); }, id));
       const typeId = source.objects.find(o => o.id === property.object)?.typeId;
       const properties = ontology.definition.types.find(t => t.id === typeId)?.properties ?? [];
-      row.append(select('业务属性', property.predicate, properties.map(p => ({ value: p.id, label: `${p.name} · ${p.id}` })), value => { property.predicate = value; changed(id); render(); }, id));
+      row.append(select('业务属性', property.predicate, properties.map(p => ({ value: p.id, label: `${p.name} · ${p.id}` })), value => { property.predicate = value; if(properties.find(p=>p.id===value)?.valueType!=='boolean')delete property.booleanEncoding; changed(id); render(); }, id));
       row.append(select('取值列', property.column, columns, value => property.column = value, id));
+      if(properties.find(p=>p.id===property.predicate)?.valueType==='boolean')row.append(select('布尔值编码（需业务依据）',property.booleanEncoding??'literal',[{value:'literal',label:'原文 false / true'},{value:'zero_one',label:'显式：0=false，1=true'}],value=>property.booleanEncoding=value,id));
       if (properties.find(p => p.id === property.predicate)?.valueType === 'datetime') row.append(node('p', '这是业务日期属性的值。请检查是否误把任职/关系的结束时间当成合同等对象自身的终止日期。'));
       row.append(input('属性业务含义（日期属性必填）', property.meaning, value => property.meaning = value, id));
       timeEditor(row, property.time, columns, id); comparisonEditor(row, property.comparison, id);
@@ -181,9 +183,17 @@ export function createPlanWorkspace({ api, work, node, button, notice, getState,
       $('#plan-manifest').append(input('本计划数据库 DATETIME 的时区偏移（未知可留空）', plan.review.datetimeOffset, value => { plan.review.datetimeOffset = value.trim() || undefined; }, undefined));
     }
     for (const ref of plan.manifest) {
-      const row = node('div'); row.append(decisions(key(ref.id, 'source', 'include'), `${ref.title} · ${ref.id}`), node('pre', pretty(ref.coverage))); $('#plan-manifest').append(row);
+      const row = node('div'),skipped=plan.proposal.skipped?.find(s=>s.sourceVersionId===ref.id); row.append(skipped?node('p',`${ref.title}：本轮不生成事实，须确认来源事项；${skipped.reason}`):decisions(key(ref.id, 'source', 'include'), `${ref.title} · ${ref.id}`), node('pre', pretty(ref.coverage))); $('#plan-manifest').append(row);
     }
     $('#plan-bindings').replaceChildren(); plan.proposal.csv.forEach(renderCsv); plan.proposal.documents.forEach(renderDocument);
+    for(const skip of plan.proposal.skipped??[]){
+      const section=heading($('#plan-bindings'),`本轮不构建 · ${plan.manifest.find(s=>s.id===skip.sourceVersionId)?.title??skip.sourceVersionId}`);
+      section.append(node('p',`${skip.reason}；来源证据及旧正式结果保留。改变范围后须重新预检。`));
+      if(mutable())section.append(button('为此来源补充映射',async()=>{
+        plan.proposal.skipped=plan.proposal.skipped.filter(s=>s.sourceVersionId!==skip.sourceVersionId);
+        plan.proposal.csv.push({sourceVersionId:skip.sourceVersionId,objects:[{id:'object_1',typeId:ontology.definition.types[0].id,identityColumn:sources.get(skip.sourceVersionId)?.content.columns?.[0]??''}],properties:[],links:[]});changed();render();
+      }));
+    }
     $('#plan-identities').replaceChildren(node('h3', '身份对应摘要（仅本批具体编号）'));
     const batchGroups = (plan.preview?.identities ?? []).filter(g => !g.autoContinued);
     if (batchGroups.length && mutable()) {
@@ -329,7 +339,7 @@ export function createPlanWorkspace({ api, work, node, button, notice, getState,
     const relations = node('ul');
     for (const link of definition.links) relations.append(node('li', `${link.name}：${link.from} → ${link.to}，${link.multiple ? '可关联多个对象' : '最多关联一个对象'}`));
     panel.append(relations);
-    const titles = { first_release: '首次启用本体', semantic_change: '修改已有业务含义或约束', new_constraint: '新增身份或业务约束', constraint_confirmation: '确认业务枚举完整性', datetime_confirmation: '确认日期表示与业务含义', removal: '删除已有定义', resolve_deferred: '采用此前暂缓的定义' };
+    const titles = { first_release: '首次启用本体', semantic_change: '修改已有业务含义或约束', new_constraint: '新增身份或业务约束', constraint_confirmation: '确认业务枚举完整性', datetime_confirmation: '确认日期表示与业务含义', source_exclusion: '确认来源本轮不构建', removal: '删除已有定义', resolve_deferred: '采用此前暂缓的定义' };
     const evidenceSources = new Map();
     for (const issue of validation.issues) {
       panel.append(node('h4', titles[issue.kind] ?? '待处理的重大事件'), node('p', issue.kind === 'first_release' ? `需要决定：是否将上面的“${definition.name}”作为本实例首次启用的业务模型，用于后续资料构建？请整体核对对象范围、属性含义及关系。` : issue.question));

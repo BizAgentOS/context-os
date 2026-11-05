@@ -50,6 +50,17 @@ function validity(time: CsvPlan['properties'][number]['time'], row: Record<strin
   return validitySchema.parse({ from: start, to: end, precision: start || end ? 'instant' : 'unknown' });
 }
 
+/** Exact decimal text expansion: never round a database number through JS Number. */
+function decimalText(raw:string) {
+  if(!/[eE]/.test(raw))return raw;
+  const m=/^(-?)(\d+)(?:\.(\d+))?[eE]([+-]?\d+)$/.exec(raw);
+  if(!m||m[4].length>6)throw new Error('科学计数法数值无效或超过展开预算');
+  const exponent=Number(m[4]),digits=m[2]+(m[3]??''),point=m[2].length+exponent;
+  const length=(point<=0?2-point+digits.length:Math.max(point,digits.length)+1)+m[1].length;
+  if(!Number.isSafeInteger(exponent)||length>20000)throw new Error('科学计数法展开超过20000字符预算');
+  return m[1]+(point<=0?'0.'+'0'.repeat(-point)+digits:point>=digits.length?digits+'0'.repeat(point-digits.length):digits.slice(0,point)+'.'+digits.slice(point));
+}
+
 /** One row, many objects and explicit endpoints; no user code or SQL is evaluated. */
 export function compileCsvPlan(content: SourceContent, raw: unknown, ontology: Ontology, namespace: string, review?: PlanReview) {
   const plan = csvPlanSchema.parse(raw);
@@ -62,6 +73,11 @@ export function compileCsvPlan(content: SourceContent, raw: unknown, ontology: O
     if (!ontology.types.some(t => t.id === obj.typeId)) throw new Error('对象绑定类型不存在');
     if (!content.columns?.includes(obj.identityColumn)) throw new Error(`身份列不存在：${obj.identityColumn}`);
   }
+  for(const obj of objects.values())if(obj.onNull==='skip_object'){
+    const column=(content.metadata?.columns as Array<{name:string;nullable?:boolean}>|undefined)?.find(c=>c.name===obj.identityColumn);
+    const primaryKey=(content.metadata?.primaryKey??[]) as string[];
+    if(content.kind!=='table'||column?.nullable!==true||primaryKey.includes(obj.identityColumn)||obj.identityColumn===content.keyColumn)throw new Error('仅原生可空非主键角色允许SQL NULL时不生成对象，不能忽略主键错误');
+  }
   const properties = plan.properties.filter(p => included('property', p.id));
   const links = plan.links.filter(p => included('link', p.id));
   const claims: Claim[] = [];
@@ -69,6 +85,7 @@ export function compileCsvPlan(content: SourceContent, raw: unknown, ontology: O
     const identity = (id: string) => {
       const obj = objects.get(id);
       if (!obj) throw new Error('声明引用了缺失或已排除的对象绑定');
+      if(obj.onNull==='skip_object'&&content.nativeValues?.[row[content.keyColumn!]]?.[obj.identityColumn]===null)return null;
       const value = row[obj.identityColumn];
       if (!value?.trim()) throw new Error('身份列存在空编号，请排除或修复对应绑定');
       return { typeId: obj.typeId, namespace, value };
@@ -79,10 +96,14 @@ export function compileCsvPlan(content: SourceContent, raw: unknown, ontology: O
     });
     for (const binding of properties) {
       try {
-      const subject = identity(binding.object);
-      const property = ontology.types.find(t => t.id === subject.typeId)?.properties.find(p => p.id === binding.predicate);
+      const object=objects.get(binding.object);
+      if(!object)throw new Error('属性引用缺失或排除的对象绑定');
+      const property = ontology.types.find(t => t.id === object.typeId)?.properties.find(p => p.id === binding.predicate);
       if (!property) throw new Error('属性绑定不属于主体类型');
+      if(binding.booleanEncoding&&property.valueType!=='boolean')throw new Error('布尔编码只能配置在boolean属性绑定上');
       if (!content.columns?.includes(binding.column)) throw new Error(`映射列不存在：${binding.column}`);
+      const subject=identity(binding.object);
+      if(!subject)continue;
       const raw = row[binding.column];
       if (content.kind === 'table' && content.nativeValues?.[row[content.keyColumn!]]?.[binding.column] === null) {
         if (property.required) throw new Error('必填属性为 SQL NULL，不能转为空字符串');
@@ -90,8 +111,13 @@ export function compileCsvPlan(content: SourceContent, raw: unknown, ontology: O
       }
       if (!raw.trim() && !property.required) continue;
       let value: string | number | boolean | null = raw;
+      if(property.valueType==='decimal')value=decimalText(raw);
       if (property.valueType === 'integer') { if (!/^-?\d+$/.test(raw)) throw new Error('整数列无效'); value = Number(raw); }
-      if (property.valueType === 'boolean') { if (!['true', 'false'].includes(raw)) throw new Error('布尔列必须为 true 或 false'); value = raw === 'true'; }
+      if (property.valueType === 'boolean') {
+        const values=binding.booleanEncoding==='zero_one'?['0','1']:['false','true'];
+        if(!values.includes(raw))throw new Error(binding.booleanEncoding==='zero_one'?'布尔编码zero_one仅允许0/1；不猜测其他值':'布尔列须为true/false；0/1需显式选择zero_one编码');
+        value=raw===values[1];
+      }
       if (property.valueType === 'datetime') { if (content.kind === 'table' && /^0000-|^\d{4}-00-|^\d{4}-\d{2}-00/.test(raw)) { if (property.required) throw new Error('必填日期为来源零值，无法作为业务时间'); continue; } if (!binding.meaning.trim()) throw new Error('日期属性必须说明日期所属业务含义，不能误用关系结束时间'); value = iso(raw, content, binding.column, review?.datetimeOffset); }
       const claim = claimSchema.parse({ subject, predicate: binding.predicate, value, comparison: binding.comparison, validity: validity(binding.time, row, content, review?.datetimeOffset), evidence: evidence([objects.get(binding.object)!.identityColumn, binding.column, ...[binding.time.fromColumn, binding.time.toColumn].filter((v): v is string => !!v)]) });
       validateClaim(ontology, claim); claims.push(claim);
@@ -99,7 +125,12 @@ export function compileCsvPlan(content: SourceContent, raw: unknown, ontology: O
     }
     for (const binding of links) {
       try {
-      const claim = claimSchema.parse({ subject: identity(binding.from), predicate: binding.predicate, object: identity(binding.to), validity: validity(binding.time, row, content, review?.datetimeOffset), evidence: evidence([objects.get(binding.from)!.identityColumn, objects.get(binding.to)!.identityColumn, ...[binding.time.fromColumn, binding.time.toColumn].filter((v): v is string => !!v)]) });
+      const fromObject=objects.get(binding.from),toObject=objects.get(binding.to);
+      const link=ontology.links.find(l=>l.id===binding.predicate);
+      if(!fromObject||!toObject||link?.from!==fromObject.typeId||link.to!==toObject.typeId)throw new Error('关系端点类型或绑定无效');
+      const subject=identity(binding.from),target=identity(binding.to);
+      if(!subject||!target)continue;
+      const claim = claimSchema.parse({ subject, predicate: binding.predicate, object: target, validity: validity(binding.time, row, content, review?.datetimeOffset), evidence: evidence([objects.get(binding.from)!.identityColumn, objects.get(binding.to)!.identityColumn, ...[binding.time.fromColumn, binding.time.toColumn].filter((v): v is string => !!v)]) });
       validateClaim(ontology, claim); claims.push(claim);
       } catch(error) { throw new Error(`关系绑定 ${binding.id} / ${binding.predicate}：${failure(error)}`); }
     }

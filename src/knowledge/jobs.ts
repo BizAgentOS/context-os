@@ -3,7 +3,7 @@ import { StructuredCompiler, STRUCTURED_POLICY } from './structured-compiler.ts'
 import { reusableMapping, verifyReusableMapping } from './mapping-reuse.ts';
 import { DecisionPackages } from './decision-packages.ts';
 import { loadSavedDiscovery } from './saved-discovery.ts';
-import { discoveryInput, discoveryCandidateSchema, validateDiscovery, DiscoveryEvidenceError } from './discovery.ts';
+import { discoveryInput, discoveryCandidateSchema, validateDiscovery, discoveryReviewIssues, type TableDecision, DiscoveryEvidenceError } from './discovery.ts';
 import { getLogger } from '../observability/logger.ts';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -13,7 +13,7 @@ import { fingerprint, locateEvidence, mapCsv, type SourceContent } from './sourc
 import type { JsonModel, ModelDiagnostic } from './model.ts';
 import { BuildPlans } from './build-plans.ts';
 import { planProposalSchema, sourceVersionIdsSchema } from './build-contracts.ts';
-export const PROMPT_VERSION = 'knowledge-native-sources-v11-structured-compiler';
+export const PROMPT_VERSION = 'knowledge-native-sources-v12-source-outcomes';
 function numericUsage(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const entries = Object.entries(value).flatMap<[string, unknown]>(([key, v]) => {
@@ -199,9 +199,10 @@ export class KnowledgeJobs {
         inputBytes = native ? 0 : Buffer.byteLength(JSON.stringify(modelInput));
         if (inputBytes > 180000) throw new Error('发现证据目录超过输入预算，请减少来源');
         let raw: unknown, recoveredTraceId: string | undefined, recoveredModelId: string | null = null, catalog=prepared?.catalog??[];
+        let tableDecisions:TableDecision[]=[],tableProposals:unknown[]=[];
         if(native){
           record({at:new Date().toISOString(),kind:'analysis.staged'});
-          const staged=await compiler().discover(samples,base?.definition??null);raw=staged.raw;catalog=staged.catalog;
+          const staged=await compiler().discover(samples,base?.definition??null);raw=staged.raw;catalog=staged.catalog;tableDecisions=staged.tableDecisions;tableProposals=staged.tableProposals;
         } else if (input.revalidateFromJobId) {
           const old = (await this.core.db.pool.query('SELECT * FROM knowledge.jobs WHERE id=$1', [input.revalidateFromJobId])).rows[0];
           if (!old || old.kind !== 'discover' || old.state !== 'failed') throw new Error('原始失败任务不可用');
@@ -217,7 +218,10 @@ export class KnowledgeJobs {
           raw = await this.model!.generate('discover', modelInput, discoveryCandidateSchema);
         }
         record({ at: new Date().toISOString(), kind: 'ontology.evidence_validating' });
-        const { definition: output, validation } = validateDiscovery(raw, samples, catalog, base?.definition ?? null);
+        const {definition:output,validation:validated}=validateDiscovery(raw,samples,catalog,base?.definition??null);
+        const validation={...validated,tableDecisions,tableProposals};
+        validation.issues=discoveryReviewIssues(output,validation.uncertainties,base?.definition??null,tableDecisions);
+        validation.reviewRequired=validation.issues.length>0;
         const memberIds = (definition: typeof output) => [...definition.types, ...definition.types.flatMap(t => t.properties), ...definition.links].map(m => m.id);
         const oldIds = base ? memberIds(base.definition) : [], newIds = memberIds(output);
         const members = (definition: typeof output) => [...definition.types, ...definition.types.flatMap(t => t.properties), ...definition.links];
@@ -248,7 +252,7 @@ export class KnowledgeJobs {
         inputBytes = native ? 0 : Buffer.byteLength(JSON.stringify(modelInput));
         if (inputBytes > 180000) throw new Error('构建计划输入超过单次预算，请减少来源');
         let proposal;
-        if(native){record({at:new Date().toISOString(),kind:'analysis.staged'});proposal=await compiler().plan(ontology.definition,samples,previous?.proposal??null,modelInput.discoveryIssues);}
+        if(native){record({at:new Date().toISOString(),kind:'analysis.staged'});proposal=await compiler().plan(ontology.definition,samples,previous?.proposal??null,modelInput.discoveryIssues,ontology.discovery?.validation?.tableDecisions??[]);}
         else{modelCalled = true; this.model.lastRun = undefined;proposal=planProposalSchema.parse(await this.model.generate('plan', modelInput, planProposalSchema));}
         const current = await this.core.ontology(actor, input.ontologyId);
         if (current.revision !== ontology.revision) throw new Error('模型运行期间本体已变化，请重新生成计划');

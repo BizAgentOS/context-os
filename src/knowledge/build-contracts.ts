@@ -13,11 +13,12 @@ export const planTimeSchema = z.object({
 }).strict();
 export const csvPlanSchema = z.object({
   sourceVersionId: z.string().uuid(),
-  objects: z.array(z.object({ id: key, typeId: key, identityColumn: z.string().min(1) }).strict()).min(1).max(100),
-  properties: z.array(z.object({ id: key, object: key, predicate: key, column: z.string().min(1), time: planTimeSchema.default({ mode: 'unknown', reason: '' }), comparison: comparisonSchema.default({}), meaning: z.string().max(4000).default('') }).strict()).max(200),
+  objects: z.array(z.object({ id: key, typeId: key, identityColumn: z.string().min(1), onNull:z.enum(['error','skip_object']).optional() }).strict()).min(1).max(100),
+  properties: z.array(z.object({ id: key, object: key, predicate: key, column: z.string().min(1), time: planTimeSchema.default({ mode: 'unknown', reason: '' }), comparison: comparisonSchema.default({}), meaning: z.string().max(4000).default(''), booleanEncoding:z.enum(['literal','zero_one']).optional() }).strict()).max(200),
   links: z.array(z.object({ id: key, predicate: key, from: key, to: key, time: planTimeSchema.default({ mode: 'unknown', reason: '' }) }).strict()).max(200),
 }).strict();
 export const planProposalSchema = z.object({
+  skipped:z.array(z.object({sourceVersionId:z.string().uuid(),reason:z.string().trim().min(1).max(2000)}).strict()).max(MAX_SOURCE_ASSETS).optional(),
   csv: z.array(csvPlanSchema).max(MAX_SOURCE_ASSETS).default([]),
   documents: z.array(z.object({ sourceVersionId: z.string().uuid(), claims: z.array(z.object({
     claim: claimSchema, timeExplanation: z.string().max(4000).default(''),

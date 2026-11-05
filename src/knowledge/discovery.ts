@@ -47,10 +47,12 @@ export function discoveryInput(sources: DiscoverySource[], baseOntology: Ontolog
     evidenceCatalog: catalog.map(e => ({ evidenceId: e.id, sourceVersionId: e.sourceVersionId, kind: e.locator.kind, ...(e.locator.kind === 'field' ? { recordKey: e.locator.recordKey, field: e.locator.field, value: e.value } : { text: e.value, start: e.locator.start }) })),
   } };
 }
+export interface TableDecision {sourceVersionId:string;status:'candidate'|'deferred'|'no_evidence'|'not_applicable';reason:string;sourceName?:string;}
 export interface ReviewIssue { id: string; memberId: string; question: string; kind: string; }
-export function discoveryReviewIssues(definition: Ontology, uncertainties: Uncertainty[] = [], base: Ontology | null = null): ReviewIssue[] {
+export function discoveryReviewIssues(definition: Ontology, uncertainties: Uncertainty[] = [], base: Ontology | null = null,tableDecisions:TableDecision[]=[]): ReviewIssue[] {
   const issues: ReviewIssue[] = [];
   const add = (kind: string, memberId: string, question: string) => issues.push({ id: fingerprint({ kind, memberId, question }), kind, memberId, question });
+  for(const d of tableDecisions.filter(d=>d.status!=='candidate'))add('source_exclusion',d.sourceVersionId,`来源 ${d.sourceName??d.sourceVersionId} 本轮${d.status}：${d.reason}。确认本轮不生成其事实；保留已有正式知识和来源证据。`);
   const members = (o: Ontology) => [...o.types, ...o.types.flatMap(t => t.properties), ...o.links];
   if (!base) add('first_release', 'ontology', '首次启用此本体：整体确认业务范围与关键假设，无需逐个成员确认。');
   const old = new Map(base ? members(base).map(m => [m.id, m]) : []);
@@ -93,7 +95,7 @@ export function discoveryReviewIssues(definition: Ontology, uncertainties: Uncer
   return issues;
 }
 export function refreshDiscoveryValidation(definition: Ontology, previous: any) {
-  const issues = discoveryReviewIssues(definition, previous.uncertainties ?? [], previous.baseline ?? null);
+  const issues = discoveryReviewIssues(definition, previous.uncertainties ?? [], previous.baseline ?? null,previous.tableDecisions??[]);
   return { ...previous, policy: DISCOVERY_POLICY, definitionHash: fingerprint(definition), issues, reviewRequired: issues.length > 0 };
 }
 export class DiscoveryEvidenceError extends Error {
@@ -104,7 +106,7 @@ export class DiscoveryEvidenceError extends Error {
     this.missingMemberIds = missingMemberIds;
   }
 }
-export function validateDiscovery(raw: unknown, sources: DiscoverySource[], catalog: CatalogEntry[], base: Ontology | null) {
+export function validateDiscoveryEvidence(raw: unknown, sources: DiscoverySource[], catalog: CatalogEntry[], base: Ontology | null) {
   const candidate = discoveryCandidateSchema.parse(raw);
   const ids = new Set([...candidate.types, ...candidate.types.flatMap(t => t.properties), ...candidate.links].map(m => m.id));
   const evidence: Ontology['discoveryEvidence'] = [];
@@ -149,6 +151,11 @@ export function validateDiscovery(raw: unknown, sources: DiscoverySource[], cata
   if (missing.length) throw new DiscoveryEvidenceError(missing);
   if (candidate.uncertainties.some(u => !ids.has(u.memberId))) throw new Error('不确定项引用不存在的成员');
   const proposed = ontologySchema.parse({ name: candidate.name, types: candidate.types, links: candidate.links, actions: candidate.actions, discoveryEvidence: evidence });
+  return {candidate,proposed,derivedTypeEvidence};
+}
+export function validateDiscovery(raw:unknown,sources:DiscoverySource[],catalog:CatalogEntry[],base:Ontology|null) {
+  const {candidate,proposed,derivedTypeEvidence}=validateDiscoveryEvidence(raw,sources,catalog,base);
+  const evidence=proposed.discoveryEvidence;
   const deferredIds = new Set(candidate.uncertainties.filter(u => u.kind === 'definition').map(u => u.memberId));
   for (const u of candidate.uncertainties.filter(u => u.kind === 'missing_context')) {
     const property = proposed.types.flatMap(t => t.properties).find(p => p.id === u.memberId);

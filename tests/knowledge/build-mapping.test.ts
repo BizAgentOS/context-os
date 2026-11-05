@@ -65,3 +65,35 @@ test('equal parsed interval boundaries report the fields and interval error rath
 test('confirming a datetime candidate cannot turn a numeric duration into a date during construction',()=>{
   assert.throws(()=>compileCsvPlan(auditTable,{...auditMapping,properties:[{id:'created',object:'log',predicate:'created',column:'time',meaning:'候选创建时间，仍需校验表示规则',time:{mode:'unknown'}}]},auditOntology,'source.audit'),/取值列 time.*无法解析日期时间/);
 });
+
+test('scientific decimal text expands exactly without rounding or accepting unbounded exponents',()=>{
+  const proposal={...mapping,links:[]};
+  for(const [raw,expected] of [['1e-8','0.00000001'],['9007199254740993123e-2','90071992547409931.23'],['-1.2300e2','-123.00']]){
+    const data={...content,rows:[{...content.rows[0],amount:raw}]};
+    assert.equal(compileCsvPlan(data,proposal,ontology,'source.local').claims[0].value,expected);
+  }
+  assert.throws(()=>compileCsvPlan({...content,rows:[{...content.rows[0],amount:'1e999999'}]},proposal,ontology,'source.local'),/预算/);
+});
+
+test('boolean zero-one encoding must be explicit and still rejects unrecognised codes',()=>{
+  const model=ontologySchema.parse({name:'Flags',types:[{id:'Flag',name:'Flag',properties:[{id:'enabled',name:'Enabled',valueType:'boolean'}]}]});
+  const data={kind:'csv' as const,keyColumn:'id',columns:['id','enabled'],rows:[{id:'A',enabled:'0'},{id:'B',enabled:'1'}],warnings:[]};
+  const proposal={sourceVersionId:mapping.sourceVersionId,objects:[{id:'f',typeId:'Flag',identityColumn:'id'}],properties:[{id:'e',object:'f',predicate:'enabled',column:'enabled'}],links:[]};
+  assert.throws(()=>compileCsvPlan(data,proposal,model,'source.local'),/显式选择zero_one/);
+  const encoded={...proposal,properties:[{...proposal.properties[0],booleanEncoding:'zero_one'}]};
+  assert.deepEqual(compileCsvPlan(data,encoded,model,'source.local').claims.map(c=>c.value),[false,true]);
+  assert.throws(()=>compileCsvPlan({...data,rows:[{id:'C',enabled:'2'}]},encoded,model,'source.local'),/仅允许0\/1/);
+});
+
+test('explicit nullable role skips only native SQL NULL, keeping root facts and rejecting empty identity strings',()=>{
+  const model=ontologySchema.parse({name:'Staff',types:[{id:'Staff',name:'Staff',properties:[{id:'name',name:'Name',valueType:'string'}]}],links:[{id:'manager',name:'Manager',from:'Staff',to:'Staff'}]});
+  const data={kind:'table' as const,keyColumn:'key',columns:['key','id','manager_id','name'],metadata:{primaryKey:['id'],columns:[{name:'id',nullable:false},{name:'manager_id',nullable:true}]},
+    rows:[{key:'r1',id:'A',manager_id:'',name:'Root'},{key:'r2',id:'B',manager_id:'A',name:'Child'}],
+    nativeValues:{r1:{id:'A',manager_id:null,name:'Root'},r2:{id:'B',manager_id:'A',name:'Child'}},warnings:[]};
+  const proposal={sourceVersionId:mapping.sourceVersionId,objects:[{id:'person',typeId:'Staff',identityColumn:'id'},{id:'boss',typeId:'Staff',identityColumn:'manager_id',onNull:'skip_object'}],
+    properties:[{id:'name',object:'person',predicate:'name',column:'name'}],links:[{id:'manager',predicate:'manager',from:'person',to:'boss'}]};
+  const result=compileCsvPlan(data,proposal,model,'source.local');
+  assert.equal(result.claims.length,3);assert.equal(result.claims.find(c=>c.object)?.object?.value,'A');
+  assert.throws(()=>compileCsvPlan({...data,nativeValues:{...data.nativeValues,r1:{...data.nativeValues.r1,manager_id:''}}},proposal,model,'source.local'),/空编号/);
+  assert.throws(()=>compileCsvPlan(data,{...proposal,objects:[{...proposal.objects[0],onNull:'skip_object'},proposal.objects[1]]},model,'source.local'),/非主键/);
+});
