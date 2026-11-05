@@ -138,3 +138,16 @@ test('unproven business enum constraints stay draft and require a current explic
   const scalar=ontologySchema.parse({...result.definition,types:[{...result.definition.types[0],properties:[{id:'amount',name:'金额',valueType:'decimal'}]}]});
   assert.equal(discoveryReviewIssues(scalar,proposal.uncertainties).some(i=>i.kind==='constraint_confirmation'),false,'removing enum removes its pending constraint issue');
 });
+
+
+test('date representation uncertainty stays a proposal and requires one current concentrated decision', () => {
+  const raw=candidate();raw.types[0].properties[0].valueType='datetime';
+  const uncertainty={memberId:'amount',kind:'datetime_representation',question:'来源time为decimal；需区分耗时和日期时间戳，不自动猜单位或时区。'};
+  const proposal={...raw,uncertainties:[uncertainty,uncertainty]};
+  const result=validateDiscovery(proposal,[source],discoveryInput([source],null).catalog,null);
+  assert.equal(result.definition.types[0].properties[0].valueType,'datetime');
+  assert.equal(result.validation.deferred.length,0);
+  assert.equal(result.validation.issues.filter(i=>i.kind==='datetime_confirmation').length,1);
+  const scalar=ontologySchema.parse({...result.definition,types:[{...result.definition.types[0],properties:[{id:'amount',name:'金额',valueType:'decimal'}]}]});
+  assert.equal(discoveryReviewIssues(scalar,proposal.uncertainties).some(i=>i.kind==='datetime_confirmation'),false);
+});

@@ -41,7 +41,11 @@ export class StructuredCompiler {
         const source=sources.find(s=>s.id===e.sourceVersionId)!;
         return structuredCandidates(source).columns.filter(c=>e.locator.kind==='field'&&c.column===e.locator.field);
       });
-      if(p.valueType==='datetime'&&!fields.some(f=>f.valueType==='datetime'))throw new Error(`属性 ${p.id} 的日期类型缺少物理日期列依据；不能依据名称中的 time 把耗时转成日期`);
+      if(p.valueType==='datetime'&&!fields.some(f=>f.valueType==='datetime')){
+        const columns=[...new Set(fields.map(f=>`${f.column} (${f.physicalType})`))].sort().join('、').slice(0,1200)||'未找到匹配的物理列类型';
+        const question=`属性 ${p.id} 的日期候选没有已验证的物理日期列依据；证据列：${columns}。请核对字段业务含义、日期表示及转换规则/时区，数值可能是时间戳或耗时，不能凭名称或猜单位转换`;
+        if(!candidate.uncertainties.some(u=>u.memberId===p.id&&u.kind==='datetime_representation'&&u.question===question))candidate.uncertainties.push({memberId:p.id,kind:'datetime_representation',question});
+      }
       if(p.valueType==='enum'&&!fields.some(f=>f.enumValues&&fingerprint([...f.enumValues].sort())===fingerprint([...(p.enumValues??[])].sort()))){
         // A SQL scalar may carry a business enum. Keep it as a proposal, never infer closure from samples.
         const question=`属性 ${p.id} 的候选枚举缺少匹配的完整数据库 ENUM 声明；需核对业务字典、规则或字段说明，样本取值不能证明允许值集合完整`;

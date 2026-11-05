@@ -61,3 +61,7 @@ test('equal parsed interval boundaries report the fields and interval error rath
   assert.throws(()=>compileCsvPlan(auditTable,{...auditMapping,properties:[{...auditMapping.properties[0],time:{mode:'columns',fromColumn:'start_time',toColumn:'start_time',reason:'explicit proposal'}}]},auditOntology,'source.audit'),/日期格式可解析.*起点不早于终点.*start_time/);
   assert.throws(()=>compileCsvPlan(auditTable,{...auditMapping,properties:[{...auditMapping.properties[0],time:{mode:'columns',fromColumn:'time',reason:'incorrect duration binding'}}]},auditOntology,'source.audit'),/有效起点 from.*来源字段 time.*耗时/);
 });
+
+test('confirming a datetime candidate cannot turn a numeric duration into a date during construction',()=>{
+  assert.throws(()=>compileCsvPlan(auditTable,{...auditMapping,properties:[{id:'created',object:'log',predicate:'created',column:'time',meaning:'候选创建时间，仍需校验表示规则',time:{mode:'unknown'}}]},auditOntology,'source.audit'),/取值列 time.*无法解析日期时间/);
+});

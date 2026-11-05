@@ -329,7 +329,7 @@ export function createPlanWorkspace({ api, work, node, button, notice, getState,
     const relations = node('ul');
     for (const link of definition.links) relations.append(node('li', `${link.name}：${link.from} → ${link.to}，${link.multiple ? '可关联多个对象' : '最多关联一个对象'}`));
     panel.append(relations);
-    const titles = { first_release: '首次启用本体', semantic_change: '修改已有业务含义或约束', new_constraint: '新增身份或业务约束', constraint_confirmation: '确认业务枚举完整性', removal: '删除已有定义', resolve_deferred: '采用此前暂缓的定义' };
+    const titles = { first_release: '首次启用本体', semantic_change: '修改已有业务含义或约束', new_constraint: '新增身份或业务约束', constraint_confirmation: '确认业务枚举完整性', datetime_confirmation: '确认日期表示与业务含义', removal: '删除已有定义', resolve_deferred: '采用此前暂缓的定义' };
     const evidenceSources = new Map();
     for (const issue of validation.issues) {
       panel.append(node('h4', titles[issue.kind] ?? '待处理的重大事件'), node('p', issue.kind === 'first_release' ? `需要决定：是否将上面的“${definition.name}”作为本实例首次启用的业务模型，用于后续资料构建？请整体核对对象范围、属性含义及关系。` : issue.question));
