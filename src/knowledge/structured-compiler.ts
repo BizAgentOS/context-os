@@ -42,7 +42,11 @@ export class StructuredCompiler {
         return structuredCandidates(source).columns.filter(c=>e.locator.kind==='field'&&c.column===e.locator.field);
       });
       if(p.valueType==='datetime'&&!fields.some(f=>f.valueType==='datetime'))throw new Error(`属性 ${p.id} 的日期类型缺少物理日期列依据；不能依据名称中的 time 把耗时转成日期`);
-      if(p.valueType==='enum'&&!fields.some(f=>f.enumValues&&fingerprint([...f.enumValues].sort())===fingerprint([...(p.enumValues??[])].sort())))throw new Error(`属性 ${p.id} 的封闭枚举没有完整数据库 ENUM 声明依据；样本取值只能作为观测值`);
+      if(p.valueType==='enum'&&!fields.some(f=>f.enumValues&&fingerprint([...f.enumValues].sort())===fingerprint([...(p.enumValues??[])].sort()))){
+        // A SQL scalar may carry a business enum. Keep it as a proposal, never infer closure from samples.
+        const question=`属性 ${p.id} 的候选枚举缺少匹配的完整数据库 ENUM 声明；需核对业务字典、规则或字段说明，样本取值不能证明允许值集合完整`;
+        if(!candidate.uncertainties.some(u=>u.memberId===p.id&&u.kind==='constraint'&&u.question===question))candidate.uncertainties.push({memberId:p.id,kind:'constraint',question});
+      }
     }
     validateDiscovery(candidate,sources,catalog,base);
     return candidate;

@@ -120,3 +120,21 @@ test('native discovery carries bounded profiling and declaration candidates with
   assert.equal(c.profile.coverage,'sample');assert.equal(c.profile.totalRows,null);
   assert.deepEqual(c.identity,{declaredPrimaryKey:['id'],inferred:false});
 });
+
+
+test('unproven business enum constraints stay draft and require a current explicit decision, not a SQL ENUM column', () => {
+  const raw=candidate();
+  Object.assign(raw.types[0].properties[0],{valueType:'enum',enumValues:['100.00','200.00']});
+  const proposal={...raw,uncertainties:[{memberId:'amount',kind:'constraint',question:'字段为数值列，样本不能证明业务枚举完整；请核对业务字典。'}]};
+  const prepared=discoveryInput([source],null),result=validateDiscovery(proposal,[source],prepared.catalog,null);
+  assert.equal(result.definition.types[0].properties[0].valueType,'enum');
+  assert.equal(result.validation.deferred.length,0,'constraint uncertainty does not discard the attribute');
+  const constraint=result.validation.issues.find(i=>i.kind==='constraint_confirmation'&&i.memberId==='amount')!;
+  assert.ok(constraint);
+  const repeated=discoveryReviewIssues(result.definition,[...proposal.uncertainties,...proposal.uncertainties]);
+  assert.equal(repeated.filter(i=>i.kind==='constraint_confirmation').length,1,'coordinated duplicate proposals must remain reviewable');
+  const changed=ontologySchema.parse({...result.definition,types:[{...result.definition.types[0],properties:[{...result.definition.types[0].properties[0],enumValues:['100.00','200.00','300.00']}]}]});
+  assert.notEqual(discoveryReviewIssues(changed,proposal.uncertainties).find(i=>i.kind==='constraint_confirmation')!.id,constraint.id,'enum edits invalidate the decision fingerprint');
+  const scalar=ontologySchema.parse({...result.definition,types:[{...result.definition.types[0],properties:[{id:'amount',name:'金额',valueType:'decimal'}]}]});
+  assert.equal(discoveryReviewIssues(scalar,proposal.uncertainties).some(i=>i.kind==='constraint_confirmation'),false,'removing enum removes its pending constraint issue');
+});

@@ -4,7 +4,7 @@ import { fingerprint, locateEvidence, type SourceContent } from './sources.ts';
 import { structuredCandidates } from './structured-profile.ts';
 
 export const DISCOVERY_POLICY = 'catalog-evidence-recovery-v4';
-export const uncertaintySchema = z.object({ memberId: key, kind: z.enum(['definition', 'fact_conflict', 'missing_context', 'time_attachment']), question: z.string().trim().min(1).max(2000), dimensions: z.array(z.enum(['unit', 'currency', 'scope'])).max(3).optional() }).strict().refine(u => u.kind !== 'missing_context' || !!u.dimensions?.length, '缺失口径需明确缺少哪些维度');
+export const uncertaintySchema = z.object({ memberId: key, kind: z.enum(['definition', 'fact_conflict', 'missing_context', 'time_attachment', 'constraint']), question: z.string().trim().min(1).max(2000), dimensions: z.array(z.enum(['unit', 'currency', 'scope'])).max(3).optional() }).strict().refine(u => u.kind !== 'missing_context' || !!u.dimensions?.length, '缺失口径需明确缺少哪些维度');
 type Uncertainty = { memberId: string; question: string; kind?: string; dimensions?: Array<'unit' | 'currency' | 'scope'> };
 export interface DiscoverySource extends SourceContent { id: string; sourceNamespace?: string; coverage?: unknown; }
 export interface CatalogEntry { id: string; sourceVersionId: string; locator: Claim['evidence'][number]; value: string; }
@@ -76,6 +76,12 @@ export function discoveryReviewIssues(definition: Ontology, uncertainties: Uncer
   if (base && fingerprint(base.actions) !== fingerprint(definition.actions)) changed.push('actions');
   if (changed.length) add('semantic_change', 'ontology', `已有业务含义、约束或动作发生变化：${changed.join('、')}`);
   if (constrained.length) add('new_constraint', 'ontology', `新增身份规则、必填、枚举、比较口径或单值关系约束：${constrained.join('、')}`);
+  const constraintCandidates=uncertainties.filter(u=>u.kind==='constraint');
+  for (const memberId of new Set(constraintCandidates.map(u=>u.memberId))) {
+    const property=definition.types.flatMap(t=>t.properties).find(p=>p.id===memberId);
+    const questions=[...new Set(constraintCandidates.filter(u=>u.memberId===memberId).map(u=>u.question))].sort().join('；');
+    if(property?.valueType==='enum')add('constraint_confirmation',memberId,`${questions}；当前拟采用的业务枚举：${JSON.stringify(property.enumValues)}。确认完整允许值及业务依据后再采用；也可先修改草稿取消封闭约束。`);
+  }
   const reintroduced = uncertainties.filter(u => (!u.kind || u.kind === 'definition') && current.has(u.memberId) && fingerprint(current.get(u.memberId)) !== fingerprint(old.get(u.memberId)));
   if (reintroduced.length) add('resolve_deferred', 'ontology', `本次纳入曾暂缓的含糊内容，需明确业务决定：${reintroduced.map(u => `${u.memberId}：${u.question}`).join('；')}`);
   return issues;
