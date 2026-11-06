@@ -1,4 +1,4 @@
-import { fingerprint, type SourceContent } from './sources.ts';
+import { fingerprint, sourceStructureHash, type SourceContent } from './sources.ts';
 
 export const PROFILE_VERSION = 'structured-profile-v1';
 interface ColumnStats { observed: number; nulls: number; empty: number; values: Set<string>; overflow: boolean; minLength: number | null; maxLength: number; }
@@ -36,9 +36,18 @@ export function tableProfile(content:SourceContent):TableProfile {
 }
 export function tableStructure(content:SourceContent) {
   const m=content.metadata??{};
-  return {kind:content.kind,schema:m.schema,name:m.name,engine:m.engine,comment:m.comment,columns:m.columns,primaryKey:m.primaryKey,foreignKeys:m.foreignKeys};
+  return {kind:content.kind,schema:m.schema,name:m.name,engine:m.engine,comment:m.comment,columns:m.columns,primaryKey:m.primaryKey,...(m.uniqueKeys?{uniqueKeys:m.uniqueKeys}:{}),foreignKeys:m.foreignKeys};
 }
-export function structureHash(content:SourceContent){return fingerprint(tableStructure(content));}
+export function structureHash(content:SourceContent){return sourceStructureHash(content);}
+
+export function commentCodes(comment:string,numericOnly=false) {
+  const numeric=[...comment.matchAll(/(-?\d+)\s*[:：=、]?\s*([^\d\s,，;；()（）]+)(?=\s|[,，;；()（）]|-?\d|$)/g)];
+  // Retain the exact v19 projection for explicit old-receipt verification.
+  if(numericOnly){const entries=numeric.map(m=>({code:m[1],meaning:m[2]}));return entries.length>=2&&new Set(entries.map(e=>e.code)).size===entries.length?entries:[];}
+  const alpha=[...comment.matchAll(/(?:^|[\s,，;；(（])['"]?([A-Za-z][A-Za-z0-9_-]{0,30})['"]?\s*[:：=]\s*([^\s,，;；()（）]+)/g)];
+  const entries=[...numeric.filter(m=>!m.index||!/[A-Za-z0-9_-]/.test(comment[m.index-1])),...alpha].sort((a,b)=>(a.index??0)-(b.index??0)).map(m=>({code:m[1],meaning:m[2]}));
+  return entries.length>=2&&new Set(entries.map(e=>e.code)).size===entries.length?entries:[];
+}
 
 function declaredEnum(type:string):string[]|undefined {
   if(!/^enum\(/i.test(type))return undefined;
@@ -52,14 +61,14 @@ function declaredEnum(type:string):string[]|undefined {
     if(i<text.length&&text[i++]!==',')return undefined;
   }return values.length?values:undefined;
 }
-export function structuredCandidates(content:SourceContent) {
+export function structuredCandidates(content:SourceContent, legacy=false,oldCommentCodes=false) {
   const metadata=content.metadata??{},primaryKey=metadata.primaryKey as string[]|undefined;
   const columns=(metadata.columns??[]) as NativeColumn[];
   const profile=tableProfile(content);
-  return {structureHash:structureHash(content),profile:{...profile,columns:profile.columns.map(c=>({...c,observedValues:c.observedValues.slice(0,5),displayedValueLimit:5}))},identity:{declaredPrimaryKey:primaryKey??[],inferred:false},foreignKeys:metadata.foreignKeys??[],
+  return {structureHash:structureHash(content),profile:{...profile,columns:profile.columns.map(c=>({...c,...(legacy?{observedValues:c.observedValues.slice(0,5),displayedValueLimit:5}:{observedValues:c.observedValues,displayedValueLimit:32,valuesTruncated:c.distinct===null,valuesCoverage:profile.coverage})}))},identity:{declaredPrimaryKey:primaryKey??[],inferred:false},foreignKeys:metadata.foreignKeys??[],
     columns:columns.map(c=>{const type=c.type.toLowerCase(),enumValues=declaredEnum(c.type);
       const valueType=enumValues?'enum':/^(decimal|numeric|float|double|real|bigint)\b/.test(type)?'decimal':/^(tinyint|smallint|mediumint|int|integer)\b/.test(type)?'integer':/^(date|datetime|timestamp)\b/.test(type)?'datetime':'string';
-      return {column:c.name,physicalType:c.type,valueType,...(enumValues?{enumValues,enumBasis:'database_declaration'}:{}),description:c.comment??'',nullable:c.nullable,
+      return {column:c.name,physicalType:c.type,valueType,...(enumValues?{enumValues,enumBasis:'database_declaration'}:{}),...(!legacy?{commentCodeCandidates:commentCodes(c.comment??'',oldCommentCodes),commentBasis:'column_comment_candidate'}:{}),description:c.comment??'',nullable:c.nullable,
         constraintsArePhysical:true,note:'物理空值约束不自动成为业务必填；观测值不自动成为枚举；TIME/数值不按字段名推断为日期。'};
     })};
 }

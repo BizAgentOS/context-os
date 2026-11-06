@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { ontologySchema, extractionSchema } from '../../src/knowledge/contracts.ts';
-import { locateEvidence, validateClaim, type SourceContent } from '../../src/knowledge/sources.ts';
+import { locateDiscoveryEvidence, validateClaim, type SourceContent } from '../../src/knowledge/sources.ts';
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/glm53-output.json', import.meta.url), 'utf8'));
 test('recorded GLM 5.3 ontology evidence aligns unique exact quotes without accepting invented quotes', () => {
@@ -10,7 +10,7 @@ test('recorded GLM 5.3 ontology evidence aligns unique exact quotes without acce
   let corrected = 0;
   for (const e of definition.discoveryEvidence) {
     const content = fixture.sources[e.sourceVersionId] as SourceContent;
-    const located = locateEvidence(content, e.locator);
+    const located = locateDiscoveryEvidence(content, e.locator);
     if (located.kind === 'quote' && e.locator.kind === 'quote' && located.start !== e.locator.start) corrected++;
   }
   assert.ok(corrected > 0, '真实失败样本必须覆盖偏移重定位');
@@ -23,7 +23,7 @@ test('recorded GLM extraction retains exact amount, half-open responsibility per
   for (const claim of output.claims) {
     validateClaim(definition, claim);
     for (const e of claim.evidence) {
-      const located = locateEvidence(fixture.pdfContent, e);
+      const located = locateDiscoveryEvidence(fixture.pdfContent, e);
       assert.ok(located.kind === 'quote' && located.location?.pages.length);
     }
   }

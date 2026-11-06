@@ -78,10 +78,10 @@ export class ConnectedSources {
         if (bytes > 100_000_000) throw new Error('本轮读取超过内容上限，未完成');
         digest.update(encoded);
         profiler.add(page.records);
-        await this.core.db.transaction(async sql => {
-          await one(sql,'SELECT id FROM knowledge.connections WHERE id=$1 AND enabled AND revision=$2',[id,connection.revision]);
-          await sql.query('INSERT INTO knowledge.observation_pages(run_id,page,records) VALUES($1,$2,$3::jsonb)',[run.id,page.index,encoded]);
-        });
+        // Staging is not domain adoption. Do not wait on the PG global domain
+        // lock while the source reader holds its consistent-read transaction.
+        const staged=await this.core.db.pool.query('INSERT INTO knowledge.observation_pages(run_id,page,records) SELECT $1,$2,$3::jsonb WHERE EXISTS(SELECT 1 FROM knowledge.connections WHERE id=$4 AND enabled AND revision=$5) RETURNING run_id',[run.id,page.index,encoded,id,connection.revision]);
+        if(!staged.rows.length)throw new Error('连接修订已变化，本轮观测未采用');
       });
       return await this.core.db.transaction(async sql => {
         await one(sql,'SELECT id FROM knowledge.connections WHERE id=$1 AND enabled AND revision=$2',[id,connection.revision]);

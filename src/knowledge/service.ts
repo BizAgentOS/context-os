@@ -1,10 +1,11 @@
+import { publishedDiscoveryCoverage } from './discovery-coverage.ts';
 import { sourceContent } from './table-content.ts';
-import { refreshDiscoveryValidation } from './discovery.ts';
+import { refreshDiscoveryValidation, reassessNativeDefinition, DISCOVERY_POLICY } from './discovery.ts';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { Database, type Sql } from './database.ts';
 import { AccessDenied, actionSchema, strictComparisonSchema, authorize, extractionSchema, identitySchema, ontologySchema, requiresReview, validateValue, type Action, type Claim, type Ontology, type Principal } from './contracts.ts';
-import { fingerprint, locateEvidence, validateClaim, type PreparedSource, type SourceContent } from './sources.ts';
+import { fingerprint, locateEvidence, locateDiscoveryEvidence, validateClaim, type PreparedSource, type SourceContent } from './sources.ts';
 import { FUSION_POLICY, projectStatements, type Statement } from './projection.ts';
 import { rematchIdentity } from './identity.ts';
 import type { IdentityMapping } from './build-plans.ts';
@@ -41,6 +42,55 @@ export class KnowledgeCore {
     const rows = (await this.db.pool.query(`SELECT * FROM knowledge.${kind} ORDER BY ${order} LIMIT $1 OFFSET $2`, [take, skip])).rows;
     return kind === 'ontologies' ? rows.map(ontologyDiscoveryView) : rows;
   }
+  async publishedOntology(actor: Principal) {
+    authorize(actor);
+    return (await this.db.pool.query("SELECT * FROM knowledge.ontologies WHERE status='published' ORDER BY published_at DESC,id LIMIT 1")).rows[0] ?? null;
+  }
+
+  /** Directory reads identities only; it never guesses a resolved property value. */
+  async browseObjects(actor: Principal, input: { type?: string; query?: string; offset?: number; limit?: number } = {}) {
+    authorize(actor);
+    const { type, query, offset, limit } = z.object({ type: z.string().max(200).default(''), query: z.string().max(200).default(''), offset: z.number().int().min(0).default(0), limit: z.number().int().min(1).max(100).default(30) }).parse(input);
+    const values = [type, query, limit + 1, offset];
+    const rows = (await this.db.pool.query<Record<string,any>&{id:string;type_id:string;identifiers:Array<{namespace:string;value:string}>}>(`SELECT o.*, COALESCE((SELECT jsonb_agg(jsonb_build_object('namespace',b.namespace,'value',b.value) ORDER BY b.namespace,b.value) FROM knowledge.identity_bindings b WHERE b.object_id=o.id AND b.system_to IS NULL),'[]'::jsonb) AS identifiers
+      FROM knowledge.objects o WHERE ($1='' OR o.type_id=$1) AND ($2='' OR EXISTS(SELECT 1 FROM knowledge.identity_bindings b WHERE b.object_id=o.id AND b.system_to IS NULL AND strpos(lower(b.value),lower($2))>0)) ORDER BY o.created_at DESC,o.id LIMIT $3 OFFSET $4`, values)).rows;
+    const validAt=new Date().toISOString();
+    const items=await Promise.all(rows.slice(0,limit).map(async object=>{
+      try {
+        const view=await this.object(actor,object.id,{validAt});
+        const fields=Object.entries(view.fields) as Array<[string,{name:string;status:string;value:unknown;disputed:boolean;pendingAssertions:string[]}]>;
+        const name=fields.find(([,f])=>f.status==='resolved'&&!f.disputed&&typeof f.value==='string'&&/^(名称|姓名|标题|name|title)$|名称$/iu.test(f.name))?.[1].value;
+        const properties=fields.filter(([,f])=>!f.value||typeof f.value!=='object').slice(0,3).map(([id,f])=>({id,name:f.name,status:f.status,value:f.status==='resolved'?f.value:null,disputed:f.disputed}));
+        const issues=fields.filter(([,f])=>['conflict','incomparable','uncertain'].includes(f.status)||f.disputed||f.pendingAssertions.length).map(([id,f])=>({id,name:f.name,status:f.disputed?'disputed':f.status,pending:f.pendingAssertions.length>0}));
+        return {...object,summary:{name,properties,issues,validAt}};
+      }catch{return {...object,summary:null,summaryUnavailable:'当前投影暂不可读，请打开对象查看原因'};}
+    }));
+    return { items, hasMore: rows.length > limit, offset, limit, coverage: '仅本页对象的当前采纳投影摘要；业务编号目录分页，不将本页长度当作全库总数',validAt };
+  }
+
+  async neighborhood(actor: Principal, id: string, input: { validAt?: string; knownAt?: string; offset?: number; outgoingOffset?: number; edgeOffset?: number } = {}) {
+    authorize(actor); uuid(id);
+    const offset = z.number().int().nonnegative().parse(input.offset ?? 0), outgoingOffset=z.number().int().nonnegative().parse(input.outgoingOffset??0), limit = 12;
+    const center = await this.object(actor,id,input);
+    const candidates = (await this.db.pool.query(`SELECT DISTINCT a.object_id FROM knowledge.assertions a JOIN knowledge.assertion_revisions r ON r.assertion_id=a.id WHERE r.target_id=$1 AND ($2::timestamptz IS NULL AND r.system_to IS NULL OR $2::timestamptz IS NOT NULL AND r.system_from<=$2 AND (r.system_to IS NULL OR r.system_to>$2)) ORDER BY a.object_id LIMIT $3 OFFSET $4`,[id,center.knownAt,limit+1,offset])).rows;
+    const edges: { from: string; to: string; name: string; predicate: string }[] = [];
+    const add = (view: any, incoming: boolean) => {
+      for (const [predicate,field] of Object.entries(view.fields) as [string,any][]) {
+        if(field.status !== 'resolved') continue;
+        for(const value of Array.isArray(field.value)?field.value:[field.value]) {
+          if(value?.objectId && (!incoming || value.objectId===id)) edges.push({from:view.id,to:value.objectId,name:field.name,predicate});
+        }
+      }
+    };
+    add(center,false);
+    const outgoing=edges.splice(0);edges.push(...outgoing.slice(outgoingOffset,outgoingOffset+20));
+    for(const candidate of candidates.slice(0,limit)) if(candidate.object_id!==id) add(await this.object(actor,candidate.object_id,{validAt:center.validAt,...(center.knownAt?{knownAt:center.knownAt}:{})}),true);
+    const edgeOffset=z.number().int().nonnegative().parse(input.edgeOffset??0);
+    const visible = edges.slice(edgeOffset,edgeOffset+40), ids = [...new Set([id,...visible.flatMap(e=>[e.from,e.to])])];
+    const nodes = (await this.db.pool.query(`SELECT o.id,o.type_id,COALESCE((SELECT jsonb_agg(jsonb_build_object('namespace',b.namespace,'value',b.value) ORDER BY b.namespace,b.value) FROM knowledge.identity_bindings b WHERE b.object_id=o.id AND ($2::timestamptz IS NULL AND b.system_to IS NULL OR $2::timestamptz IS NOT NULL AND b.system_from<=$2 AND (b.system_to IS NULL OR b.system_to>$2))),'[]'::jsonb) AS identifiers FROM knowledge.objects o WHERE o.id=ANY($1::uuid[])`,[ids,center.knownAt])).rows;
+    return {nodes,edges:visible,offset,hasMore:candidates.length>limit,nextOffset:offset+limit,truncated:edges.length>edgeOffset+40,nextEdgeOffset:edgeOffset+40,hasMoreOutgoing:outgoing.length>outgoingOffset+20,nextOutgoingOffset:outgoingOffset+20,validAt:center.validAt,knownAt:center.knownAt,coverage:'仅当前查询双时间下已采纳投影的一跳关系；每页检查12个入向主体，图最多40条边；冲突、未知时间和候选不画成正式边'};
+  }
+
   async sourceVersion(actor: Principal, id: string, sampleLimit?: number): Promise<Record<string, any>> {
     authorize(actor); const row = await one(this.db.pool, 'SELECT * FROM knowledge.source_versions WHERE id=$1', [uuid(id)]);
     return { ...row, content: await sourceContent(this.db.pool, row.id, row.content, sampleLimit) };
@@ -74,6 +124,28 @@ export class KnowledgeCore {
         metadata = { ...metadata, review: null, validation: { ...refreshDiscoveryValidation(definition, metadata.validation), evidenceValid: false } };
       }
       return one(sql, "UPDATE knowledge.ontologies SET definition=$3::jsonb,discovery=$4::jsonb,revision=revision+1 WHERE id=$1 AND revision=$2 RETURNING *", [existing.id, existing.expectedRevision, json(definition), json(metadata)]);
+    });
+  }
+  async reassessDiscovery(actor:Principal,id:string,expectedRevision:number) {
+    authorize(actor,true);uuid(id);z.number().int().positive().parse(expectedRevision);
+    return this.db.transaction(async sql=>{
+      const row=await one(sql,"SELECT * FROM knowledge.ontologies WHERE id=$1 AND revision=$2 AND status='draft' FOR UPDATE",[id,expectedRevision]);
+      if(!row.discovery?.jobId||!row.discovery.validation?.tableProposals?.length||!row.discovery.sources?.every((s:{kind:string})=>s.kind==='table'))throw new Error('仅可本地评估原生表自动生成的草稿');
+      const definition=ontologySchema.parse(row.definition);
+      const original=await one(sql,"SELECT result FROM knowledge.jobs WHERE id=$1 AND kind='discover' AND state='completed'",[row.discovery.jobId]);
+      const prior=row.discovery.localReassessment;
+      if(prior?.policy===DISCOVERY_POLICY&&prior.definitionHash===fingerprint(definition))return ontologyDiscoveryView(row);
+      if(!original.result?.definition||fingerprint(ontologySchema.parse(original.result.definition))!==fingerprint(definition))throw new Error('草稿已有手工修改，不能自动覆盖；请保留修改并手动调整约束，或继续协调生成另一份草稿');
+      const sources=[];
+      for(const ref of row.discovery.sources){
+        const saved=await one(sql,'SELECT id,content FROM knowledge.source_versions WHERE id=$1',[ref.id]);
+        const content=await sourceContent(sql,saved.id,saved.content,undefined,[]);
+        for(const e of definition.discoveryEvidence.filter(e=>e.sourceVersionId===ref.id&&e.locator.kind==='column'))locateDiscoveryEvidence(content,e.locator);
+        sources.push({...content,id:saved.id});
+      }
+      const {definition:normalized,validation}=reassessNativeDefinition(definition,row.discovery.validation,sources);
+      const discovery={...row.discovery,validation,review:null,localReassessment:{policy:DISCOVERY_POLICY,originalDefinitionHash:fingerprint(definition),definitionHash:fingerprint(normalized),changes:'撤销新成员无业务依据的身份、必填、单值及样本枚举约束；按已存来源声明解决物理日期疑问。既有定义、证据及暂缓候选保留。',at:new Date().toISOString()}};
+      return ontologyDiscoveryView(await one(sql,'UPDATE knowledge.ontologies SET definition=$3::jsonb,discovery=$4::jsonb,revision=revision+1 WHERE id=$1 AND revision=$2 RETURNING *',[id,expectedRevision,json(normalized),json(discovery)]));
     });
   }
   async reviewDiscovery(actor: Principal, id: string, raw: unknown) {
@@ -303,7 +375,7 @@ export class KnowledgeCore {
         const refs = definition.discoveryEvidence;
         for (const ref of refs) {
           const source = await one(sql, 'SELECT id,content FROM knowledge.source_versions WHERE id=$1', [ref.sourceVersionId]);
-          locateEvidence(await sourceContent(sql, source.id, source.content, undefined, ref.locator.kind === 'field' ? [ref.locator.recordKey] : undefined), ref.locator);
+          locateDiscoveryEvidence(await sourceContent(sql, source.id, source.content, undefined, ref.locator.kind === 'field' ? [ref.locator.recordKey] : ref.locator.kind === 'column' ? [] : undefined), ref.locator);
         }
         const base = draft.discovery.baseOntologyId ? (await sql.query('SELECT definition FROM knowledge.ontologies WHERE id=$1', [draft.discovery.baseOntologyId])).rows[0] : null;
         const oldMembers = base ? [...base.definition.types, ...base.definition.types.flatMap((t: Ontology['types'][number]) => t.properties), ...base.definition.links] : [];
@@ -380,7 +452,7 @@ export class KnowledgeCore {
       const identifiers = (await sql.query('SELECT namespace,value FROM knowledge.identity_bindings WHERE object_id=$1 AND ($2::timestamptz IS NULL AND system_to IS NULL OR $2::timestamptz IS NOT NULL AND system_from<=$2 AND (system_to IS NULL OR system_to>$2))', [id, knownAt])).rows;
       const incoming = (await sql.query(`SELECT a.id,a.object_id,a.predicate,a.ontology_id,r.revision,r.status,r.valid_from,r.valid_to,r.time_precision FROM knowledge.assertions a JOIN knowledge.assertion_revisions r ON r.assertion_id=a.id
         WHERE r.target_id=$1 AND ($2::timestamptz IS NULL AND r.system_to IS NULL OR $2::timestamptz IS NOT NULL AND r.system_from<=$2 AND (r.system_to IS NULL OR r.system_to>$2)) ORDER BY a.id`, [id, knownAt])).rows;
-      const result = { id, revision: knownAt ? null : object.revision, identifiers, knownAt, ontologyId: model.id, ...view, assertions: rows, incoming, humanBasis: rows.filter(r => r.origin === 'human').map(r => ({ assertionId: r.id, reason: r.reason, kind: 'human_judgment' })) };
+      const result = { id, revision: knownAt ? null : object.revision, identifiers, knownAt, ontologyId: model.id, discoveryCoverage:publishedDiscoveryCoverage({id:model.id,status:model.status,discovery:model.discovery},rows.map(r=>r.source_version_id).filter(Boolean)), ...view, assertions: rows, incoming, humanBasis: rows.filter(r => r.origin === 'human').map(r => ({ assertionId: r.id, reason: r.reason, kind: 'human_judgment' })) };
       if (!knownAt) {
         await sql.query('INSERT INTO knowledge.projections(object_id,object_revision,body,fusion_policy_version) VALUES($1,$2,$3::jsonb,$4) ON CONFLICT(object_id) DO UPDATE SET object_revision=excluded.object_revision,body=excluded.body,fusion_policy_version=excluded.fusion_policy_version,computed_at=clock_timestamp()', [id, object.revision, json(result), FUSION_POLICY]);
         await sql.query('DELETE FROM knowledge.projection_dependencies WHERE object_id=$1', [id]);

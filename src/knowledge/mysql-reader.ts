@@ -4,7 +4,7 @@ import { fingerprint } from './sources.ts';
 
 export interface MysqlConfig { url: string; tls?: 'verify' | 'disabled'; ca?: string; }
 export interface MysqlColumn { name: string; type: string; nullable: boolean; comment: string; collation: string | null; }
-export interface MysqlTable { schema: string; name: string; engine: string; comment: string; columns: MysqlColumn[]; primaryKey: string[]; foreignKeys: Array<{ name: string; column: string; targetSchema: string; targetTable: string; targetColumn: string; ordinal: number }>; }
+export interface MysqlTable { schema: string; name: string; engine: string; comment: string; columns: MysqlColumn[]; primaryKey: string[]; uniqueKeys?:Array<{name:string;columns:string[]}>; foreignKeys: Array<{ name: string; column: string; targetSchema: string; targetTable: string; targetColumn: string; ordinal: number }>; }
 export interface MysqlRecord { key: string; values: Record<string, string | null>; }
 export interface MysqlPage { index: number; records: MysqlRecord[]; }
 const quote = (s: string) => '`' + s.replaceAll('`', '``') + '`';
@@ -32,11 +32,12 @@ export class MysqlReader {
       FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA=DATABASE() ORDER BY TABLE_NAME,CONSTRAINT_NAME,ORDINAL_POSITION`);
     const map = new Map<string, MysqlTable>();
     for (const r of catalog) {
-      if (!map.has(r.TABLE_NAME)) map.set(r.TABLE_NAME, { schema: r.TABLE_SCHEMA, name: r.TABLE_NAME, engine: r.ENGINE, comment: r.TABLE_COMMENT, columns: [], primaryKey: [], foreignKeys: [] });
+      if (!map.has(r.TABLE_NAME)) map.set(r.TABLE_NAME, { schema: r.TABLE_SCHEMA, name: r.TABLE_NAME, engine: r.ENGINE, comment: r.TABLE_COMMENT, columns: [], primaryKey: [], uniqueKeys:[], foreignKeys: [] });
       map.get(r.TABLE_NAME)!.columns.push({ name: r.COLUMN_NAME, type: r.COLUMN_TYPE, nullable: r.IS_NULLABLE === 'YES', comment: r.COLUMN_COMMENT, collation: r.COLLATION_NAME });
     }
     for (const r of keys) {
       const t = map.get(r.TABLE_NAME); if (!t) continue;
+      if(r.CONSTRAINT_NAME!=='PRIMARY'&&!r.REFERENCED_TABLE_NAME){let key=t.uniqueKeys!.find(k=>k.name===r.CONSTRAINT_NAME);if(!key){key={name:r.CONSTRAINT_NAME,columns:[]};t.uniqueKeys!.push(key);}key.columns.push(r.COLUMN_NAME);}
       if (r.CONSTRAINT_NAME === 'PRIMARY') t.primaryKey.push(r.COLUMN_NAME);
       if (r.REFERENCED_TABLE_NAME) t.foreignKeys.push({ name: r.CONSTRAINT_NAME, column: r.COLUMN_NAME, targetSchema: r.REFERENCED_TABLE_SCHEMA, targetTable: r.REFERENCED_TABLE_NAME, targetColumn: r.REFERENCED_COLUMN_NAME, ordinal: Number(r.ORDINAL_POSITION) });
     }

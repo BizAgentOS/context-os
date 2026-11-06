@@ -1,6 +1,12 @@
 # Context OS Feature List
 
+**2026-11-06 后续收口（当前）：** v22 / structured-compiler-v12 / references-v3。删除无读取方的 analysisCompletion，完成状态仍由 coverageManifest 表达；仅排除同一冻结来源、顺序列组完全相同且无显式外键的推断自引用，保留显式自关联和不同列映射。v16–v22 逐表回执兼容，旧协调缓存不跨策略复用，DB007 不变。定向新版 53/53、零跳过，类型和差异检查通过；离线预演 50 阶段、最大 40958 字节、重放新增 0。未连库或调用真实模型。R02 冻结记录探测、R03 组合验收、事件/状态和人工先例见 BACKLOG；FEATURE_069 仍 InProgress。
+
 ## 当前新增工作：KNOWLEDGE_PHASE1
+
+**2026-11-06 R01/R02修复：**当前v21/v11/references-v3；引用候选实时重投与抽样未匹配分级已修，适用新版回归72/72零跳过。历史158/158独立数据库结果保留，不能代替本次修改后的全量运行。FEATURE_069仍InProgress，真实金标准/模型业务验收未完成，见[逐项账](implementation/STRUCTURED_COMPILER_ACCEPTANCE.md)。
+
+**2026-11-06 当前证据更正：**新版知识核心158/158、零跳过，独立数据库合成容量验证完成且容器已清理。references-v3/v10/v20实现、文档收尾及逐项核对见[验收账](implementation/STRUCTURED_COMPILER_ACCEPTANCE.md)；真实验收准备见[方案](implementation/STRUCTURED_COMPILER_PILOT_PLAN.md)。FEATURE_069仍InProgress：独立业务金标准及真实模型验收待执行。下方旧测试数字保留为历史，旧Agent/旧快照路径不再测试或修复。
 
 状态：**InProgress（核心机制与合成小样本已验证，真实企业场景验收待开展）**；类型检查、新核心 16/16、既有回归 680/680、CLI/浏览器与指定 GLM 5.3 小样本结果见[运行验证](implementation/PHASE1_VERIFICATION.md)。未指定新的发布版本，不改变旧 Feature 的完成和 Released 记录。
 
@@ -78,6 +84,7 @@ Last Updated: 2026-10-22
 | ID | 功能 | 状态 | Planned / Released | 设计 |
 |---|---|---|---|---|
 | 069 | MySQL 原生来源接入与人工事项集中处理 | InProgress | 未定 / — | [设计与步骤](features/enterprise-autonomy.md) |
+| 070 | 本体对象探索与知识构建界面 | Completed | 未定 / — | [设计与验收](features/frontend-exploration.md) |
 
 ## Version Summary
 
@@ -967,3 +974,20 @@ Last Updated: 2026-10-22
 
 
 **2026-11-05 FEATURE_069 同类修复：**表级暂缓/不适用/空表继续、来源跳过集中决定、显式布尔编码、可空角色及精确指数数值；v12/v2，DB007不变。类型/静态审查之外的运行验收待执行，继续InProgress。见编译规格最新节。
+
+
+### 070: 本体对象探索与知识构建界面
+
+- **Status:** Completed
+- **Category / Priority:** New / High
+- **Planned / Released:** 未定 / —
+- **Created / Started / Completed:** 2026-11-05 / 2026-11-05 / 2026-11-05
+- **Description:** 以知识核心为基线实现已发布本体到对象探索、知识构建双页面和分层事项定位；保留现有在途工作与服务端门禁。
+- **Design:** [FEATURE_070](features/frontend-exploration.md)。
+
+**2026-11-05 FEATURE_070 验收：**双页面、类型/对象探索、有界双向关系、证据/历史/修正、业务构建摘要及分层事项已实现；知识123通过/4专用MySQL跳过，旧Agent680通过，类型/语法/浏览器及双轴复核通过。Completed指本轮界面与隔离机制验收，统计/检索/容量限制见[交付记录](implementation/FRONTEND_EXPLORATION.md)；未发布，未混合提交已有工作。
+
+**2026-11-06 FEATURE_069 修复续作（InProgress）：**references-v2支持显式新增/删除/属性移动与遗漏保留，跨表固定版本键候选、注释代码/完整小观测集合、按请求负载顺序拆协调及全局覆盖检查、首字节/停顿诊断、事务锁等待指标、可读暂缓与旧构建保护理由已实施。独立数据库容量、真实模型和隔离金标准未验收，未发布；详见编译规格2026-11-06节及交接。不能将归档147条或机制测试当作线上/业务验收结果。
+
+
+**2026-11-06 FEATURE_069 最终同步（InProgress）：**references-v3 / structured-compiler-v10 / knowledge-native-sources-v20-dependency-coordination已覆盖递归请求拆分、全局联合窗口及动态关系目录、新冻结任务依赖复用、显式关系绑定和三层验证；独立PG16/MySQL8.4回归158/158零跳过，8表16000合成行容量实测及清理完成。此前“数据库容量未验收”只代表当时状态。文档收尾已完成；付费真实模型、独立金标准签认/裁决、生产容量和本轮浏览器视觉仍待验，不能据此结项或发布。详见[逐项验收账](implementation/STRUCTURED_COMPILER_ACCEPTANCE.md)与[真实验收准备](implementation/STRUCTURED_COMPILER_PILOT_PLAN.md)。

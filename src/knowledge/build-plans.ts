@@ -103,6 +103,8 @@ export class BuildPlans {
   async list(actor: Principal) {
     authorize(actor);
     return (await this.core.db.pool.query(`SELECT p.id,p.revision,p.ontology_id,p.status,p.manifest,p.provenance,p.created_at,p.approved_at,
+      p.preview->'errors' AS preview_errors,p.preview->'ready' AS preview_ready,
+      (SELECT count(*)::integer FROM jsonb_array_elements(COALESCE(p.preview->'identities','[]'::jsonb)) g WHERE g->>'decision'='pending' AND COALESCE((g->>'autoContinued')::boolean,false)=false) AS pending_identity_count,
       CASE WHEN EXISTS (SELECT 1 FROM jsonb_array_elements(p.manifest) m JOIN knowledge.source_versions v ON v.id=(m->>'id')::uuid JOIN knowledge.sources s ON s.id=v.source_id WHERE COALESCE(s.observed_version,s.active_version) IS DISTINCT FROM v.id OR v.content_hash IS DISTINCT FROM m->>'hash')
       OR EXISTS (SELECT 1 FROM knowledge.approved_plan_outputs o JOIN knowledge.source_versions v ON v.id=o.source_version_id JOIN knowledge.source_build_heads h ON h.source_id=v.source_id WHERE o.plan_id=p.id AND h.installed_at>p.approved_at AND h.build_plan_id IS DISTINCT FROM p.id)
       THEN 'obsolete' ELSE p.status END AS effective_status
@@ -267,7 +269,9 @@ export class BuildPlans {
       for (const fact of old) allClaims.push({ subject: existingSubjects.get(fact.object_id)!, predicate: fact.predicate, ...(fact.target_id ? { object: { typeId: fact.target_type, namespace: fact.target_namespace, value: fact.target_value } } : { value: fact.value }), validity: { from: fact.valid_from ? new Date(fact.valid_from).toISOString() : null, to: fact.valid_to ? new Date(fact.valid_to).toISOString() : null, precision: fact.time_precision }, basis: fact.basis, semantics: fact.semantics, comparison: fact.comparison, evidence: [] });
     }
     const events = buildConflictEvents(ontology, allClaims);
-    for(const skip of row.proposal.skipped??[])events.push({id:fingerprint({kind:'source_exclusion',...skip}),kind:'source_exclusion',summary:`${row.manifest.find(m=>m.id===skip.sourceVersionId)?.title??skip.sourceVersionId} 本轮不构建，需确认理由：${skip.reason}`,details:skip});
+    // Skipped sources never install a new head or retire old facts. Coverage is a
+    // warning above, not a per-source business approval. Destructive changes remain gated.
+
     const policies=row.proposal.csv.filter(s=>selectedSource(s.sourceVersionId)).flatMap(s=>[
       ...s.properties.filter(p=>p.booleanEncoding==='zero_one'&&included(row,itemKey(s.sourceVersionId,'property',p.id))).map(p=>({sourceId:row.manifest.find(m=>m.id===s.sourceVersionId)!.sourceId,binding:p.id,object:p.object,typeId:s.objects.find(o=>o.id===p.object)?.typeId,predicate:p.predicate,column:p.column,booleanEncoding:p.booleanEncoding})),
       ...s.objects.filter(o=>o.onNull==='skip_object'&&included(row,itemKey(s.sourceVersionId,'object',o.id))).map(o=>({sourceId:row.manifest.find(m=>m.id===s.sourceVersionId)!.sourceId,binding:o.id,typeId:o.typeId,column:o.identityColumn,onNull:o.onNull})),

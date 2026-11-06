@@ -50,6 +50,13 @@ export async function controlledModelFetch(input: Parameters<typeof fetch>[0], i
   const signal = AbortSignal.any([request.signal, current.abort.signal, controller.signal]);
   let timer: ReturnType<typeof setTimeout>;
   let lastActivity = Date.now();
+  const started=Date.now();
+  const requestBytes=request.body?Buffer.byteLength(await request.clone().text()):0;
+  current.emit('transport.request',{requestBytes});
+  let headersReceived = false, receivedBytes = 0;
+  const phase=()=>!headersReceived?'response_headers':receivedBytes===0?'first_byte':'stream_idle';
+  const idleError = () => new ModelTransportError('MODEL_IDLE_TIMEOUT',
+    `模型 HTTP 请求连续 ${current.policy.idleTimeoutMs / 1000} 秒无数据（${headersReceived ? receivedBytes===0?'已收到响应头，等待首字节':`已收到响应头及 ${receivedBytes} 字节，等待后续响应` : '尚未收到响应头'}），已取消并禁止自动重发；总运行预算尚未耗尽也会触发此保护。请检查模型服务或代理的响应停顿；手动重试可能产生费用`);
   let rejectIdle!: (error: ModelTransportError) => void;
   const idle = new Promise<never>((_, reject) => { rejectIdle = reject; });
   // Attach a rejection handler even while callers are between stream reads.
@@ -58,7 +65,8 @@ export async function controlledModelFetch(input: Parameters<typeof fetch>[0], i
     clearTimeout(timer);
     lastActivity = Date.now();
     timer = setTimeout(() => {
-      const error = new ModelTransportError('MODEL_IDLE_TIMEOUT', `模型 HTTP 请求连续 ${current.policy.idleTimeoutMs / 1000} 秒无数据，已取消并禁止自动重发`);
+      const error = idleError();
+      current.emit('transport.idle',{phase:phase(),elapsedMs:Date.now()-started,receivedBytes,requestBytes});
       controller.abort(error); rejectIdle(error); current.fail(error);
     }, current.policy.idleTimeoutMs);
   };
@@ -71,6 +79,8 @@ export async function controlledModelFetch(input: Parameters<typeof fetch>[0], i
   arm();
   try {
     const response = await Promise.race([send(request, { signal }), idle]);
+    headersReceived = true;
+    current.emit('transport.headers',{elapsedMs:Date.now()-started,requestBytes});
     assertModelTransportActive();
     if (!response.ok) {
       clean();
@@ -89,11 +99,11 @@ export async function controlledModelFetch(input: Parameters<typeof fetch>[0], i
           const next = await Promise.race([reader.read(), idle]);
           assertModelTransportActive();
           if (Date.now() - lastActivity >= current.policy.idleTimeoutMs) {
-            const error = new ModelTransportError('MODEL_IDLE_TIMEOUT', '模型 HTTP 长时间无数据，已停止自动重试');
+            const error = idleError();
             current.fail(error); throw error;
           }
           if (next.done) { clean(); current.abort.signal.removeEventListener('abort', onAbort); reader.releaseLock(); c.close(); }
-          else { arm(); c.enqueue(next.value); }
+          else { if(receivedBytes===0&&next.value.byteLength)current.emit('transport.first_byte',{elapsedMs:Date.now()-started,requestBytes});receivedBytes += next.value.byteLength; arm(); c.enqueue(next.value); }
         } catch (error) {
           clean(); current.abort.signal.removeEventListener('abort', onAbort);
           const failure = current.failure ?? new ModelTransportError('MODEL_STREAM_FAILED', '模型响应流中断，已停止本次任务；请查看 HTTP 追踪后手动重试');

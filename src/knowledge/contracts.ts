@@ -55,7 +55,7 @@ export const builtinActions = ['CorrectProperty', 'RejectAssertion', 'CorrectVal
 export const ontologySchema = z.object({
   name: label, types: z.array(objectTypeSchema).min(1).max(100), links: z.array(linkSchema).max(200).default([]),
   actions: z.array(z.enum(builtinActions)).default([...builtinActions]),
-  discoveryEvidence: z.array(z.object({ memberId: key, sourceVersionId: z.string().uuid(), locator: z.lazy(() => evidenceInputSchema), originalStart: z.number().int().nonnegative().optional() }).strict()).max(1000).default([]),
+  discoveryEvidence: z.array(z.object({ memberId: key, sourceVersionId: z.string().uuid(), locator: z.lazy(() => discoveryLocatorSchema), originalStart: z.number().int().nonnegative().optional() }).strict()).max(1000).default([]),
 }).strict().superRefine((o, ctx) => {
   const ids = new Set<string>();
   for (const member of [...o.types, ...o.types.flatMap(t => t.properties), ...o.links]) {
@@ -72,6 +72,10 @@ export const identitySchema = z.object({ typeId: key, namespace: key, value: lab
 export const evidenceInputSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('field'), recordKey: label, field: label }).strict(),
   z.object({ kind: z.literal('quote'), quote: z.string().min(1).max(20000), start: z.number().int().nonnegative() }).strict(),
+]);
+// Schema evidence is for ontology definitions only, never for record claims.
+export const discoveryLocatorSchema = z.union([evidenceInputSchema,
+  z.object({ kind: z.literal('column'), field: label, structureHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
 ]);
 export const claimSchema = z.object({
   subject: identitySchema, predicate: key,

@@ -50,4 +50,3 @@ v0.2.3（2026-10-16）是本轮开发的历史基线；[0.2.x 设计](docs/featu
 - **Tag 一经发布不移动、不复用**。发布后发现问题，修复后发下一个 PATCH。打 Tag 前先用 `git tag` 确认版本号未被占用，包括在仓库外发出过的版本。
 - 远程仓库为 `https://github.com/BizAgentOS/context-os.git`（私有），默认分支为 `main`；按用户授权推送功能分支和 Pull Request。GitHub Release 按 [RELEASING](docs/RELEASING.md) 由 NoraJing 通过指定流程确认；版本变更与线上部署仍需明确授权，不能把上传代码等同于发布新版本。用户已选择保留双方权限的流程门禁，Write/Admin 的网页/API 手动发布权限仍在，不得声称平台已隔离 Release 权限。协作步骤见 [CONTRIBUTING](CONTRIBUTING.md)。
 - 带日期的验收与设计记录保留当时原文；后续变化以追加段落或标注说明，不改写历史。
-

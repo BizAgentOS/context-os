@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { discoveryInput, validateDiscovery, discoveryCandidateSchema, discoveryReviewIssues, type DiscoverySource } from '../../src/knowledge/discovery.ts';
-import { strictComparisonSchema, ontologySchema } from '../../src/knowledge/contracts.ts';
+import { discoveryInput, validateDiscovery, discoveryCandidateSchema, discoveryReviewIssues, validateDiscoveryEvidence, carryDiscoveryEvidence, refreshDiscoveryValidation, reassessNativeDefinition, type DiscoverySource } from '../../src/knowledge/discovery.ts';
+import { locateDiscoveryEvidence } from '../../src/knowledge/sources.ts';
+import { strictComparisonSchema, ontologySchema, claimSchema } from '../../src/knowledge/contracts.ts';
 import { openDatabase } from '../../src/knowledge/database.ts';
 import { KnowledgeCore } from '../../src/knowledge/service.ts';
 const source: DiscoverySource = { id: '00000000-0000-4000-8000-000000000001', kind: 'csv', keyColumn: 'id', columns: ['id', 'amount'], rows: [{ id: 'C001', amount: '100.00' }], warnings: [] };
@@ -75,7 +76,8 @@ test('an ambiguous property is deferred without blocking the clear type and its 
   assert.equal(result.definition.types[0].properties.length, 0);
   assert.equal(result.validation.deferred.length, 1);
   assert.equal(result.validation.issues.length, 1);
-  assert.equal(result.validation.issues[0].kind, 'first_release');
+  assert.ok(result.validation.issues.some(i=>i.kind==='first_release'));
+  assert.equal(result.validation.issues.some(i=>i.kind==='deferred_candidates'),false);
 });
 
 test('value conflicts and missing currency retain the amount concept without picking a winner', () => {
@@ -150,4 +152,152 @@ test('date representation uncertainty stays a proposal and requires one current 
   assert.equal(result.validation.issues.filter(i=>i.kind==='datetime_confirmation').length,1);
   const scalar=ontologySchema.parse({...result.definition,types:[{...result.definition.types[0],properties:[{id:'amount',name:'金额',valueType:'decimal'}]}]});
   assert.equal(discoveryReviewIssues(scalar,proposal.uncertainties).some(i=>i.kind==='datetime_confirmation'),false);
+});
+
+
+test('all-NULL native columns retain exact evidence for optional schema candidates without inventing dates', () => {
+  const native: DiscoverySource = { id: source.id, kind: 'table', keyColumn: 'id', columns: ['id', 'create_time'],
+    rows: [{ id: '1', create_time: '' }, { id: '2', create_time: '' }], warnings: [],
+    nativeValues: { '1': { id: '1', create_time: null }, '2': { id: '2', create_time: null } },
+    metadata: { name: 'system_exception_log', columns: [{ name: 'create_time', type: 'datetime', comment: '创建时间', nullable: true }] } };
+  const prepared = discoveryInput([native], null);
+  const refs = prepared.catalog.filter(e => e.locator.kind === 'field' && e.locator.field === 'create_time');
+  assert.equal(refs.length, 2);
+  assert.ok(refs.every(e => e.value === null));
+  const inputEvidence = prepared.input.evidenceCatalog.find(e => e.evidenceId === refs[0].id)!;
+  assert.ok('value' in inputEvidence);
+  assert.equal(inputEvidence.value, null);
+  const proposal = { name: '日志', types: [{ id: 'Log', name: '日志', properties: [{ id: 'created', name: '创建时间', valueType: 'datetime', required: false }] }], links: [],
+    evidenceReferences: [{ memberId: 'created', evidenceIds: [refs[0].id] }], uncertainties: [] };
+  const result = validateDiscovery(proposal, [native], prepared.catalog, null);
+  assert.equal(result.definition.types[0].properties[0].valueType, 'datetime');
+  assert.equal(result.definition.types[0].properties[0].required, false);
+  assert.equal(result.validation.semanticVerified, false);
+  const evidence = result.definition.discoveryEvidence.find(e => e.memberId === 'created')!;
+  const located = locateDiscoveryEvidence(native, evidence.locator);
+  assert.ok('value' in located);
+  assert.equal(located.value, null);
+  assert.throws(() => validateDiscovery({ ...proposal, evidenceReferences: [] }, [native], prepared.catalog, null), /暂无可自动采用/);
+  assert.throws(() => validateDiscovery({ ...proposal, evidenceReferences: [{ memberId: 'created', evidenceIds: ['invented'] }] }, [native], prepared.catalog, null), /证据目录/);
+});
+
+const nativeEvidenceSource = (): DiscoverySource => ({ id: source.id, kind: 'table', keyColumn: 'id', columns: ['id', 'create_time'],
+  rows: [{ id: '1', create_time: '' }], nativeValues: { '1': { id: '1', create_time: null } }, warnings: [],
+  metadata: { name: 'unpredictable_table', columns: [{ name: 'id', type: 'integer' }, { name: 'create_time', type: 'datetime', comment: '创建时间', nullable: true }] } });
+
+test('explicit source columns attach schema evidence independently of member names and record values', () => {
+  const native=nativeEvidenceSource(),prepared=discoveryInput([native],null);
+  const column=prepared.input.sources[0].sourceColumns!.find(c=>c.column==='create_time')!;
+  const proposal={name:'业务候选',types:[{id:'Anything',name:'对象',properties:[{id:'unrelated_member_name',name:'创建时间',valueType:'datetime',sourceColumnIds:[column.sourceColumnId]}]}],links:[]};
+  const result=validateDiscovery(proposal,[native],prepared.catalog,null);
+  assert.equal(result.validation.deferred.length,0);
+  const evidence=result.definition.discoveryEvidence.find(e=>e.memberId==='unrelated_member_name')!;
+  assert.equal(evidence.locator.kind,'column');
+  assert.ok('declaration' in locateDiscoveryEvidence(native,evidence.locator));
+  assert.equal(result.validation.semanticVerified,false);
+  assert.equal('sourceColumnIds' in result.definition.types[0].properties[0],false,'compiler bindings do not enter semantic definitions');
+  const empty={...native,rows:[],nativeValues:{},rowCount:0};
+  assert.deepEqual(discoveryInput([empty],null).input.sources[0].sourceColumns,prepared.input.sources[0].sourceColumns,'declaration IDs do not depend on sample rows');
+  assert.equal(locateDiscoveryEvidence(empty,evidence.locator).kind,'column');
+  assert.equal(claimSchema.safeParse({subject:{typeId:'Anything',namespace:'local',value:'1'},predicate:'unrelated_member_name',value:'2026-11-05',evidence:[evidence.locator]}).success,false,'schema evidence cannot be used to manufacture a record fact');
+  const rejected=validateDiscoveryEvidence({...proposal,types:[{...proposal.types[0],properties:[{...proposal.types[0].properties[0],sourceColumnIds:['column:invented']}]}]},[native],prepared.catalog,null);
+  assert.ok(rejected.candidate.uncertainties.some(u=>u.kind==='source_binding'));
+  assert.ok(!rejected.proposed.discoveryEvidence.some(e=>e.memberId==='unrelated_member_name'));
+  assert.throws(()=>locateDiscoveryEvidence({...native,metadata:{...native.metadata,name:'different_table'}},evidence.locator),/结构指纹/);
+});
+
+test('native missing evidence defers the member without guessing its id suffix, without a review gate after refresh', () => {
+  const native=nativeEvidenceSource(),prepared=discoveryInput([native],null),column=prepared.input.sources[0].sourceColumns![0];
+  const proposal={name:'日志',types:[{id:'Log',name:'日志',sourceColumnIds:[column.sourceColumnId],properties:[{id:'Log.id',name:'ID',valueType:'integer'}]}],links:[]};
+  const result=validateDiscovery(proposal,[native],prepared.catalog,null);
+  assert.equal(result.definition.types[0].properties.length,0,'a real id column is not enough to infer a missing binding');
+  assert.equal(result.validation.deferred[0].member.id,'Log.id');
+  assert.equal(result.validation.issues.some(i=>i.kind==='deferred_candidates'),false);
+  assert.equal(refreshDiscoveryValidation(result.definition,result.validation).issues.some((i:{kind:string})=>i.kind==='deferred_candidates'),false);
+  assert.throws(()=>validateDiscovery({...proposal,evidenceReferences:[{memberId:'Log.id',evidenceIds:['invented']}]},[native],prepared.catalog,null),/证据目录/);
+});
+
+test('coordination restores unchanged member provenance and renamed members use explicit stable column bindings', () => {
+  const native=nativeEvidenceSource(),prepared=discoveryInput([native],null),column=prepared.input.sources[0].sourceColumns![0];
+  const prior=validateDiscoveryEvidence({name:'日志',types:[{id:'Log',name:'日志',properties:[{id:'log_id',name:'编号',valueType:'integer',sourceColumnIds:[column.sourceColumnId]}]}],links:[]},[native],prepared.catalog,null).candidate;
+  const omitted=structuredClone(prior);omitted.evidenceReferences=[];omitted.types[0].properties[0].sourceColumnIds=[];
+  const carried=carryDiscoveryEvidence(omitted,[prior]);
+  assert.equal(validateDiscovery(carried,[native],prepared.catalog,null).validation.deferred.length,0);
+  const renamed=structuredClone(prior);renamed.types[0].properties[0].id='renamed_id';renamed.evidenceReferences=[];
+  assert.ok(validateDiscovery(renamed,[native],prepared.catalog,null).definition.discoveryEvidence.some(e=>e.memberId==='renamed_id'));
+  const moved=structuredClone(omitted);moved.types[0].id='DifferentOwner';
+  assert.equal(carryDiscoveryEvidence(moved,[prior]).types[0].properties[0].sourceColumnIds.length,0,'owner changes cannot inherit evidence by a repeated property id');
+});
+
+
+test('explicit column names are resolved by the host and mistyped opaque ids are quarantined without fuzzy repair', () => {
+  const native=nativeEvidenceSource(),prepared=discoveryInput([native],null);
+  const proposal={name:'日志',types:[{id:'Log',name:'日志',properties:[
+    {id:'id',name:'编号',valueType:'integer',sourceColumns:[{column:'id'}]},
+    {id:'created',name:'创建时间',valueType:'datetime',sourceColumns:[{column:'create_time'}]},
+    {id:'bad',name:'错误来源',valueType:'string',sourceColumnIds:['column:40a40bdc1834fa41c6483d6d604fd0fe720363e7d06d4100535991923b9698b6']}
+  ]}],links:[]};
+  const normalized=validateDiscoveryEvidence(proposal,[native],prepared.catalog,null);
+  assert.deepEqual(normalized.candidate.types[0].properties[1].sourceColumns,[{sourceVersionId:native.id,column:'create_time'}]);
+  const result=validateDiscovery(normalized.candidate,[native],prepared.catalog,null);
+  assert.deepEqual(result.definition.types[0].properties.map(p=>p.id),['id','created']);
+  assert.ok(result.validation.deferred.some(d=>d.member.id==='bad'&&d.reason.includes('40a40b')));
+  const mixed={...proposal,types:[{...proposal.types[0],properties:[proposal.types[0].properties[0],{...proposal.types[0].properties[2],sourceColumns:[{column:'id'}]}]}]};
+  assert.ok(validateDiscovery(mixed,[native],prepared.catalog,null).validation.deferred.some(d=>d.member.id==='bad'),'a valid binding does not silently pardon another rejected binding');
+  const second={...native,id:'00000000-0000-4000-8000-000000000099'};
+  const ambiguous=validateDiscoveryEvidence(proposal,[native,second],discoveryInput([native,second],null).catalog,null);
+  assert.ok(ambiguous.candidate.uncertainties.some(u=>u.memberId==='id'&&u.kind==='source_binding'),'multi-source shorthand is not resolved by matching a column name');
+  const explicit={...proposal,types:[{...proposal.types[0],properties:[{...proposal.types[0].properties[0],sourceColumns:[{column:'id',sourceVersionId:native.id}]}]}]};
+  assert.ok(validateDiscoveryEvidence(explicit,[native,second],discoveryInput([native,second],null).catalog,null).proposed.discoveryEvidence.some(e=>e.memberId==='id'&&e.sourceVersionId===native.id));
+});
+
+test('native qualified property references and uncertainties resolve only through exact declared ownership', () => {
+  const native=nativeEvidenceSource(),prepared=discoveryInput([native],null);
+  const evidenceId=prepared.catalog.find(e=>e.locator.kind==='column'&&e.locator.field==='id')!.id;
+  const proposal={name:'关联表',types:[{id:'SystemRoleMenuRelation',name:'关联',properties:[{id:'id',name:'编号',valueType:'integer'}]}],links:[],
+    evidenceReferences:[{memberId:'SystemRoleMenuRelation.id',evidenceIds:[evidenceId]}],
+    uncertainties:[{memberId:'SystemRoleMenuRelation.id',kind:'fact_conflict',question:'编号存在冲突，保留依据'}]};
+  const result=validateDiscovery(proposal,[native],prepared.catalog,null);
+  assert.ok(result.definition.discoveryEvidence.some(e=>e.memberId==='id'));
+  assert.equal(result.validation.uncertainties[0].memberId,'id');
+  assert.equal(result.validation.deferred.length,0);
+  const missing=validateDiscoveryEvidence({...proposal,evidenceReferences:[{memberId:'OtherType.id',evidenceIds:[evidenceId]}],uncertainties:[]},[native],prepared.catalog,null);
+  assert.ok(!missing.proposed.discoveryEvidence.some(e=>e.memberId==='id'),'matching a suffix never repairs an unknown owner');
+  assert.ok(missing.candidate.uncertainties.some(u=>u.kind==='source_binding'&&u.question.includes('OtherType.id')));
+  const unknownUncertainty=validateDiscoveryEvidence({...proposal,uncertainties:[{memberId:'Removed',kind:'fact_conflict',question:'原冲突提醒'}]},[native],prepared.catalog,null);
+  assert.ok(unknownUncertainty.candidate.uncertainties.some(u=>u.kind==='source_binding'&&u.question.includes('原冲突提醒')),'orphan warnings must not be silently deleted');
+  assert.throws(()=>validateDiscoveryEvidence({...proposal,evidenceReferences:[{memberId:'OtherType.id',evidenceIds:['invented']}]},[native],prepared.catalog,null),/证据目录/,'orphan member references do not bypass evidence validation');
+});
+
+test('canonical member IDs take precedence over qualified aliases', () => {
+  const native=nativeEvidenceSource(),prepared=discoveryInput([native],null);
+  const evidenceId=prepared.catalog.find(e=>e.locator.kind==='column'&&e.locator.field==='id')!.id;
+  const checked=validateDiscoveryEvidence({name:'日志',types:[{id:'Log',name:'日志',properties:[{id:'id',name:'ID',valueType:'integer'},{id:'Log.id',name:'独立成员',valueType:'integer'}]}],links:[],
+    evidenceReferences:[{memberId:'Log.id',evidenceIds:[evidenceId]}]},[native],prepared.catalog,null);
+  assert.ok(checked.proposed.discoveryEvidence.some(e=>e.memberId==='Log.id'));
+  assert.ok(!checked.proposed.discoveryEvidence.some(e=>e.memberId==='id'));
+});
+
+
+test('local native reassessment removes routine gates and speculative constraints while retaining exclusions and evidence',()=>{
+  const native=nativeEvidenceSource(),prepared=discoveryInput([native],null);
+  const raw={name:'日志',types:[{id:'Log',name:'日志',identityNamespaces:['shared'],properties:[
+    {id:'id',name:'编号',valueType:'enum',enumValues:['1'],required:true,sourceColumns:[{column:'id'}]},
+    {id:'created',name:'创建日期',valueType:'datetime',sourceColumns:[{column:'create_time'}]}
+  ]}],links:[]};
+  const original=validateDiscovery(raw,[native],prepared.catalog,null);
+  const previous={...original.validation,uncertainties:[{memberId:'created',kind:'datetime_representation',question:'确认时区'},{memberId:'created',kind:'datetime_representation',question:'重复确认'}],tableDecisions:[{sourceVersionId:native.id,status:'deferred',reason:'局部问题'}],tableProposals:[{sourceVersionId:native.id,candidate:raw}],deferred:[{member:{id:'missing'},evidence:[{sourceVersionId:native.id}],reason:'缺目标'}]};
+  const result=reassessNativeDefinition(original.definition,previous,[native]);
+  assert.deepEqual(result.validation.issues.map((i:{kind:string})=>i.kind),['first_release']);
+  assert.equal(result.definition.types[0].properties[0].valueType,'integer');
+  assert.equal(result.definition.types[0].properties[0].required,false);
+  assert.deepEqual(result.definition.types[0].identityNamespaces,[]);
+  assert.deepEqual(result.definition.discoveryEvidence,original.definition.discoveryEvidence);
+  assert.deepEqual(result.validation.deferred,previous.deferred);
+  assert.ok(result.validation.unresolvedSourceVersionIds.includes(native.id),'old source heads must remain protected');
+  assert.equal(result.validation.tableDecisions[0].status,'candidate');
+  assert.equal(original.definition.types[0].properties[0].required,true,'input is not mutated');
+  const existing=reassessNativeDefinition(original.definition,{...previous,baseline:original.definition},[native]);
+  assert.equal(existing.definition.types[0].properties[0].required,true,'existing business constraints remain intact');
+  assert.equal(existing.definition.types[0].properties[0].valueType,'enum');
 });

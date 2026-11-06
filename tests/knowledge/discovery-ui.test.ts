@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 // @ts-expect-error Browser JavaScript is verified separately with node --check.
-import { createPlanWorkspace, discoveryDecisionState, submitDiscovery } from '../../web/knowledge/plans.js';
+import { createPlanWorkspace, discoveryDecisionState, submitDiscovery, discoveryDisplayGroups, discoveryCompletionLabel, relationshipDataMatchLabel } from '../../web/knowledge/plans.js';
 
 test('discovery action reports an old backend beside the button without creating a model task', async () => {
   const messages: Array<{message:string;error:boolean}> = [];
@@ -88,7 +88,7 @@ test('first-release panel explains scope, requires reason, and saves current eve
 test('batch identity continuation preserves unsaved exclusions while allowing reason and identity overrides', async () => {
   class Element {
     children: Element[] = []; value = ''; disabled = false; checked = false; type = ''; textContent = ''; className = '';
-    listeners = new Map<string, () => void>();
+    listeners = new Map<string, () => any>();
     tag: string; text: string;
     constructor(tag = '', text = '') { this.tag = tag; this.text = text; }
     append(...elements: Element[]) { this.children.push(...elements); }
@@ -105,6 +105,7 @@ test('batch identity continuation preserves unsaved exclusions while allowing re
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'document');
   Object.defineProperty(globalThis, 'document', { configurable: true, value: { querySelector } });
   const calls: Array<{ path: string; input: any }> = [], buttons = new Map<string, () => Promise<void>>();
+  let activeWork:Promise<unknown>|undefined;
   const current = {
     id: 'plan', revision: 2, status: 'draft', ontology_id: 'draft',
     manifest: [{ id: 'source-version', title: 'Contracts', coverage: {} }],
@@ -120,7 +121,7 @@ test('batch identity continuation preserves unsaved exclusions while allowing re
         if (path === '/api/source-versions/source-version') return { content: {kind:'table',columns:['id']} };
         throw new Error(`Unexpected API request: ${path}`);
       },
-      work: (run: () => unknown) => run(), node: (tag: string, text = '') => new Element(tag, text),
+      work: (run: () => unknown) => activeWork=Promise.resolve().then(run), node: (tag: string, text = '') => new Element(tag, text),
       button: (text: string, run: () => Promise<void>) => { buttons.set(text, run); return new Element('button', text); },
       notice() {}, getState: () => ({ actor: { role: 'admin' } }), getOntologyId: () => 'draft', refresh: async () => {}, openOntology: async () => {},
     });
@@ -129,6 +130,10 @@ test('batch identity continuation preserves unsaved exclusions while allowing re
       reason.value = '确认本批具体编号'; reason.listeners.get('input')!();
     };
     await workspace.open('plan');
+    const sourceSummary = flatten(querySelector('#plan-summary')).find(el => el.tag === 'details')!;
+    assert.equal((sourceSummary as any).open, false, 'source scope starts collapsed');
+    const report = flatten(querySelector('#plan-preview')).find(el => el.tag === 'details' && el.children.some(child => child.text.includes('预检完整报告')))!;
+    assert.equal((report as any).open, false, 'full preflight JSON starts collapsed');
     assert.ok(flatten(querySelector('#plan-bindings')).some(el=>el.text==='数据库表 · Contracts'));
     assert.ok(!flatten(querySelector('#plan-bindings')).some(el=>el.text.startsWith('CSV ·')));
     setReason();
@@ -148,10 +153,37 @@ test('batch identity continuation preserves unsaved exclusions while allowing re
 
     await workspace.open('plan');setReason();
     const offset=flatten(querySelector('#plan-manifest')).find(el=>el.tag==='input'&&el.type==='text')!;
-    offset.value='+08:00';offset.listeners.get('change')!();
+    offset.value='+08:00';offset.listeners.get('input')!();
     await assert.rejects(buttons.get('批准本批对应并继续构建')!(), /时区.*未保存/);
     assert.equal(calls.length,1,'unsaved timezone must not be discarded by identity continuation');
+    await workspace.open('plan');
+    const focusedReason=querySelector('#plan-reason');focusedReason.value='未失焦的审核理由';focusedReason.listeners.get('input')!();
+    assert.equal(await workspace.refreshCurrent(),false,'focused input must protect review before blur');
+    await workspace.openForIssue('plan');assert.equal(focusedReason.value,'未失焦的审核理由');
+    await assert.rejects(workspace.openForIssue('other-plan'),/未保存/);
+    await workspace.open('plan');
+    const json=querySelector('#plan-json');json.value='{ "unfinished":';json.listeners.get('input')!();
+    assert.equal(await workspace.refreshCurrent(),false,'unfinished advanced JSON survives refresh');
+    assert.equal(json.value,'{ "unfinished":');
+    const requestCount=calls.length;querySelector('#plan-build').listeners.get('click')!();await assert.rejects(activeWork!,/JSON.*载入/);
+    assert.equal(calls.length,requestCount,'unloaded JSON must never enqueue a build using the old plan');
+
   } finally {
     if (previous) Object.defineProperty(globalThis, 'document', previous); else Reflect.deleteProperty(globalThis, 'document');
   }
+});
+
+
+test('deferred members group by version-local source, business class and reason without forcing approvals',()=>{
+ const current={definition:{types:[{id:'Branch',name:'分所',properties:[{id:'manager'}]}]},discovery:{validation:{tableDecisions:[{sourceVersionId:'v1',sourceName:'分所表'}],deferred:[{member:{id:'manager',name:'负责人'},evidence:[{sourceVersionId:'v1'}],reason:'人员角色不明确'},{member:{id:'assistant',name:'助理'},ownerTypeId:'Branch',evidence:[{sourceVersionId:'v1'}],reason:'人员角色不明确'}]}}};
+ const groups=discoveryDisplayGroups(current);assert.equal(groups.length,1);assert.equal(groups[0].sourceNames[0],'分所表');assert.equal(groups[0].ownerName,'分所');assert.equal(groups[0].members.length,2);
+ assert.match(discoveryCompletionLabel({coverageManifest:{state:'in_progress',planned:3,completed:['a']}}),/尚未完成/);
+ assert.match(discoveryCompletionLabel({}),/旧草稿/);
+ assert.match(discoveryCompletionLabel({coverageManifest:{state:'completed',planned:1,completed:['a']}}),/已完成/);
+});
+
+test('relationship check labels distinguish sampled non-match and legacy bounded zero-match from complete coverage',async()=>{
+ assert.match(relationshipDataMatchLabel({status:'sample_no_match',checked:1,matched:0,sourceScope:{checkedRows:1,totalRows:100},targetScopes:[{checkedRows:1,totalRows:1}]}),/抽样未匹配.*不代表全量无关联/);
+ assert.match(relationshipDataMatchLabel({status:'zero_match',checked:1,matched:0}),/旧.*覆盖.*不能/);
+ assert.match(relationshipDataMatchLabel({status:'zero_match',checked:1,matched:0,sourceScope:{complete:true,checkedRows:1,totalRows:1},targetScopes:[{complete:true,checkedRows:1,totalRows:1}]}),/完整.*零匹配.*保留/);
 });

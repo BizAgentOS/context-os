@@ -36,6 +36,9 @@ test('plans: review, source-isolated identities, approval, reverse relationship,
     assert.ok(preview.preview);
     assert.equal(preview.preview.ready, false);
     assert.equal(preview.preview.identities.length, 1);
+    const attention=(await plans.list(actor)).find(p=>p.id===plan.id);
+    assert.equal(attention?.pending_identity_count,1,'unified attention receives persisted identity decisions without full preview outputs');
+    assert.ok(attention?.preview_errors.length>0);
     assert.equal((await core.list(actor, 'objects')).length, 0, 'dry-run does not materialize objects');
     await assert.rejects(plans.approve(actor, plan.id, preview.revision));
     const review = { items: Object.fromEntries(preview.preview.items.map((i: any) => [i.key, { include: true, reviewed: true }])), identities: Object.fromEntries(preview.preview.identities.map((i: any) => [i.key, { decision: 'same', reason: 'reviewed same contract-number issuer and scope' }])), reason: 'all mappings, time and replacement reviewed' };

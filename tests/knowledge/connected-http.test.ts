@@ -1,3 +1,4 @@
+import {retainedCoordination} from './coordination-fixture.ts';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -18,7 +19,8 @@ test('HTTP connection starts native capture, discovery and draft-plan analysis b
   assert.equal((await db.pool.query("SELECT 1 FROM pg_namespace WHERE nspname='knowledge'")).rows.length,0);await db.initialize();owns=true;
   await remote.query("CREATE TABLE http_contracts (id varchar(30) PRIMARY KEY, amount decimal(20,2)) ENGINE=InnoDB COMMENT='合同'");ownsRemote=true;await remote.query("INSERT INTO http_contracts VALUES ('C1',100.00)");
   const model:JsonModel={identity:'fixture',async close(){},async generate(task,raw){calls++;const input=raw as any;
-   if(task==='discover')return {name:'合同',types:[{id:'Contract',name:'合同',properties:[{id:'amount',name:'金额',valueType:'decimal'}]}],links:[],evidenceReferences:[{memberId:'amount',evidenceIds:[input.evidenceCatalog.find((e:any)=>e.field==='amount').evidenceId]}]};
+   if(task==='discover'&&input.stage==='coordinate')return retainedCoordination(input);
+   if(task==='discover')return {name:'合同',types:[{id:'Contract',name:'合同',properties:[{id:'amount',name:'金额',valueType:'decimal',sourceColumns:[{column:'amount'}]}]}],links:[]};
    assert.equal(task,'plan');return {csv:input.sources.map((s:any)=>({sourceVersionId:s.id,objects:[{id:'c',typeId:'Contract',identityColumn:'id'}],properties:[{id:'a',object:'c',predicate:'amount',column:'amount'}],links:[]}))};
   }};
   const admin='a'.repeat(40),editor='e'.repeat(40),viewer='v'.repeat(40);
@@ -35,26 +37,26 @@ test('HTTP connection starts native capture, discovery and draft-plan analysis b
   const packageId=persisted.find(j=>j.kind==='plan')!.result.decisionPackageId;assert.ok(packageId);
   assert.equal((await call(`/api/decision-packages/${packageId}`)).body.state,'preparing');
   // A new worker without any model configuration resumes the durable local collection step.
-  await new KnowledgeJobs(app.core).once();assert.equal(calls,2);
-  const state=await call('/api/state');assert.equal(calls,2);assert.equal(state.body.objects.length,0);assert.equal(state.body.decisionPackages.length,1);
+  await new KnowledgeJobs(app.core).once();assert.equal(calls,3);
+  const state=await call('/api/state');assert.equal(calls,3);assert.equal(state.body.objects.length,0);assert.equal(state.body.decisionPackages.length,1);
   assert.ok(!JSON.stringify(state.body).includes('local-autonomy-test-only'));
   const pack=(await call(`/api/decision-packages/${state.body.decisionPackages[0].id}`)).body;
   assert.equal(pack.summary.ontologyStatus,'draft');assert.equal(pack.summary.ontologyIssues.length,1);
   const payload={expectedRevision:pack.revision,candidateHash:pack.summary.candidateHash,reason:'确认本次合同业务范围'};
   assert.equal((await call(`/api/decision-packages/${pack.id}/submit`,payload,editor)).status,403);
-  const built=await call(`/api/decision-packages/${pack.id}/submit`,payload);assert.equal(built.status,200,JSON.stringify(built.body));assert.equal(built.body.state,'built');assert.equal(calls,2);
+  const built=await call(`/api/decision-packages/${pack.id}/submit`,payload);assert.equal(built.status,200,JSON.stringify(built.body));assert.equal(built.body.state,'built');assert.equal(calls,3);
   // Ordinary data changes rebind an approved template, then collect/preflight and build locally.
   await remote.query("UPDATE http_contracts SET amount=120.00 WHERE id='C1'");
   await call(`/api/connections/${connected.body.id}/sync`,{operationId:'sync-data-change',construct:true});
   for(let i=0;i<3;i++)await app.jobs.once();
-  assert.equal(calls,2,'same structure and published ontology reuse mappings without model calls');
+  assert.equal(calls,3,'same structure and published ontology reuse mappings without model calls');
   const reused=(await call('/api/plans')).body.filter((p:any)=>p.provenance?.reusedFromPlanId);
   assert.equal(reused.length,1);assert.equal(reused[0].status,'approved');
   const updated=(await call('/api/state')).body;
   assert.ok(updated.decisionPackages.some((p:any)=>p.state==='built'));
   const changedObject=await app.core.object({id:'admin',role:'admin'},updated.objects[0].id);
   assert.ok(changedObject.assertions.some((a:any)=>a.status==='accepted'&&String(a.value)==='120.00'),'fresh values must be rebuilt rather than copied from old outputs');
-  await call(`/api/connections/${connected.body.id}/sync`,{operationId:'sync-no-change',construct:true});await app.jobs.once();await app.jobs.once();assert.equal(calls,2,'unchanged capture creates no discovery model request');
+  await call(`/api/connections/${connected.body.id}/sync`,{operationId:'sync-no-change',construct:true});await app.jobs.once();await app.jobs.once();assert.equal(calls,3,'unchanged capture creates no discovery model request');
  }finally{
   if(ownsRemote)await remote.query('DROP TABLE http_contracts');await remote.end();
   if(app){await app.jobs.close();await new Promise<void>(resolve=>app!.server.close(()=>resolve()));}

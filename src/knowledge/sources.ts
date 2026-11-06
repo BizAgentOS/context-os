@@ -46,6 +46,19 @@ export async function preparePdf(directory: string, name: string, data: Uint8Arr
     kind: 'pdf', text: String(file.content.raw), blocks: metadata.blocks, warnings: metadata.warnings,
   }, discard: file.discard };
 }
+export function sourceStructureHash(content: SourceContent) {
+  const m = content.metadata ?? {};
+  return fingerprint({ kind: content.kind, schema: m.schema, name: m.name, engine: m.engine, comment: m.comment,
+    columns: m.columns, primaryKey: m.primaryKey, ...(m.uniqueKeys?{uniqueKeys:m.uniqueKeys}:{}), foreignKeys: m.foreignKeys });
+}
+export function locateDiscoveryEvidence(content: SourceContent, ref: Ontology['discoveryEvidence'][number]['locator']) {
+  if (ref.kind !== 'column') return locateEvidence(content, ref);
+  if (content.kind !== 'table' || sourceStructureHash(content) !== ref.structureHash) throw new Error('结构依据的来源类型或结构指纹不匹配');
+  const columns = (content.metadata?.columns ?? []) as Array<{name: string}>;
+  const column = columns.find(c => c.name === ref.field);
+  if (!column || !content.columns?.includes(ref.field)) throw new Error('结构依据的声明列不存在');
+  return { ...ref, declaration: column, scope: 'schema_only; not a record value or proof of business constraints' };
+}
 export function locateEvidence(content: SourceContent, ref: Claim['evidence'][number]) {
   if (ref.kind === 'field') {
     if (!['csv', 'table'].includes(content.kind) || !content.columns?.includes(ref.field)) throw new Error('字段证据不存在');

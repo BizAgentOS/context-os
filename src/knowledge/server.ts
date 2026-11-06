@@ -35,6 +35,7 @@ const assets = new Map([
   ['/plans.js', ['plans.js', 'text/javascript; charset=utf-8']],
   ['/action-target.js', ['action-target.js', 'text/javascript; charset=utf-8']],
   ['/evidence.js', ['evidence.js', 'text/javascript; charset=utf-8']],
+  ['/explorer.js', ['explorer.js', 'text/javascript; charset=utf-8']],
   ['/style.css', ['style.css', 'text/css; charset=utf-8']],
 ]);
 export async function createKnowledgeServer(options: { db: Database; directory: string; principals: unknown; model?: JsonModel; worker?: boolean; vault?: CredentialVault }) {
@@ -118,6 +119,8 @@ export async function createKnowledgeServer(options: { db: Database; directory: 
         const input = z.object({ operationId: z.string().min(1), sourceKey: z.string().min(1), title: z.string().min(1), name: z.string().min(1), base64: z.string().regex(/^[A-Za-z0-9+/]*={0,2}$/) }).strict().parse(await body(request));
         send(200, await core.importSource(actor, input.operationId, input.sourceKey, input.title, await preparePdf(options.directory, input.name, Buffer.from(input.base64, 'base64')))); return;
       }
+      const reassess=/^\/api\/ontologies\/([^/]+)\/reassess$/.exec(url.pathname);
+      if(request.method==='POST'&&reassess){const input=z.object({expectedRevision:z.number().int().positive()}).strict().parse(await body(request));send(200,await core.reassessDiscovery(actor,reassess[1],input.expectedRevision));return;}
       if (request.method === 'POST' && url.pathname === '/api/ontologies') {
         const input = z.object({ definition: z.unknown(), copyFromId: z.string().uuid().optional(), id: z.string().uuid().optional(), expectedRevision: z.number().int().positive().optional() }).strict().parse(await body(request));
         if (input.id && input.copyFromId) throw new Error('不能同时编辑和复制草稿');
@@ -149,6 +152,14 @@ export async function createKnowledgeServer(options: { db: Database; directory: 
           if (operation === 'approve') { send(200, await plans.approve(actor, id, input.expectedRevision)); return; }
         }
       }
+      if (request.method === 'GET' && url.pathname === '/api/browse/ontology') { send(200,await core.publishedOntology(actor));return; }
+      if (request.method === 'GET' && url.pathname === '/api/browse/objects') {
+        send(200, await core.browseObjects(actor, { type: url.searchParams.get('type') ?? '', query: url.searchParams.get('query') ?? '', offset: Number(url.searchParams.get('offset') ?? 0), limit: Number(url.searchParams.get('limit') ?? 30) })); return;
+      }
+      const neighborhood = /^\/api\/objects\/([^/]+)\/neighbors$/.exec(url.pathname);
+      if (request.method === 'GET' && neighborhood) {
+        send(200, await core.neighborhood(actor,neighborhood[1],{validAt:url.searchParams.get('validAt')??undefined,knownAt:url.searchParams.get('knownAt')??undefined,offset:Number(url.searchParams.get('offset')??0),outgoingOffset:Number(url.searchParams.get('outgoingOffset')??0),edgeOffset:Number(url.searchParams.get('edgeOffset')??0)}));return;
+      }
       const object = /^\/api\/objects\/([^/]+)$/.exec(url.pathname);
       if (request.method === 'GET' && object) { send(200, await core.object(actor, object[1], { validAt: url.searchParams.get('validAt') ?? undefined, knownAt: url.searchParams.get('knownAt') ?? undefined })); return; }
       const evidence = /^\/api\/evidence\/([^/]+)$/.exec(url.pathname);
@@ -157,6 +168,8 @@ export async function createKnowledgeServer(options: { db: Database; directory: 
       if (request.method === 'GET' && source) { const { original_path, ...safe } = await core.sourceVersion(actor, source[1]); send(200, safe); return; }
       const retry = /^\/api\/jobs\/([^/]+)\/retry$/.exec(url.pathname);
       if (request.method === 'POST' && retry) { await body(request); send(200, await jobs.retry(actor, retry[1])); return; }
+      const recoordinate=/^\/api\/jobs\/([^/]+)\/recoordinate$/.exec(url.pathname);
+      if(request.method==='POST'&&recoordinate){const input=z.object({operationId:z.string().min(1).max(160),confirmModelCall:z.literal(true)}).strict().parse(await body(request));send(202,await jobs.recoordinate(actor,recoordinate[1],input.operationId));return;}
       const revalidate = /^\/api\/jobs\/([^/]+)\/revalidate$/.exec(url.pathname);
       if (request.method === 'POST' && revalidate) { await body(request); send(202, await jobs.revalidate(actor, revalidate[1])); return; }
       const recreate = /^\/api\/jobs\/([^/]+)\/recreate$/.exec(url.pathname);

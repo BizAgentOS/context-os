@@ -1,10 +1,11 @@
+import { statusLabel, revealBuildTarget } from './explorer.js';
 /** Connection and decision UI uses the same authenticated domain APIs as other callers. */
 export function createAutonomyWorkspace({api,node,button,notice,refresh,getState,openOntology}) {
   const $=s=>document.querySelector(s);let current;
   async function open(id){
     current=await api(`/api/decision-packages/${id}`);
     const root=$('#decision-package-detail'),s=current.summary;
-    root.replaceChildren(node('h3',`${s.definition.name} · ${current.state}`),node('p',s.note));
+    root.replaceChildren(node('h3',`${s.definition.name} · ${statusLabel(current.state)}`),node('p',s.note));
     root.append(node('p',current.retention+(current.pendingDays>=30?' 已等待超过30天，请复核来源和适用范围。':'')));
     if(current.superseded_by)root.append(node('p',`本批已被 ${current.superseded_by} 取代。`));
     root.append(node('p',`本体事项 ${s.ontologyIssues.length} 项；身份对应 ${s.identities.length} 组；构建事件 ${s.events.length} 项。`));
@@ -41,7 +42,7 @@ export function createAutonomyWorkspace({api,node,button,notice,refresh,getState
         await refresh();await open(result.id);notice(result.state==='built'?'本轮决定与构建已完成。':'已保存当前有效决定，请处理新增或失效事项；不会重复调用模型。');
       }));
     }
-    $('#decision-packages').scrollIntoView({block:'start'});
+    revealBuildTarget($('#decision-packages')).scrollIntoView({block:'start'});
   }
   function update(state){
     const list=$('#connection-list');list.replaceChildren();
@@ -56,7 +57,7 @@ export function createAutonomyWorkspace({api,node,button,notice,refresh,getState
       list.append(row);
     }
     const packs=$('#decision-package-list');packs.replaceChildren();
-    for(const p of state.decisionPackages??[])packs.append(button(`${p.state} · ${p.id.slice(0,8)}`,()=>open(p.id)));
+    for(const p of state.decisionPackages??[])packs.append(button(`${statusLabel(p.state)} · ${p.id.slice(0,8)}`,()=>open(p.id)));
   }
   $('#connect-mysql').addEventListener('submit',event=>{
     event.preventDefault();const form=new FormData(event.target),password=String(form.get('password'));event.target.elements.password.value='';
