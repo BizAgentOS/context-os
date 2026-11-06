@@ -1,0 +1,109 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
+import { readFile, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { once } from 'node:events';
+import type { AddressInfo } from 'node:net';
+import { openDatabase } from '../../src/knowledge/database.ts';
+import { createKnowledgeServer } from '../../src/knowledge/server.ts';
+import { textPdf } from '../agent/document-fixture.ts';
+import type { JsonModel } from '../../src/knowledge/model.ts';
+
+const url = process.env.CONTEXT_OS_KNOWLEDGE_TEST_DATABASE_URL;
+test('HTTP: authenticate, PDF parse, publish, queued extraction, conflict, feedback, historical view and permissions', { skip: !url }, async () => {
+  const db = await openDatabase(url!);
+  const directory = await mkdtemp(join(tmpdir(), 'context-os-knowledge-http-'));
+  let app: Awaited<ReturnType<typeof createKnowledgeServer>> | undefined, ownsSchema = false;
+  try {
+    assert.equal((await db.pool.query("SELECT 1 FROM pg_namespace WHERE nspname='knowledge'")).rows.length, 0, '需使用空的专用测试库');
+    await db.initialize(); ownsSchema = true;
+    const admin = randomBytes(32).toString('hex'), editor = randomBytes(32).toString('hex'), viewer = randomBytes(32).toString('hex');
+    const model: JsonModel = { identity: 'http-fixture', async close() {}, async generate(task, raw) {
+      this.lastRun = { runId: 'fake-run', status: 'completed', usage: { inputTokens: 42, outputTokens: 18, note: 'not persisted' } };
+      assert.equal(task, 'extract');
+      const input = raw as { sourceNamespace: string; content: { text: string } };
+      const quote = input.content.text.trim();
+      return { claims: [{ subject: { typeId: 'Contract', namespace: input.sourceNamespace, value: 'C001' }, predicate: 'contract_amount', value: '1200000.00', validity: { from: '2026-04-01T00:00:00Z', to: null, precision: 'instant' }, evidence: [{ kind: 'quote', quote, start: input.content.text.indexOf(quote) }] }] };
+    } };
+    app = await createKnowledgeServer({ db, directory, worker: false, model, principals: [{ id: 'admin', role: 'admin', token: admin }, { id: 'editor', role: 'editor', token: editor }, { id: 'viewer', role: 'viewer', token: viewer }] });
+    app.server.listen(0, '127.0.0.1'); await once(app.server, 'listening');
+    const base = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
+    const call = async (path: string, data?: unknown, token = admin) => {
+      const response = await fetch(base + path, { method: data === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token}`, ...(data === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(data === undefined ? {} : { body: JSON.stringify(data) }) });
+      return { status: response.status, body: await response.json() as any };
+    };
+    assert.equal((await fetch(base)).status, 200);
+    assert.equal((await fetch(base+'/explorer.js')).status,200);
+    assert.equal((await call('/api/state', undefined, '')).status, 401);
+    assert.equal((await fetch(base + '/api/state', { headers: { Authorization: `Bearer ${admin}`, Origin: 'https://example.invalid' } })).status, 403);
+    const definition = JSON.parse(await readFile(new URL('../../data/samples/knowledge-core/ontology.json', import.meta.url), 'utf8'));
+    assert.equal((await call('/api/ontologies', { definition }, viewer)).status, 403);
+    const draft = await call('/api/ontologies', { definition }); assert.equal(draft.status, 200);
+    const publish = { operationId: 'http-publish', kind: 'PublishOntologyVersion', targetId: draft.body.id, expectedRevision: 1, reason: 'reviewed sample' };
+    assert.equal((await call('/api/actions', publish, editor)).status, 403);
+    assert.equal((await call('/api/actions', publish)).status, 200);
+    const csv = await readFile(new URL('../../data/samples/knowledge-core/contracts.csv', import.meta.url), 'utf8');
+    const source = await call('/api/sources/csv', { operationId: 'http-csv', sourceKey: 'contracts', title: 'Contracts', keyColumn: 'contract_no', text: csv });
+    assert.equal(source.status, 200);
+    const mapping = JSON.parse(await readFile(new URL('../../data/samples/knowledge-core/mapping.json', import.meta.url), 'utf8'));
+    mapping.namespace = `source.${source.body.source.id}`; mapping.links.forEach((l: any) => { l.targetNamespace = mapping.namespace; });
+    assert.equal((await call('/api/jobs', { kind: 'extract', operationId: 'http-map', ontologyId: draft.body.id, sourceVersionId: source.body.version.id, mapping })).status, 202);
+    await app.jobs.once();
+    const pdf = await call('/api/sources/pdf', { operationId: 'http-pdf', sourceKey: 'pdf', title: 'PDF contract', name: 'contract.pdf', base64: textPdf(['Contract C001 amount is 1200000.00 effective 2026-04-01.']).toString('base64') });
+    assert.equal(pdf.status, 200, JSON.stringify(pdf.body));
+    assert.equal(pdf.body.version.content.blocks[0].page, 1);
+    await call('/api/jobs', { kind: 'extract', operationId: 'http-document', ontologyId: draft.body.id, sourceVersionId: pdf.body.version.id });
+    await app.jobs.once();
+    const state = await call('/api/state');
+    assert.ok(state.body.jobs.every((j: any) => j.state === 'completed'), JSON.stringify(state.body.jobs));
+    assert.equal(state.body.accessScope, 'all_instance_data');
+    assert.equal(state.body.fineGrainedPermissions, false);
+    const modelJob = state.body.jobs.find((j: any) => j.payload.input.operationId === 'http-document');
+    assert.ok(modelJob.metrics.durationMs >= 0);
+    assert.ok(modelJob.metrics.inputBytes > 0);
+    assert.deepEqual(modelJob.metrics.usage, { inputTokens: 42, outputTokens: 18 });
+    assert.equal(modelJob.metrics.cost, null);
+    assert.equal((await call(`/api/jobs/${modelJob.id}/attempts`)).body[0].outcome, 'completed');
+    assert.equal((await call('/api/browse/ontology',undefined,viewer)).body.id,draft.body.id);
+    const directoryPage = await call('/api/browse/objects?type=Contract&query=C001&limit=1', undefined, viewer);
+    assert.equal(directoryPage.status,200); assert.equal(directoryPage.body.items.length,1); assert.equal(directoryPage.body.hasMore,true);
+    assert.equal(directoryPage.body.items[0].type_id,'Contract'); assert.ok(directoryPage.body.items[0].identifiers.some((i:any)=>i.value==='C001'));
+    assert.equal((await call('/api/browse/objects?offset=-1')).status,400);
+    assert.equal((await call('/api/browse/objects?query=%27%20OR%201%3D1')).body.items.length,0);
+    assert.equal((await call('/api/browse/objects',undefined,'')).status,401);
+    const csvObject = state.body.objects.find((o:any)=>o.type_id==='Contract');
+    const adjacency = await call(`/api/objects/${csvObject.id}/neighbors?validAt=2026-04-20T00:00:00Z`,undefined,viewer);
+    assert.equal(adjacency.status,200,JSON.stringify(adjacency.body)); assert.ok(adjacency.body.edges.length<=40);
+    assert.ok(adjacency.body.nodes.some((n:any)=>n.id===csvObject.id));
+    for(const edge of adjacency.body.edges){
+      const projection = await call(`/api/objects/${edge.from}?validAt=2026-04-20T00:00:00Z`);
+      assert.equal(projection.body.fields[edge.predicate].status,'resolved');
+      const value=projection.body.fields[edge.predicate].value;
+      assert.ok((Array.isArray(value)?value:[value]).some((v:any)=>v?.objectId===edge.to));
+      const reverse = await call(`/api/objects/${edge.to}/neighbors?validAt=2026-04-20T00:00:00Z`);
+      assert.ok(reverse.body.edges.some((e:any)=>e.from===edge.from&&e.to===edge.to&&e.predicate===edge.predicate),'incoming traversal keeps original direction');
+    }
+    const contractViews = await Promise.all(state.body.objects.filter((o: any) => o.type_id === 'Contract').map((o: any) => call(`/api/objects/${o.id}?validAt=2026-04-20T00:00:00Z`)));
+    assert.equal(contractViews.length, 2, 'direct extraction keeps source identities separate');
+    const objectId = contractViews.find(v => v.body.assertions.some((a: any) => a.source_version_id === pdf.body.version.id))!.body.id;
+    const object = await call(`/api/objects/${objectId}?validAt=2026-04-20T00:00:00Z`);
+    assert.equal(object.body.fields.contract_amount.status, 'resolved');
+    const claim = object.body.assertions.find((a: any) => a.source_version_id === pdf.body.version.id);
+    const evidence = await call('/api/evidence/' + claim.id);
+    assert.deepEqual(evidence.body[0].locator.location.pages, [1]);
+    assert.equal((await call('/api/evidence/' + claim.id + '?revision=0')).status, 400);
+    assert.equal((await call('/api/evidence/' + claim.id + '?revision=1')).status, 200);
+    const correction = { operationId: 'http-correct', kind: 'CorrectProperty', targetId: objectId, expectedRevision: object.body.revision, reason: 'reviewed amendment', predicate: 'contract_amount', value: '1300000.00', duration: 'until_revoked', validity: { from: '2026-04-01T00:00:00Z', to: null, precision: 'instant' } };
+    assert.equal((await call('/api/actions', correction, viewer)).status, 403);
+    assert.equal((await call('/api/actions', { ...correction, kind: 'RematchIdentity' }, editor)).status, 403);
+    assert.equal((await call('/api/actions', correction)).status, 200);
+    assert.equal((await call(`/api/objects/${objectId}?validAt=2026-04-20T00:00:00Z`, undefined, viewer)).body.fields.contract_amount.value, '1300000.00');
+    assert.ok((await call('/api/audit')).body.length >= 2);
+  } finally {
+    if (ownsSchema) { await db.pool.query('DROP SCHEMA knowledge CASCADE'); await db.pool.query('DELETE FROM knowledge_schema_versions WHERE version BETWEEN 1 AND 7'); }
+    if (app) await app.close(); else await db.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

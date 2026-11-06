@@ -1,0 +1,702 @@
+{
+  "model": "glm/glm-5.3",
+  "dataOrigin": "synthetic-contract-fixture",
+  "discovery": {
+    "name": "合同与企业责任本体（基于来源样本发现 v1）",
+    "types": [
+      {
+        "id": "Contract",
+        "name": "合同 (Contract)",
+        "description": "业务合同，以合同编号为业务标识；观测字段包含金额与生效时间范围（CSV 列 contract_no/amount/valid_from/valid_to 及 PDF 陈述归纳）。覆盖范围仅为样本，不代表全库。",
+        "identityNamespaces": [
+          "contract.no"
+        ],
+        "properties": [
+          {
+            "id": "Contract.contractNo",
+            "name": "合同编号 (Contract Number)",
+            "valueType": "string",
+            "required": true,
+            "multiple": false
+          },
+          {
+            "id": "Contract.amount",
+            "name": "金额 (Amount)",
+            "valueType": "decimal",
+            "required": false,
+            "multiple": false
+          },
+          {
+            "id": "Contract.validFrom",
+            "name": "生效开始 (Valid From)",
+            "valueType": "datetime",
+            "required": false,
+            "multiple": false
+          },
+          {
+            "id": "Contract.validTo",
+            "name": "生效结束 (Valid To)",
+            "valueType": "datetime",
+            "required": false,
+            "multiple": false
+          }
+        ]
+      },
+      {
+        "id": "Company",
+        "name": "公司 (Company)",
+        "description": "签署合同的公司/组织，以公司代码标识，另有公司名称属性（CSV 列 company_code 及 PDF 陈述归纳）。",
+        "identityNamespaces": [
+          "company.code"
+        ],
+        "properties": [
+          {
+            "id": "Company.companyCode",
+            "name": "公司代码 (Company Code)",
+            "valueType": "string",
+            "required": true,
+            "multiple": false
+          },
+          {
+            "id": "Company.name",
+            "name": "公司名称 (Company Name)",
+            "valueType": "string",
+            "required": false,
+            "multiple": false
+          }
+        ]
+      },
+      {
+        "id": "Employee",
+        "name": "员工 (Employee)",
+        "description": "在特定时间区间内负责合同的员工，以员工编号标识（CSV 列 employee_no 及 PDF 陈述归纳）。",
+        "identityNamespaces": [
+          "employee.no"
+        ],
+        "properties": [
+          {
+            "id": "Employee.employeeNo",
+            "name": "员工编号 (Employee No)",
+            "valueType": "string",
+            "required": true,
+            "multiple": false
+          }
+        ]
+      },
+      {
+        "id": "ContractResponsibility",
+        "name": "合同负责关系 (Contract Responsibility Assignment)",
+        "description": "员工对合同负责的时间性分配记录；同一合同可先后由不同员工负责，实例以员工+合同+时间区间组合区分，不单独授予可信身份命名空间。",
+        "identityNamespaces": [],
+        "properties": [
+          {
+            "id": "ContractResponsibility.validFrom",
+            "name": "负责开始 (Responsible From)",
+            "valueType": "datetime",
+            "required": false,
+            "multiple": false
+          },
+          {
+            "id": "ContractResponsibility.validTo",
+            "name": "负责结束 (Responsible Until)",
+            "valueType": "datetime",
+            "required": false,
+            "multiple": false
+          }
+        ]
+      }
+    ],
+    "links": [
+      {
+        "id": "Contract.signedByCompany",
+        "name": "合同由公司签署 (Contract signed by Company)",
+        "from": "Contract",
+        "to": "Company",
+        "multiple": false
+      },
+      {
+        "id": "ContractResponsibility.ofContract",
+        "name": "负责关系针对的合同 (Responsibility for Contract)",
+        "from": "ContractResponsibility",
+        "to": "Contract",
+        "multiple": false
+      },
+      {
+        "id": "ContractResponsibility.byEmployee",
+        "name": "负责员工 (Responsible Employee)",
+        "from": "ContractResponsibility",
+        "to": "Employee",
+        "multiple": false
+      }
+    ],
+    "actions": [
+      "CorrectProperty",
+      "RejectAssertion",
+      "CorrectValidity",
+      "PublishOntologyVersion"
+    ],
+    "discoveryEvidence": [
+      {
+        "memberId": "Contract",
+        "sourceVersionId": "bd121d25-6e4b-4c58-9c01-f08ebaf3cebc",
+        "locator": {
+          "kind": "field",
+          "recordKey": "C001",
+          "field": "contract_no"
+        }
+      },
+      {
+        "memberId": "Contract",
+        "sourceVersionId": "e2bfd591-fe86-4889-8d6e-5e1b571637a6",
+        "locator": {
+          "kind": "quote",
+          "quote": "Contract C001 was signed by company ORG001.",
+          "start": 0
+        }
+      },
+      {
+        "memberId": "Contract.contractNo",
+        "sourceVersionId": "bd121d25-6e4b-4c58-9c01-f08ebaf3cebc",
+        "locator": {
+          "kind": "field",
+          "recordKey": "C001",
+          "field": "contract_no"
+        }
+      },
+      {
+        "memberId": "Contract.contractNo",
+        "sourceVersionId": "e2bfd591-fe86-4889-8d6e-5e1b571637a6",
+        "locator": {
+          "kind": "quote",
+          "quote": "Contract C001",
+          "start": 0
+        }
+      },
+      {
+        "memberId": "Contract.amount",
+        "sourceVersionId": "bd121d25-6e4b-4c58-9c01-f08ebaf3cebc",
+        "locator": {
+          "kind": "field",
+          "recordKey": "C001",
+          "field": "amount"
+        }
+      },
+      {
+        "memberId": "Contract.amount",
+        "sourceVersionId": "e2bfd591-fe86-4889-8d6e-5e1b571637a6",
+        "locator": {
+          "kind": "quote",
+          "quote": "The amount for contract C001 is 1200000.00",
+          "start": 45
+        }
+      },
+      {
+        "memberId": "Contract.validFrom",
+        "sourceVersionId": "bd121d25-6e4b-4c58-9c01-f08ebaf3cebc",
+        "locator": {
+          "kind": "field",
+          "recordKey": "C001",
+          "field": "valid_from"
+        }
+      },
+      {
+        "memberId": "Contract.validFrom",
+        "sourceVersionId": "e2bfd591-fe86-4889-8d6e-5e1b571637a6",
+        "locator": {
+          "kind": "quote",
+          "quote": "effective 2026-04-01T00:00:00Z.",
+          "start": 88
+        }
+      },
+      {
+        "memberId": "Contract.validTo",
+        "sourceVersionId": "bd121d25-6e4b-4c58-9c01-f08ebaf3cebc",
+        "locator": {
+          "kind": "field",
+          "recordKey": "C001",
+          "field": "valid_to"
+        }
+      },
+      {
+        "memberId": "Company",
+        "sourceVersionId": "bd121d25-6e4b-4c58-9c01-f08ebaf3cebc",
+        "locator": {
+          "kind": "field",
+          "recordKey": "C001",
+          "field": "company_code"
+        }
+      },
+      {
+        "memberId": "Company",
+        "sourceVersionId": "e2bfd591-fe86-4889-8d6e-5e1b571637a6",
+        "locator": {
+          "kind": "quote",
+          "quote": "Company ORG001 is named Example Manufacturing.",
+          "start": 291
+        }
+      },
+      {
+        "memberId": "Company.companyCode",
+        "sourceVersionId": "bd121d25-6e4b-4c58-9c01-f08ebaf3cebc",
+        "locator": {
+          "kind": "field",
+          "recordKey": "C001",
+          "field": "company_code"
+        }
+      },
+      {
+        "memberId": "Company.companyCode",
+        "sourceVersionId": "e2bfd591-fe86-4889-8d6e-5e1b571637a6",
+        "locator": {
+          "kind": "quote",
+          "quote": "Company ORG001",
+          "start": 291
+        }
+      },
+      {
+        "memberId": "Company.name",
+        "sourceVersionId": "e2bfd591-fe86-4889-8d6e-5e1b571637a6",
+        "locator": {
+          "kind": "quote",
+          "quote": "named Example Manufacturing",
+          "start": 309
+        }
+      },
+      {
+        "memberId": "Employee",
+        "sourceVersionId": "bd121d25-6e4b-4c58-9c01-f08ebaf3cebc",
+        "locator": {
+          "kind": "field",
+          "recordKey": "C001",
+          "field": "employee_no"
+        }
+      },
+      {
+        "memberId": "Employee",
+        "sourceVersionId": "e2bfd591-fe86-4889-8d6e-5e1b571637a6",
+        "locator": {
+          "kind": "quote",
+          "quote": "Employee E001 is responsible for contract C001",
+          "start": 121
+        }
+      },
+      {
+        "memberId": "Employee.employeeNo",
+        "sourceVersionId": "bd121d25-6e4b-4c58-9c01-f08ebaf3cebc",
+        "locator": {
+          "kind": "field",
+          "recordKey": "C001",
+          "field": "employee_no"
+        }
+      },
+      {
+        "memberId": "Employee.employeeNo",
+        "sourceVersionId": "e2bfd591-fe86-4889-8d6e-5e1b571637a6",
+        "locator": {
+          "kind": "quote",
+          "quote": "Employee E002",
+          "start": 216
+        }
+      },
+      {
+        "memberId": "ContractResponsibility",
+        "sourceVersionId": "e2bfd591-fe86-4889-8d6e-5e1b571637a6",
+        "locator": {
+          "kind": "quote",
+          "quote": "Employee E001 is responsible for contract C001 from 2026-04-01T00:00:00Z until 2026-05-01T00:",
+          "start": 121
+        }
+      },
+      {
+        "memberId": "ContractResponsibility",
+        "sourceVersionId": "e2bfd591-fe86-4889-8d6e-5e1b571637a6",
+        "locator": {
+          "kind": "quote",
+          "quote": "Employee E002 is responsible for contract C001 from 2026-05-01T00:00:00Z.",
+          "start": 216
+        }
+      },
+      {
+        "memberId": "ContractResponsibility.validFrom",
+        "sourceVersionId": "e2bfd591-fe86-4889-8d6e-5e1b571637a6",
+        "locator": {
+          "kind": "quote",
+          "quote": "from 2026-04-01T00:00:00Z",
+          "start": 168
+        }
+      },
+      {
+        "memberId": "ContractResponsibility.validTo",
+        "sourceVersionId": "e2bfd591-fe86-4889-8d6e-5e1b571637a6",
+        "locator": {
+          "kind": "quote",
+          "quote": "until 2026-05-01T00:",
+          "start": 194
+        }
+      },
+      {
+        "memberId": "Contract.signedByCompany",
+        "sourceVersionId": "e2bfd591-fe86-4889-8d6e-5e1b571637a6",
+        "locator": {
+          "kind": "quote",
+          "quote": "Contract C001 was signed by company ORG001.",
+          "start": 0
+        }
+      },
+      {
+        "memberId": "Contract.signedByCompany",
+        "sourceVersionId": "bd121d25-6e4b-4c58-9c01-f08ebaf3cebc",
+        "locator": {
+          "kind": "field",
+          "recordKey": "C001",
+          "field": "company_code"
+        }
+      },
+      {
+        "memberId": "ContractResponsibility.ofContract",
+        "sourceVersionId": "e2bfd591-fe86-4889-8d6e-5e1b571637a6",
+        "locator": {
+          "kind": "quote",
+          "quote": "responsible for contract C001",
+          "start": 138
+        }
+      },
+      {
+        "memberId": "ContractResponsibility.byEmployee",
+        "sourceVersionId": "e2bfd591-fe86-4889-8d6e-5e1b571637a6",
+        "locator": {
+          "kind": "quote",
+          "quote": "Employee E002 is responsible for contract C001",
+          "start": 216
+        }
+      }
+    ]
+  },
+  "extraction": {
+    "claims": [
+      {
+        "subject": {
+          "typeId": "Contract",
+          "namespace": "contract_no",
+          "value": "C001"
+        },
+        "predicate": "contract_no",
+        "value": "C001",
+        "validity": {
+          "from": null,
+          "to": null,
+          "precision": "unknown"
+        },
+        "evidence": [
+          {
+            "kind": "quote",
+            "quote": "Contract C001 was signed by company ORG001.",
+            "start": 0
+          }
+        ],
+        "basis": "explicit"
+      },
+      {
+        "subject": {
+          "typeId": "Contract",
+          "namespace": "contract_no",
+          "value": "C001"
+        },
+        "predicate": "contract_customer",
+        "object": {
+          "typeId": "Company",
+          "namespace": "company_code",
+          "value": "ORG001"
+        },
+        "validity": {
+          "from": null,
+          "to": null,
+          "precision": "unknown"
+        },
+        "evidence": [
+          {
+            "kind": "quote",
+            "quote": "Contract C001 was signed by company ORG001.",
+            "start": 0
+          }
+        ],
+        "basis": "explicit"
+      },
+      {
+        "subject": {
+          "typeId": "Contract",
+          "namespace": "contract_no",
+          "value": "C001"
+        },
+        "predicate": "contract_amount",
+        "value": "1200000.00",
+        "validity": {
+          "from": "2026-04-01T00:00:00Z",
+          "to": null,
+          "precision": "instant"
+        },
+        "evidence": [
+          {
+            "kind": "quote",
+            "quote": "The amount for contract C001 is 1200000.00 effective 2026-04-01T00:00:00Z.",
+            "start": 45
+          }
+        ],
+        "basis": "explicit"
+      },
+      {
+        "subject": {
+          "typeId": "Contract",
+          "namespace": "contract_no",
+          "value": "C001"
+        },
+        "predicate": "contract_owner",
+        "object": {
+          "typeId": "Person",
+          "namespace": "employee_no",
+          "value": "E001"
+        },
+        "validity": {
+          "from": "2026-04-01T00:00:00Z",
+          "to": "2026-05-01T00:00:00Z",
+          "precision": "instant"
+        },
+        "evidence": [
+          {
+            "kind": "quote",
+            "quote": "Employee E001 is responsible for contract C001 from 2026-04-01T00:00:00Z until 2026-05-01T00:00:",
+            "start": 121
+          },
+          {
+            "kind": "quote",
+            "quote": "Employee E002 is responsible for contract C001 from 2026-05-01T00:00:00Z.",
+            "start": 219
+          }
+        ],
+        "basis": "inferred"
+      },
+      {
+        "subject": {
+          "typeId": "Contract",
+          "namespace": "contract_no",
+          "value": "C001"
+        },
+        "predicate": "contract_owner",
+        "object": {
+          "typeId": "Person",
+          "namespace": "employee_no",
+          "value": "E002"
+        },
+        "validity": {
+          "from": "2026-05-01T00:00:00Z",
+          "to": null,
+          "precision": "instant"
+        },
+        "evidence": [
+          {
+            "kind": "quote",
+            "quote": "Employee E002 is responsible for contract C001 from 2026-05-01T00:00:00Z.",
+            "start": 219
+          }
+        ],
+        "basis": "explicit"
+      },
+      {
+        "subject": {
+          "typeId": "Company",
+          "namespace": "company_code",
+          "value": "ORG001"
+        },
+        "predicate": "company_name",
+        "value": "Example Manufacturing",
+        "validity": {
+          "from": null,
+          "to": null,
+          "precision": "unknown"
+        },
+        "evidence": [
+          {
+            "kind": "quote",
+            "quote": "Company ORG001 is named Example Manufacturing.",
+            "start": 294
+          }
+        ],
+        "basis": "explicit"
+      }
+    ]
+  },
+  "sources": {
+    "bd121d25-6e4b-4c58-9c01-f08ebaf3cebc": {
+      "kind": "csv",
+      "rows": [
+        {
+          "amount": "1000000.00",
+          "valid_to": "",
+          "valid_from": "2026-04-01T00:00:00Z",
+          "contract_no": "C001",
+          "employee_no": "E001",
+          "company_code": "ORG001"
+        }
+      ],
+      "columns": [
+        "contract_no",
+        "amount",
+        "company_code",
+        "employee_no",
+        "valid_from",
+        "valid_to"
+      ],
+      "warnings": [],
+      "keyColumn": "contract_no"
+    },
+    "e2bfd591-fe86-4889-8d6e-5e1b571637a6": {
+      "kind": "pdf",
+      "text": "Contract C001 was signed by company ORG001.\n\nThe amount for contract C001 is 1200000.00 effective 2026-04-01T00:00:00Z.\n\nEmployee E001 is responsible for contract C001 from 2026-04-01T00:00:00Z until 2026-05-01T00:00:\n\nEmployee E002 is responsible for contract C001 from 2026-05-01T00:00:00Z.\n\nCompany ORG001 is named Example Manufacturing.",
+      "blocks": [
+        {
+          "end": 43,
+          "kind": "page",
+          "page": 1,
+          "start": 0
+        },
+        {
+          "end": 119,
+          "kind": "page",
+          "page": 2,
+          "start": 45
+        },
+        {
+          "end": 217,
+          "kind": "page",
+          "page": 3,
+          "start": 121
+        },
+        {
+          "end": 292,
+          "kind": "page",
+          "page": 4,
+          "start": 219
+        },
+        {
+          "end": 340,
+          "kind": "page",
+          "page": 5,
+          "start": 294
+        }
+      ],
+      "warnings": []
+    }
+  },
+  "pdfContent": {
+    "kind": "pdf",
+    "text": "Contract C001 was signed by company ORG001.\n\nThe amount for contract C001 is 1200000.00 effective 2026-04-01T00:00:00Z.\n\nEmployee E001 is responsible for contract C001 from 2026-04-01T00:00:00Z until 2026-05-01T00:00:\n\nEmployee E002 is responsible for contract C001 from 2026-05-01T00:00:00Z.\n\nCompany ORG001 is named Example Manufacturing.",
+    "blocks": [
+      {
+        "end": 43,
+        "kind": "page",
+        "page": 1,
+        "start": 0
+      },
+      {
+        "end": 119,
+        "kind": "page",
+        "page": 2,
+        "start": 45
+      },
+      {
+        "end": 217,
+        "kind": "page",
+        "page": 3,
+        "start": 121
+      },
+      {
+        "end": 292,
+        "kind": "page",
+        "page": 4,
+        "start": 219
+      },
+      {
+        "end": 340,
+        "kind": "page",
+        "page": 5,
+        "start": 294
+      }
+    ],
+    "warnings": []
+  },
+  "reviewedOntology": {
+    "name": "合同知识验证",
+    "types": [
+      {
+        "id": "Company",
+        "name": "企业",
+        "identityNamespaces": [
+          "company_code"
+        ],
+        "properties": [
+          {
+            "id": "company_name",
+            "name": "企业名称",
+            "valueType": "string"
+          }
+        ]
+      },
+      {
+        "id": "Contract",
+        "name": "合同",
+        "identityNamespaces": [
+          "contract_no"
+        ],
+        "properties": [
+          {
+            "id": "contract_no",
+            "name": "合同编号",
+            "valueType": "string",
+            "required": true
+          },
+          {
+            "id": "contract_amount",
+            "name": "合同金额",
+            "valueType": "decimal"
+          }
+        ]
+      },
+      {
+        "id": "Person",
+        "name": "负责人",
+        "identityNamespaces": [
+          "employee_no"
+        ],
+        "properties": [
+          {
+            "id": "person_name",
+            "name": "姓名",
+            "valueType": "string"
+          }
+        ]
+      }
+    ],
+    "links": [
+      {
+        "id": "contract_customer",
+        "name": "合同客户",
+        "from": "Contract",
+        "to": "Company",
+        "multiple": false
+      },
+      {
+        "id": "contract_owner",
+        "name": "合同负责人",
+        "from": "Contract",
+        "to": "Person",
+        "multiple": false
+      }
+    ],
+    "actions": [
+      "CorrectProperty",
+      "RejectAssertion",
+      "CorrectValidity",
+      "PublishOntologyVersion"
+    ]
+  }
+}

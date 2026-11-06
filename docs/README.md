@@ -1,5 +1,15 @@
 # Context OS 文档中心
 
+**2026-11-06 后续收口（当前）：** v22 / structured-compiler-v12 / references-v3。删除无读取方的 analysisCompletion，完成状态仍由 coverageManifest 表达；仅排除同一冻结来源、顺序列组完全相同且无显式外键的推断自引用，保留显式自关联和不同列映射。v16–v22 逐表回执兼容，旧协调缓存不跨策略复用，DB007 不变。定向新版 53/53、零跳过，类型和差异检查通过；离线预演 50 阶段、最大 40958 字节、重放新增 0。未连库或调用真实模型。R02 冻结记录探测、R03 组合验收、事件/状态和人工先例见 BACKLOG；FEATURE_069 仍 InProgress。
+
+**2026-11-06 修复更新：**引用候选过期及抽样未匹配语义已修，当前references-v3 / structured-compiler-v11 / v21；本次适用新版回归72/72、零跳过。历史158/158和容量证据保留；真实业务验收未完成，详见[逐项账](implementation/STRUCTURED_COMPILER_ACCEPTANCE.md)。
+
+**2026-11-06 新版知识核心收尾：**当前references-v3 / structured-compiler-v10 / v20；新版独立数据库回归158/158、零跳过，合成容量验证完成，专用容器已清理。见[逐项要求与证据账](implementation/STRUCTURED_COMPILER_ACCEPTANCE.md)、[编译设计当前更正](features/structured-semantic-compiler.md#2026-11-06-最终收尾更正当前事实)和[独立金标准与真实模型验收准备](implementation/STRUCTURED_COMPILER_PILOT_PLAN.md)。真实业务质量、提供方停顿和生产容量尚未验收，FEATURE_069仍InProgress。旧Agent/旧快照路径停止测试和修复；下方带日期验证均为历史记录。
+
+当前工作区的架构与流程图见[新知识核心现状图](implementation/CURRENT_ARCHITECTURE.md)：区分模型生成、程序执行、重大业务决定、存储与旧入口边界。
+
+**当前新阶段入口：**[第一阶段实施决定](implementation/PHASE1_DECISION.md)、[现状评估](implementation/ASSESSMENT.md)、[代码交接](implementation/PHASE1_DEVELOPMENT.md)、[11-02 补齐交付](implementation/PHASE1_HARDENING.md)、[试点评测基线](implementation/PHASE1_PILOT_EVALUATION.md)。新定位为单企业实例、元数据驱动 OO 本体、PostgreSQL 声明/证据/双时间与 Action；旧文档中的范围限制不覆盖本轮已确认目标。核心机制已运行验证，真实业务效果与生产验收仍待开展。
+
 更新：2026-10-22。文档按基于 KodaX 的领域 Agent 产品组织：产品目标 → 系统职责 → Agent 方法与运行 → 共同语义契约 → 人类交互和外部消费 → 实施与验证。
 
 **产品核心：本体驱动异构多源数据融合与语义打通。** 内部 Agent 协助构建和治理；人类用户与外部 Agent 消费同一企业语义层。三个页面是工作入口，内部保持一个 Agent，不为每页创建独立 Agent 或事实库。
@@ -80,3 +90,5 @@
 | [ADR 索引](https://github.com/icetomoyo/KodaX-Space/blob/84352756f9d792c6f327a506cede062e809392e1/docs/ADR/README.md)保留决策与取舍 | 固定单循环、共同领域操作边界、状态与来源分离三项决定 |
 
 Context OS 当前是 Node HTTP 服务与 Web 画布。Space 的 Electron、Coder/Partner、共享 daemon、桌面面板及权限档位有各自产品背景，本轮不引入这些结构。外部数据消费仍是独立的确定性服务入口，无需经过内部模型。
+
+当前企业知识核心工程验证：[2026-11-03 收尾记录](implementation/PHASE1_CLOSEOUT.md)，知识核心 59/59、旧回归 680/680；正式业务效果与后续领域配置单独验收。

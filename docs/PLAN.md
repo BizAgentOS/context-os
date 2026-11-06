@@ -1,4 +1,6 @@
-# 开发导航：三页数据融合产品
+# 开发导航
+
+当前优先工作为单企业对象式知识核心第一阶段，见[实施决定](implementation/PHASE1_DECISION.md)与[开发交接](implementation/PHASE1_DEVELOPMENT.md)，状态以[台账](FEATURE_LIST.md)的 KNOWLEDGE_PHASE1 为准。下面是历史导航，不能覆盖当前目标。
 
 当前正在开发 **v0.3.0**，Feature 与任务见 [v0.3.0 设计](features/v0.3.0.md)，目标设计见[蓝图](features/v0.3.0-blueprint.md)，实际进度见[功能台账](FEATURE_LIST.md)。最近发布版本为 v0.2.3（2026-10-16，本地 Tag），包版本保留发布值不改变当前开发目标。
 

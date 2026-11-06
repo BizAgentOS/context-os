@@ -14,6 +14,9 @@ import type { Data, DomainTool, Json } from "./contracts.ts";
 import type { AgentCapabilities } from "../capabilities/service.ts";
 
 export interface RunRequest {
+  /** Per-request budgets; omitted preserves the legacy Agent defaults. */
+  timeoutMs?: number;
+  maxIterations?: number;
   nativeTools?: string[];
   capabilities?: AgentCapabilities;
   sessionId?: string;
@@ -144,6 +147,10 @@ export class KodaXDriver implements AgentDriver {
   }
 
   async run(request: RunRequest): Promise<RunOutcome> {
+    const timeoutMs = request.timeoutMs ?? 240_000;
+    const maxIterations = request.maxIterations ?? 24;
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 1_800_000) throw new Error('模型运行时限必须在 1 秒至 30 分钟之间');
+    if (!Number.isSafeInteger(maxIterations) || maxIterations < 1 || maxIterations > 24) throw new Error('模型迭代预算必须在 1 至 24 之间');
     this.stopping = false;
     const runtime = await this.initialize();
     let provider: string = this.settings.provider;
@@ -327,9 +334,9 @@ export class KodaXDriver implements AgentDriver {
     let timedOut = false;
     const timeout = setTimeout(() => {
       timedOut = true;
-      request.onEvent("run.timed_out", { reason: "运行超过240秒" });
+      request.onEvent("run.timed_out", { reason: `运行超过${timeoutMs / 1000}秒`, timeoutMs });
       void this.stop().catch(() => {});
-    }, 240_000);
+    }, timeoutMs);
     try {
       this.handle = await runtime.runs.start({
         sessionId: session.id,
@@ -339,7 +346,7 @@ export class KodaXDriver implements AgentDriver {
           provider,
           model: this.settings.model,
           agentMode: "sa",
-          maxIter: 24,
+          maxIter: maxIterations,
           maxOutputTokens: 6500,
           thinking: false,
           lsp: false,
@@ -365,6 +372,8 @@ export class KodaXDriver implements AgentDriver {
       request.onEvent("run.started", {
         runId: this.handle.runId,
         sessionId: session.id,
+        timeoutMs,
+        maxIterations,
       });
       const result = await this.handle.result;
       const failed =

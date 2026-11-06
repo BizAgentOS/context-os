@@ -1,5 +1,17 @@
 # Context OS
 
+**部署口径：**每个客户独立部署一套实例。跨客户共享的 SaaS 多租户不在当前产品范围内。客户实例内部的部门与角色权限另行定义。
+
+**2026-11-06 后续收口（当前）：** v22 / structured-compiler-v12 / references-v3。删除无读取方的 analysisCompletion，完成状态仍由 coverageManifest 表达；仅排除同一冻结来源、顺序列组完全相同且无显式外键的推断自引用，保留显式自关联和不同列映射。v16–v22 逐表回执兼容，旧协调缓存不跨策略复用，DB007 不变。定向新版 53/53、零跳过，类型和差异检查通过；离线预演 50 阶段、最大 40958 字节、重放新增 0。未连库或调用真实模型。R02 冻结记录探测、R03 组合验收、事件/状态和人工先例见 BACKLOG；FEATURE_069 仍 InProgress。
+
+**2026-11-06 修复更新：**引用候选过期及抽样未匹配语义已修，当前references-v3 / structured-compiler-v11 / v21；本次适用新版回归72/72、零跳过。历史158/158和容量证据保留；真实业务验收未完成，详见[逐项账](docs/implementation/STRUCTURED_COMPILER_ACCEPTANCE.md)。
+
+**2026-11-06 新版知识核心收尾：**当前references-v3 / structured-compiler-v10 / v20；新版独立数据库回归158/158、零跳过，合成容量验证完成，专用容器已清理。见[逐项要求与证据账](docs/implementation/STRUCTURED_COMPILER_ACCEPTANCE.md)、[编译设计当前更正](docs/features/structured-semantic-compiler.md#2026-11-06-最终收尾更正当前事实)和[独立金标准与真实模型验收准备](docs/implementation/STRUCTURED_COMPILER_PILOT_PLAN.md)。真实业务质量、提供方停顿和生产容量尚未验收，FEATURE_069仍InProgress。旧Agent/旧快照路径停止测试和修复；下方带日期验证均为历史记录。
+
+**第一阶段验证更新：**用户授权后已完成类型检查、新核心 16 项、现有回归 680 项及 CLI/浏览器检查，修复启动、权限、分页和模型适配问题，并用已配置 GLM 5.3 完成合成资料小样本验证。详情见[运行记录](docs/implementation/PHASE1_VERIFICATION.md)；实际企业资料与生产条件仍待验收。
+
+> **当前开发方向：单企业实例的对象式知识核心。** 新阶段以 [实施决定](docs/implementation/PHASE1_DECISION.md)为准，代码入口已改为 PostgreSQL 知识核心，使用步骤与配置见[开发交接](docs/implementation/PHASE1_DEVELOPMENT.md)。首轮按用户要求仅编写实现，授权后的运行结果见上方更新；下方旧版验收为历史记录。`npm start` 使用新入口；旧入口为 `npm run legacy:start`。
+
 本体驱动的通用多源数据底座。把散落在不同系统的数据接进来，构建可溯源、有依据的本体，按版本发布给人和外部 Agent 使用。程序负责构建结构，KodaX Agent 协助接入、解释与修订。投研作为后续验证场景。
 
 ## 当前版本：v0.3.1

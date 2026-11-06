@@ -1,0 +1,5 @@
+Contract C001 was signed by company ORG001.
+The amount for contract C001 is 1200000.00 effective 2026-04-01T00:00:00Z.
+Employee E001 is responsible for contract C001 from 2026-04-01T00:00:00Z until 2026-05-01T00:00:00Z.
+Employee E002 is responsible for contract C001 from 2026-05-01T00:00:00Z.
+Company ORG001 is named Example Manufacturing.

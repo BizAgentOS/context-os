@@ -1,3 +1,5 @@
+import { controlledModelFetch, hasModelTransport } from '../observability/model-transport.ts';
+import { traceModelFetch } from '../observability/model-http-trace.ts';
 import {
   KodaXOpenAICompatProvider,
   KodaXAnthropicCompatProvider,
@@ -9,7 +11,7 @@ import {
 // Apply at the SDK client's transport boundary, including background review calls.
 // No process-wide fetch patch: fixed providers and source connectors are unchanged.
 const endpointFetch: typeof fetch = async (input, init) => {
-  const response = await fetch(input, { ...init, redirect: "manual" });
+  const response = await controlledModelFetch(input, { ...init, redirect: "manual" }, (request, options) => traceModelFetch(request, options, fetch));
   if (response.status >= 300 && response.status < 400) {
     await response.body?.cancel();
     return new Response(
@@ -49,7 +51,7 @@ class CustomOpenAI extends KodaXOpenAICompatProvider {
     this.config = providerConfig(config);
   }
   protected async buildClient() {
-    return (await super.buildClient()).withOptions({ fetch: endpointFetch });
+    return (await super.buildClient()).withOptions({ fetch: endpointFetch, ...(hasModelTransport() ? { maxRetries: 0 } : {}) });
   }
 }
 class CustomAnthropic extends KodaXAnthropicCompatProvider {
@@ -61,7 +63,7 @@ class CustomAnthropic extends KodaXAnthropicCompatProvider {
     this.config = providerConfig(config);
   }
   protected async buildClient() {
-    return (await super.buildClient()).withOptions({ fetch: endpointFetch });
+    return (await super.buildClient()).withOptions({ fetch: endpointFetch, ...(hasModelTransport() ? { maxRetries: 0 } : {}) });
   }
 }
 export function registerEndpointProvider(config: KodaXCustomProviderConfig) {
